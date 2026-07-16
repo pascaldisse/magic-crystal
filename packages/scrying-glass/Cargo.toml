@@ -21,6 +21,9 @@ transmutation = { path = "../transmute" }
 tauri = { version = "2.11.5", features = ["macos-private-api", "unstable"] }
 wgpu = "30.0.0"
 
+[dev-dependencies]
+lumen = { path = "../lumen" }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6.2"
 objc2-app-kit = { version = "0.3.2", features = ["NSEvent", "NSWindow", "NSCursor"] }

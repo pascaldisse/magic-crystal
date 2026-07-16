@@ -1,7 +1,3 @@
-mod input;
-mod player;
-mod scene;
-
 use std::{
     io::{Read, Write},
     net::{Ipv4Addr, TcpListener, TcpStream},
@@ -15,20 +11,20 @@ use std::{
     time::{Duration, Instant},
 };
 
-use player::{Ground, Key, Player, PlayerParams};
+use scrying_glass::player::{Ground, Key, Player, PlayerParams};
+use scrying_glass::{input, player};
 
 use crystal::{Core, GaiaPackage, load_world_dir};
 use glam::Vec3;
-use scene::first_light::FirstLightDefaults;
-use scene::{Camera, FrameUniform, RenderScene, SceneParameters, Vertex, WORLD_SHADER};
 use scrying_glass::ScryingGlassPackage;
+use scrying_glass::bvh::{Bvh, BvhParams};
+use scrying_glass::integrator::{Integrator, IntegratorParams, IntegratorUniform};
+use scrying_glass::scene::{Camera, RenderScene, SceneParameters, SunDefaults, SunLight};
 use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewUrl};
-use wgpu::util::DeviceExt;
 
 const DEFAULT_NATIVE_PORT: u16 = 8430;
 const BYTES_PER_PIXEL: u32 = 4;
 const CAPTURE_SLOT_COUNT: usize = 3;
-const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 #[derive(Clone)]
 struct ScryingGlassConfig {
@@ -43,6 +39,10 @@ struct ScryingGlassConfig {
     auto_test_ipc: bool,
     world_path: PathBuf,
     scene: SceneParameters,
+    integrator: IntegratorParams,
+    bvh: BvhParams,
+    /// Accumulation frames a /scry moving-eye capture integrates for a crisp shot.
+    capture_frames: u32,
 }
 
 impl ScryingGlassConfig {
@@ -108,7 +108,7 @@ impl ScryingGlassConfig {
                 camera_yaw: number("GAIA_NATIVE_CAMERA_YAW", 0.0)? as f32,
                 camera_pitch: number("GAIA_NATIVE_CAMERA_PITCH", 0.0)? as f32,
                 cluster_error_threshold: number("GAIA_NATIVE_CLUSTER_ERROR", 1.0)? as f32,
-                first_light: FirstLightDefaults {
+                sun: SunDefaults {
                     sun_color: std::env::var("GAIA_NATIVE_SUN_COLOR")
                         .unwrap_or_else(|_| "#ffe2b0".into()),
                     sun_intensity: number("GAIA_NATIVE_SUN_INTENSITY", 1.1)? as f32,
@@ -117,11 +117,22 @@ impl ScryingGlassConfig {
                         number("GAIA_NATIVE_SUN_Y", 90.0)? as f32,
                         number("GAIA_NATIVE_SUN_Z", 30.0)? as f32,
                     ],
-                    ambient_color: std::env::var("GAIA_NATIVE_AMBIENT_COLOR")
-                        .unwrap_or_else(|_| "#8fb3ff".into()),
                     ambient_intensity: number("GAIA_NATIVE_AMBIENT_INTENSITY", 0.32)? as f32,
                 },
+                emission_intensity: number("GAIA_NATIVE_EMISSIVE_INTENSITY", 2.5)? as f32,
             },
+            integrator: IntegratorParams {
+                spp: integer("GAIA_NATIVE_SPP", 2)?,
+                max_bounces: integer("GAIA_NATIVE_MAX_BOUNCES", 4)?,
+                rr_start: integer("GAIA_NATIVE_RR_START", 2)?,
+                seed: integer("GAIA_NATIVE_SEED", 0x5eed)?,
+                eps: number("GAIA_NATIVE_RAY_EPS", 1e-3)? as f32,
+            },
+            bvh: BvhParams {
+                leaf_max: integer("GAIA_NATIVE_BVH_LEAF", 4)? as usize,
+                max_depth: integer("GAIA_NATIVE_BVH_DEPTH", 64)? as usize,
+            },
+            capture_frames: integer("GAIA_NATIVE_CAPTURE_FRAMES", 48)?,
         };
         if config.window_width <= 0.0
             || config.window_height <= 0.0
@@ -610,28 +621,9 @@ struct CaptureSlot {
     busy: Arc<AtomicBool>,
 }
 
-fn create_depth_view(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
-    let depth = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("world depth buffer"),
-        size: wgpu::Extent3d {
-            width: width.max(1),
-            height: height.max(1),
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: DEPTH_FORMAT,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-        view_formats: &[],
-    });
-    depth.create_view(&wgpu::TextureViewDescriptor::default())
-}
-
 struct OffscreenTarget {
     texture: wgpu::Texture,
     view: wgpu::TextureView,
-    depth_view: wgpu::TextureView,
     slots: Vec<CaptureSlot>,
     next_slot: usize,
     padded_bytes_per_row: u32,
@@ -656,7 +648,6 @@ impl OffscreenTarget {
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let depth_view = create_depth_view(device, width, height);
         let unpadded = width * BYTES_PER_PIXEL;
         let alignment = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
         let padded_bytes_per_row = unpadded.div_ceil(alignment) * alignment;
@@ -679,7 +670,6 @@ impl OffscreenTarget {
         Self {
             texture,
             view,
-            depth_view,
             slots,
             next_slot: 0,
             padded_bytes_per_row,
@@ -704,33 +694,6 @@ impl OffscreenTarget {
     }
 }
 
-/// Upload selected Great Chain vertices into a fresh VERTEX buffer. An empty cut
-/// still yields a one-vertex placeholder so `slice(..)` never binds nothing.
-fn build_vertex_buffer(
-    device: &wgpu::Device,
-    vertices: &[Vertex],
-    label: &'static str,
-) -> Result<(wgpu::Buffer, u32), String> {
-    let count =
-        u32::try_from(vertices.len()).map_err(|_| "chain cut exceeds u32 vertices".to_string())?;
-    let bytes = bytemuck::cast_slice(vertices);
-    let buffer = if bytes.is_empty() {
-        device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some(label),
-            size: std::mem::size_of::<Vertex>() as u64,
-            usage: wgpu::BufferUsages::VERTEX,
-            mapped_at_creation: false,
-        })
-    } else {
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some(label),
-            contents: bytes,
-            usage: wgpu::BufferUsages::VERTEX,
-        })
-    };
-    Ok((buffer, count))
-}
-
 struct Renderer {
     // Safety: created from the native Tauri Window's raw handles; the app owns that Window
     // until shutdown, and the render worker stops before process exit.
@@ -738,17 +701,25 @@ struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
-    sky_pipeline: wgpu::RenderPipeline,
-    mesh_pipeline: wgpu::RenderPipeline,
-    frame_buffer: wgpu::Buffer,
-    frame_bind_group: wgpu::BindGroup,
-    /// Great Chain cut for the fixed surface camera, re-selected only on resize
-    /// (the surface pose never changes; the moving eye selects per request).
-    surface_vertex_buffer: wgpu::Buffer,
-    surface_vertex_count: u32,
-    scene: RenderScene,
+    /// The ONE traced integrator (Rite IV) — replaces the deleted raster path.
+    integrator: Integrator,
+    /// Current window camera (the moving eye follows the embodied body).
+    camera: Camera,
+    sun: SunLight,
+    sky_top: [f32; 4],
+    sky_horizon: [f32; 4],
+    int_params: IntegratorParams,
+    /// Accumulation frames a /scry moving-eye capture integrates.
+    capture_frames: u32,
+    /// Persistent window accumulation: progressive while the eye is still,
+    /// reset the instant it moves or the surface resizes.
+    surface_accum: wgpu::Buffer,
+    surface_compute_bg: wgpu::BindGroup,
+    surface_blit_bg: wgpu::BindGroup,
+    samples_before: u32,
+    /// (eye, yaw, pitch, width, height) the current accumulation belongs to.
+    last_view: Option<([f32; 3], f32, f32, u32, u32)>,
     offscreen: OffscreenTarget,
-    surface_depth: wgpu::TextureView,
     pixel_order: PixelOrder,
     capture_sender: mpsc::Sender<CaptureReady>,
 }
@@ -758,6 +729,9 @@ impl Renderer {
         window: &tauri::Window,
         capture_sender: mpsc::Sender<CaptureReady>,
         scene: RenderScene,
+        int_params: IntegratorParams,
+        bvh_params: &BvhParams,
+        capture_frames: u32,
     ) -> Result<Self, String> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let target = unsafe {
@@ -811,159 +785,68 @@ impl Renderer {
         };
         surface.configure(&device, &config);
 
-        let frame = scene.frame_uniform(config.width, config.height, &scene.camera);
-        let frame_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("world frame uniform"),
-            contents: bytemuck::bytes_of(&frame),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("world frame layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: wgpu::BufferSize::new(
-                        std::mem::size_of::<FrameUniform>() as u64
-                    ),
-                },
-                count: None,
-            }],
-        });
-        let frame_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("world frame bind group"),
-            layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: frame_buffer.as_entire_binding(),
-            }],
-        });
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("world pipeline layout"),
-            bind_group_layouts: &[Some(&bind_group_layout)],
-            immediate_size: 0,
-        });
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("W1 world shader"),
-            source: wgpu::ShaderSource::Wgsl(WORLD_SHADER.into()),
-        });
-        let color_target = || wgpu::ColorTargetState {
-            format,
-            blend: Some(wgpu::BlendState::REPLACE),
-            write_mask: wgpu::ColorWrites::ALL,
-        };
-        // Sky is the far backdrop: it fills colour but never occludes, so it never writes depth.
-        let sky_depth = wgpu::DepthStencilState {
-            format: DEPTH_FORMAT,
-            depth_write_enabled: Some(false),
-            depth_compare: Some(wgpu::CompareFunction::Always),
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        };
-        // Meshes write and test depth: the real depth buffer resolves interpenetration.
-        let mesh_depth = wgpu::DepthStencilState {
-            format: DEPTH_FORMAT,
-            depth_write_enabled: Some(true),
-            depth_compare: Some(wgpu::CompareFunction::Less),
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        };
-        let sky_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("sky gradient pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("sky_vs"),
-                buffers: &[],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("sky_fs"),
-                targets: &[Some(color_target())],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: Some(sky_depth),
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
-        let mesh_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("W1 primitive mesh pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("mesh_vs"),
-                buffers: &[Some(Vertex::layout())],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("mesh_fs"),
-                targets: &[Some(color_target())],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                ..Default::default()
-            },
-            depth_stencil: Some(mesh_depth),
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
-        // First cut: draw the surface camera through the Great Chain (the SOLE
-        // geometry path). First-frame budget printed, never gated (Rite III
-        // ordeal item 5).
-        let first_frame = Instant::now();
-        let surface_vertices = scene.select_vertices(&scene.camera, config.height);
-        let (surface_vertex_buffer, surface_vertex_count) =
-            build_vertex_buffer(&device, &surface_vertices, "surface chain cut")?;
-        let first_frame_millis = first_frame.elapsed().as_secs_f64() * 1e3;
-        let offscreen = OffscreenTarget::new(&device, format, config.width, config.height);
-        let surface_depth = create_depth_view(&device, config.width, config.height);
+        // The acceleration: a BVH over the Great Chain's EXACT leaf triangles.
+        // Load budget printed, never gated (RENDER: cost ∝ pixels, not FLOPs).
+        let build_start = Instant::now();
+        let triangles = scene.leaf_triangles();
+        let bvh = Bvh::build(&triangles, bvh_params);
+        let build_millis = build_start.elapsed().as_secs_f64() * 1e3;
+        let integrator = Integrator::new(&device, format, &bvh);
         eprintln!(
-            "[wgpu] chains={} first-cut vertices={surface_vertex_count} select={first_frame_millis:.1}ms; raw-window-handle surface + offscreen framebuffer + depth: {format:?} {}x{}",
-            scene.chains.len(),
-            config.width,
-            config.height
+            "[lumen] BVH nodes={} triangles={} build={build_millis:.1}ms; traced integrator spp={} bounces={} rr_start={} — first_light is dead",
+            integrator.node_count,
+            integrator.tri_count,
+            int_params.spp,
+            int_params.max_bounces,
+            int_params.rr_start,
+        );
+
+        let camera = scene.camera;
+        let sun = scene.sun;
+        let sky_top = scene.sky_top;
+        let sky_horizon = scene.sky_horizon;
+
+        let surface_accum = integrator.make_accum(&device, config.width, config.height);
+        let surface_compute_bg = integrator.compute_bind_group(&device, &surface_accum);
+        let surface_blit_bg = integrator.blit_bind_group(&device, &surface_accum);
+        let offscreen = OffscreenTarget::new(&device, format, config.width, config.height);
+        eprintln!(
+            "[wgpu] traced surface + offscreen framebuffer: {format:?} {}x{}",
+            config.width, config.height
         );
         Ok(Self {
             surface,
             device,
             queue,
             config,
-            sky_pipeline,
-            mesh_pipeline,
-            frame_buffer,
-            frame_bind_group,
-            surface_vertex_buffer,
-            surface_vertex_count,
-            scene,
+            integrator,
+            camera,
+            sun,
+            sky_top,
+            sky_horizon,
+            int_params,
+            capture_frames,
+            surface_accum,
+            surface_compute_bg,
+            surface_blit_bg,
+            samples_before: 0,
+            last_view: None,
             offscreen,
-            surface_depth,
             pixel_order,
             capture_sender,
         })
     }
 
-    /// Re-select the surface camera's cut into `surface_vertex_buffer` — called
-    /// on resize (the projection scale depends on viewport height).
-    fn reselect_surface(&mut self) -> Result<(), String> {
-        let vertices = self
-            .scene
-            .select_vertices(&self.scene.camera, self.config.height);
-        let (buffer, count) = build_vertex_buffer(&self.device, &vertices, "surface chain cut")?;
-        self.surface_vertex_buffer = buffer;
-        self.surface_vertex_count = count;
-        Ok(())
+    /// Rebuild the window accumulation buffer (zeroed) for the current surface
+    /// size and drop the accumulated samples — the reset gesture on move/resize.
+    fn reset_surface_accum(&mut self) {
+        let accum = self
+            .integrator
+            .make_accum(&self.device, self.config.width, self.config.height);
+        self.surface_compute_bg = self.integrator.compute_bind_group(&self.device, &accum);
+        self.surface_blit_bg = self.integrator.blit_bind_group(&self.device, &accum);
+        self.surface_accum = accum;
+        self.samples_before = 0;
     }
 
     fn resize(&mut self, size: PhysicalSize<u32>) {
@@ -980,74 +863,54 @@ impl Renderer {
                 self.config.width,
                 self.config.height,
             );
-            self.surface_depth =
-                create_depth_view(&self.device, self.config.width, self.config.height);
-            // Projection scale tracks viewport height → re-cut the surface camera.
-            if let Err(error) = self.reselect_surface() {
-                eprintln!("[chain] surface re-selection failed on resize: {error}");
-            }
+            self.reset_surface_accum();
+            self.last_view = None;
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn encode_world_pass(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        view: &wgpu::TextureView,
-        depth_view: &wgpu::TextureView,
-        vertex_buffer: &wgpu::Buffer,
-        vertex_count: u32,
-        label: &'static str,
-    ) {
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some(label),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: depth_view,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
-            }),
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        pass.set_bind_group(0, &self.frame_bind_group, &[]);
-        pass.set_pipeline(&self.sky_pipeline);
-        pass.draw(0..3, 0..1);
-        if vertex_count > 0 {
-            pass.set_pipeline(&self.mesh_pipeline);
-            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-            pass.draw(0..vertex_count, 0..1);
-        }
-    }
-
-    /// Point the windowed (surface) camera at the embodied player's eye. The
-    /// offscreen moving-eye path keeps its own per-request pose overrides.
+    /// Point the windowed camera at the embodied player's eye. Movement resets
+    /// the accumulation on the next frame (detected by `last_view`).
     fn set_view_pose(&mut self, eye: Vec3, yaw: f32, pitch: f32) {
-        self.scene.camera.eye = eye;
-        self.scene.camera.yaw = yaw;
-        self.scene.camera.pitch = pitch;
+        self.camera.eye = eye;
+        self.camera.yaw = yaw;
+        self.camera.pitch = pitch;
+    }
+
+    fn view_key(&self) -> ([f32; 3], f32, f32, u32, u32) {
+        (
+            self.camera.eye.to_array(),
+            self.camera.yaw,
+            self.camera.pitch,
+            self.config.width,
+            self.config.height,
+        )
     }
 
     fn render(&mut self, size: PhysicalSize<u32>) {
         let _ = self.device.poll(wgpu::PollType::Poll);
         self.resize(size);
-        let frame_uniform =
-            self.scene
-                .frame_uniform(self.config.width, self.config.height, &self.scene.camera);
-        self.queue
-            .write_buffer(&self.frame_buffer, 0, bytemuck::bytes_of(&frame_uniform));
+
+        // Reset accumulation the instant the eye moves (progressive while still).
+        let key = self.view_key();
+        if self.last_view != Some(key) {
+            self.reset_surface_accum();
+            self.last_view = Some(key);
+        }
+
+        let (width, height) = (self.config.width, self.config.height);
+        let uniform = IntegratorUniform::build(
+            &self.camera,
+            &self.sun,
+            self.sky_top,
+            self.sky_horizon,
+            width,
+            height,
+            self.integrator.node_count,
+            self.integrator.tri_count,
+            self.samples_before,
+            &self.int_params,
+        );
+
         let surface_frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
             | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => Some(frame),
@@ -1059,30 +922,36 @@ impl Renderer {
             | wgpu::CurrentSurfaceTexture::Occluded
             | wgpu::CurrentSurfaceTexture::Validation => None,
         };
+
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("world render + framebuffer capture"),
+                label: Some("traced frame + capture"),
             });
-        self.encode_world_pass(
+        // One accumulation frame, then present the running mean to both targets.
+        self.integrator.dispatch(
+            &self.queue,
+            &mut encoder,
+            &uniform,
+            &self.surface_compute_bg,
+            width,
+            height,
+        );
+        self.integrator.blit(
             &mut encoder,
             &self.offscreen.view,
-            &self.offscreen.depth_view,
-            &self.surface_vertex_buffer,
-            self.surface_vertex_count,
-            "offscreen world pass",
+            &self.surface_blit_bg,
+            "offscreen present",
         );
         if let Some(frame) = &surface_frame {
             let view = frame
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
-            self.encode_world_pass(
+            self.integrator.blit(
                 &mut encoder,
                 &view,
-                &self.surface_depth,
-                &self.surface_vertex_buffer,
-                self.surface_vertex_count,
-                "surface world pass",
+                &self.surface_blit_bg,
+                "surface present",
             );
         }
 
@@ -1138,14 +1007,15 @@ impl Renderer {
             });
         }
         self.queue.submit(Some(encoder.finish()));
+        self.samples_before += self.int_params.spp;
         if let Some(frame) = surface_frame {
             self.queue.present(frame);
         }
     }
 
-    /// The moving eye: render one frame from an arbitrary pose to a per-request
-    /// offscreen target and read it back synchronously. Runs on the render thread
-    /// (never the main thread); the surface frame loop is untouched.
+    /// The moving eye: integrate `capture_frames` accumulation frames from an
+    /// arbitrary pose to a per-request offscreen target and read it back. Runs on
+    /// the render thread; the surface loop's own accumulation is untouched.
     fn capture_pose(&mut self, params: &ScryParams) -> Result<CapturedFrame, String> {
         let width = params.width.unwrap_or(self.config.width).max(1);
         let height = params.height.unwrap_or(self.config.height).max(1);
@@ -1156,42 +1026,62 @@ impl Renderer {
                 }
                 degrees.to_radians()
             }
-            None => self.scene.camera.fov_y_radians,
+            None => self.camera.fov_y_radians,
         };
         let camera = Camera {
-            eye: params
-                .pos
-                .map(Vec3::from_array)
-                .unwrap_or(self.scene.camera.eye),
-            yaw: params.yaw.unwrap_or(self.scene.camera.yaw),
-            pitch: params.pitch.unwrap_or(self.scene.camera.pitch),
+            eye: params.pos.map(Vec3::from_array).unwrap_or(self.camera.eye),
+            yaw: params.yaw.unwrap_or(self.camera.yaw),
+            pitch: params.pitch.unwrap_or(self.camera.pitch),
             fov_y_radians: fov,
-            near: self.scene.camera.near,
-            far: self.scene.camera.far,
+            near: self.camera.near,
+            far: self.camera.far,
         };
-        let frame_uniform = self.scene.frame_uniform(width, height, &camera);
-        self.queue
-            .write_buffer(&self.frame_buffer, 0, bytemuck::bytes_of(&frame_uniform));
 
-        // The moving eye picks its OWN Great Chain cut (view-dependent LOD).
-        let vertices = self.scene.select_vertices(&camera, height);
-        let (vertex_buffer, vertex_count) =
-            build_vertex_buffer(&self.device, &vertices, "scry chain cut")?;
+        let accum = self.integrator.make_accum(&self.device, width, height);
+        let compute_bg = self.integrator.compute_bind_group(&self.device, &accum);
+        let blit_bg = self.integrator.blit_bind_group(&self.device, &accum);
 
+        let mut samples_before = 0u32;
+        for _ in 0..self.capture_frames.max(1) {
+            let uniform = IntegratorUniform::build(
+                &camera,
+                &self.sun,
+                self.sky_top,
+                self.sky_horizon,
+                width,
+                height,
+                self.integrator.node_count,
+                self.integrator.tri_count,
+                samples_before,
+                &self.int_params,
+            );
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("scry integrate"),
+                });
+            self.integrator.dispatch(
+                &self.queue,
+                &mut encoder,
+                &uniform,
+                &compute_bg,
+                width,
+                height,
+            );
+            self.queue.submit(Some(encoder.finish()));
+            let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+            samples_before += self.int_params.spp;
+        }
+
+        // Present the converged mean to a fresh sRGB target, then read it back.
         let target = OffscreenTarget::new(&self.device, self.config.format, width, height);
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("scry pose render + capture"),
+                label: Some("scry present + capture"),
             });
-        self.encode_world_pass(
-            &mut encoder,
-            &target.view,
-            &target.depth_view,
-            &vertex_buffer,
-            vertex_count,
-            "scry world pass",
-        );
+        self.integrator
+            .blit(&mut encoder, &target.view, &blit_bg, "scry present");
         let slot = &target.slots[0];
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
@@ -1220,7 +1110,6 @@ impl Renderer {
         encoder.map_buffer_on_submit(&buffer, wgpu::MapMode::Read, .., move |result| {
             let mapped = result.map_err(|error| error.to_string());
             if mapped.is_err() {
-                // Nothing to unmap on failure.
                 let _ = callback_buffer;
             }
             let _ = done_tx.send(mapped.map(|_| ()));
@@ -1467,8 +1356,15 @@ fn main() {
             );
             input::install_player_input(player.clone()).map_err(std::io::Error::other)?;
 
-            let renderer = Renderer::new(&window, capture_sender, render_scene)
-                .map_err(std::io::Error::other)?;
+            let renderer = Renderer::new(
+                &window,
+                capture_sender,
+                render_scene,
+                config.integrator,
+                &config.bvh,
+                config.capture_frames,
+            )
+            .map_err(std::io::Error::other)?;
             let (scry_tx, scry_rx) = mpsc::channel::<ScryRequest>();
             start_screenshot_server(
                 native_port,
