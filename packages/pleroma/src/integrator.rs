@@ -61,7 +61,31 @@ impl Default for Params {
 /// Trace ONE path for pixel `pixel`, sample `sample`, returning its radiance
 /// estimate. Public so ordeals can drive it directly (measure a point's
 /// reflected radiance without a camera).
+///
+/// When the scene carries a participating medium, the primary camera segment is
+/// marched inside THIS pass (no separate volumetric pass): the surface/emitter
+/// radiance behind the medium is attenuated by its transmittance and the
+/// medium's single-scattered light is added on top (Rite VI A1).
 pub fn radiance(scene: &Scene, primary: Ray, pixel: u64, sample: u64, p: &Params) -> Vec3 {
+    let surface = surface_radiance(scene, primary, pixel, sample, p);
+    match &scene.medium {
+        None => surface,
+        Some(medium) => {
+            // Distance to the first surface bounds the primary march (else the
+            // medium's own far cap does — godrays in empty sky).
+            let t_first = scene
+                .hit(&primary, p.eps, f64::INFINITY)
+                .map(|(h, _)| h.t)
+                .unwrap_or(medium.far);
+            let (inscatter, tr) = medium.primary(primary.origin, primary.dir, p.eps, t_first);
+            inscatter + tr * surface
+        }
+    }
+}
+
+/// The surface-only radiance estimate (the L0/L1 path) — the medium composes
+/// over this in [`radiance`].
+fn surface_radiance(scene: &Scene, primary: Ray, pixel: u64, sample: u64, p: &Params) -> Vec3 {
     let mut ray = primary;
     let mut throughput = Vec3::ONE;
     let mut acc = Vec3::ZERO;

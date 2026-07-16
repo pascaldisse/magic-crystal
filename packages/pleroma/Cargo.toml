@@ -6,6 +6,7 @@ description = "the Pleroma — the one light: a reference path integrator, the g
 license = "MIT"
 
 [dependencies]
+aether = { path = "../aether" }
 png = "0.17.16"
 
 [[example]]

@@ -4,6 +4,7 @@
 
 use crate::geometry::{Hit, Ray, Shape};
 use crate::material::Material;
+use crate::medium::Medium;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Primitive {
@@ -14,11 +15,17 @@ pub struct Primitive {
 #[derive(Clone, Debug, Default)]
 pub struct Scene {
     pub prims: Vec<Primitive>,
+    /// An optional participating medium marched inside the light pass (Rite VI
+    /// A1). `None` = a vacuum scene (the L0/L1 surface-only path, unchanged).
+    pub medium: Option<Medium>,
 }
 
 impl Scene {
     pub fn new() -> Scene {
-        Scene { prims: Vec::new() }
+        Scene {
+            prims: Vec::new(),
+            medium: None,
+        }
     }
 
     pub fn add(&mut self, shape: Shape, material: Material) -> &mut Self {
