@@ -24,6 +24,7 @@
 //!   naruko_city_massing   x[30,78]     y[-2,56]      z[-59,-16]
 //!   naruko_lantern        x[-7.58,-6.95] y[0,4.05]   z[19.45,20.55]
 //!   naruko_stall_massing  x[-3.8,1.8]  y[0,2.9]      z[23,27.45]
+//!   naruko_chrome_orb     x[-12.4,-11.6] y[1.02,3.22] z[11.6,12.4] (post+orb union)
 //! Eye basis at yaw 0: fwd=(0,0,-1), right=(1,0,0), up=(0,1,0); FOV 60 vertical
 //! (aspect 1) ⇒ tan_half = tan(30°) = 0.5773502692.
 
@@ -90,10 +91,14 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
     .unwrap();
     // Realm grew at the Living World merge: lighthouse_beacon extracted from
     // the tower (center [0, 56.5, -120], range 171.3075 from spawn) — an
-    // eleventh meshed vessel, in-frustum from the spawn eye.
+    // eleventh meshed vessel, in-frustum from the spawn eye. Then PLEROMA L2
+    // set the chrome orb on a pier post (post cylinder + mirror sphere; union
+    // AABB center [-12, 2.12, 12], range 34.5227 from spawn) — the TWELFTH
+    // meshed vessel. It sits x=-12 at z_view=32 ahead: |x_off|=12 < the 60°
+    // half-width tan30·32 = 18.475, INSIDE the left plane ⇒ in-frustum.
     assert_eq!(
-        g.entity_count, 11,
-        "exactly the eleven meshed vessels are in-frustum"
+        g.entity_count, 12,
+        "exactly the twelve meshed vessels are in-frustum"
     );
     let caps = caption_ids(&g);
     for id in [
@@ -108,6 +113,7 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
         "naruko_lantern",
         "naruko_stall_massing",
         "lighthouse_beacon",
+        "naruko_chrome_orb",
     ] {
         assert!(caps.contains(&id.to_string()), "{id} must be in-frustum");
     }
@@ -125,16 +131,18 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
 ///   lantern        center [-7.265, 2.025, 20] → √(52.78+24.75+576)  = 25.6320
 ///   chain_posts    center [-2, 1.95, 18]      → √(4+25.50+676)      = 26.5613
 ///   seawall        center [0, 0.7, 18]        → √(0+39.69+676)      = 26.7524
+///   chrome_orb     center [-12, 2.12, 12]     → √(144+23.81+1024)   = 34.5227
 ///   pier           center [-12, -0.8375, -2]  → √(144+61.43+2116)   = 48.1812
 ///   city_massing   center [54, 27, -37.5]     → √(2916+400+6642.25) = 99.7910
 ///   lighthouse_rock center[0, 8.5, -120]      → √(0+2.25+26896)     = 164.0069
 ///   lighthouse_tower center[0, 41, -120]      → √(1156+26896)       = 167.4873
 ///   (sea 604.06, terra 9.41 are SUPPORT — demoted.)
-/// So the default nearest_n=5 captions, in order:
-///   [stall_massing, lantern, chain_posts, seawall, pier].
+/// So the default nearest_n=5 captions, in order (the chrome orb's 34.5227
+/// now displaces the pier out of the top-5 — pier falls to 6th at 48.1812):
+///   [stall_massing, lantern, chain_posts, seawall, chrome_orb].
 /// TOLERANCE (DERIVED): each range is the live f32 √(Σ(center−eye)²) vs the f64
 /// reference above quoted to 4 decimals. The measured live-vs-reference
-/// discrepancy across all ten ranges peaks at 6.1e-5 m (at the 604 m sea
+/// discrepancy across all eleven ranges peaks at 6.1e-5 m (at the 604 m sea
 /// center) — that budget is the 4-decimal reference rounding (≤5e-5) plus the
 /// f32 center/sub/sqrt round-off (≈1e-5). RANGE_TOL = 1e-3 m is ≈16× that
 /// measured max — tight enough that a wrong center (±0.1 m) or a wrong AABB
@@ -153,9 +161,9 @@ fn canon_nearest_ordering_and_ranges_are_derived() {
             "naruko_lantern",
             "naruko_chain_posts",
             "naruko_seawall",
-            "naruko_pier",
+            "naruko_chrome_orb",
         ],
-        "default nearest-5 caption order"
+        "default nearest-5 caption order (chrome orb 34.5227 displaces pier)"
     );
 
     // Support surfaces never eat a caption slot.
@@ -180,6 +188,7 @@ fn canon_nearest_ordering_and_ranges_are_derived() {
         ("naruko_lantern", 25.6320),
         ("naruko_chain_posts", 26.5613),
         ("naruko_seawall", 26.7524),
+        ("naruko_chrome_orb", 34.5227),
         ("naruko_pier", 48.1812),
         ("naruko_city_massing", 99.7910),
         ("lighthouse_rock", 164.0069),
@@ -396,9 +405,14 @@ fn canon_depth_band_column_16_is_front_face_path_length() {
 /// terra (huge slab, straddles — SUPPORT), lighthouse_rock, lighthouse_tower,
 /// and sea (SUPPORT). The market foreground (seawall/chain_posts/lantern/
 /// stall_massing at z∈[17,27]) is now BEHIND the eye (z > 15) ⇒ culled; the
-/// city sits far to the right, outside the 60° cone from x=-13 ⇒ culled. So
-/// entity_count = 5; the non-support captions are
-///   [pier, lighthouse_rock, lighthouse_tower, sea].
+/// city sits far to the right, outside the 60° cone from x=-13 ⇒ culled. The
+/// chrome orb (center [-12,2.12,12]) sits just ahead of the pier eye: − eye
+/// [-13,2.7,15] = [1,-0.58,-3], within the z_view=3 cone (half-width
+/// tan30·3 = 1.732 > |x_off|=1 and > |y_off|=0.58) ⇒ in-frustum. So
+/// entity_count = 7 (with lighthouse_beacon); the non-support captions are
+///   [chrome_orb, pier, lighthouse_rock, lighthouse_tower, beacon, sea].
+/// Chrome-orb range: [1,-0.58,-3] → √(1 + 0.3364 + 9) = 3.2150 m — nearer
+/// than the pier, so it leads the caption order.
 /// Pier range: center [-12,-0.8375,-2] − eye [-13,2.7,15] = [1,-3.5375,-17] →
 ///   √(1 + 12.51 + 289) = 17.3929 m. Lighthouse still ahead: rock 135.75 m,
 ///   tower 140.93 m, both bearing ≈ +5.5° (well inside the 30° half-FOV).
@@ -420,9 +434,10 @@ fn canon_moved_eye_pier_glance() {
         },
     )
     .unwrap();
-    // + lighthouse_beacon (range 145.9056 from the pier eye) since the Living
-    // World merge — six meshed vessels in this frustum.
-    assert_eq!(g.entity_count, 6, "moved-eye in-frustum count");
+    // + lighthouse_beacon (range 145.9056) since the Living World merge, and
+    // + naruko_chrome_orb (range 3.2150, right beside the pier eye) since
+    // PLEROMA L2 — seven meshed vessels in this frustum.
+    assert_eq!(g.entity_count, 7, "moved-eye in-frustum count");
 
     // Non-support caption set (default demotes terra & sea).
     let plain = look(
@@ -437,13 +452,14 @@ fn canon_moved_eye_pier_glance() {
     assert_eq!(
         caption_ids(&plain),
         vec![
+            "naruko_chrome_orb",
             "naruko_pier",
             "lighthouse_rock",
             "lighthouse_tower",
             "lighthouse_beacon",
             "naruko_sea",
         ],
-        "moved-eye non-support caption set/order (beacon 145.9056 between tower 140.93 and sea)"
+        "moved-eye non-support caption set/order (chrome orb 3.2150 leads; beacon 145.9056 between tower 140.93 and sea)"
     );
 
     // Lighthouse pair still in-frustum.
@@ -456,6 +472,12 @@ fn canon_moved_eye_pier_glance() {
     assert!(
         (r - 17.3929).abs() < RANGE_TOL,
         "pier range live {r} != derived 17.3929"
+    );
+    // Chrome orb leads the order at 3.2150 m (nearer than the pier).
+    let ro = range_of(&plain, "naruko_chrome_orb");
+    assert!(
+        (ro - 3.2150).abs() < RANGE_TOL,
+        "chrome orb range live {ro} != derived 3.2150"
     );
 }
 
