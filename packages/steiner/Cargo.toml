@@ -5,7 +5,21 @@ edition = "2021"
 description = "Reading Steiner: the DreamForge world-history organ — append-only op journals and (seed, journal) worldline replay"
 license = "MIT"
 
+[features]
+# The live tap: subscribe to a wired client's op stream and journal it. Optional
+# so the default build (the determinism ordeals) stays free of tokio/networking.
+live = ["dep:wired", "dep:tokio"]
+
 [dependencies]
 crystal = { path = "../../crates/crystal" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+wired = { path = "../wired", optional = true }
+tokio = { version = "1", optional = true, features = ["sync", "time"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+
+[[example]]
+name = "live_ordeal"
+required-features = ["live"]

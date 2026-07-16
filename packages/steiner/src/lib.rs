@@ -17,12 +17,20 @@
 //! byte-identical journal bytes and a bit-identical ECS state hash.
 
 pub mod error;
+pub mod hash;
 pub mod journal;
+#[cfg(feature = "live")]
+pub mod live;
 mod recorder;
 
 pub use error::{SteinerError, TornKind};
+pub use hash::{hash_state, StateMap};
 pub use journal::{
-    fork_journal, read_header, read_journal, DecodedJournal, JournalEntry, JournalWriter,
-    ReadOutcome, FORMAT_VERSION, HEADER_LEN, MAGIC,
+    encode_header_v2, fork_journal, read_header, read_header_meta, read_journal, DecodedJournal,
+    Header, JournalEntry, JournalWriter, ReadOutcome, SnapshotFrame, FORMAT_VERSION,
+    FORMAT_VERSION_SNAPSHOT, HEADER_LEN, HEADER_LEN_V2, MAGIC,
 };
 pub use recorder::Recorder;
+
+#[cfg(feature = "live")]
+pub use live::LiveTap;

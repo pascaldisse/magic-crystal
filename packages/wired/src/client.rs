@@ -8,7 +8,7 @@
 //! (re)connect so the presence stays reap-bound.
 
 use crate::codec::{self, WorldView};
-use crystal::{Op, WsMessage};
+use crystal::{Op, OpBatch, WsMessage};
 use futures_util::{SinkExt, StreamExt};
 use std::sync::{
     atomic::{AtomicU64, Ordering},
@@ -125,6 +125,7 @@ pub struct Wired {
     tx: mpsc::UnboundedSender<Command>,
     status: watch::Receiver<Status>,
     events: broadcast::Sender<serde_json::Value>,
+    batches: broadcast::Sender<OpBatch>,
     task: Option<JoinHandle<()>>,
 }
 
@@ -139,12 +140,14 @@ impl Wired {
         let (tx, rx) = mpsc::unbounded_channel();
         let (status_tx, status_rx) = watch::channel(Status::Connecting);
         let (events_tx, _) = broadcast::channel(256);
+        let (batches_tx, _) = broadcast::channel(1024);
         let task = tokio::spawn(run(
             config.clone(),
             view.clone(),
             rx,
             status_tx,
             events_tx.clone(),
+            batches_tx.clone(),
         ));
         Self {
             config,
@@ -152,6 +155,7 @@ impl Wired {
             tx,
             status: status_rx,
             events: events_tx,
+            batches: batches_tx,
             task: Some(task),
         }
     }
@@ -204,6 +208,15 @@ impl Wired {
     /// Subscribe to transient `event` ops as they arrive.
     pub fn events(&self) -> broadcast::Receiver<serde_json::Value> {
         self.events.subscribe()
+    }
+
+    /// The op event source: subscribe to every applied inbound op batch, in
+    /// arrival order, exactly as it folded into the [`WorldView`]. This is the
+    /// clean seam a journaling consumer (steiner's live tap) reads — wired
+    /// publishes; the consumer decides tick coordinates and persistence, so
+    /// wired never depends on the recorder (acyclic: steiner -> wired).
+    pub fn op_batches(&self) -> broadcast::Receiver<OpBatch> {
+        self.batches.subscribe()
     }
 
     /// Send a raw message. Errors only if the manager task is gone.
@@ -269,6 +282,7 @@ async fn run(
     mut rx: mpsc::UnboundedReceiver<Command>,
     status: watch::Sender<Status>,
     events: broadcast::Sender<serde_json::Value>,
+    batches: broadcast::Sender<OpBatch>,
 ) {
     let mut backoff = config.reconnect.initial;
     loop {
@@ -319,6 +333,14 @@ async fn run(
                 inbound = read.next() => match inbound {
                     Some(Ok(Message::Text(text))) => {
                         if let Ok(message) = serde_json::from_str::<WsMessage>(&text) {
+                            if let WsMessage::Ops(ops) = &message {
+                                let _ = batches.send(OpBatch {
+                                    dev: ops.dev,
+                                    ops: ops.ops.clone(),
+                                    from: ops.from.clone(),
+                                    extra: ops.extra.clone(),
+                                });
+                            }
                             let emitted = view.lock().expect("view mutex").apply(&message);
                             for event in emitted {
                                 let _ = events.send(event);

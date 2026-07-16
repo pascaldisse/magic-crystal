@@ -5,7 +5,11 @@
 
 use crystal::{Op, OpBatch, SetOp};
 use serde_json::{json, Value};
-use steiner::{ReadOutcome, Recorder, TornKind};
+use std::collections::BTreeMap;
+use steiner::{
+    read_header_meta, read_journal, ReadOutcome, Recorder, SnapshotFrame, TornKind, FORMAT_VERSION,
+    FORMAT_VERSION_SNAPSHOT,
+};
 
 /// A tiny deterministic LCG so op streams are reproducible without an RNG dep.
 struct Lcg(u64);
@@ -230,6 +234,149 @@ fn record_run_ticks(seed: u64, ticks: u64) -> Recorder {
         recorder.record(&op_at(seed, tick), tick).unwrap();
     }
     recorder
+}
+
+/// Build a deterministic base snapshot of `n` entities, each with two comps.
+fn base_snapshot(n: u64) -> SnapshotFrame {
+    let mut entities = BTreeMap::new();
+    for e in 0..n {
+        let mut comps = BTreeMap::new();
+        comps.insert(
+            "health".to_owned(),
+            json!({ "hp": (e * 7) as i64, "max": 100 }),
+        );
+        comps.insert("pose".to_owned(), json!({ "tag": format!("base{e}") }));
+        entities.insert(format!("e{e}"), comps);
+    }
+    SnapshotFrame { entities }
+}
+
+#[test]
+fn ordeal_snapshot_prefix_replay() {
+    // A live session starts from a server snapshot, not genesis. The journal's
+    // frame 0 is that snapshot; replay must reconstruct snapshot + ops to any
+    // tick, and re-replay byte-identically.
+    let seed = 0x5405_9A75;
+    let snapshot = base_snapshot(12);
+    let mut live = Recorder::from_snapshot(seed, snapshot).unwrap();
+
+    // Header is v2 and carries a snapshot hash.
+    let header = read_header_meta(live.journal_bytes()).unwrap();
+    assert_eq!(header.version, FORMAT_VERSION_SNAPSHOT);
+    assert!(header.snapshot_hash.is_some());
+
+    let base_hash = live.state_hash();
+    let mut hash_at_50 = None;
+    for tick in 1..=100 {
+        live.record(&op_at(seed, tick), tick).unwrap();
+        if tick == 50 {
+            hash_at_50 = Some(live.state_hash());
+        }
+    }
+    let hash_at_50 = hash_at_50.unwrap();
+    let final_hash = live.state_hash();
+    assert_ne!(base_hash, final_hash, "ops mutated the base");
+
+    let bytes = live.journal_bytes().to_vec();
+    let decoded = read_journal(&bytes).unwrap();
+    assert!(decoded.snapshot.is_some(), "frame 0 is the snapshot");
+    assert_eq!(decoded.entries.len(), 100);
+    assert_eq!(decoded.outcome, ReadOutcome::Complete);
+
+    // Full replay == live.
+    let (replay_full, outcome) = Recorder::replay(&bytes, None).unwrap();
+    assert_eq!(outcome, ReadOutcome::Complete);
+    assert_eq!(replay_full.state_hash(), final_hash, "snapshot+ops replay");
+
+    // Any-tick: replay to 0 (base only) and to 50.
+    let (replay_base, _) = Recorder::replay(&bytes, Some(0)).unwrap();
+    assert_eq!(
+        replay_base.state_hash(),
+        base_hash,
+        "tick 0 is the snapshot"
+    );
+    let (replay_50, _) = Recorder::replay(&bytes, Some(50)).unwrap();
+    assert_eq!(replay_50.state_hash(), hash_at_50, "replay to T=50");
+
+    // Determinism: re-replay reproduces the bytes exactly.
+    assert_eq!(
+        replay_full.journal_bytes(),
+        bytes,
+        "v2 replay byte-identical"
+    );
+
+    println!(
+        "SNAPSHOT-PREFIX: base=0x{base_hash:016x} @50=0x{hash_at_50:016x} final=0x{final_hash:016x} bytes={} snapshot_hash=0x{:016x}",
+        bytes.len(),
+        header.snapshot_hash.unwrap()
+    );
+}
+
+#[test]
+fn ordeal_v1_file_compatibility() {
+    // Genesis worldlines still write v1, and v1 buffers still read: no snapshot,
+    // version 1, and replay is byte-identical to the ordeals above.
+    let seed = 0x1111_2222;
+    let v1 = record_run(seed, 64);
+    let bytes = v1.journal_bytes().to_vec();
+
+    let header = read_header_meta(&bytes).unwrap();
+    assert_eq!(header.version, FORMAT_VERSION, "genesis stays v1");
+    assert!(header.snapshot_hash.is_none());
+
+    let decoded = read_journal(&bytes).unwrap();
+    assert!(decoded.snapshot.is_none(), "v1 has no snapshot frame");
+    assert_eq!(decoded.entries.len(), 64);
+    assert_eq!(decoded.outcome, ReadOutcome::Complete);
+
+    let (replay, outcome) = Recorder::replay(&bytes, None).unwrap();
+    assert_eq!(outcome, ReadOutcome::Complete);
+    assert_eq!(replay.state_hash(), v1.state_hash());
+    assert_eq!(replay.journal_bytes(), bytes, "v1 replay byte-identical");
+    println!(
+        "V1-COMPAT: version={} snapshot=None entries={} bytes={}",
+        header.version,
+        decoded.entries.len(),
+        bytes.len()
+    );
+}
+
+#[test]
+fn ordeal_snapshot_journal_torn_tail() {
+    // A torn op tail on a v2 (snapshot) journal still stops cleanly: the base
+    // snapshot and every intact frame survive, the partial frame is dropped.
+    let seed = 0x7777_0001;
+    let mut live = Recorder::from_snapshot(seed, base_snapshot(6)).unwrap();
+    for tick in 1..=40 {
+        live.record(&op_at(seed, tick), tick).unwrap();
+    }
+    let bytes = live.journal_bytes().to_vec();
+    let intact = read_journal(&bytes).unwrap();
+
+    let torn = &bytes[..bytes.len() - 5];
+    let decoded = read_journal(torn).unwrap();
+    let (recorder, outcome) = Recorder::replay(torn, None).unwrap();
+    match outcome {
+        ReadOutcome::Torn { kind, valid_frames } => {
+            assert_eq!(kind, TornKind::Truncated);
+            assert_eq!(valid_frames, intact.entries.len() - 1, "one op frame lost");
+            assert!(
+                decoded.snapshot.is_some(),
+                "snapshot frame survives the tear"
+            );
+            // Equals a clean snapshot+surviving-ticks run.
+            let mut clean = Recorder::from_snapshot(seed, base_snapshot(6)).unwrap();
+            for tick in 1..=(valid_frames as u64) {
+                clean.record(&op_at(seed, tick), tick).unwrap();
+            }
+            assert_eq!(recorder.state_hash(), clean.state_hash());
+            println!(
+                "SNAPSHOT-TORN: intact_entries={} valid_frames={valid_frames} kind={kind} (snapshot intact, clean stop)",
+                intact.entries.len()
+            );
+        }
+        other => panic!("expected torn tail, got {other:?}"),
+    }
 }
 
 #[test]
