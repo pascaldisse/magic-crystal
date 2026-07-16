@@ -1,16 +1,27 @@
-//! The V0 ordeals. Each test is one trial from the summons.
+//! The vessel ordeals. Each test is one trial from the summons — the six V0
+//! trials (mesh sanity, closedness, weights, deformation, determinism, both
+//! morphologies) followed by the five V1 region/color trials.
 
 use glam::Quat;
 use homunculus::{Pose, Skeleton};
 use std::collections::HashMap;
 use std::f32::consts::FRAC_PI_2;
-use vessel::{Mesh, Vessel, VesselParams};
+use vessel::{Blend, BodyRegions, Mesh, Palette, Vessel, VesselParams};
 
 fn morphologies() -> Vec<(&'static str, Skeleton)> {
     vec![
         ("humanoid", Skeleton::humanoid()),
         ("quadruped", Skeleton::quadruped()),
     ]
+}
+
+/// The default region partition + example palette for a morphology label.
+fn regions_and_palette(label: &str, skel: &Skeleton) -> (BodyRegions, Palette) {
+    match label {
+        "humanoid" => (BodyRegions::humanoid(skel), Palette::pale_skin_dark_hair()),
+        "quadruped" => (BodyRegions::quadruped(skel), Palette::pink_cat()),
+        other => panic!("no default regions for morphology {other}"),
+    }
 }
 
 /// The cubic-cell edge the builder uses for a skeleton at given params — the
@@ -256,6 +267,235 @@ fn ordeal_both_morphologies_no_nan() {
             "[no-nan] {label} verts={} tris={} ok",
             m.vertex_count(),
             m.triangle_count()
+        );
+    }
+}
+
+// ===========================================================================
+// V1 ordeals — body regions + per-region colors.
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Ordeal 7 — every vertex gets exactly one region (max-weight-bone rule).
+// Ties break deterministically to the LOWER bone index (homunculus sorts each
+// vertex's influences by descending weight with a stable sort over ascending
+// bone index), so the assignment is reproducible with no random tiebreak.
+// ---------------------------------------------------------------------------
+#[test]
+fn ordeal_every_vertex_one_region() {
+    let params = VesselParams::default();
+    for (label, skel) in morphologies() {
+        let v = Vessel::build(&skel, &params);
+        let (regions, _) = regions_and_palette(label, &skel);
+
+        // Partition totality: every bone owned by exactly one region.
+        let bone_region = regions.bone_region(skel.len());
+        for (bi, r) in bone_region.iter().enumerate() {
+            assert!(r.is_some(), "{label} bone {bi} owned by no region");
+        }
+
+        let assignment = regions.assign(&v.weights, skel.len());
+        assert_eq!(
+            assignment.len(),
+            v.mesh.vertex_count(),
+            "{label} region assignment must cover every vertex"
+        );
+        // Exactly one region each: assignment yields a single valid index.
+        for (vi, &r) in assignment.iter().enumerate() {
+            assert!(
+                r < regions.len(),
+                "{label} vertex {vi} region {r} out of range"
+            );
+        }
+
+        // Reproducible (deterministic tie-break): a second assignment matches.
+        let again = regions.assign(&v.weights, skel.len());
+        assert_eq!(assignment, again, "{label} assignment not reproducible");
+
+        let counts = regions.counts(&assignment);
+        let breakdown: Vec<String> = regions
+            .regions
+            .iter()
+            .zip(counts.iter())
+            .map(|(reg, c)| format!("{}={c}", reg.name))
+            .collect();
+        println!(
+            "[one-region] {label} verts={} regions={} [{}]",
+            v.mesh.vertex_count(),
+            regions.len(),
+            breakdown.join(" ")
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Ordeal 8 — region coverage (derived geometric check): every vertex the head
+// region owns actually lies near a head bone. Because the region IS capsule
+// ownership, a head-region vertex's nearest capsule is a head capsule; we prove
+// it geometrically — its distance to the head bone set is (a) smaller than to
+// every other region, and (b) within a derived reach bound.
+// ---------------------------------------------------------------------------
+#[test]
+fn ordeal_region_coverage_geometric() {
+    let params = VesselParams::default();
+    for (label, skel) in morphologies() {
+        let v = Vessel::build(&skel, &params);
+        let (regions, _) = regions_and_palette(label, &skel);
+        let assignment = regions.assign(&v.weights, skel.len());
+
+        let head_ri = regions.index_of("head").expect("head region exists");
+        let head_bones = &regions.regions[head_ri].bones;
+
+        // Distance from a point to the nearest capsule in a bone set.
+        let dist_to_set = |p: glam::Vec3, bones: &[usize]| {
+            bones
+                .iter()
+                .map(|&b| v.capsules[b].distance(p))
+                .fold(f32::INFINITY, f32::min)
+        };
+
+        // Reach bound: head capsules can bind a vertex out to the SDF smooth
+        // union + padding envelope; derive it from the actual head radius.
+        let head_radius = head_bones
+            .iter()
+            .map(|&b| v.capsules[b].radius)
+            .fold(0.0f32, f32::max);
+        let base_radius = v.capsules.iter().map(|c| c.radius).fold(0.0f32, f32::max);
+        let reach = params.smooth_k + params.padding * base_radius + head_radius;
+
+        let head_verts: Vec<usize> = (0..v.mesh.vertex_count())
+            .filter(|&i| assignment[i] == head_ri)
+            .collect();
+        assert!(!head_verts.is_empty(), "{label} no head-region vertices");
+
+        let mut worst_head = 0.0f32;
+        for &i in &head_verts {
+            let p = v.mesh.positions[i];
+            let d_head = dist_to_set(p, head_bones);
+            worst_head = worst_head.max(d_head);
+            // Nearest to head bones among all regions (ownership, proven).
+            for (ri, reg) in regions.regions.iter().enumerate() {
+                if ri == head_ri {
+                    continue;
+                }
+                let d_other = dist_to_set(p, &reg.bones);
+                assert!(
+                    d_head <= d_other + 1.0e-4,
+                    "{label} head vertex {i} closer to region {} ({d_other:e}) than head ({d_head:e})",
+                    reg.name
+                );
+            }
+            // Within the derived reach envelope.
+            assert!(
+                d_head <= reach + 1.0e-4,
+                "{label} head vertex {i} dist {d_head:e} beyond reach {reach:e}"
+            );
+        }
+        println!(
+            "[coverage] {label} head_verts={} worst_head_dist={:e} reach={:e}",
+            head_verts.len(),
+            worst_head,
+            reach
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Ordeal 9 — color validity: every per-vertex color, and every palette entry,
+// is a parseable schema color string (the EMISSIVE/color = string law). Both
+// hard and smooth blends emit valid strings.
+// ---------------------------------------------------------------------------
+#[test]
+fn ordeal_color_validity() {
+    let params = VesselParams::default();
+    for (label, skel) in morphologies() {
+        let v = Vessel::build(&skel, &params);
+        let (regions, palette) = regions_and_palette(label, &skel);
+        assert!(palette.is_valid(), "{label} palette has an invalid color");
+
+        for blend in [Blend::Hard, Blend::Smooth { width: 0.35 }] {
+            let mut p = palette.clone();
+            p.blend = blend;
+            let colored = v.colored(&regions, &p);
+            assert_eq!(
+                colored.len(),
+                v.mesh.vertex_count(),
+                "{label} colors must cover every vertex"
+            );
+            let mut distinct = std::collections::HashSet::new();
+            for (i, c) in colored.colors.iter().enumerate() {
+                assert!(
+                    vessel::color::is_valid(c),
+                    "{label} vertex {i} color {c} does not parse"
+                );
+                distinct.insert(c.clone());
+            }
+            println!(
+                "[color] {label} blend={:?} verts={} distinct_colors={}",
+                blend,
+                colored.len(),
+                distinct.len()
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Ordeal 10 — determinism: the colored mesh (geometry + colors + regions) is
+// byte-identical across two builds, for human and cat.
+// ---------------------------------------------------------------------------
+#[test]
+fn ordeal_colored_determinism() {
+    let params = VesselParams::default();
+    for (label, skel) in morphologies() {
+        let (regions, palette) = regions_and_palette(label, &skel);
+
+        let va = Vessel::build(&skel, &params);
+        let ca = va.colored(&regions, &palette);
+        let vb = Vessel::build(&skel, &params);
+        let cb = vb.colored(&regions, &palette);
+
+        let ba = ca.to_bytes(&va.mesh);
+        let bb = cb.to_bytes(&vb.mesh);
+        assert_eq!(ba, bb, "{label} colored mesh not byte-identical");
+        println!(
+            "[colored-determinism] {label} bytes={} identical=true",
+            ba.len()
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Ordeal 11 — both morphologies valid at defaults: no NaN, every region
+// non-empty (owns at least one vertex).
+// ---------------------------------------------------------------------------
+#[test]
+fn ordeal_both_morphologies_regions_nonempty() {
+    let params = VesselParams::default();
+    for (label, skel) in morphologies() {
+        let v = Vessel::build(&skel, &params);
+        let (regions, palette) = regions_and_palette(label, &skel);
+        let colored = v.colored(&regions, &palette);
+        let counts = regions.counts(&colored.regions);
+
+        for (reg, &c) in regions.regions.iter().zip(counts.iter()) {
+            assert!(c > 0, "{label} region {} is empty", reg.name);
+        }
+        // No NaN leaked into colors (all are #rrggbb, already validated) — and
+        // region indices stay in range.
+        for &r in &colored.regions {
+            assert!(r < regions.len(), "{label} region index out of range");
+        }
+        let breakdown: Vec<String> = regions
+            .regions
+            .iter()
+            .zip(counts.iter())
+            .map(|(reg, c)| format!("{}={c}", reg.name))
+            .collect();
+        println!(
+            "[nonempty] {label} regions={} [{}]",
+            regions.len(),
+            breakdown.join(" ")
         );
     }
 }
