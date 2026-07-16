@@ -9,7 +9,7 @@
 
 use crate::codec::{self, WorldView};
 use crate::interp::{sample_of, InterpConfig, Interpolator, Sample};
-use crystal::{Op, SetOp, WsMessage};
+use crystal::{Op, OpBatch, SetOp, WsMessage};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -189,6 +189,7 @@ pub struct Wired {
     status: watch::Receiver<Status>,
     events: broadcast::Sender<serde_json::Value>,
     client_events: broadcast::Sender<ClientEvent>,
+    batches: broadcast::Sender<OpBatch>,
     task: Option<JoinHandle<()>>,
 }
 
@@ -209,6 +210,7 @@ impl Wired {
         let (status_tx, status_rx) = watch::channel(Status::Connecting);
         let (events_tx, _) = broadcast::channel(256);
         let (client_events_tx, _) = broadcast::channel(256);
+        let (batches_tx, _) = broadcast::channel(1024);
         let task = tokio::spawn(run(
             config.clone(),
             view.clone(),
@@ -218,6 +220,7 @@ impl Wired {
             status_tx,
             events_tx.clone(),
             client_events_tx.clone(),
+            batches_tx.clone(),
         ));
         Self {
             config,
@@ -228,6 +231,7 @@ impl Wired {
             status: status_rx,
             events: events_tx,
             client_events: client_events_tx,
+            batches: batches_tx,
             task: Some(task),
         }
     }
@@ -317,6 +321,15 @@ impl Wired {
             .slam(id, now - self.config.interp.delay)
     }
 
+    /// The op event source: subscribe to every applied inbound op batch, in
+    /// arrival order, exactly as it folded into the [`WorldView`]. This is the
+    /// clean seam a journaling consumer (steiner's live tap) reads — wired
+    /// publishes; the consumer decides tick coordinates and persistence, so
+    /// wired never depends on the recorder (acyclic: steiner -> wired).
+    pub fn op_batches(&self) -> broadcast::Receiver<OpBatch> {
+        self.batches.subscribe()
+    }
+
     /// Send a raw message. Errors only if the manager task is gone.
     pub fn send_message(&self, message: WsMessage) -> Result<(), String> {
         self.tx
@@ -384,6 +397,7 @@ async fn run(
     status: watch::Sender<Status>,
     events: broadcast::Sender<serde_json::Value>,
     client_events: broadcast::Sender<ClientEvent>,
+    batches: broadcast::Sender<OpBatch>,
 ) {
     // Timers fire always; a disabled knob is parked at a far-future period and
     // guarded at the emission site, so the select stays branch-static.
@@ -479,6 +493,16 @@ async fn run(
                         last_inbound = Instant::now();
                         stale_flagged = false;
                         if let Ok(message) = serde_json::from_str::<WsMessage>(&text) {
+                            // steiner's live tap: publish the op batch BEFORE
+                            // folding into the view — the acyclic seam.
+                            if let WsMessage::Ops(ops) = &message {
+                                let _ = batches.send(OpBatch {
+                                    dev: ops.dev,
+                                    ops: ops.ops.clone(),
+                                    from: ops.from.clone(),
+                                    extra: ops.extra.clone(),
+                                });
+                            }
                             let now = start.elapsed().as_secs_f64();
                             fold_inbound(
                                 &message, &view, &interp, now,

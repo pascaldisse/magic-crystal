@@ -6,21 +6,28 @@
 //! entropy x-axis, and [`Recorder::fork`] branches a new worldline that shares
 //! the parent's past exactly.
 //!
-//! Op semantics (J0): a `set` op writes a component onto the gaia-bound entity
-//! for its id (creating the entity and registering the component the first time
-//! it is seen); `set` with a `null` value removes the component. This matches
+//! Op semantics: a `set` op writes a component onto the gaia-bound entity for
+//! its id (creating the entity and registering the component the first time it
+//! is seen); `set` with a `null` value removes the component. This matches
 //! `crystal`'s data-driven world loading, where unknown components are opaque
-//! JSON buffers. Non-`set` ops are recorded verbatim but leave the ECS state
-//! untouched — they are ECS-neutral protocol traffic for J0.
+//! JSON buffers.
+//!
+//! J1 adds the LIVE protocol's structural ops so a recorder tracks a wired
+//! [`WorldView`](../wired) exactly: `spawn` creates an entity with a bundle of
+//! components, `despawn` removes an entity whole, `clear` empties the world.
+//! The server normalizes everything else it re-broadcasts (moves, merges) into
+//! `set`, so these four cover the entire inbound stream. Other ops (`event`,
+//! and authoring-only `scene`/`material`/`reset`/`use`) are ECS-neutral here:
+//! recorded verbatim, applied as nothing.
 
 use crate::error::SteinerError;
-use crate::journal::{fork_journal, read_journal, JournalEntry, JournalWriter, ReadOutcome};
+use crate::hash::{hash_state, StateMap};
+use crate::journal::{
+    fork_journal, read_journal, JournalEntry, JournalWriter, ReadOutcome, SnapshotFrame,
+};
 use crystal::{Core, Op, OpBatch, WorldOptions};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
-
-const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
 /// A live worldline: the ECS core plus the append-only journal that records it.
 pub struct Recorder {
@@ -44,6 +51,21 @@ impl Recorder {
             journal: JournalWriter::new(seed),
             index: BTreeMap::new(),
         }
+    }
+
+    /// Open a snapshot-prefixed worldline: the ECS is seeded with `snapshot`
+    /// (a live server's base state) and the journal opens as v2 with that
+    /// snapshot as frame 0. Every subsequent [`record`](Self::record) appends
+    /// after it. This is how a live session — which starts mid-world, not from
+    /// genesis — becomes a replayable worldline.
+    pub fn from_snapshot(seed: u64, snapshot: SnapshotFrame) -> Result<Self, SteinerError> {
+        let mut recorder = Self {
+            core: Core::new(WorldOptions::default()),
+            journal: JournalWriter::new_with_snapshot(seed, &snapshot)?,
+            index: BTreeMap::new(),
+        };
+        recorder.apply_snapshot(&snapshot)?;
+        Ok(recorder)
     }
 
     /// The world seed of this worldline.
@@ -83,7 +105,10 @@ impl Recorder {
     /// A torn tail is skipped cleanly; the [`ReadOutcome`] reports it.
     pub fn replay(bytes: &[u8], until: Option<u64>) -> Result<(Self, ReadOutcome), SteinerError> {
         let decoded = read_journal(bytes)?;
-        let mut recorder = Recorder::new(decoded.seed);
+        let mut recorder = match decoded.snapshot {
+            Some(snapshot) => Recorder::from_snapshot(decoded.seed, snapshot)?,
+            None => Recorder::new(decoded.seed),
+        };
         for entry in &decoded.entries {
             if until.is_some_and(|t| entry.tick > t) {
                 continue;
@@ -112,6 +137,9 @@ impl Recorder {
             journal: JournalWriter::from_prefix(bytes[..decoded.valid_len].to_vec(), decoded.seed),
             index: BTreeMap::new(),
         };
+        if let Some(snapshot) = &decoded.snapshot {
+            recorder.apply_snapshot(snapshot)?;
+        }
         for entry in &decoded.entries {
             recorder.apply_ops(&entry.ops)?;
         }
@@ -129,17 +157,24 @@ impl Recorder {
 
     /// A deterministic 64-bit digest of the entire ECS state (every gaia-bound
     /// entity and each of its component values, in sorted order). Two worldlines
-    /// hash equal iff their observable component state is identical.
+    /// hash equal iff their observable component state is identical — and, via
+    /// [`crate::hash`], a live wired [`WorldView`](../wired) hashes identically
+    /// to a replayed recorder of the same stream.
     pub fn state_hash(&self) -> u64 {
-        let mut hash = FNV_OFFSET;
+        hash_state(&self.state_map())
+    }
+
+    /// Snapshot this worldline's live ECS as a canonical `id -> component ->
+    /// value` map — the digest domain, and the base for forking a v2 journal.
+    pub fn state_map(&self) -> StateMap {
+        let mut state = StateMap::new();
         for (id, components) in &self.index {
-            hash = fnv(hash, id.as_bytes());
-            hash = fnv(hash, &[0x1e]);
             let entity = self
                 .core
                 .world
                 .entity_for_gaia(id)
                 .expect("indexed gaia id must be bound");
+            let mut map = BTreeMap::new();
             for name in components {
                 let component = self
                     .core
@@ -151,23 +186,43 @@ impl Recorder {
                     .world
                     .get_component(entity, component)
                     .expect("indexed component must be present");
-                hash = fnv(hash, name.as_bytes());
-                hash = fnv(hash, &[0x1f]);
-                hash = fnv(hash, &serde_json::to_vec(&value).unwrap_or_default());
-                hash = fnv(hash, &[0x00]);
+                map.insert(name.clone(), value);
             }
-            hash = fnv(hash, &[0xff]);
+            state.insert(id.clone(), map);
         }
-        hash
+        state
+    }
+
+    /// Apply a base snapshot into the ECS + index (no journal write — the
+    /// journal already carries the snapshot as frame 0).
+    fn apply_snapshot(&mut self, snapshot: &SnapshotFrame) -> Result<(), SteinerError> {
+        for (id, components) in &snapshot.entities {
+            for (component, value) in components {
+                self.apply_set(id, component, value)?;
+            }
+        }
+        Ok(())
     }
 
     /// Apply ops to the ECS + index without touching the journal.
     fn apply_ops(&mut self, ops: &[Op]) -> Result<(), SteinerError> {
         for op in ops {
-            if let Op::Set(set) = op {
-                self.apply_set(&set.id, &set.component, &set.value)?;
+            match op {
+                Op::Set(set) => self.apply_set(&set.id, &set.component, &set.value)?,
+                Op::Other { op, fields } => match op.as_str() {
+                    "spawn" => self.apply_spawn(fields)?,
+                    "despawn" => {
+                        if let Some(id) = fields.get("id").and_then(Value::as_str) {
+                            self.apply_despawn(id)?;
+                        }
+                    }
+                    "clear" => self.apply_clear()?,
+                    // `event` and any unknown op: ECS-neutral, recorded only.
+                    _ => {}
+                },
+                // Authoring ops never ride the runtime stream this tap consumes.
+                _ => {}
             }
-            // Non-set ops are ECS-neutral for J0: recorded, not applied.
         }
         Ok(())
     }
@@ -218,6 +273,56 @@ impl Recorder {
             .insert(component.to_owned());
         Ok(())
     }
+
+    /// Apply a `spawn` op: (re)create the entity as EXACTLY its `components`
+    /// bundle. Mirrors wired's [`WorldView`] fold, where spawn `insert`s a fresh
+    /// doc — a re-spawn REPLACES the entity, wiping any components not in the
+    /// bundle. So we despawn first, then set the bundle.
+    fn apply_spawn(&mut self, fields: &crystal::JsonMap) -> Result<(), SteinerError> {
+        let id = match fields.get("id").and_then(Value::as_str) {
+            Some(id) => id.to_owned(),
+            None => return Ok(()),
+        };
+        self.apply_despawn(&id)?;
+        match fields.get("components") {
+            Some(Value::Object(components)) if !components.is_empty() => {
+                for (component, value) in components {
+                    self.apply_set(&id, component, value)?;
+                }
+            }
+            _ => {
+                // A component-less spawn still binds the entity so despawn/hash see it.
+                let world = &mut self.core.world;
+                let entity = world.create_entity(vec![]).map_err(SteinerError::Apply)?;
+                world
+                    .bind_gaia_id(&id, entity)
+                    .map_err(SteinerError::Apply)?;
+                self.index.entry(id).or_default();
+            }
+        }
+        Ok(())
+    }
+
+    /// Apply a `despawn` op: destroy the entity whole and drop it from the index.
+    fn apply_despawn(&mut self, id: &str) -> Result<(), SteinerError> {
+        if let Some(entity) = self.core.world.entity_for_gaia(id) {
+            self.core
+                .world
+                .destroy_entity(entity)
+                .map_err(SteinerError::Apply)?;
+        }
+        self.index.remove(id);
+        Ok(())
+    }
+
+    /// Apply a `clear` op: destroy every bound entity, empty the index.
+    fn apply_clear(&mut self) -> Result<(), SteinerError> {
+        let ids: Vec<String> = self.index.keys().cloned().collect();
+        for id in ids {
+            self.apply_despawn(&id)?;
+        }
+        Ok(())
+    }
 }
 
 /// An opaque JSON-buffer component, matching `crystal`'s world loader for
@@ -230,12 +335,4 @@ fn opaque_component(name: &str) -> crystal::ComponentDescriptor {
         buffer: true,
         default: None,
     }
-}
-
-fn fnv(mut hash: u64, bytes: &[u8]) -> u64 {
-    for &byte in bytes {
-        hash ^= byte as u64;
-        hash = hash.wrapping_mul(FNV_PRIME);
-    }
-    hash
 }

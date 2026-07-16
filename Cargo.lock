@@ -3391,6 +3391,8 @@ dependencies = [
  "crystal",
  "serde",
  "serde_json",
+ "tokio",
+ "wired",
 ]
 
 [[package]]
