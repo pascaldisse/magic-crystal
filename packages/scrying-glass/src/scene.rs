@@ -7,7 +7,11 @@ use crystal::{
 };
 use elements::Triangle;
 use glam::{EulerRot, Mat3, Mat4, Quat, Vec3};
+use homunculus::Pose;
 use kami::{BindPose, Registry, TickContext};
+use sama::{Gait, GaitParams, Locomotion, LocomotionParams, gait_pose};
+
+use crate::player::Ground;
 use serde_json::{Number, json};
 use transmutation::{
     Bounds, Cluster, Dag, Mesh as ChainMesh, TransmuteParams, Vertex as ChainVertex,
@@ -269,16 +273,106 @@ pub struct RenderScene {
 }
 
 /// One embodied vessel: a realm entity's `body` skinned to world-space leaf
-/// triangles at sama's idle pose. `preset` is the named vessel preset; the
-/// triangles carry lambertian albedo from the body's per-vertex colours.
+/// triangles. `preset` is the named vessel preset; the triangles carry
+/// lambertian albedo from the body's per-vertex colours.
+///
+/// RITE V · V1 — SHE WALKS. The instance carries a SAMA [`Locomotion`] state
+/// machine and the composed [`vessel::Body`]; [`BodyInstance::command`] advances
+/// the machine one tick against a commanded speed (the walker's velocity),
+/// takes the pose the state machine emits, and re-skins `world_tris` FROM THAT
+/// EXACT POSE — sama is the sole pose source and its pose IS the skinning input
+/// (the 0e0 ordeal). GENERIC: any creature that names a preset animates the same
+/// way.
 #[derive(Clone, Debug)]
 pub struct BodyInstance {
     /// The owning entity's gaia id.
     pub gaia_id: String,
     /// The named vessel preset (`body.preset`).
     pub preset: String,
-    /// World-space idle-posed triangles carrying their albedo.
+    /// World-space posed triangles carrying their albedo (the current tick).
     pub world_tris: Vec<LeafTriangle>,
+    /// The composed body (skeleton + skinned vessel + colours + idle pose).
+    body: vessel::Body,
+    /// Per-vertex LINEAR-rgb albedo, parallel to the vessel mesh vertices.
+    albedo: Vec<Vec3>,
+    /// The GROUNDED world transform: authored rotation/scale/xz with the y
+    /// derived so the lowest contact vertex rests on the realm floor.
+    model: Mat4,
+    /// The SAMA locomotion state machine — the SOLE pose source.
+    locomotion: Locomotion,
+    /// The pose the state machine emitted for the CURRENT `world_tris` (the
+    /// skinning input — same object, so pose == skinning input is exact).
+    pose: Pose,
+    /// The commanded speed last fed to the state machine (walker velocity).
+    commanded_speed: f32,
+}
+
+impl BodyInstance {
+    /// The pose SAMA emitted for the current skinned triangles — the exact
+    /// skinning input (the 0e0 ordeal proves `world_tris` skins THIS pose).
+    pub fn pose(&self) -> &Pose {
+        &self.pose
+    }
+
+    /// The commanded speed (walker velocity magnitude) last driven in.
+    pub fn commanded_speed(&self) -> f32 {
+        self.commanded_speed
+    }
+
+    /// The locomotion state (idle / walk / run) after the last command.
+    pub fn gait(&self) -> Gait {
+        self.locomotion.state()
+    }
+
+    /// Whether the body is animating this tick — a non-idle gait or a live
+    /// cross-fade. An idle, settled body holds the bind pose (static geometry),
+    /// so the dynamic BVH need not re-splice for it.
+    pub fn is_animating(&self) -> bool {
+        self.locomotion.state() != Gait::Idle || self.locomotion.blending()
+    }
+
+    /// Advance SAMA one fixed tick against `commanded_speed` (the walker's
+    /// velocity) and re-skin `world_tris` from the pose it emits. The pose is
+    /// taken ONCE and fed straight into the skinner — sama's pose IS the
+    /// skinning input (Rite V·V1). Deterministic in the tick + command stream.
+    pub fn command(&mut self, commanded_speed: f32) {
+        self.commanded_speed = commanded_speed;
+        self.pose = self.locomotion.step(&self.body.skeleton, commanded_speed);
+        self.world_tris = skin_body(&self.body, &self.pose, self.model, &self.albedo);
+    }
+
+    /// Re-skin the current pose into world-space triangles — the pure skinning
+    /// step, exposed so an ordeal can prove `world_tris` IS this pose skinned
+    /// (byte-identical, 0e0).
+    pub fn skin_current(&self) -> Vec<LeafTriangle> {
+        skin_body(&self.body, &self.pose, self.model, &self.albedo)
+    }
+}
+
+/// Skin a composed body at `pose` into world-space [`LeafTriangle`]s. Pure: the
+/// vessel deforms the bound mesh by `pose` (SAMA's output), the model places it
+/// in the realm, each triangle takes the mean of its three vertices' linear
+/// albedo. The SINGLE skinning path — compose and every per-tick command call it
+/// with the pose SAMA emitted, so the pose is always the skinning input.
+fn skin_body(body: &vessel::Body, pose: &Pose, model: Mat4, albedo: &[Vec3]) -> Vec<LeafTriangle> {
+    let mesh = body.vessel.posed(&body.skeleton, pose);
+    mesh.indices
+        .chunks_exact(3)
+        .map(|tri| {
+            let corner = |i: u32| {
+                model
+                    .transform_point3(mesh.positions[i as usize])
+                    .to_array()
+            };
+            let mean =
+                (albedo[tri[0] as usize] + albedo[tri[1] as usize] + albedo[tri[2] as usize]) / 3.0;
+            LeafTriangle::lambertian(
+                [corner(tri[0]), corner(tri[1]), corner(tri[2])],
+                mean.to_array(),
+                [0.0, 0.0, 0.0],
+            )
+        })
+        .collect()
 }
 
 /// Material batch key: quantised linear colour bits + emissive flag +
@@ -447,8 +541,15 @@ impl RenderScene {
         }
 
         // RITE V weld: read the embodied ones (`body` sigil) into world-space
-        // skinned triangles BEFORE the dynamics consume the ECS.
-        let bodies = body_instances(world)?;
+        // skinned triangles BEFORE the dynamics consume the ECS. The bodies
+        // GROUND onto the SAME static floor the walker walks on (the realm's
+        // static leaf triangles) — the y is derived, never eye-nudged.
+        let ground_positions: Vec<[f32; 3]> = static_buckets
+            .values()
+            .flat_map(|bucket| bucket.vertices.iter().map(|vertex| vertex.position))
+            .collect();
+        let floor = Ground::from_positions(&ground_positions);
+        let bodies = body_instances(world, &floor)?;
 
         // Seal the shared static buckets; the dynamics take ownership of the ECS
         // (its live tick reads and writes the animated transforms).
@@ -478,6 +579,21 @@ impl RenderScene {
     /// the traced BVH then re-splices the dynamic partition (`main.rs`).
     pub fn tick(&mut self) {
         self.dynamics.tick();
+    }
+
+    /// RITE V · V1 — drive every embodied body one fixed tick against the
+    /// walker's `commanded_speed` (the embodiment velocity magnitude). Each body
+    /// steps its SAMA state machine, takes the emitted pose, and re-skins its
+    /// `world_tris` from it. Call once per frame BEFORE re-splicing the dynamic
+    /// partition. Returns whether any body is animating (so the caller knows the
+    /// dynamic BVH must re-splice even when the living models are still).
+    pub fn command_bodies(&mut self, commanded_speed: f32) -> bool {
+        let mut animating = false;
+        for body in &mut self.bodies {
+            body.command(commanded_speed);
+            animating |= body.is_animating();
+        }
+        animating
     }
 
     /// The DYNAMIC partition: every living entity's leaf triangles, TRANSFORMED
@@ -633,11 +749,11 @@ fn parts_of(mesh: Mesh) -> Result<Vec<MeshPart>, String> {
 /// Read every VESSEL `body`-sigil entity into a skinned world-space
 /// [`BodyInstance`] (Rite V). GENERIC: the compose reads only the
 /// `body`/`transform` sigils and resolves the named vessel preset — the engine
-/// never special-cases a creature. The body is skinned at SAMA's idle pose
-/// (tick 0, via [`vessel::Body`]), each vertex coloured by its region palette; a
-/// triangle's albedo is the mean of its three vertices' linear colours.
-/// `body.preset` names the preset; an unknown preset is an authoring error
-/// (surfaced, never silently invented).
+/// never special-cases a creature. The body is composed at SAMA's idle pose
+/// (via [`vessel::Body`]) and given a live [`Locomotion`] machine for V1; each
+/// vertex is coloured by its region palette, a triangle's albedo the mean of
+/// its three vertices' linear colours. `body.preset` names the preset; an
+/// unknown preset is an authoring error (surfaced, never silently invented).
 ///
 /// TWO BODY KINDS share the `body` sigil (the P3 merge): a VESSEL body names a
 /// `preset` (skinned here); a PHYSICS body names a `shape` and is owned by the
@@ -645,7 +761,15 @@ fn parts_of(mesh: Mesh) -> Result<Vec<MeshPart>, String> {
 /// `body_declarations` during the mesh walk. This skinned pass is vessels ONLY,
 /// so it SKIPS physics bodies; both dynamics paths then feed the traced BVH
 /// splice side by side.
-fn body_instances(world: &EcsWorld) -> Result<Vec<BodyInstance>, String> {
+///
+/// CONTACT (Rite V·V1, Guardian finding 1 — no hover): the world y is DERIVED,
+/// not authored. The compose rotates/scales the idle mesh (translation excluded)
+/// and finds the lowest CONTACT vertex (a `.foot`-bone vertex; the whole mesh's
+/// lowest if a morphology has no foot bone); the realm `floor` height under the
+/// body's `(x, z)` is read from the SAME static geometry the walker stands on,
+/// and the y is set so that contact vertex rests exactly on the floor. Nothing
+/// is nudged by eye.
+fn body_instances(world: &EcsWorld, floor: &Ground) -> Result<Vec<BodyInstance>, String> {
     let Some(body_id) = world.component_id("body") else {
         return Ok(Vec::new());
     };
@@ -679,44 +803,115 @@ fn body_instances(world: &EcsWorld) -> Result<Vec<BodyInstance>, String> {
         let transform: Transform =
             serde_json::from_value(world.get_component(entity, transform_id)?)
                 .map_err(|error| format!("entity {id:?} transform: {error}"))?;
-        let model = transform_matrix(
-            vec3(transform.position.as_ref()).unwrap_or(Vec3::ZERO),
-            vec3(transform.rotation.as_ref()).unwrap_or(Vec3::ZERO),
-            scale(transform.scale.as_ref()),
-        );
+        let position = vec3(transform.position.as_ref()).unwrap_or(Vec3::ZERO);
+        let rotation = vec3(transform.rotation.as_ref()).unwrap_or(Vec3::ZERO);
+        let body_scale = scale(transform.scale.as_ref());
 
         // Compose: skin + colour + idle pose (sama). The mesh is skeleton-local
         // (pelvis at origin); the entity transform places it in the world.
         let composed = vessel::Body::from_preset(&preset);
-        let mesh = composed.idle_mesh();
+        let idle = composed.idle_pose.clone();
+        let mesh = composed.vessel.posed(&composed.skeleton, &idle);
         let albedo = composed.vertex_albedo();
 
-        let world_tris: Vec<LeafTriangle> = mesh
-            .indices
-            .chunks_exact(3)
-            .map(|tri| {
-                let corner = |i: u32| {
-                    let p = mesh.positions[i as usize];
-                    model.transform_point3(p).to_array()
-                };
-                let mean =
-                    (albedo[tri[0] as usize] + albedo[tri[1] as usize] + albedo[tri[2] as usize])
-                        / 3.0;
-                LeafTriangle::lambertian(
-                    [corner(tri[0]), corner(tri[1]), corner(tri[2])],
-                    mean.to_array(),
-                    [0.0, 0.0, 0.0],
-                )
-            })
-            .collect();
+        // Derive the grounded y: the rotation+scale of the idle mesh, no
+        // translation, then the lowest CONTACT vertex — the foot that must
+        // touch the floor. The realm floor under (x,z) is the static geometry
+        // the walker itself stands on; if none is found (body over the void)
+        // the authored y is kept verbatim.
+        let orient = transform_matrix(Vec3::ZERO, rotation, body_scale);
+        let contact_local = lowest_contact_y(&composed, &mesh, orient);
+        let ground_y = floor.height_at(position.x, position.z, f32::INFINITY);
+        let grounded_y = ground_y.map(|g| g - contact_local).unwrap_or(position.y);
+        let model = transform_matrix(
+            Vec3::new(position.x, grounded_y, position.z),
+            rotation,
+            body_scale,
+        );
+
+        let world_tris = skin_body(&composed, &idle, model, &albedo);
 
         out.push(BodyInstance {
             gaia_id: id,
             preset: preset_name,
             world_tris,
+            body: composed,
+            albedo,
+            model,
+            locomotion: Locomotion::new(LocomotionParams::default()),
+            pose: idle,
+            commanded_speed: 0.0,
         });
     }
     Ok(out)
+}
+
+/// Two representative ticks of a `params` walk cycle, DERIVED from the gait
+/// (never eye-picked): the CONTACT tick (the swing foot at its LOWEST — nearest
+/// a plant, both feet down) and the PASSING tick (the swing foot at its HIGHEST
+/// — mid-swing, one foot lifted). The metric is the highest `.foot` vertex of
+/// the posed mesh over the cycle; contact = argmin, passing = argmax. The V1
+/// ordeal and the proof forge both read the SAME two poses through this.
+pub fn contact_passing_ticks(body: &vessel::Body, params: &GaitParams) -> (u64, u64) {
+    let cycle = (1.0 / (params.cadence * params.dt)).round().max(1.0) as u64;
+    let foot: Vec<usize> = (0..body.vessel.mesh.positions.len())
+        .filter(|&vi| {
+            body.vessel.weights.per_vertex[vi]
+                .first()
+                .map(|(bone, _)| body.skeleton.bones[*bone].name.ends_with(".foot"))
+                .unwrap_or(false)
+        })
+        .collect();
+    let lift = |tick: u64| -> f32 {
+        let pose = gait_pose(&body.skeleton, params, tick);
+        let mesh = body.vessel.posed(&body.skeleton, &pose);
+        foot.iter()
+            .map(|&vi| mesh.positions[vi].y)
+            .fold(f32::NEG_INFINITY, f32::max)
+    };
+    let mut contact = 0u64;
+    let mut passing = 0u64;
+    let (mut lo, mut hi) = (f32::INFINITY, f32::NEG_INFINITY);
+    for tick in 0..cycle {
+        let l = lift(tick);
+        if l < lo {
+            lo = l;
+            contact = tick;
+        }
+        if l > hi {
+            hi = l;
+            passing = tick;
+        }
+    }
+    (contact, passing)
+}
+
+/// The lowest CONTACT-vertex y of an idle mesh under an orientation (rotation +
+/// scale, NO translation) — the foot point that must rest on the floor. A
+/// vertex is a contact vertex when its dominant (max-weight) bone is a `.foot`;
+/// a morphology with no foot bone falls back to the whole mesh's lowest vertex.
+/// Deterministic and derived from the bind pose — the grounding never guesses.
+fn lowest_contact_y(body: &vessel::Body, mesh: &vessel::Mesh, orient: Mat4) -> f32 {
+    let skeleton = &body.skeleton;
+    let mut foot_min = f32::INFINITY;
+    let mut any_min = f32::INFINITY;
+    for (vi, position) in mesh.positions.iter().enumerate() {
+        let y = orient.transform_point3(*position).y;
+        any_min = any_min.min(y);
+        let dominant = body.vessel.weights.per_vertex[vi]
+            .first()
+            .map(|(bone, _)| *bone);
+        if let Some(bone) = dominant
+            && skeleton.bones[bone].name.ends_with(".foot")
+        {
+            foot_min = foot_min.min(y);
+        }
+    }
+    if foot_min.is_finite() {
+        foot_min
+    } else {
+        any_min
+    }
 }
 
 /// A real emissive light source in the realm — one glowing mesh part: its

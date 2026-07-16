@@ -4,18 +4,24 @@
 //! body, Elements P3) falling onto the pier. Both dynamics paths feed the ONE
 //! traced BVH splice — the skinned vessel triangles AND the rigid-solver crate.
 //! This render frames BOTH in a single wide, elevated shot on the MERGED realm,
-//! at the tick the crate has settled, so the merge itself ends in pixels:
+//! at a MID-STRIDE tick — nari WALKING (her SAMA gait at the passing pose, swing
+//! foot lifted) while the crate has come to rest — so the reconciliation merge
+//! (rite5-v1 → main) itself ends in pixels:
 //!
-//!   proof/composed-coexist.png — nari on the seawall + the crate at rest
+//!   proof/composed-coexist.png — nari walking on the seawall + the crate at rest
 //!
 //! Run:  cargo run -p scrying-glass --release --example composed_coexist
 
 use std::path::Path;
 
 use glam::Vec3 as GVec3;
+use sama::GaitParams;
 use scrying_glass::bvh::{Bvh, BvhParams};
 use scrying_glass::integrator::{IntegratorParams, headless_device, resolve, trace_headless};
-use scrying_glass::scene::{Camera, RenderScene, SceneParameters, SunDefaults};
+use scrying_glass::scene::{
+    Camera, RenderScene, SceneParameters, SunDefaults, contact_passing_ticks,
+};
+use vessel::{Body, Preset};
 
 use crystal::{EcsWorld, load_world_dir};
 
@@ -129,10 +135,26 @@ fn main() {
     let exposure = 1.6;
     let proof = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../proof");
 
-    // Settle the crate (it comes to rest ≈ tick 91; render at 150, well after).
-    let target = 150u64;
+    // MID-STRIDE target: nari walks (her SAMA gait driven by `command_bodies`)
+    // AND the crate settles (`tick` drives the rigid solver). The passing gait
+    // tick is DERIVED from the walk cycle (swing foot at its highest — the same
+    // pose the V1 ordeal proves distinct); the crate comes to rest ≈ tick 91.
+    // Run past both: at least the crate-settle horizon (150) AND the idle→walk
+    // blend (one full cycle beyond the passing phase), landing on the passing
+    // phase so nari is unmistakably mid-stride, not idle.
+    let body = Body::from_preset(&Preset::nari());
+    let gait = GaitParams::walk();
+    let cycle = (1.0 / (gait.cadence * gait.dt)).round().max(1.0) as u64;
+    let (_contact_tick, passing_tick) = contact_passing_ticks(&body, &gait);
+    let mut target = 150u64;
+    while target < passing_tick + cycle || target % cycle != passing_tick % cycle {
+        target += 1;
+    }
     let mut current = 0u64;
     while current < target {
+        // The player-path order (main.rs `advance_world`): command the body from
+        // the walker's speed, then advance the world clock (physics + dynamics).
+        scene.command_bodies(6.0);
         scene.tick();
         current += 1;
     }
@@ -140,8 +162,11 @@ fn main() {
     let dyn_bvh = Bvh::build(&scene.dynamic_leaf_triangles(), &bvh_params);
     let bvh = Bvh::merge(&static_bvh, &dyn_bvh);
     eprintln!(
-        "[coexist] tick {current}: crate at rest [{:.3}, {:.3}, {:.3}]  (merged BVH {} tris — static + nari-skinned + crate)",
-        crate_pos[0], crate_pos[1], crate_pos[2], bvh.tris.len(),
+        "[coexist] tick {current} (passing {passing_tick}, cycle {cycle}): nari mid-stride, crate at rest [{:.3}, {:.3}, {:.3}]  (merged BVH {} tris — static + nari-skinned + crate)",
+        crate_pos[0],
+        crate_pos[1],
+        crate_pos[2],
+        bvh.tris.len(),
     );
     let accum = trace_headless(
         &device,
