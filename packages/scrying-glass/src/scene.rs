@@ -361,7 +361,13 @@ impl RenderScene {
                     scale: bind_scale.as_dvec3().to_array(),
                     intensity: 1.0,
                 };
-                dynamics.push(&id, chains, bind, entity_model, parameters.emission_intensity);
+                dynamics.push(
+                    &id,
+                    chains,
+                    bind,
+                    entity_model,
+                    parameters.emission_intensity,
+                );
             } else {
                 for (index, part) in parts.iter().enumerate() {
                     append_part(
@@ -405,7 +411,7 @@ impl RenderScene {
     /// The DYNAMIC partition: every living entity's leaf triangles, TRANSFORMED
     /// by its current model delta into world space — the exact geometry the
     /// traced BVH splices in this tick (albedo/emission carried per triangle,
-    /// same split as [`leaf_triangles`]). Empty when the realm has no behaviors.
+    /// same split as [`RenderScene::leaf_triangles`]). Empty with no behaviors.
     pub fn dynamic_leaf_triangles(&self) -> Vec<LeafTriangle> {
         self.dynamics.leaf_triangles()
     }
@@ -452,7 +458,7 @@ impl RenderScene {
     /// Every STATIC leaf triangle carrying its material, world-space — the EXACT
     /// geometry the traced integrator's STATIC BVH is built over (view-
     /// independent, error 0, built once and cached; the living layer's triangles
-    /// are the separate [`dynamic_leaf_triangles`] partition, spliced per tick).
+    /// are the separate [`RenderScene::dynamic_leaf_triangles`] partition).
     /// Extends `leaf_positions` with per-triangle albedo/emission from
     /// the material batch: a pure emitter gets albedo 0 + emission colour×scale
     /// (matching the Pleroma), a non-emitter gets albedo colour + emission 0.

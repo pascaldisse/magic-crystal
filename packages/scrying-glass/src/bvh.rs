@@ -163,12 +163,8 @@ impl Bvh {
         let dn = dynamic_bvh.nodes.len();
         let st = static_bvh.tris.len() as u32;
         // Remap: static root→1, static rest i→i+2; dynamic root→2, rest j→j+Sn+1.
-        let rs = |i: usize| -> u32 {
-            if i == 0 { 1 } else { (i + 2) as u32 }
-        };
-        let rd = |j: usize| -> u32 {
-            if j == 0 { 2 } else { (j + sn + 1) as u32 }
-        };
+        let rs = |i: usize| -> u32 { if i == 0 { 1 } else { (i + 2) as u32 } };
+        let rd = |j: usize| -> u32 { if j == 0 { 2 } else { (j + sn + 1) as u32 } };
 
         let mut nodes = vec![GpuNode::zeroed(); 1 + sn + dn];
         // The new root spans both children (static_root at 1, dynamic_root at 2).
