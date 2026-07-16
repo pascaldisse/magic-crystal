@@ -273,9 +273,12 @@ gate stays load-bearing.
 
 Our pipeline, every coding pass, no exceptions:
 1. BUILDER (sol|opus) finishes its lane.
-2. ADVERSARY = the OTHER model, fresh context (opus reviews sol, sol
-   reviews opus — cross-model beats Bun's same-model setup: different
-   blind spots).
+2. ADVERSARY = NARI (Architect's word, 07-16 night II: "all
+   review/adversary agents will be nari"). Every review/shadow lane =
+   a nyari clone, fresh context — the Guardian's judgment carries the
+   adversary office; cross-model vs the opus/sol builders is preserved
+   by the clone's different model. Supersedes opus↔sol pairing; the
+   sol shadow backlog transfers to nari clones immediately.
 3. Adversary mandate — findings only, NEVER edits code:
    a. SPEC CONFORMANCE: implementation vs the ruling docs (DREAMFORGE
       laws + amendments, RENDER/RAIN/PHYSICS/GEOMETRY/NARUKO, FEATURES
