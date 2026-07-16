@@ -125,8 +125,11 @@ impl Partitioner for MetisPartitioner {
         // bisection is stable for the small nparts we feed it.
         let xadj: Vec<metis::Idx> = graph.xadj.iter().map(|&v| v as metis::Idx).collect();
         let adjncy: Vec<metis::Idx> = graph.adjncy.iter().map(|&v| v as metis::Idx).collect();
-        let adjwgt: Vec<metis::Idx> =
-            graph.adjwgt.iter().map(|&v| v.max(1) as metis::Idx).collect();
+        let adjwgt: Vec<metis::Idx> = graph
+            .adjwgt
+            .iter()
+            .map(|&v| v.max(1) as metis::Idx)
+            .collect();
         let mut part = vec![0 as metis::Idx; graph.node_count];
 
         let np = nparts.min(graph.node_count) as metis::Idx;
@@ -214,9 +217,9 @@ fn greedy_parts(graph: &AdjacencyGraph, nparts: usize, balance_chunk_mult: usize
     }
     let nparts = nparts.min(n);
     let target = n.div_ceil(nparts); // balanced part-size target
-    // Bounded leftover chunk (finding 2). saturating_mul so an over-large
-    // balance_chunk_mult can never overflow (advisory A-4) — it saturates,
-    // collapsing a component into one chunk rather than panicking/wrapping.
+                                     // Bounded leftover chunk (finding 2). saturating_mul so an over-large
+                                     // balance_chunk_mult can never overflow (advisory A-4) — it saturates,
+                                     // collapsing a component into one chunk rather than panicking/wrapping.
     let chunk_cap = target.saturating_mul(balance_chunk_mult.max(1)).max(1);
     let mut part = vec![usize::MAX; n];
     let mut sizes = vec![0usize; nparts];
@@ -381,7 +384,12 @@ mod scaling_tests {
             adjwgt.push(1);
             xadj.push(adjncy.len() as i32);
         }
-        AdjacencyGraph { node_count: n, xadj, adjncy, adjwgt }
+        AdjacencyGraph {
+            node_count: n,
+            xadj,
+            adjncy,
+            adjwgt,
+        }
     }
 
     /// Partition a star; return (balance-phase op count, diagnostic wall-clock).

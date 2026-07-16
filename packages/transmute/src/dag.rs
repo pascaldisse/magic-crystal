@@ -53,10 +53,16 @@ impl std::fmt::Display for TransmuteError {
         match self {
             TransmuteError::ZeroBudget(w) => write!(f, "budget `{w}` must be nonzero"),
             TransmuteError::VerticesTooLarge(v) => {
-                write!(f, "max_vertices {v} exceeds engine ceiling {MAX_VERTICES_CEIL}")
+                write!(
+                    f,
+                    "max_vertices {v} exceeds engine ceiling {MAX_VERTICES_CEIL}"
+                )
             }
             TransmuteError::TrianglesTooLarge(t) => {
-                write!(f, "max_triangles {t} exceeds engine ceiling {MAX_TRIANGLES_CEIL}")
+                write!(
+                    f,
+                    "max_triangles {t} exceeds engine ceiling {MAX_TRIANGLES_CEIL}"
+                )
             }
             TransmuteError::TrianglesNotMultiple(t) => write!(
                 f,
@@ -366,7 +372,11 @@ fn shardize(mesh: &Mesh, p: &MeshletParams) -> Vec<(Vec<Vertex>, Vec<u32>)> {
     );
     let mut out = Vec::with_capacity(meshlets.len());
     for m in meshlets.iter() {
-        let verts: Vec<Vertex> = m.vertices.iter().map(|&gi| mesh.vertices[gi as usize]).collect();
+        let verts: Vec<Vertex> = m
+            .vertices
+            .iter()
+            .map(|&gi| mesh.vertices[gi as usize])
+            .collect();
         let indices: Vec<u32> = m.triangles.iter().map(|&t| t as u32).collect();
         out.push((verts, indices));
     }
@@ -587,13 +597,14 @@ pub fn transmute(
 
     // ---- Build up (staged, one level at a time) ----
     let mut level = 0u32;
-    while levels.last().unwrap().len() > params.min_clusters
-        && (level as usize) < params.max_levels
+    while levels.last().unwrap().len() > params.min_clusters && (level as usize) < params.max_levels
     {
         let prev_ids = levels.last().unwrap().clone();
         // owned snapshot so we can read old clusters while staging new ones.
-        let prev: Vec<Cluster> =
-            prev_ids.iter().map(|&id| clusters[id as usize].clone()).collect();
+        let prev: Vec<Cluster> = prev_ids
+            .iter()
+            .map(|&id| clusters[id as usize].clone())
+            .collect();
         let prev_ref: Vec<&Cluster> = prev.iter().collect();
 
         let staged = stage_level(
@@ -732,12 +743,8 @@ fn stage_level(
 
         let target_tris = ((merged_tris as f32) * params.simplify_ratio).ceil() as usize;
         let target_index_count = target_tris.max(1) * 3;
-        let (simplified, abs_error) = simplify_group(
-            &welded.mesh,
-            &locks,
-            target_index_count,
-            params,
-        );
+        let (simplified, abs_error) =
+            simplify_group(&welded.mesh, &locks, target_index_count, params);
 
         // group LOD error is monotone: at least the children's, plus this step.
         let group_error = child_err_max.max(abs_error);

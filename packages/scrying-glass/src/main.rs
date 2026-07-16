@@ -14,8 +14,8 @@ use std::{
 };
 
 use crystal::{Core, GaiaPackage, load_world_dir};
-use scrying_glass::ScryingGlassPackage;
 use scene::{FrameUniform, RenderScene, SceneParameters, Vertex, WORLD_SHADER};
+use scrying_glass::ScryingGlassPackage;
 use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewUrl};
 use wgpu::util::DeviceExt;
 

@@ -29,10 +29,7 @@ fn naruko_blank_page_parses_and_populates_expected_entities() {
         .values()
         .filter(|entity| entity.get("transform").is_some() && entity.get("mesh").is_some())
         .count();
-    assert!(
-        expected_total > 0,
-        "the canonical realm must not be empty"
-    );
+    assert!(expected_total > 0, "the canonical realm must not be empty");
 
     let mut ecs = EcsWorld::default();
     let loaded = load_world_dir(&path, &mut ecs).expect("load Naruko through GAIA protocol");

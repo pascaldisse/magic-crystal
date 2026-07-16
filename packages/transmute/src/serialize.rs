@@ -201,7 +201,10 @@ pub fn serialize(dag: &Dag) -> Result<Vec<u8>, SerdeError> {
     }
 
     for (pid, row) in rows.iter().enumerate() {
-        let clusters: Vec<Cluster> = row.iter().map(|&c| dag.clusters[c as usize].clone()).collect();
+        let clusters: Vec<Cluster> = row
+            .iter()
+            .map(|&c| dag.clusters[c as usize].clone())
+            .collect();
         let page = Page {
             id: pid as u32,
             clusters,

@@ -23,11 +23,11 @@ pub use mesh::{
     cylinder, subdivided_cube, uv_sphere, GaiaPrimitive, Mesh, Vertex, POSITION_OFFSET,
     VERTEX_STRIDE,
 };
+#[cfg(feature = "metis")]
+pub use partition::MetisPartitioner;
 pub use partition::{
     default_partitioner, AdjacencyGraph, GreedyPartitioner, Partition, Partitioner,
 };
-#[cfg(feature = "metis")]
-pub use partition::MetisPartitioner;
 pub use serialize::{
     deserialize, read_directory, read_header, read_page, read_root, serialize, Directory, Header,
     Page, PageRef, FORMAT_VERSION, HEADER_LEN, MAGIC,
@@ -105,9 +105,10 @@ mod tests {
     #[test]
     fn header_rejects_garbage() {
         assert!(deserialize(b"nope").is_err());
-        let mut bytes =
-            serialize(&transmute_default(&uv_sphere(1.0, 16, 12), &TransmuteParams::default()).unwrap())
-                .unwrap();
+        let mut bytes = serialize(
+            &transmute_default(&uv_sphere(1.0, 16, 12), &TransmuteParams::default()).unwrap(),
+        )
+        .unwrap();
         bytes[4] = 0xFF; // corrupt version
         assert!(deserialize(&bytes).is_err());
     }
@@ -140,8 +141,12 @@ mod tests {
     #[test]
     fn greedy_fallback_also_transmutes() {
         let mesh = uv_sphere(1.0, 96, 64);
-        let dag =
-            transmute(&mesh, &TransmuteParams::default(), &GreedyPartitioner::default()).unwrap();
+        let dag = transmute(
+            &mesh,
+            &TransmuteParams::default(),
+            &GreedyPartitioner::default(),
+        )
+        .unwrap();
         assert!(dag.level_count() > 1);
         assert_eq!(dag.leaf_tri_sum(), mesh.tri_count());
         assert!(budgets_ok(&dag, &MeshletParams::default()));

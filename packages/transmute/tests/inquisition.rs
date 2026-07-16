@@ -21,8 +21,11 @@ fn plane_grid(size: f32, n: usize) -> Mesh {
         for ix in 0..=n {
             let x = (ix as f32 / n as f32 - 0.5) * size;
             let z = (iz as f32 / n as f32 - 0.5) * size;
-            m.vertices
-                .push(Vertex::new([x, 0.0, z], [0.0, 1.0, 0.0], [ix as f32 / n as f32, iz as f32 / n as f32]));
+            m.vertices.push(Vertex::new(
+                [x, 0.0, z],
+                [0.0, 1.0, 0.0],
+                [ix as f32 / n as f32, iz as f32 / n as f32],
+            ));
         }
     }
     for iz in 0..n {
@@ -112,8 +115,7 @@ fn non_manifold_fan() -> Mesh {
         m.vertices.push(Vertex::new(p, n, [p[0], p[1]]));
     }
     // edge 0-1 shared by three faces (2, 3, 4)
-    m.indices
-        .extend_from_slice(&[0, 1, 2, 0, 1, 3, 0, 1, 4]);
+    m.indices.extend_from_slice(&[0, 1, 2, 0, 1, 3, 0, 1, 4]);
     m
 }
 
@@ -135,9 +137,11 @@ fn uv_seam_strip() -> Mesh {
     let n = [0.0, 0.0, 1.0];
     let mut m = Mesh::default();
     // left quad: verts 0..4, seam edge at x=0 with uv u=1.0
-    m.vertices.push(Vertex::new([-1.0, 0.0, 0.0], n, [0.0, 0.0]));
+    m.vertices
+        .push(Vertex::new([-1.0, 0.0, 0.0], n, [0.0, 0.0]));
     m.vertices.push(Vertex::new([0.0, 0.0, 0.0], n, [1.0, 0.0])); // seam, uv=1
-    m.vertices.push(Vertex::new([-1.0, 1.0, 0.0], n, [0.0, 1.0]));
+    m.vertices
+        .push(Vertex::new([-1.0, 1.0, 0.0], n, [0.0, 1.0]));
     m.vertices.push(Vertex::new([0.0, 1.0, 0.0], n, [1.0, 1.0])); // seam, uv=1
     m.indices.extend_from_slice(&[0, 1, 2, 2, 1, 3]);
     // right quad: seam verts COINCIDE in position but uv u=0.0 (a real seam)
@@ -239,7 +243,10 @@ fn assert_boundaries_locked(dag: &Dag, label: &str) {
     // Advisory: the regression must actually WITNESS surviving shared borders
     // (present in every producer), not pass vacuously on an all-absent world
     // (present==0 everywhere). present==0-for-everything now fails here.
-    assert!(checked > 0, "{label}: no shared borders exercised — weak test");
+    assert!(
+        checked > 0,
+        "{label}: no shared borders exercised — weak test"
+    );
     assert!(
         survived > 0,
         "{label}: no shared border survived in ≥1 parent (present==0 everywhere) — \
@@ -305,8 +312,10 @@ fn finding1_canonical_coordinate_offset_grids() {
     // 0 mismatches across mixed cuts. (Probe quantum 1e-3 groups the 1e-6 twins
     // but not distinct grid points ~0.25 apart.)
     let mesh = two_offset_grids(6.0, 24, 1e-6);
-    for pt in [&GreedyPartitioner::default() as &dyn Partitioner, default_partitioner().as_ref()]
-    {
+    for pt in [
+        &GreedyPartitioner::default() as &dyn Partitioner,
+        default_partitioner().as_ref(),
+    ] {
         let dag = transmute(&mesh, &TransmuteParams::default(), pt).unwrap();
         assert!(dag.level_count() > 1, "need a chain to have parent borders");
         assert_canonical_coords(&dag, 1e-3, dag.partitioner.as_str());
@@ -323,7 +332,10 @@ fn finding1_boundary_locking_sphere_and_plane() {
         (transmutation::subdivided_cube(2.0, 40), "cube"),
     ] {
         let dag = transmute_default(&mesh, &params).unwrap();
-        assert!(dag.level_count() > 1, "{label}: need a chain to have borders");
+        assert!(
+            dag.level_count() > 1,
+            "{label}: need a chain to have borders"
+        );
         assert_boundaries_locked(&dag, label);
     }
 }
@@ -338,7 +350,11 @@ fn finding1_boundary_locking_pathological() {
     ] {
         // must not panic, must stay loss-free
         let dag = transmute_default(&mesh, &params).unwrap();
-        assert_eq!(dag.leaf_tri_sum(), mesh.tri_count(), "{label}: lossy leaves");
+        assert_eq!(
+            dag.leaf_tri_sum(),
+            mesh.tri_count(),
+            "{label}: lossy leaves"
+        );
         if dag.groups.iter().any(|g| g.children.len() > 1) {
             assert_boundaries_locked(&dag, label);
         }
@@ -355,20 +371,38 @@ fn finding2_group_records_share_metric() {
     let dag = transmute_default(&uv_sphere(1.0, 96, 64), &TransmuteParams::default()).unwrap();
     assert!(!dag.groups.is_empty());
     for g in &dag.groups {
-        assert!(g.bounds.radius > 0.0, "group {} has empty shared sphere", g.id);
+        assert!(
+            g.bounds.radius > 0.0,
+            "group {} has empty shared sphere",
+            g.id
+        );
         // every produced parent carries the group's shared error + back-ref
         for &p in &g.parents {
             let c = dag.cluster(p);
             assert_eq!(c.error, g.error, "parent {p} error != group error");
-            assert_eq!(c.group, Some(g.id), "parent {p} missing producing-group ref");
+            assert_eq!(
+                c.group,
+                Some(g.id),
+                "parent {p} missing producing-group ref"
+            );
         }
         // every consumed child transitions UP on the group's shared error
         for &ch in &g.children {
             let c = dag.cluster(ch);
-            assert_eq!(c.parent_error, g.error, "child {ch} parent_error != group error");
-            assert_eq!(c.parent_group, Some(g.id), "child {ch} missing consuming-group ref");
+            assert_eq!(
+                c.parent_error, g.error,
+                "child {ch} parent_error != group error"
+            );
+            assert_eq!(
+                c.parent_group,
+                Some(g.id),
+                "child {ch} missing consuming-group ref"
+            );
             // monotone: a child is never coarser than its parent group
-            assert!(c.error <= g.error, "child {ch} error exceeds group error (non-monotone)");
+            assert!(
+                c.error <= g.error,
+                "child {ch} error exceeds group error (non-monotone)"
+            );
         }
     }
 }
@@ -391,7 +425,10 @@ fn finding3_unsimplifiable_stays_terminal_no_orphans() {
     let reachable: BTreeSet<u32> = dag.levels.iter().flatten().copied().collect();
     assert_eq!(reachable.len(), dag.clusters.len(), "orphan clusters exist");
     for c in &dag.clusters {
-        assert!(c.parent_error.is_infinite(), "terminal child lost ∞ threshold");
+        assert!(
+            c.parent_error.is_infinite(),
+            "terminal child lost ∞ threshold"
+        );
         assert_eq!(c.parent_group, None);
         assert_eq!(c.group, None);
     }
@@ -424,7 +461,10 @@ fn finding4_root_loads_without_the_rest() {
     // read_root touches ONLY the directory + root pages.
     let (dir, root_clusters) = read_root(&bytes).unwrap();
     assert!(!dir.roots.is_empty(), "no root pages recorded");
-    assert!(dir.roots.len() < dir.pages.len(), "root must not be the whole file");
+    assert!(
+        dir.roots.len() < dir.pages.len(),
+        "root must not be the whole file"
+    );
     // the returned clusters are exactly the coarsest level.
     let top: BTreeSet<u32> = dag.levels.last().unwrap().iter().copied().collect();
     let got: BTreeSet<u32> = root_clusters.iter().map(|c| c.id).collect();
@@ -443,7 +483,13 @@ fn finding4_pages_range_read_independently() {
         let got: BTreeSet<u32> = page.clusters.iter().map(|c| c.id).collect();
         assert_eq!(want, got, "page {} range read mismatch", pr.id);
         for c in &page.clusters {
-            assert_eq!(*c, *dag.cluster(c.id), "page {} cluster {} corrupted", pr.id, c.id);
+            assert_eq!(
+                *c,
+                *dag.cluster(c.id),
+                "page {} cluster {} corrupted",
+                pr.id,
+                c.id
+            );
         }
     }
 }
@@ -474,7 +520,11 @@ fn finding4_dependency_closure_covers_all_pages() {
 
 #[test]
 fn finding4_version_bumped_and_v1_rejected() {
-    assert_eq!(transmutation::FORMAT_VERSION, 2, "chunked layout must bump version");
+    assert_eq!(
+        transmutation::FORMAT_VERSION,
+        2,
+        "chunked layout must bump version"
+    );
     // a v1-style blob (magic + version=1) must be rejected loudly.
     let mut fake = Vec::new();
     fake.extend_from_slice(&transmutation::MAGIC);
@@ -527,8 +577,11 @@ fn uv_seam_grid(size: f32, n: usize) -> Mesh {
                 // two halves DISAGREE at x=0 (a real texture seam).
                 let at_seam = if seam_on_right { ix == n } else { ix == 0 };
                 let u = if at_seam { u_at_seam } else { t };
-                m.vertices
-                    .push(Vertex::new([x, 0.0, z], [0.0, 1.0, 0.0], [u, iz as f32 / n as f32]));
+                m.vertices.push(Vertex::new(
+                    [x, 0.0, z],
+                    [0.0, 1.0, 0.0],
+                    [u, iz as f32 / n as f32],
+                ));
             }
         }
         for iz in 0..n {
@@ -552,7 +605,10 @@ fn finding5_uv_seam_survives_multi_level() {
     // the leaf layer. Both u=0 and u=1 must persist at the seam position at
     // EVERY non-leaf level too.
     let dag = transmute_default(&uv_seam_grid(6.0, 24), &TransmuteParams::default()).unwrap();
-    assert!(dag.level_count() > 1, "need a multi-level chain to test seam survival");
+    assert!(
+        dag.level_count() > 1,
+        "need a multi-level chain to test seam survival"
+    );
     let u0 = 0.0f32.to_bits();
     let u1 = 1.0f32.to_bits();
     let mut checked_levels = 0usize;
@@ -586,7 +642,10 @@ fn finding5_uv_seam_survives_multi_level() {
             checked_levels += 1;
         }
     }
-    assert!(checked_levels > 1, "seam not exercised across multiple non-leaf levels ({checked_levels})");
+    assert!(
+        checked_levels > 1,
+        "seam not exercised across multiple non-leaf levels ({checked_levels})"
+    );
 }
 
 #[test]
@@ -600,7 +659,11 @@ fn finding5_pathological_lossless() {
     ];
     for (mesh, label) in cases {
         let dag = transmute(&mesh, &params, default_partitioner().as_ref()).unwrap();
-        assert_eq!(dag.leaf_tri_sum(), mesh.tri_count(), "{label}: shardize was lossy");
+        assert_eq!(
+            dag.leaf_tri_sum(),
+            mesh.tri_count(),
+            "{label}: shardize was lossy"
+        );
         for c in &dag.clusters {
             assert!(c.vertices.len() <= params.meshlet.max_vertices);
             assert!(c.tri_count() <= params.meshlet.max_triangles);
@@ -656,7 +719,10 @@ fn finding6_illegal_params_rejected() {
 
     // bad weld tolerances
     let mut p = base;
-    p.weld = WeldParams { pos_quant_frac: 0.0, ..WeldParams::default() };
+    p.weld = WeldParams {
+        pos_quant_frac: 0.0,
+        ..WeldParams::default()
+    };
     assert_eq!(run(p), TransmuteError::OutOfRange("pos_quant_frac"));
 }
 
@@ -678,7 +744,11 @@ fn finding7_disconnected_components_balanced() {
     let level0_groups: Vec<&transmutation::Group> =
         dag.groups.iter().filter(|g| g.level == 0).collect();
     assert!(!level0_groups.is_empty());
-    let max_children = level0_groups.iter().map(|g| g.children.len()).max().unwrap();
+    let max_children = level0_groups
+        .iter()
+        .map(|g| g.children.len())
+        .max()
+        .unwrap();
     assert!(
         max_children <= params.group_size * 4,
         "greedy dumped a mega-group: {max_children} children (target {})",
@@ -713,7 +783,12 @@ fn finding7_greedy_partition_balance_direct() {
         }
         xadj.push(adjncy.len() as i32);
     }
-    let graph = AdjacencyGraph { node_count: n, xadj, adjncy, adjwgt };
+    let graph = AdjacencyGraph {
+        node_count: n,
+        xadj,
+        adjncy,
+        adjwgt,
+    };
     let part = GreedyPartitioner::default().partition(&graph, comp);
     assert_eq!(part.backend, "greedy");
     // all nodes assigned
@@ -749,7 +824,12 @@ fn star_graph(leaves: usize) -> AdjacencyGraph {
         adjwgt.push(1);
         xadj.push(adjncy.len() as i32);
     }
-    AdjacencyGraph { node_count: n, xadj, adjncy, adjwgt }
+    AdjacencyGraph {
+        node_count: n,
+        xadj,
+        adjncy,
+        adjwgt,
+    }
 }
 
 // NOTE (MF-1b): the DETERMINISTIC ops-ratio scaling test lives as a UNIT test in
@@ -792,7 +872,12 @@ fn finding2_greedy_leftover_bounded_not_dumped() {
         }
         xadj.push(adjncy.len() as i32);
     }
-    let graph = AdjacencyGraph { node_count: n, xadj, adjncy, adjwgt };
+    let graph = AdjacencyGraph {
+        node_count: n,
+        xadj,
+        adjncy,
+        adjwgt,
+    };
     let gp = GreedyPartitioner::default();
     let part = gp.partition(&graph, nparts);
     assert_eq!(part.backend, "greedy");
@@ -826,7 +911,11 @@ fn finding8_pipeline_deterministic_greedy() {
     let b = transmute(&mesh, &params, &GreedyPartitioner::default()).unwrap();
     assert_eq!(a.clusters.len(), b.clusters.len(), "cluster count varied");
     assert_eq!(a.levels, b.levels, "level structure varied");
-    assert_eq!(serialize(&a).unwrap(), serialize(&b).unwrap(), "not byte-identical");
+    assert_eq!(
+        serialize(&a).unwrap(),
+        serialize(&b).unwrap(),
+        "not byte-identical"
+    );
 }
 
 /// The DEFAULT (METIS) backend is deterministic IN-PROCESS too: vendored METIS
@@ -840,7 +929,10 @@ fn finding8_metis_default_in_process_double_build_identical() {
     let a = transmute_default(&mesh, &params).unwrap();
     let b = transmute_default(&mesh, &params).unwrap();
     // With METIS compiled in, this proves the per-call InitRandom(seed) claim.
-    assert_eq!(a.partitioner, b.partitioner, "backend varied between builds");
+    assert_eq!(
+        a.partitioner, b.partitioner,
+        "backend varied between builds"
+    );
     assert_eq!(
         serialize(&a).unwrap(),
         serialize(&b).unwrap(),
@@ -919,7 +1011,11 @@ fn advisory_leaf_triangle_multiset_equals_input() {
 fn advisory_error_monotone_up_chain() {
     let dag = transmute_default(&uv_sphere(1.0, 96, 64), &TransmuteParams::default()).unwrap();
     for c in &dag.clusters {
-        assert!(c.error <= c.parent_error, "cluster {} error > parent_error", c.id);
+        assert!(
+            c.error <= c.parent_error,
+            "cluster {} error > parent_error",
+            c.id
+        );
         for &ch in &c.children {
             assert!(
                 dag.cluster(ch).error <= c.error,
