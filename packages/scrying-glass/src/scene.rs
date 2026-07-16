@@ -643,7 +643,7 @@ fn body_instances(world: &EcsWorld) -> Result<Vec<BodyInstance>, String> {
             .chunks_exact(3)
             .map(|tri| {
                 let corner = |i: u32| {
-                    let p = Vec3::from(mesh.positions[i as usize]);
+                    let p = mesh.positions[i as usize];
                     model.transform_point3(p).to_array()
                 };
                 let mean =
@@ -1760,17 +1760,30 @@ mod tests {
         );
 
         // STATIC BVH triangles (built once) and the DYNAMIC partition triangles.
+        // Rite V: the dynamic partition is now the living layer PLUS the embodied
+        // bodies (nari's `body` sigil) — account for the body triangles apart.
         let static_tris = scene.leaf_triangles().len();
         let dyn_tris = scene.dynamic_leaf_triangles().len();
+        let body_tris: usize = scene.bodies.iter().map(|b| b.world_tris.len()).sum();
         assert!(dyn_tris > 0, "dynamic entities carry geometry");
-        // The dynamic partition equals the bind triangle sum (transform preserves count).
+        // The living-layer partition equals the bind triangle sum (transform
+        // preserves count); the body is the separate Rite-V partition on top.
         let bind_sum: usize = scene
             .dynamics
             .entities()
             .iter()
             .map(|e| e.bind_tris.len())
             .sum();
-        assert_eq!(dyn_tris, bind_sum, "transform never drops a triangle");
+        assert_eq!(
+            scene.dynamics.leaf_triangles().len(),
+            bind_sum,
+            "transform never drops a living-layer triangle"
+        );
+        assert_eq!(
+            dyn_tris,
+            bind_sum + body_tris,
+            "dynamic partition = living layer + embodied bodies"
+        );
 
         // INDEPENDENT total: rebuild the SAME realm with every `behavior`
         // stripped — now everything is static. static + dynamic must equal this
@@ -1794,10 +1807,14 @@ mod tests {
             );
             all_static.leaf_triangles().len()
         };
+        // The undivided rebuild counts static MESH leaves only — a `body` sigil
+        // carries no mesh, so nari's skinned triangles live solely in the
+        // dynamic partition. The conservation identity therefore carries the
+        // body count explicitly: static + dynamic == undivided-mesh + body.
         assert_eq!(
             static_tris + dyn_tris,
-            undivided,
-            "static BVH tris + dynamic tris == the undivided realm's leaves (no loss, no dup)"
+            undivided + body_tris,
+            "static BVH tris + dynamic tris == undivided mesh leaves + body (no loss, no dup)"
         );
 
         // And the MERGED BVH the GPU walks carries exactly that total.

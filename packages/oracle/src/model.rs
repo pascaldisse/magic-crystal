@@ -705,7 +705,7 @@ mod aabb_tests {
     /// World bounds of an authored `{transform, mesh}` doc (the live path a gaze
     /// takes), so rotation/scale composition is under test end-to-end.
     fn world_bounds(transform: Value, mesh: Value) -> Option<Aabb> {
-        derive_geometry(Some(&transform), Some(&mesh), None, false).bounds
+        derive_geometry(Some(&transform), Some(&mesh), None, None, false).bounds
     }
 
     /// Local bounds of a single part (primitive derivation under test).

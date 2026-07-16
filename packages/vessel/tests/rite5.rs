@@ -83,8 +83,7 @@ fn v0_bone_vertex_transform_parity() {
             .positions
             .iter()
             .zip(body.vessel.weights.per_vertex.iter())
-            .map(|(&p, w)| {
-                let rest = Vec3::from(p);
+            .map(|(&rest, w)| {
                 let mut acc = Vec3::ZERO;
                 for &(bone, weight) in w {
                     acc += skin[bone].transform_point3(rest) * weight;
@@ -105,9 +104,8 @@ fn v0_bone_vertex_transform_parity() {
     let mut worst_idle = 0.0f32;
     let mut worst_probe = 0.0f32;
     for vi in 0..body.vessel.mesh.positions.len() {
-        worst_idle = worst_idle.max((Vec3::from(idle_mesh.positions[vi]) - ref_idle[vi]).length());
-        worst_probe =
-            worst_probe.max((Vec3::from(probe_mesh.positions[vi]) - ref_probe[vi]).length());
+        worst_idle = worst_idle.max((idle_mesh.positions[vi] - ref_idle[vi]).length());
+        worst_probe = worst_probe.max((probe_mesh.positions[vi] - ref_probe[vi]).length());
     }
 
     println!(
@@ -135,8 +133,8 @@ fn v0_bone_vertex_transform_parity() {
     broken_posed[0].translation += glam::Vec3A::new(0.01, 0.0, 0.0);
     let ref_broken = reference_lbs(&broken_posed);
     let mut broke = 0.0f32;
-    for vi in 0..body.vessel.mesh.positions.len() {
-        broke = broke.max((Vec3::from(probe_mesh.positions[vi]) - ref_broken[vi]).length());
+    for (posed, reference) in probe_mesh.positions.iter().zip(ref_broken.iter()) {
+        broke = broke.max((*posed - *reference).length());
     }
     assert!(
         broke > PARITY_TOL * 100.0,
