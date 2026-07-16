@@ -24,6 +24,8 @@ struct Uniform {
   med_params: vec4<f32>,   // sigma_a, sigma_s, g (HG anisotropy), far cap
   med_march: vec4<f32>,    // march_steps, shadow_steps, shadow_dist, enabled
   med_dims: vec4<u32>,     // grid dims xyz, w unused
+  med_light: vec4<f32>,    // xyz unit dir TOWARD the medium's light, w = intensity
+  med_light_color: vec4<f32>, // rgb light colour (the steam's own warm source)
 };
 
 struct Node {
@@ -196,7 +198,7 @@ fn medium_single_scatter(o: vec3<f32>, d: vec3<f32>, t0: f32, t1: f32) -> f32 {
   let ds = (t1 - t0) / f32(steps);
   let sigma_t = u.med_params.x + u.med_params.y;
   let sigma_s = u.med_params.y;
-  let w_light = normalize(u.sun_dir.xyz);
+  let w_light = normalize(u.med_light.xyz);
   let phase = hg_phase(dot(w_light, d));
   var tau_before = 0.0;
   var acc = 0.0;
@@ -227,8 +229,8 @@ fn medium_primary(o: vec3<f32>, d: vec3<f32>) -> vec4<f32> {
   if (t1 <= eps) { return vec4<f32>(0.0, 0.0, 0.0, 1.0); }
   let scatter = medium_single_scatter(o, d, eps, t1);
   let tr = exp(-medium_optical_depth(o, d, eps, t1, u32(u.med_march.x)));
-  let sun_radiance = u.sun_color.rgb * u.sun_color.w;
-  return vec4<f32>(sun_radiance * scatter, tr);
+  let light_radiance = u.med_light_color.rgb * u.med_light.w;
+  return vec4<f32>(light_radiance * scatter, tr);
 }
 
 struct Hit {

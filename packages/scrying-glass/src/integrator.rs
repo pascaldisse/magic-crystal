@@ -44,6 +44,10 @@ pub struct IntegratorUniform {
     pub med_march: [f32; 4],
     /// grid dims xyz, w unused.
     pub med_dims: [u32; 4],
+    /// xyz unit direction TOWARD the medium's light, w = intensity.
+    pub med_light: [f32; 4],
+    /// rgb colour of the medium's own light (the steam's warm source).
+    pub med_light_color: [f32; 4],
 }
 
 /// A participating medium uploaded to the GPU: the density volume (Aether's
@@ -71,8 +75,15 @@ pub struct MediumGpu {
     pub march_steps: u32,
     /// Shadow-ray march step count (self-shadowing toward the sun).
     pub shadow_steps: u32,
-    /// Bound on the occlusion march toward the (directional) sun.
+    /// Bound on the occlusion march toward the (directional) light.
     pub shadow_dist: f32,
+    /// Unit direction TOWARD the medium's own light (the steam's warm source,
+    /// decoupled from the sky sun so steam can be under/back-lit).
+    pub light_dir: [f32; 3],
+    /// Light colour (linear rgb).
+    pub light_color: [f32; 3],
+    /// Light radiance scale.
+    pub light_intensity: f32,
     /// Density values (x-fastest, then y, z), length = dims.x*dims.y*dims.z.
     pub density: Vec<f32>,
 }
@@ -168,6 +179,19 @@ impl IntegratorUniform {
             med_dims: match medium {
                 Some(m) => [m.dims[0], m.dims[1], m.dims[2], 0],
                 None => [0; 4],
+            },
+            med_light: match medium {
+                Some(m) => [
+                    m.light_dir[0],
+                    m.light_dir[1],
+                    m.light_dir[2],
+                    m.light_intensity,
+                ],
+                None => [0.0; 4],
+            },
+            med_light_color: match medium {
+                Some(m) => [m.light_color[0], m.light_color[1], m.light_color[2], 0.0],
+                None => [0.0; 4],
             },
         }
     }

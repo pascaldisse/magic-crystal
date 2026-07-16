@@ -35,6 +35,7 @@ fn look_camera(eye: [f32; 3], look_at: [f32; 3], fov_deg: f32) -> Camera {
 
 /// Build the GPU medium upload from the SAME Aether grid + optics the CPU
 /// marches. `g_override` lets the discrimination leg break the phase.
+#[allow(clippy::too_many_arguments)]
 fn medium_gpu(
     grid: &DensityGrid,
     optics: &HomogeneousMedium,
@@ -42,6 +43,9 @@ fn medium_gpu(
     march_steps: u32,
     shadow_steps: u32,
     shadow_dist: f32,
+    light_dir: [f32; 3],
+    light_color: [f32; 3],
+    light_intensity: f32,
     g_override: Option<f32>,
 ) -> MediumGpu {
     let o = grid.world_origin();
@@ -57,6 +61,9 @@ fn medium_gpu(
         march_steps,
         shadow_steps,
         shadow_dist,
+        light_dir,
+        light_color,
+        light_intensity,
         density: grid.data().to_vec(),
     }
 }
@@ -121,6 +128,8 @@ fn medium_parity_gpu_matches_aether_reference() {
         eps: 1e-3,
     };
 
+    // The medium's own light == the sun here, so the CPU reference (which uses
+    // this same light) and the GPU medium march agree.
     let medium = medium_gpu(
         &grid,
         &optics,
@@ -128,6 +137,9 @@ fn medium_parity_gpu_matches_aether_reference() {
         march_steps,
         shadow_steps,
         shadow_dist,
+        sun_dir.to_array(),
+        sun_rgb,
+        sun_intensity,
         None,
     );
     let gpu = resolve(&trace_headless(
@@ -155,6 +167,9 @@ fn medium_parity_gpu_matches_aether_reference() {
         march_steps,
         shadow_steps,
         shadow_dist,
+        sun_dir.to_array(),
+        sun_rgb,
+        sun_intensity,
         Some(-optics.g as f32),
     );
     let gpu_broken = resolve(&trace_headless(
