@@ -3,11 +3,41 @@
 //! per-ordeal numbers.
 
 use glam::Quat;
-use homunculus::{walk_pose, Pose, Skeleton, WalkParams};
+use homunculus::{Pose, Skeleton};
 use sama::{
-    gait_pose, look_at, Gait, GaitParams, Gesture, Locomotion, LocomotionParams, LookAt,
-    LookAtParams,
+    gait_pose, gait_pose_stream, look_at, Gait, GaitParams, Gesture, Locomotion, LocomotionParams,
+    LookAt, LookAtParams,
 };
+
+/// The frozen walk-cycle canon: the byte-exact pose stream the retired
+/// `homunculus::walk_pose` emitted for `WalkParams::default()` over ticks
+/// `0..CANON_TICKS` on `Skeleton::humanoid()`. Captured before `walk.rs` was
+/// deleted (`ordeal_walk_parity_with_canon` regenerates nothing — it reads
+/// this). Layout: per tick, per bone, `[x, y, z, w]` little-endian `f32`.
+/// This IS the ground truth now — the canonical forward path (`gait_pose`)
+/// must reproduce it bit for bit.
+const WALK_CYCLE_CANON: &[u8] = include_bytes!("canon/walk_cycle.bin");
+const CANON_TICKS: usize = 300;
+
+/// Reconstruct the canon pose at `tick` for a skeleton of `bone_count` bones.
+fn canon_pose(tick: usize, bone_count: usize) -> Pose {
+    let stride = bone_count * 16;
+    let base = tick * stride;
+    let mut local_rotations = Vec::with_capacity(bone_count);
+    for b in 0..bone_count {
+        let o = base + b * 16;
+        let f = |k: usize| {
+            f32::from_le_bytes([
+                WALK_CYCLE_CANON[o + k],
+                WALK_CYCLE_CANON[o + k + 1],
+                WALK_CYCLE_CANON[o + k + 2],
+                WALK_CYCLE_CANON[o + k + 3],
+            ])
+        };
+        local_rotations.push(Quat::from_xyzw(f(0), f(4), f(8), f(12)));
+    }
+    Pose { local_rotations }
+}
 
 /// Max per-bone quaternion angle (radians) between two poses.
 fn pose_max_angle(a: &Pose, b: &Pose) -> f32 {
@@ -95,18 +125,27 @@ fn ordeal_determinism_byte_identical() {
 }
 
 #[test]
-fn ordeal_walk_parity_with_homunculus() {
+fn ordeal_walk_parity_with_canon() {
+    // The canon (frozen from the retired homunculus::walk_pose) is the ground
+    // truth. `GaitParams::walk()` is the canonical forward path and must
+    // reproduce it bit for bit.
     let skeleton = Skeleton::humanoid();
     let sama_params = GaitParams::walk();
-    let homu_params = WalkParams::default();
+    let bones = skeleton.len();
+
+    assert_eq!(
+        WALK_CYCLE_CANON.len(),
+        CANON_TICKS * bones * 16,
+        "canon corpus size must be {CANON_TICKS} ticks * {bones} bones * 16 bytes"
+    );
 
     let mut max_diff = 0.0_f32;
     let mut sample_bone = 0usize;
     let mut sample_sama = Quat::IDENTITY;
-    let mut sample_homu = Quat::IDENTITY;
-    for tick in 0..300u64 {
-        let a = gait_pose(&skeleton, &sama_params, tick);
-        let b = walk_pose(&skeleton, &homu_params, tick);
+    let mut sample_canon = Quat::IDENTITY;
+    for tick in 0..CANON_TICKS {
+        let a = gait_pose(&skeleton, &sama_params, tick as u64);
+        let b = canon_pose(tick, bones);
         let d = pose_max_component_diff(&a, &b);
         if d >= max_diff {
             max_diff = d;
@@ -125,15 +164,16 @@ fn ordeal_walk_parity_with_homunculus() {
                 if (bd - d).abs() < 1e-12 {
                     sample_bone = i;
                     sample_sama = *x;
-                    sample_homu = *y;
+                    sample_canon = *y;
                     break;
                 }
             }
         }
     }
 
-    // Derived tolerance: f32 epsilon scale. The two paths are the same math in
-    // the same order, so the difference is expected to be exactly 0.
+    // Derived tolerance: f32 epsilon scale. `gait_pose` walk-preset is the same
+    // math in the same order the canon was born from, so the difference is
+    // expected to be exactly 0.
     let tolerance = f32::EPSILON; // 1.1920929e-7
     assert!(
         max_diff <= tolerance,
@@ -143,16 +183,52 @@ fn ordeal_walk_parity_with_homunculus() {
     // A representative moving bone (a thigh) mid-cycle, to show real values.
     let thigh = skeleton.index_of("L.thigh").unwrap();
     let sa = gait_pose(&skeleton, &sama_params, 15).local_rotations[thigh];
-    let hb = walk_pose(&skeleton, &homu_params, 15).local_rotations[thigh];
+    let cb = canon_pose(15, bones).local_rotations[thigh];
 
     println!(
-        "ORDEAL walk parity: max |diff| over 300 ticks = {max_diff:e} (tolerance {tolerance:e}); \
-         worst bone #{sample_bone}: sama={:?} homunculus={:?}; \
-         L.thigh@tick15: sama={:?} homunculus={:?}",
+        "ORDEAL walk parity (vs frozen canon): max |diff| over {CANON_TICKS} ticks = {max_diff:e} \
+         (tolerance {tolerance:e}); worst bone #{sample_bone}: sama={:?} canon={:?}; \
+         L.thigh@tick15: sama={:?} canon={:?}",
         sample_sama.to_array(),
-        sample_homu.to_array(),
+        sample_canon.to_array(),
         sa.to_array(),
-        hb.to_array()
+        cb.to_array()
+    );
+}
+
+#[test]
+fn ordeal_gait_walk_determinism() {
+    // Ported from the retired homunculus `ordeal_walk_determinism`: the gait is
+    // the canonical forward path now, so the byte-identity / motion / seed
+    // guarantees it inherited must hold on `gait_pose`.
+    let skeleton = Skeleton::humanoid();
+    let params = GaitParams::walk();
+
+    let a = gait_pose_stream(&skeleton, &params, 128);
+    let b = gait_pose_stream(&skeleton, &params, 128);
+    let bytes_a: Vec<u8> = a.iter().flat_map(|p| p.to_le_bytes()).collect();
+    let bytes_b: Vec<u8> = b.iter().flat_map(|p| p.to_le_bytes()).collect();
+    assert_eq!(bytes_a, bytes_b, "gait stream not byte-identical");
+
+    // Tick 100 specifically.
+    let t100_x = gait_pose(&skeleton, &params, 100).to_le_bytes();
+    let t100_y = gait_pose(&skeleton, &params, 100).to_le_bytes();
+    assert_eq!(t100_x, t100_y, "tick 100 not byte-identical");
+
+    // The gait is actually moving (not a frozen bind pose) at tick 100.
+    let bind = Pose::bind(&skeleton).to_le_bytes();
+    assert_ne!(t100_x, bind, "gait pose equals bind — no motion");
+
+    // Seed changes the stream (seed is honored).
+    let seeded = GaitParams { seed: 42, ..params };
+    let t100_seeded = gait_pose(&skeleton, &seeded, 100).to_le_bytes();
+    assert_ne!(t100_seeded, t100_x, "seed had no effect");
+
+    println!(
+        "ORDEAL gait determinism: stream bytes={} tick100 deterministic=true \
+         seed-sensitive={} moves-off-bind=true",
+        bytes_a.len(),
+        t100_seeded != t100_x
     );
 }
 
