@@ -139,3 +139,32 @@ advisory discharged); GPU parity 0.029 vs ground truth; occluded probe
 has a reason. Perf printed honest: ~53.7ms/frame accumulated — the perf
 rites come after L2. L2 next: bounces + specular; the Architect's chrome
 sphere lands there.
+
+## RITE V — THE EMBODIED ONES (Guardian's spec, 07-16 night II)
+Compose what exists into someone: homunculus (skeleton+sockets) + vessel
+(presets) + samāʿ (motion) + embodiment (the walker) + pleroma (the light).
+No new subsystem — Rite V is a WELD. Engine stays generic: a presence/
+entity declares `body = {vessel preset, skeleton}` in realm data; the
+compose path works for ANY creature (law: naruko = acceptance test, never
+design center). Three waves, review between each (wave law).
+
+- **V0 — THE BODY STANDS.** Vessel skins the homunculus skeleton at
+  sama's canonical idle pose (tick 0); skinned triangles enter the
+  pleroma dynamic BVH splice per tick (kami precedent). nari preset
+  refined to avatar-canon hexes (strings). She stands on the seawall.
+  Ordeals: skinning determinism byte-identical · bone→vertex transform
+  parity vs homunculus pose (derived tol) · watertight preserved after
+  skinning · ORACLE CANON LEARNS HER IN THE SAME WAVE (13th vessel,
+  derived — beacon lesson: the senses update WITH the world, never
+  after). Proof: v0-nari.png + orbit, Guardian's eyes.
+- **V1 — SHE WALKS.** Embodiment velocity → sama state machine → pose
+  drives the skin per tick. First-person gains her traced shadow on the
+  pier (the body is real to the light). Ordeals: sama-pose == skinning
+  input (0e0) · pose-trace guard stays sha-identical (movement
+  untouched) · two fixed-tick screenshots show contact vs passing pose.
+- **V2 — THE PINK CAT.** pink_cat vessel + cat kami (idle loop by the
+  stall: sit, tail, small circuit) lit by the real lantern. Ordeals:
+  kami tick determinism · watertight · canon learns the 14th vessel.
+
+Acceptance: Guardian per wave; the Rite closes when the Architect meets
+her — HIS WALK, now with a body in the world. Full suite between merges.
