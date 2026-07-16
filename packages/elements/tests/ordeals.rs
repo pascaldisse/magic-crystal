@@ -329,8 +329,7 @@ fn ordeal_fracture_weak_link_breaks() {
 
 /// Max magnitude of any body-particle velocity — the "still?" witness.
 fn max_body_speed(s: &Solver, body: &RigidBody) -> f64 {
-    body
-        .indices
+    body.indices
         .iter()
         .map(|&i| s.particles.vel[i].length())
         .fold(0.0_f64, f64::max)
@@ -453,7 +452,8 @@ fn ordeal_rigid_invariance_under_tumbling() {
     }
     // Record rest pairwise distances.
     let idx = s.rigids[body_idx].indices.clone();
-    let rest_dist = |s: &Solver, a: usize, b: usize| (s.particles.pos[a] - s.particles.pos[b]).length();
+    let rest_dist =
+        |s: &Solver, a: usize, b: usize| (s.particles.pos[a] - s.particles.pos[b]).length();
     let rest: Vec<f64> = (0..idx.len())
         .flat_map(|a| (a + 1..idx.len()).map(move |b| (a, b)))
         .map(|(a, b)| rest_dist(&s, idx[a], idx[b]))
@@ -631,9 +631,21 @@ fn place_box_on_plane(
     let particle_mass = density * dims.x * dims.y * dims.z / n_total as f64;
     let inv_mass = 1.0 / particle_mass;
     let step = Vec3::new(
-        if nx > 1 { dims.x / (nx - 1) as f64 } else { 0.0 },
-        if ny > 1 { dims.y / (ny - 1) as f64 } else { 0.0 },
-        if nz > 1 { dims.z / (nz - 1) as f64 } else { 0.0 },
+        if nx > 1 {
+            dims.x / (nx - 1) as f64
+        } else {
+            0.0
+        },
+        if ny > 1 {
+            dims.y / (ny - 1) as f64
+        } else {
+            0.0
+        },
+        if nz > 1 {
+            dims.z / (nz - 1) as f64
+        } else {
+            0.0
+        },
     );
     let mut indices = Vec::with_capacity(n_total);
     for ix in 0..nx {

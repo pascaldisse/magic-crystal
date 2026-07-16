@@ -108,9 +108,21 @@ impl Solver {
         // Lattice spacing: particles centred within each cell so the cluster
         // fills `dims` symmetrically about `center`.
         let step = Vec3::new(
-            if nx > 1 { dims.x / (nx - 1) as f64 } else { 0.0 },
-            if ny > 1 { dims.y / (ny - 1) as f64 } else { 0.0 },
-            if nz > 1 { dims.z / (nz - 1) as f64 } else { 0.0 },
+            if nx > 1 {
+                dims.x / (nx - 1) as f64
+            } else {
+                0.0
+            },
+            if ny > 1 {
+                dims.y / (ny - 1) as f64
+            } else {
+                0.0
+            },
+            if nz > 1 {
+                dims.z / (nz - 1) as f64
+            } else {
+                0.0
+            },
         );
         let origin = center - dims.scale(0.5);
         let mut indices = Vec::with_capacity(n_total);
@@ -118,11 +130,7 @@ impl Solver {
             for iy in 0..ny {
                 for iz in 0..nz {
                     let pos = origin
-                        + Vec3::new(
-                            step.x * ix as f64,
-                            step.y * iy as f64,
-                            step.z * iz as f64,
-                        );
+                        + Vec3::new(step.x * ix as f64, step.y * iy as f64, step.z * iz as f64);
                     let inv_mass = 1.0 / particle_mass;
                     indices.push(self.particles.add_with_radius(pos, inv_mass, radius));
                 }
@@ -150,7 +158,11 @@ impl Solver {
         let n = subdiv.max(1);
         // Gather lattice points inside the sphere first (to count them).
         let mut points = Vec::new();
-        let step = if n > 1 { 2.0 * radius / (n - 1) as f64 } else { 0.0 };
+        let step = if n > 1 {
+            2.0 * radius / (n - 1) as f64
+        } else {
+            0.0
+        };
         for ix in 0..n {
             for iy in 0..n {
                 for iz in 0..n {

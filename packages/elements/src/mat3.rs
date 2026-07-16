@@ -43,8 +43,10 @@ impl Mat3 {
         Mat3::from_columns(a.scale(b.x), a.scale(b.y), a.scale(b.z))
     }
 
-    /// Sum of two frames, column by column.
+    /// Sum of two frames, column by column. Named (not `impl Add`) to keep the
+    /// covariance accumulation reading as fixed-order column arithmetic.
     #[inline]
+    #[allow(clippy::should_implement_trait)]
     pub fn add(self, other: Mat3) -> Mat3 {
         Mat3::from_columns(
             self.col0 + other.col0,
@@ -66,8 +68,10 @@ impl Mat3 {
     }
 
     /// Matrix product `self · other` (columns of the result = `self` applied
-    /// to each column of `other`).
+    /// to each column of `other`). Named (not `impl Mul`) so the polar
+    /// iteration's frame products read explicitly in fixed order.
     #[inline]
+    #[allow(clippy::should_implement_trait)]
     pub fn mul(self, other: Mat3) -> Mat3 {
         Mat3::from_columns(
             self.mul_vec(other.col0),
@@ -139,12 +143,18 @@ pub struct PolarConfig {
     /// (≈ `1e-12` per element) — at or below this the frame has stopped
     /// moving in `f64`.
     pub tolerance_sq: f64,
-    /// RELATIVE regularization added to the covariance before decomposition:
-    /// `A ← A + (relative × ‖A‖_F)·I`. Default `1.0e-6` — negligible for a
-    /// full-rank 3-D cluster, but it lifts a DEGENERATE (coplanar/collinear)
-    /// cluster off its null direction so the rotation stays defined (a flat
-    /// slab or a rod resolves toward identity in its thin axis instead of
-    /// collapsing the fit).
+    /// RELATIVE regularization `A ← A + (relative × ‖A‖_F)·I`, applied ONLY
+    /// when the covariance is genuinely SINGULAR (a coplanar slab or collinear
+    /// rod, whose `A` cannot be inverted). Default `1.0e-6` — it lifts such a
+    /// degenerate cluster off its null direction so the rotation stays defined
+    /// (the thin axis resolves toward identity instead of collapsing the fit).
+    ///
+    /// It is NOT applied to a full-rank cluster: adding `ε·I` to a healthy `A`
+    /// biases the extracted rotation toward identity by `O(ε/σ_min)`, and while
+    /// that bias is tiny per solve it is SYSTEMATIC — over thousands of
+    /// substeps it compounds into a spurious torsional spring that drags a
+    /// free spin back to rest (measured: 98% spin-energy loss in 1 s at 16
+    /// substeps before this was made conditional).
     pub regularization: f64,
 }
 
@@ -167,14 +177,18 @@ impl Default for PolarConfig {
 /// the inverse does not exist) the fit is undefined and we return the
 /// identity (documented limitation: rigids must be genuinely 3-D).
 pub fn polar_rotation(a: Mat3, cfg: PolarConfig) -> Mat3 {
-    // Regularize: lift a degenerate (coplanar/collinear) covariance off its
-    // null direction so the inverse exists and the fit stays defined.
-    let eps = a.frobenius_norm() * cfg.regularization;
-    let mut q = if eps > 0.0 {
-        a.add(Mat3::IDENTITY.scale(eps))
-    } else {
-        a
-    };
+    // Regularize ONLY a degenerate (singular) covariance: lift a coplanar/
+    // collinear cluster off its null direction so the inverse exists and the
+    // fit stays defined. A full-rank `A` is left UNTOUCHED — adding ε·I there
+    // would bias the rotation toward identity every solve, and that bias
+    // compounds over substeps into a spin-killing torsional spring.
+    let mut q = a;
+    if a.inverse().is_none() {
+        let eps = a.frobenius_norm() * cfg.regularization;
+        if eps > 0.0 {
+            q = a.add(Mat3::IDENTITY.scale(eps));
+        }
+    }
     for _ in 0..cfg.max_iterations.max(1) {
         let inv_t = match q.inverse() {
             Some(inv) => inv.transpose(),

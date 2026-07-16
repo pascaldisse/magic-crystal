@@ -4,7 +4,7 @@
 //! Based on Shape Matching*): each solve, fit the cluster's present pose to a
 //! rotated+translated copy of its REST shape (rotation by polar decomposition)
 //! and pull every particle toward its goal. `stiffness = 1.0` is perfectly
-//! rigid; `< 1.0` is deformable — the loves scale [0,1] extends here with no
+//! rigid; `< 1.0` is deformable — the loves scale `[0,1]` extends here with no
 //! new dial. No new force is invented: shape matching is love toward a rigid
 //! goal, the same pull a bond is toward its rest length.
 
@@ -66,7 +66,10 @@ impl RigidBody {
             }
             centroid = centroid.scale(1.0 / total_mass);
         }
-        let rest: Vec<Vec3> = indices.iter().map(|&i| particles.pos[i] - centroid).collect();
+        let rest: Vec<Vec3> = indices
+            .iter()
+            .map(|&i| particles.pos[i] - centroid)
+            .collect();
         RigidBody {
             indices,
             rest,
