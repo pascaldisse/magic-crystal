@@ -1,3 +1,5 @@
+mod input;
+mod player;
 mod scene;
 
 use std::{
@@ -5,13 +7,15 @@ use std::{
     net::{Ipv4Addr, TcpListener, TcpStream},
     path::{Path, PathBuf},
     sync::{
-        Arc, RwLock,
+        Arc, Mutex, RwLock,
         atomic::{AtomicBool, Ordering},
         mpsc,
     },
     thread,
     time::{Duration, Instant},
 };
+
+use player::{Ground, Key, Player, PlayerParams};
 
 use crystal::{Core, GaiaPackage, load_world_dir};
 use glam::Vec3;
@@ -289,31 +293,92 @@ fn respond_frame(stream: &mut TcpStream, frame: &CapturedFrame) {
     }
 }
 
-fn handle_http(mut stream: TcpStream, latest: &LatestFrame, scry: &mpsc::Sender<ScryRequest>) {
+/// Shared state the HTTP organs read: the live surface frame, the moving-eye
+/// render channel, and — for the Embodiment — the walking body + its floor.
+struct HttpContext {
+    latest: LatestFrame,
+    scry: mpsc::Sender<ScryRequest>,
+    player: Arc<Mutex<Player>>,
+    ground: Arc<Ground>,
+    tick_dt: f32,
+}
+
+/// Read a full HTTP request (headers + any body) honouring Content-Length.
+fn read_request(stream: &mut TcpStream) -> Option<(String, String)> {
+    let mut buffer = Vec::with_capacity(4096);
+    let mut chunk = [0_u8; 4096];
+    let header_end = loop {
+        let read = stream.read(&mut chunk).ok()?;
+        if read == 0 {
+            return None;
+        }
+        buffer.extend_from_slice(&chunk[..read]);
+        if let Some(index) = buffer.windows(4).position(|w| w == b"\r\n\r\n") {
+            break index + 4;
+        }
+        if buffer.len() > 1 << 20 {
+            return None; // 1 MiB header guard
+        }
+    };
+    let headers = String::from_utf8_lossy(&buffer[..header_end]).into_owned();
+    let content_length = headers
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.trim()
+                .eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().ok())
+                .flatten()
+        })
+        .unwrap_or(0);
+    while buffer.len() < header_end + content_length {
+        let read = stream.read(&mut chunk).ok()?;
+        if read == 0 {
+            break;
+        }
+        buffer.extend_from_slice(&chunk[..read]);
+    }
+    let body = String::from_utf8_lossy(
+        &buffer[header_end..header_end + content_length.min(buffer.len() - header_end)],
+    )
+    .into_owned();
+    Some((headers, body))
+}
+
+fn handle_http(mut stream: TcpStream, ctx: &HttpContext) {
+    let latest = &ctx.latest;
+    let scry = &ctx.scry;
     let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-    let mut request = [0_u8; 4096];
-    let Ok(read) = stream.read(&mut request) else {
+    let Some((headers, body)) = read_request(&mut stream) else {
         return;
     };
-    let first_line = String::from_utf8_lossy(&request[..read])
-        .lines()
-        .next()
-        .unwrap_or_default()
-        .to_owned();
+    let first_line = headers.lines().next().unwrap_or_default().to_owned();
     let mut tokens = first_line.split_whitespace();
     let method = tokens.next().unwrap_or_default();
     let target = tokens.next().unwrap_or_default();
+    let (path, query) = target.split_once('?').unwrap_or((target, ""));
+
+    // Embodiment debug organs (param-gated by their presence, no keyboard needed):
+    // GET /pose returns the body's eye pose; POST /walk injects held keys for N ticks.
+    if path == "/pose" && method == "GET" {
+        respond_pose(&mut stream, ctx);
+        return;
+    }
+    if path == "/walk" && method == "POST" {
+        respond_walk(&mut stream, ctx, &body);
+        return;
+    }
+
     if method != "GET" {
         let _ = write_response(
             &mut stream,
             "405 Method Not Allowed",
             "text/plain; charset=utf-8",
             b"method not allowed\n",
-            "Allow: GET\r\n",
+            "Allow: GET, POST\r\n",
         );
         return;
     }
-    let (path, query) = target.split_once('?').unwrap_or((target, ""));
     // GET /scry — the true name (GRIMOIRE: a screenshot is a scrying).
     // GET /screenshot is kept as an alias for tool compatibility.
     if path != "/scry" && path != "/screenshot" {
@@ -398,11 +463,126 @@ fn handle_http(mut stream: TcpStream, latest: &LatestFrame, scry: &mpsc::Sender<
     }
 }
 
-fn start_screenshot_server(
-    port: u16,
-    latest: LatestFrame,
-    scry: mpsc::Sender<ScryRequest>,
-) -> Result<(), String> {
+/// Format a pose as the `/pose` — and `/walk` stream — JSON object.
+fn pose_json(pose: &player::Pose) -> String {
+    format!(
+        "{{\"position\":[{},{},{}],\"yaw\":{},\"pitch\":{},\"eyeHeight\":{},\"feetY\":{},\"grounded\":{},\"vy\":{}}}",
+        pose.position.x,
+        pose.position.y,
+        pose.position.z,
+        pose.yaw,
+        pose.pitch,
+        pose.eye_height,
+        pose.position.y - pose.eye_height,
+        pose.grounded,
+        pose.vy,
+    )
+}
+
+/// GET /pose — the body's current eye pose (debug organ).
+fn respond_pose(stream: &mut TcpStream, ctx: &HttpContext) {
+    let pose = match ctx.player.lock() {
+        Ok(player) => player.pose(),
+        Err(_) => {
+            let _ = write_response(
+                stream,
+                "500 Internal Server Error",
+                "text/plain; charset=utf-8",
+                b"player state poisoned\n",
+                "",
+            );
+            return;
+        }
+    };
+    let _ = write_response(
+        stream,
+        "200 OK",
+        "application/json; charset=utf-8",
+        pose_json(&pose).as_bytes(),
+        "",
+    );
+}
+
+/// POST /walk — inject held keys for N deterministic ticks (debug organ). Body
+/// is `{\"keys\":[...], \"yaw\"?, \"pitch\"?, \"ticks\"?}`. Returns the final pose
+/// plus the full per-tick pose stream so play-tests read exactly what moved.
+fn respond_walk(stream: &mut TcpStream, ctx: &HttpContext, body: &str) {
+    let request: serde_json::Value = match serde_json::from_str(body.trim()) {
+        Ok(value) => value,
+        Err(error) => {
+            let _ = write_response(
+                stream,
+                "400 Bad Request",
+                "text/plain; charset=utf-8",
+                format!("walk body must be JSON: {error}").as_bytes(),
+                "",
+            );
+            return;
+        }
+    };
+    let ticks = request
+        .get("ticks")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(1)
+        .min(100_000) as u32;
+    let keys: std::collections::HashSet<Key> = request
+        .get("keys")
+        .and_then(serde_json::Value::as_array)
+        .map(|array| {
+            array
+                .iter()
+                .filter_map(|item| item.as_str().and_then(Key::from_token))
+                .collect()
+        })
+        .unwrap_or_default();
+    let yaw = request.get("yaw").and_then(serde_json::Value::as_f64);
+    let pitch = request.get("pitch").and_then(serde_json::Value::as_f64);
+
+    let mut player = match ctx.player.lock() {
+        Ok(player) => player,
+        Err(_) => {
+            let _ = write_response(
+                stream,
+                "500 Internal Server Error",
+                "text/plain; charset=utf-8",
+                b"player state poisoned\n",
+                "",
+            );
+            return;
+        }
+    };
+    if let Some(yaw) = yaw {
+        player.yaw = yaw as f32;
+    }
+    if let Some(pitch) = pitch {
+        player.pitch = (pitch as f32).clamp(-player.params.pitch_limit, player.params.pitch_limit);
+    }
+    player.keys = keys;
+    let mut poses = Vec::with_capacity(ticks as usize);
+    for _ in 0..ticks {
+        player.step(ctx.tick_dt, &ctx.ground);
+        poses.push(pose_json(&player.pose()));
+    }
+    // Injected keys are transient: clear them so the render loop doesn't keep
+    // walking after the organ returns.
+    player.keys.clear();
+    let final_pose = pose_json(&player.pose());
+    drop(player);
+
+    let body = format!(
+        "{{\"ticks\":{ticks},\"pose\":{final_pose},\"stream\":[{}]}}",
+        poses.join(",")
+    );
+    let _ = write_response(
+        stream,
+        "200 OK",
+        "application/json; charset=utf-8",
+        body.as_bytes(),
+        "",
+    );
+}
+
+fn start_screenshot_server(port: u16, ctx: HttpContext) -> Result<(), String> {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, port))
         .map_err(|error| format!("bind GAIA_NATIVE_PORT {port}: {error}"))?;
     thread::Builder::new()
@@ -410,7 +590,7 @@ fn start_screenshot_server(
         .spawn(move || {
             for stream in listener.incoming() {
                 match stream {
-                    Ok(stream) => handle_http(stream, &latest, &scry),
+                    Ok(stream) => handle_http(stream, &ctx),
                     Err(error) => eprintln!("[scry] HTTP accept failed: {error}"),
                 }
             }
@@ -418,6 +598,9 @@ fn start_screenshot_server(
         .map_err(|error| format!("spawn scrying HTTP server: {error}"))?;
     eprintln!(
         "[scry] GET http://127.0.0.1:{port}/scry (alias: /screenshot; optional pos/yaw/pitch/fov/w/h)"
+    );
+    eprintln!(
+        "[embodiment] GET http://127.0.0.1:{port}/pose · POST http://127.0.0.1:{port}/walk {{keys,yaw?,pitch?,ticks?}}"
     );
     Ok(())
 }
@@ -849,6 +1032,14 @@ impl Renderer {
         }
     }
 
+    /// Point the windowed (surface) camera at the embodied player's eye. The
+    /// offscreen moving-eye path keeps its own per-request pose overrides.
+    fn set_view_pose(&mut self, eye: Vec3, yaw: f32, pitch: f32) {
+        self.scene.camera.eye = eye;
+        self.scene.camera.yaw = yaw;
+        self.scene.camera.pitch = pitch;
+    }
+
     fn render(&mut self, size: PhysicalSize<u32>) {
         let _ = self.device.poll(wgpu::PollType::Poll);
         self.resize(size);
@@ -1256,15 +1447,51 @@ fn main() {
 
             let latest = Arc::new(RwLock::new(None));
             let capture_sender = spawn_capture_worker(latest.clone());
+
+            // The Embodiment: the render scene's own triangles become the floor,
+            // and the world spawn pose becomes a walking body.
+            let ground = Arc::new(Ground::from_positions(
+                &render_scene
+                    .vertices
+                    .iter()
+                    .map(|vertex| vertex.position)
+                    .collect::<Vec<_>>(),
+            ));
+            let spawn_eye = render_scene.camera.eye;
+            let spawn_yaw = render_scene.camera.yaw;
+            let player_params = PlayerParams::from_env().map_err(std::io::Error::other)?;
+            let player = Arc::new(Mutex::new(Player::new(
+                player_params,
+                spawn_eye,
+                spawn_yaw,
+            )));
+            let tick_dt = (1.0 / config.fps) as f32;
+            eprintln!(
+                "[embodiment] spawn eye={spawn_eye:?} yaw={spawn_yaw} floor_triangles={} tick_dt={tick_dt}",
+                ground.triangle_count()
+            );
+            input::install_player_input(player.clone()).map_err(std::io::Error::other)?;
+
             let renderer = Renderer::new(&window, capture_sender, render_scene)
                 .map_err(std::io::Error::other)?;
             let (scry_tx, scry_rx) = mpsc::channel::<ScryRequest>();
-            start_screenshot_server(native_port, latest, scry_tx)
-                .map_err(std::io::Error::other)?;
+            start_screenshot_server(
+                native_port,
+                HttpContext {
+                    latest,
+                    scry: scry_tx,
+                    player: player.clone(),
+                    ground: ground.clone(),
+                    tick_dt,
+                },
+            )
+            .map_err(std::io::Error::other)?;
             let running = Arc::new(AtomicBool::new(true));
             app.manage(RuntimeState {
                 running: running.clone(),
             });
+            let render_player = player.clone();
+            let render_ground = ground.clone();
             thread::Builder::new()
                 .name("gaia-render".into())
                 .spawn(move || {
@@ -1275,6 +1502,14 @@ fn main() {
                         while let Ok(request) = scry_rx.try_recv() {
                             let frame = renderer.capture_pose(&request.params);
                             let _ = request.reply.send(frame);
+                        }
+                        // Step the body one fixed tick and aim the window camera
+                        // at its eye.
+                        if let Ok(mut body) = render_player.lock() {
+                            body.step(tick_dt, &render_ground);
+                            let pose = body.pose();
+                            drop(body);
+                            renderer.set_view_pose(pose.position, pose.yaw, pose.pitch);
                         }
                         if let Ok(size) = window.inner_size() {
                             renderer.render(size);
