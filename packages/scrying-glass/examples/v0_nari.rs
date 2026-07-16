@@ -129,8 +129,10 @@ fn main() {
     // nari stands on the seawall, feet y=1.4, head ~y=3.5 (mid ~2.45). Frame her
     // whole body against the pink horizon, camera near her own height so the
     // sky/sea horizon line sits behind her silhouette.
-    // Front: straight on from the sea side.
-    let cam_front = camera_at([0.0, 2.45, 25.0], [0.0, 2.45, 18.0], 46.0);
+    // Front: straight on from the sea side, camera above her head aiming down
+    // toward the horizon so her whole silhouette (obsidian head, dark seifuku)
+    // stands against the PINK dawn band, not the near-black upper sky.
+    let cam_front = camera_at([0.0, 3.3, 24.0], [0.0, 2.2, 18.0], 46.0);
     // Orbit: from her right shoulder, over the open sea (the left side is
     // crowded by the stall massing).
     let cam_orbit = camera_at([4.6, 2.7, 23.5], [0.0, 2.45, 18.0], 46.0);
