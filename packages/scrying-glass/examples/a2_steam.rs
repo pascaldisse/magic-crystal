@@ -136,30 +136,34 @@ fn dist2(a: [f32; 3], b: [f32; 3]) -> f32 {
 fn steam_medium(bound: &BoundLight, counter_top_y: f32) -> MediumGpu {
     // The plume is grounded ON the counter surface (derived), rising over a
     // documented height. Base radius and turbulence are steam dials.
-    let plume_height = 3.4_f64;
+    let plume_height = 4.2_f64;
     let column = SteamColumn {
         base: aether::vec3(-1.0, counter_top_y as f64, 25.6),
         height: plume_height,
-        radius: 0.55,
-        peak: 1.1,
-        turbulence: 0.6,
+        radius: 0.85,
+        peak: 1.0,
+        turbulence: 0.7,
         ..SteamColumn::default()
     };
     // Rasterize into the grid the GPU uploads (the SAME artifact the CPU marches).
     // The grid's y-MIN is the counter surface — nothing exists below it (clip).
     let vsize = 0.12;
-    let dims = [30usize, 32, 30];
-    let origin = aether::vec3(-2.8, counter_top_y as f64, 23.8);
+    let dims = [26usize, 36, 26];
+    let origin = aether::vec3(-2.5, counter_top_y as f64, 24.1);
     let grid = DensityGrid::rasterize(dims, vsize, origin, &column);
 
-    // Optics: THIN, near-pure-scattering steam, sharply forward (g=0.8). Thin
-    // so the plume stays TRANSLUCENT — the dusk sky shows through and the wisp
-    // does not occlude into a dark column; sharply forward so the real lantern
-    // BEHIND the plume forward-scatters its warm glow toward the camera as a
-    // soft pink veil. Honest steam dials against the real (modest) lantern —
-    // never a boosted light. This is what backlit steam over a night stall is:
-    // a luminous breath, not an opaque smokestack.
-    let optics = HomogeneousMedium::new(0.02, 2.6, 0.82);
+    // Optics: a THIN translucent veil, near-pure scattering (water droplets
+    // absorb almost nothing: albedo ≈ 0.999). Base-center optical depth ≈ 0.5
+    // (T ≈ 0.6) — the dusk sky shows THROUGH the wisp as a mauve dimming
+    // instead of a black smokestack, which is what real stall steam at 9 m
+    // from a modest lantern is: in-scatter (intensity/d² ≈ 0.03) can never
+    // outshine the sky it occludes, so readability comes from translucency,
+    // wispy structure, and a warm tint near the base. g = 0.4 is the EFFECTIVE
+    // phase: droplet HG g ≈ 0.8 isotropized by multiple scattering (similarity
+    // theory, g' < g), which a single-scatter march must fold in — and it
+    // hands the side-lit orbit view its share of the lantern. Never a boosted
+    // light; the veil is as bright as the physics allows.
+    let optics = HomogeneousMedium::new(0.001, 1.5, 0.4);
     let d = grid.dims();
     let o = grid.world_origin();
 
@@ -282,9 +286,14 @@ fn main() {
     // The plume centre (its base is grounded on the counter; the light selection
     // uses the mid-column point).
     let plume_center = [-1.0, counter_top_y + 1.7, 25.6];
-    // An emitter within this reach of the plume is "the stall's light"; beyond
-    // it, fall back to the sun/moon. The stall lantern sits ~9 m away.
-    let fallback_reach = 12.0;
+    // An emitter owns the steam only where it OUT-LIGHTS the sun: a point
+    // source of intensity I beats the sun's irradiance (sun_intensity) inside
+    // d < sqrt(I / sun_intensity). Derived for the stall lantern (I = 2.376,
+    // sun 1.1): sqrt(2.376 / 1.1) = 1.47 m. The lantern sits ~9 m from the
+    // plume, where its irradiance is I/d² ≈ 0.03 — 3% of the sun's — so the
+    // honest dominant illuminant for this open-air plume is the SUN (derived,
+    // not chosen); the lantern would own steam rising from its own sphere.
+    let fallback_reach = 1.47;
     let bound = select_medium_light(
         &sources,
         &scene.sun,
