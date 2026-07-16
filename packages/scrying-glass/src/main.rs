@@ -793,7 +793,7 @@ impl Renderer {
         let build_millis = build_start.elapsed().as_secs_f64() * 1e3;
         let integrator = Integrator::new(&device, format, &bvh);
         eprintln!(
-            "[lumen] BVH nodes={} triangles={} build={build_millis:.1}ms; traced integrator spp={} bounces={} rr_start={} — first_light is dead",
+            "[pleroma] BVH nodes={} triangles={} build={build_millis:.1}ms; traced integrator spp={} bounces={} rr_start={} — first_light is dead",
             integrator.node_count,
             integrator.tri_count,
             int_params.spp,

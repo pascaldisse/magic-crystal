@@ -1,8 +1,8 @@
-//! ORDEALS for Lumen-in-the-glass (Rite IV, L1). Trial by fire; green =
+//! ORDEALS for the Pleroma-in-the-glass (Rite IV, L1). Trial by fire; green =
 //! survived. Each drives the REAL GPU integrator (`integrator.wgsl`) headlessly
 //! and prints its verbatim numbers.
 //!
-//!   1. PARITY — GPU tracer vs the CPU Lumen reference on a committed analytic
+//!   1. PARITY — GPU tracer vs the CPU Pleroma reference on a committed analytic
 //!      scene (emissive quad over lambertian floor): mean abs diff within a
 //!      derived tolerance.
 //!   2. SHADOW — an occluded probe point receives NO sun (direct term 0).
@@ -39,7 +39,7 @@ fn quad(y: f32, half: f32, albedo: [f32; 3], emission: [f32; 3]) -> [LeafTriangl
 }
 
 /// Build a [`Camera`] from an eye + look target (yaw/pitch derived so it matches
-/// the CPU Lumen camera's ray generation exactly).
+/// the CPU Pleroma camera's ray generation exactly).
 fn look_camera(eye: [f32; 3], look_at: [f32; 3], fov_deg: f32) -> Camera {
     let f = GVec3::from_array(look_at) - GVec3::from_array(eye);
     let f = f.normalize();
@@ -64,10 +64,10 @@ fn no_sun() -> SunLight {
     }
 }
 
-// ── ORDEAL 1 · PARITY vs the CPU Lumen reference ────────────────────────
+// ── ORDEAL 1 · PARITY vs the CPU Pleroma reference ────────────────────────
 #[test]
-fn parity_gpu_tracer_matches_lumen() {
-    use lumen::{Camera as LCamera, Film, Material, Params, Scene, Shape, Vec3 as LVec3, vec3};
+fn parity_gpu_tracer_matches_pleroma() {
+    use pleroma::{Camera as LCamera, Film, Material, Params, Scene, Shape, Vec3 as LVec3, vec3};
 
     let Some((device, queue)) = headless_device() else {
         eprintln!("[PARITY] no GPU adapter on this host — ordeal could not run");
@@ -76,7 +76,7 @@ fn parity_gpu_tracer_matches_lumen() {
 
     // Committed analytic scene: an emissive quad (y=4, half 3, emission 3.0)
     // over a lambertian floor (y=0, albedo 0.5). Sun off + sky black ⇒ the GPU
-    // integrator reduces to EXACTLY Lumen's unidirectional emissive transport.
+    // integrator reduces to EXACTLY the Pleroma's unidirectional emissive transport.
     let floor_albedo = [0.5, 0.5, 0.5];
     let emit = [3.0, 3.0, 3.0];
     let floor_half = 40.0;
@@ -94,7 +94,7 @@ fn parity_gpu_tracer_matches_lumen() {
     let fov = 50.0f32;
     let camera = look_camera(eye, look, fov);
 
-    // Matched totals: GPU frames*spp == Lumen spp.
+    // Matched totals: GPU frames*spp == Pleroma spp.
     let frames = 64u32;
     let params = IntegratorParams {
         spp: 4,
@@ -120,7 +120,7 @@ fn parity_gpu_tracer_matches_lumen() {
     );
     let gpu = resolve(&accum);
 
-    // The same scene in the CPU Lumen (Plane floor + Box emitter).
+    // The same scene in the CPU Pleroma (Plane floor + Box emitter).
     let mut scene = Scene::new();
     scene.add(
         Shape::Plane {
@@ -170,11 +170,11 @@ fn parity_gpu_tracer_matches_lumen() {
     // Derived tolerance: both estimators converge to the SAME expected image
     // (matched primary rays + identical transport), so the residual is combined
     // Monte-Carlo standard error at 256 spp + f32-vs-f64 rounding + the finite
-    // GPU floor vs Lumen's infinite plane at the frame edges. Averaged over
+    // GPU floor vs the Pleroma's infinite plane at the frame edges. Averaged over
     // 64*64*3 samples this sits well under 0.05.
     let tol = 0.05;
     println!("[PARITY] {total_spp} spp  mean-abs-diff={mad:.5}  tol={tol}");
-    assert!(mad < tol, "GPU/Lumen parity: mad {mad} exceeds tol {tol}");
+    assert!(mad < tol, "GPU/Pleroma parity: mad {mad} exceeds tol {tol}");
 }
 
 // ── ORDEAL 2 · SHADOW — an occluded point receives no sun ────────────────

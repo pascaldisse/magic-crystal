@@ -1,9 +1,9 @@
-// Lumen Naturae in the glass (Rite IV, L1) — a real path-traced integrator over
+// the Pleroma in the glass (Rite IV, L1) — a real path-traced integrator over
 // the Great Chain's leaf triangles. One integrator, no raster shading, no fake
 // ambient floor (GRIMOIRE: unlit is truly unlit). Primary rays are traced; the
 // sun is a directional delta light reached by a shadow ray (next-event); the sky
 // gradient is the environment escaped rays gather; emissive surfaces glow and
-// illuminate others through cosine-weighted bounce rays (as in the CPU Lumen).
+// illuminate others through cosine-weighted bounce rays (as in the CPU Pleroma).
 //
 // ENTROPY law: no randomness — every sample is hash(seed, pixel, sample, dim).
 
@@ -62,7 +62,7 @@ fn urand(pixel: u32, sample: u32, dim: u32) -> f32 {
   return f32(h >> 8u) * (1.0 / 16777216.0);
 }
 
-// Duff et al. branchless ONB (matches the CPU Lumen's vec::onb).
+// Duff et al. branchless ONB (matches the CPU Pleroma's vec::onb).
 fn onb(n: vec3<f32>) -> mat2x3<f32> {
   let sign = select(-1.0, 1.0, n.z >= 0.0);
   let a = -1.0 / (sign + n.z);

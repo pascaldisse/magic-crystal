@@ -1,6 +1,6 @@
-//! # Lumen Naturae — the CPU reference path integrator (L0)
+//! # the Pleroma — the CPU reference path integrator (L0)
 //!
-//! Paracelsus' light of nature: the one true light, computed offline, tiny,
+//! The one light, the fullness from which every frame emanates: computed offline, tiny,
 //! and correct. This crate is the GROUND TRUTH other DreamForge renderers
 //! (the GPU integrator, ReSTIR, the SDF/voxel intersector) are tested
 //! against. It is unidirectional Monte-Carlo path transport with a
@@ -16,7 +16,7 @@
 //!
 //! ## Quick use
 //! ```
-//! use lumen::{Scene, Shape, Material, Camera, Film, Params, vec3, color};
+//! use pleroma::{Scene, Shape, Material, Camera, Film, Params, vec3, color};
 //! let mut scene = Scene::new();
 //! scene.add(
 //!     Shape::Sphere { center: vec3(0.0, 0.0, 0.0), radius: 1.0 },

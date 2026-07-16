@@ -8,7 +8,7 @@
 //!
 //! Every tolerance below is DERIVED, not chosen for convenience.
 
-use lumen::{estimate, radiance, vec3, Film, Material, Params, Ray, Scene, Shape, Vec3};
+use pleroma::{estimate, radiance, vec3, Film, Material, Params, Ray, Scene, Shape, Vec3};
 use std::f64::consts::PI;
 
 fn approx(a: f64, b: f64, tol: f64, what: &str) {
@@ -145,7 +145,7 @@ fn ordeal_direct_analytic() {
 // bounce,dim), so this holds by construction, not by luck.
 #[test]
 fn ordeal_determinism() {
-    use lumen::Camera;
+    use pleroma::Camera;
     let mut scene = Scene::new();
     scene.add(
         Shape::Sphere {

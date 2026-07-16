@@ -1,4 +1,4 @@
-//! The traced integrator (Rite IV, L1) — the GPU half of Lumen Naturae in the
+//! The traced integrator (Rite IV, L1) — the GPU half of the Pleroma in the
 //! glass. Wraps the compute path tracer (`integrator.wgsl`) and its present blit
 //! into one reusable spirit the window (`main.rs`) and the ordeals both drive.
 //!
@@ -386,7 +386,7 @@ pub fn headless_device() -> Option<(wgpu::Device, wgpu::Queue)> {
 
 /// Trace `frames` accumulation frames of a scene headlessly and read the
 /// accumulation buffer back (per-pixel sum in xyz, sample count in w). The
-/// ordeals' workhorse: parity vs Lumen, determinism, shadow correctness.
+/// ordeals' workhorse: parity vs the Pleroma, determinism, shadow correctness.
 #[allow(clippy::too_many_arguments)]
 pub fn trace_headless(
     device: &wgpu::Device,

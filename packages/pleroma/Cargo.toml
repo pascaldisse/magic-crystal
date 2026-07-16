@@ -1,8 +1,8 @@
 [package]
-name = "lumen"
+name = "pleroma"
 version = "0.1.0"
 edition = "2021"
-description = "Lumen Naturae — the CPU reference path integrator (L0 ground truth)"
+description = "the Pleroma — the one light: a reference path integrator, the ground truth every render is tested against"
 license = "MIT"
 
 [dependencies]

@@ -1964,13 +1964,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
-name = "lumen"
-version = "0.1.0"
-dependencies = [
- "png 0.17.16",
-]
-
-[[package]]
 name = "markup5ever"
 version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2561,6 +2554,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
+name = "pleroma"
+version = "0.1.0"
+dependencies = [
+ "png 0.17.16",
+]
+
+[[package]]
 name = "plist"
 version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3018,8 +3018,8 @@ dependencies = [
  "bytemuck",
  "crystal",
  "glam",
- "lumen",
  "objc2-app-kit",
+ "pleroma",
  "png 0.17.16",
  "pollster",
  "raw-window-handle",

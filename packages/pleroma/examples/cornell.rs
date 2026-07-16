@@ -1,11 +1,11 @@
-//! Relic forge — render a 128×128 cornell-ish box with Lumen Naturae and
+//! Relic forge — render a 128×128 cornell-ish box with the Pleroma and
 //! write it to relics/l0-cornell.png. Low-res + noisy is FINE and honest;
 //! noise is granted, lies are not. Every value here is SCENE DATA (authoring
 //! parameters), not integrator hardcoding.
 //!
-//! Run:  cargo run -p lumen --release --example cornell
+//! Run:  cargo run -p pleroma --release --example cornell
 
-use lumen::{color, vec3, write_png, Camera, Film, Material, Params, Scene, Shape, Vec3};
+use pleroma::{color, vec3, write_png, Camera, Film, Material, Params, Scene, Shape, Vec3};
 use std::path::Path;
 
 fn main() {

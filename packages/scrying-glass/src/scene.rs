@@ -151,7 +151,7 @@ fn sun_vec3(value: Option<&serde_json::Value>, key: &str) -> Option<Vec3> {
 
 /// One world-space leaf triangle carrying its material — the EXACT geometry the
 /// traced integrator intersects (view-independent, error 0). `albedo` is the
-/// lambertian reflectance (ZERO for a pure emitter, matching Lumen); `emission`
+/// lambertian reflectance (ZERO for a pure emitter, matching the Pleroma); `emission`
 /// is the radiance the surface glows with (material colour × emission intensity,
 /// ZERO for a non-emitter).
 #[derive(Clone, Copy, Debug)]
@@ -401,7 +401,7 @@ impl RenderScene {
     /// geometry the traced integrator's BVH is built over (view-independent,
     /// error 0). Extends `leaf_positions` with per-triangle albedo/emission from
     /// the material batch: a pure emitter gets albedo 0 + emission colour×scale
-    /// (matching Lumen), a non-emitter gets albedo colour + emission 0.
+    /// (matching the Pleroma), a non-emitter gets albedo colour + emission 0.
     pub fn leaf_triangles(&self) -> Vec<LeafTriangle> {
         let mut out = Vec::new();
         for chain in &self.chains {
