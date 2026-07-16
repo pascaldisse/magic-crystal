@@ -882,13 +882,19 @@ impl Renderer {
     /// unchanged; the instant one changes (a bobbing lantern, every tick) the
     /// BVH re-splices and accumulation resets — so a continuously moving world
     /// renders live at `spp` samples/frame (no ghosting), and pauses converge.
-    fn advance_world(&mut self) {
-        if self.scene.dynamics.entities().is_empty() {
+    fn advance_world(&mut self, body_speed: f32) {
+        let has_bodies = !self.scene.bodies.is_empty();
+        if self.scene.dynamics.entities().is_empty() && !has_bodies {
             return; // a still realm never pays the living-layer cost
         }
+        // RITE V·V1 — drive the embodied bodies from the walker's velocity: the
+        // commanded speed feeds each body's SAMA state machine, its pose re-skins
+        // the body per tick. A walking body changes the dynamic partition every
+        // tick even when the living models are still, so it forces a re-splice.
+        let bodies_animating = self.scene.command_bodies(body_speed);
         self.scene.tick();
         let models = self.scene.dynamics.model_matrices();
-        if models == self.last_models {
+        if models == self.last_models && !bodies_animating {
             return; // nothing moved — keep accumulating
         }
         let dyn_bvh = Bvh::build(&self.scene.dynamic_leaf_triangles(), &self.bvh_params);
@@ -1449,14 +1455,18 @@ fn main() {
                         }
                         // Step the body one fixed tick and aim the window camera
                         // at its eye.
+                        let mut body_speed = 0.0f32;
                         if let Ok(mut body) = render_player.lock() {
                             body.step(tick_dt, &render_ground);
                             let pose = body.pose();
+                            // The walker's horizontal velocity drives sama.
+                            body_speed = body.velocity.length();
                             drop(body);
                             renderer.set_view_pose(pose.position, pose.yaw, pose.pitch);
                         }
-                        // Tick the world clock and re-splice the living layer.
-                        renderer.advance_world();
+                        // Tick the world clock, drive the embodied bodies from
+                        // the walker velocity, and re-splice the living layer.
+                        renderer.advance_world(body_speed);
                         if let Ok(size) = window.inner_size() {
                             renderer.render(size);
                         }

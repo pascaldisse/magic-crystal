@@ -21,6 +21,7 @@ serde_json = "1"
 transmutation = { path = "../transmute" }
 vessel = { path = "../vessel" }
 homunculus = { path = "../homunculus" }
+sama = { path = "../sama" }
 tauri = { version = "2.11.5", features = ["macos-private-api", "unstable"] }
 wgpu = "30.0.0"
 
