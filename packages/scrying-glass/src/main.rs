@@ -806,7 +806,7 @@ impl Renderer {
         let dyn_bvh = Bvh::build(&dynamic_tris, bvh_params);
         let bvh = Bvh::merge(&static_bvh, &dyn_bvh);
         let build_millis = build_start.elapsed().as_secs_f64() * 1e3;
-        let integrator = Integrator::new(&device, format, &bvh);
+        let integrator = Integrator::new(&device, format, &bvh, None);
         let last_models = scene.dynamics.model_matrices();
         eprintln!(
             "[pleroma] BVH nodes={} triangles={} (static {} + dynamic {}) build={build_millis:.1}ms; {} dynamic entit(ies) — living layer",
@@ -960,6 +960,7 @@ impl Renderer {
             self.integrator.tri_count,
             self.samples_before,
             &self.int_params,
+            None,
         );
 
         let surface_frame = match self.surface.get_current_texture() {
@@ -1105,6 +1106,7 @@ impl Renderer {
                 self.integrator.tri_count,
                 samples_before,
                 &self.int_params,
+                None,
             );
             let mut encoder = self
                 .device

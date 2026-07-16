@@ -135,6 +135,7 @@ fn parity_gpu_tracer_matches_pleroma() {
         h,
         frames,
         &params,
+        None,
     );
     let gpu = resolve(&accum);
 
@@ -264,6 +265,7 @@ fn specular_parity_gpu_mirror_matches_pleroma() {
             h,
             frames,
             &params,
+            None,
         );
         resolve(&accum)
     };
@@ -377,7 +379,7 @@ fn shadowed_point_receives_no_sun() {
         // frame) — the jittered ray span stays inside the shadow patch.
         let camera = look_camera([x, 20.0, 0.0], [x, 0.0, 0.0], 1.0);
         let accum = trace_headless(
-            &device, &queue, &bvh, &camera, &sun, [0.0; 4], [0.0; 4], 1, 1, 4, &params,
+            &device, &queue, &bvh, &camera, &sun, [0.0; 4], [0.0; 4], 1, 1, 4, &params, None,
         );
         resolve(&accum)[0].x
     };
@@ -421,7 +423,7 @@ fn determinism_same_seed_frames_byte_identical() {
     };
     let run = |p: &IntegratorParams| {
         trace_headless(
-            &device, &queue, &bvh, &camera, &sun, [0.0; 4], [0.0; 4], w, h, 3, p,
+            &device, &queue, &bvh, &camera, &sun, [0.0; 4], [0.0; 4], w, h, 3, p, None,
         )
     };
     let a = run(&params);
