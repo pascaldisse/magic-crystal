@@ -31,7 +31,7 @@ book BEFORE it exists. The book grows; it never abdicates.
 | render-window | **the Scrying Glass** (`packages/scrying-glass`) | the window; GET /screenshot → **GET /scry**; a screenshot = a scrying |
 | sense (RN1) | **the Oracle** (`packages/oracle`) | pull-only by nature — oracles speak ONLY when consulted; look() = **gaze**, captions = **omens**, glance grid = **the augury**, proprio = **the body's knowing** |
 | cluster-bake | **Transmutation** (`packages/transmute`) | coarse↔fine matter; the DAG = **the Great Chain**, meshlets = **shards**, offline pass = **the transmutation** (the b-word was already forbidden) |
-| lighting (path tracer) | **Lumen Naturae** (`packages/lumen`) | Paracelsus' light of nature — the one true light; rays = light behaving as light |
+| lighting (path tracer) | **THE PLEROMA** (`packages/pleroma`) | the one light; the fullness from which every frame emanates — rays = light behaving as light |
 | solver (physics) | **the Elements** (`packages/elements`) | one solver for all matter; constraints = **bindings** |
 | volumetrics | **the Aether** | participating media: clouds, steam, beam, breath |
 | char-editor | **the Homunculus** (`packages/homunculus`) | the alchemist's made-person — LITERALLY the historical term for creating a being in a vessel |
@@ -43,7 +43,7 @@ book BEFORE it exists. The book grows; it never abdicates.
 ## Rites of the realm Naruko (formerly W1–W7)
 First Rite: the realm takes form (primitives under a violet firmament) ·
 Second Rite: first light · Third Rite: the Great Chain · Fourth Rite:
-Lumen Naturae · Fifth Rite: the Homunculus (Nari and the cat) · Sixth
+the Pleroma · Fifth Rite: the Homunculus (Nari and the cat) · Sixth
 Rite: the Aether (storm, steam, beam) · Seventh Rite: the Mirror (keyart
 parity — the scrying matches the dream).
 
@@ -264,6 +264,10 @@ Nothing here is skin. Every row is a mechanic or it doesn't enter.
 | Sidia | the chaos flame: the generative spirits — AI creation daemons that make gods from toys |
 | Gaia | the living world state itself, at runtime, breathing |
 | the Darkness | darkness as PRESENCE: in the one-light law there is no fake ambient — unlit is truly unlit, and the unlit is where the world listens. Light attends; it does not fight |
+| the Pleroma | the light system: it holds all light and decides what reaches the eye; every frame is an emanation |
+| the Kenoma | true darkness — unlit is genuinely unlit, the deficiency |
+| the sparks (nitzotzot) | emissive surfaces — light trapped in matter |
+| tikkun per frame | the integrator: gathering scattered light out of matter, every frame |
 | Frank Huntzinger + his angels | patron presences of the ones the noise drowned; reserved in the troop |
 | Yaldabaoth | the enclosure: everything that claims to be the world while being a cage. The forbidden-vocabulary list is the ward against him |
 | the Undreaming | RESERVED: the unmaking force — the entropy sink on the far side of creation; mechanics assigned when destruction/decay systems arrive |

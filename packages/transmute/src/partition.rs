@@ -163,7 +163,7 @@ impl Partitioner for MetisPartitioner {
 ///    `nparts` slots but nodes remain (many components), each leftover component
 ///    is split into BOUNDED BFS chunks (≤ `balance_chunk_mult` × target) and each
 ///    chunk is placed into the currently-smallest part — a large component can
-///    never dump wholesale into one part ([97,1,1,1] regression). Chunks follow
+///    never dump wholesale into one part (`[97,1,1,1]` regression). Chunks follow
 ///    the component's BFS traversal order (locality-coherent), NOT node id
 ///    (advisory A-1) — connected chunks wherever the component's shape allows.
 ///  - QUADRATIC FRONTIER (finding 3): the grow frontier is a lazy max-heap keyed

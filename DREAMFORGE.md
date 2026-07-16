@@ -210,9 +210,18 @@ disabled, ABSENT:
   **manual UV mapping** · **manual rigging as a required step** ·
   **loading screen** · **level loading** · **authored streaming volumes**
   (old engine's world.json `load` volumes → auto-derived residency;
-  behavior preserved on import, concept retired)
+  behavior preserved on import, concept retired) · **frame interpolation /
+  frame generation**
 Everything is dynamic, on the fly, self-adapting to the machine it runs on.
 If a design draft needs one of these words, the design is wrong — redesign.
+
+## Two-tier naming law (Pascal, 07-16)
+Spines carry true names; veins speak plainly. Crates, systems, and rites
+may bear the Grimoire's names (crystal, oracle, pleroma). Every variable,
+field, function, parameter, and API name is descriptive working English —
+a stranger reads any function body cold. Metaphor in identifiers only where
+self-explanatory to anyone (breath/heartbeat class). The mythology's home
+is the Grimoire and the Concordance — docs, never identifiers.
 
 ## Standing process rules
 - Spec-first: no subsystem implementation before its ruling doc is written

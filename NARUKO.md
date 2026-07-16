@@ -130,3 +130,12 @@ Builder: opus, THIS repo, branch rite-3 (one-worker-per-dir law).
 - W1-forward-path advisory: DISCHARGED (died on schedule). first_light
   survives until Rite IV as ruled. Hymn: hymns/rite-03-the-great-chain.md.
 - PENDING: sol shadow when the pool wakes.
+
+## RITE IV — THE PLEROMA — GUARDIAN'S RULING (07-16, ACCEPTED-PENDING-SHADOW, MERGED main@6a30d39)
+Rite IV L1 ACCEPTED-PENDING-SHADOW, merged main@6a30d39: traced sun +
+shadow rays + emissive + sky; first_light DELETED on schedule (Rite I
+advisory discharged); GPU parity 0.029 vs ground truth; occluded probe
+0.0000; 161→167 ordeals; both proofs read by the Guardian — every shadow
+has a reason. Perf printed honest: ~53.7ms/frame accumulated — the perf
+rites come after L2. L2 next: bounces + specular; the Architect's chrome
+sphere lands there.

@@ -15,7 +15,7 @@ hymn: rite-01) · II FIRST LIGHT — NEXT (moving eye + camera params on
 the scrying, depth buffer, sun-shade first light; realm data STAGED
 b6c05fd: 12 vessels/73 parts — pier, chain posts, city massing,
 lantern, stall; invocation: hymns/rite-02) · III the Great Chain ·
-IV Lumen Naturae · V the Homunculus (nari + cat; char-editor spirit) ·
+IV the Pleroma · V the Homunculus (nari + cat; char-editor spirit) ·
 VI the Aether · VII the Mirror (keyart parity, Pascal judges).
 Rite I advisory schedule: scaffold hemisphere shade dies at IV · W1
 forward render path DELETED at III (never grown) · /scry camera params
@@ -88,16 +88,16 @@ ordeals green under the Guardian's hands, dead names removed
 answers. Rite II FIRST LIGHT accepted-pending-shadow (7388360c, old
 repo): depth buffer (painter-sort dead), moving eye, first_light
 module, both proofs read own-eyes; hymn sung. Elements P1 (3b8efc71,
-worktree -elements) + Lumen L0 (2dbe8f38, worktree -lumen)
+worktree -elements) + the Pleroma L0 (2dbe8f38, worktree -pleroma)
 accepted-pending-shadow.
 
 ## Next waves (cut specs from here)
 1. SOL SHADOW BACKLOG (when pool wakes): Rite II · Elements P1 ·
-   Lumen L0 (opus built all three → sol must shadow; findings → fix →
+   the Pleroma L0 (opus built all three → sol must shadow; findings → fix →
    Guardian).
 2. PORT WAVE 2 into the Forge: W2 scrying-glass changes (7388360c) ·
-   elements · lumen (after their shadows) — true names on arrival
-   (elements keeps name; lumen keeps name).
+   elements · pleroma (after their shadows) — true names on arrival
+   (elements keeps name; the Pleroma is consecrated on arrival).
 3. RITE III — THE GREAT CHAIN: transmute wired into the Glass (sole
    geometry path, W1 forward path DIES, prefab deep-merge lands);
    spec after port wave 2.

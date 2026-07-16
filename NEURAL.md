@@ -1,5 +1,10 @@
 # NEURAL — DreamForge neural performance ledger (DRAFT, 2026-07-16)
 
+> **RULED (Architect, 07-16):** NEURAL RENDERING = UPSCALING, DENOISING,
+> PHYSICS ASSISTANCE ONLY. Frame interpolation/generation is BANNED
+> forever, in every form. 60 FPS is the MINIMUM — the floor, never the
+> target.
+
 Target it serves (Pascal, restated 07-16): 60 FPS · M1 · 16 GB unified ·
 the ONE traced lighting system always on — "no such thing as ray tracing
 on or off"; neural = INTERNAL detail levels (denoiser/upscaler/cache

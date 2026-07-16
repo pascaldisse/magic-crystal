@@ -60,7 +60,7 @@ packages/             the SPIRITS — everything else, each summoned,
                         clusters without end, detail without lies)
   sense                 the Oracle (pull-only sight for spirits: it
                         speaks ONLY when consulted)
-  …                     Lumen Naturae, the Elements, the Aether, the
+  …                     the Pleroma, the Elements, the Aether, the
                         Homunculus, the Seed — each arrives as its own
                         spirit, in its own rite
 worlds/               the REALMS — pure vessel-documents; Naruko first

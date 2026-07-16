@@ -7,7 +7,7 @@
 //! BUY: meshopt (shard build + simplifier) + METIS (grouping). BUILD: the Great
 //! Chain (grouping, boundary locking, staged commit, chunked paging).
 //!
-//! Entry point: [`transmute`]. Serialize with [`serialize`] / [`deserialize`]
+//! Entry point: [`transmute`]. Serialize with [`serialize()`] / [`deserialize`]
 //! (chunked format; [`read_root`] / [`read_page`] for residency-scale reads).
 
 pub mod dag;
