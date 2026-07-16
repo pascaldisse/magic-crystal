@@ -50,7 +50,37 @@ impl Preset {
     pub fn by_name(name: &str) -> Option<Preset> {
         match name {
             "nari" => Some(Self::nari()),
+            "pink_cat" => Some(Self::pink_cat()),
             _ => None,
+        }
+    }
+
+    /// pink_cat — the pink cat by the ramen stall (Rite V · V2). A QUADRUPED
+    /// morphology: the tailed cat skeleton ([`Skeleton::quadruped`]) skinned and
+    /// painted with the [`Palette::pink_cat`] preset over the quadruped region
+    /// partition (head · body · legs · tail). Same generic weld as nari, only
+    /// the morphology differs — the engine special-cases nothing.
+    ///
+    /// DEFERRED — features the low-poly capsule quadruped honestly cannot carry
+    /// (represented as nothing, listed, never faked):
+    /// - EARS — no ear bones on the preset cat skeleton, so the head is one
+    ///   smooth capsule; the ears fold into `head` (region note in
+    ///   [`BodyRegions::quadruped`]). No pointed silhouette.
+    /// - WHISKERS / facial features — no face geometry on a capsule skull.
+    /// - PAW toes / claws — the `.foot` is a single small capsule tip.
+    /// - fur texture — flat per-region albedo, no strand/shading detail.
+    /// The `tail` region IS carried (the skeleton has an 8-segment tail chain),
+    /// so the tail silhouette is honest geometry.
+    pub fn pink_cat() -> Preset {
+        let skeleton = Skeleton::quadruped();
+        let regions = BodyRegions::quadruped(&skeleton);
+        let palette = Palette::pink_cat();
+        Preset {
+            name: "pink_cat",
+            skeleton,
+            vessel: VesselParams::default(),
+            regions,
+            palette,
         }
     }
 
