@@ -103,6 +103,7 @@ impl ScryingGlassConfig {
                 ],
                 camera_yaw: number("GAIA_NATIVE_CAMERA_YAW", 0.0)? as f32,
                 camera_pitch: number("GAIA_NATIVE_CAMERA_PITCH", 0.0)? as f32,
+                cluster_error_threshold: number("GAIA_NATIVE_CLUSTER_ERROR", 1.0)? as f32,
                 first_light: FirstLightDefaults {
                     sun_color: std::env::var("GAIA_NATIVE_SUN_COLOR")
                         .unwrap_or_else(|_| "#ffe2b0".into()),
@@ -520,6 +521,33 @@ impl OffscreenTarget {
     }
 }
 
+/// Upload selected Great Chain vertices into a fresh VERTEX buffer. An empty cut
+/// still yields a one-vertex placeholder so `slice(..)` never binds nothing.
+fn build_vertex_buffer(
+    device: &wgpu::Device,
+    vertices: &[Vertex],
+    label: &'static str,
+) -> Result<(wgpu::Buffer, u32), String> {
+    let count =
+        u32::try_from(vertices.len()).map_err(|_| "chain cut exceeds u32 vertices".to_string())?;
+    let bytes = bytemuck::cast_slice(vertices);
+    let buffer = if bytes.is_empty() {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: std::mem::size_of::<Vertex>() as u64,
+            usage: wgpu::BufferUsages::VERTEX,
+            mapped_at_creation: false,
+        })
+    } else {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(label),
+            contents: bytes,
+            usage: wgpu::BufferUsages::VERTEX,
+        })
+    };
+    Ok((buffer, count))
+}
+
 struct Renderer {
     // Safety: created from the native Tauri Window's raw handles; the app owns that Window
     // until shutdown, and the render worker stops before process exit.
@@ -531,8 +559,10 @@ struct Renderer {
     mesh_pipeline: wgpu::RenderPipeline,
     frame_buffer: wgpu::Buffer,
     frame_bind_group: wgpu::BindGroup,
-    vertex_buffer: wgpu::Buffer,
-    vertex_count: u32,
+    /// Great Chain cut for the fixed surface camera, re-selected only on resize
+    /// (the surface pose never changes; the moving eye selects per request).
+    surface_vertex_buffer: wgpu::Buffer,
+    surface_vertex_count: u32,
     scene: RenderScene,
     offscreen: OffscreenTarget,
     surface_depth: wgpu::TextureView,
@@ -706,28 +736,21 @@ impl Renderer {
             multiview_mask: None,
             cache: None,
         });
-        let vertex_count = u32::try_from(scene.vertices.len())
-            .map_err(|_| "world has too many W1 primitive vertices".to_string())?;
-        let vertex_bytes = bytemuck::cast_slice(&scene.vertices);
-        let vertex_buffer = if vertex_bytes.is_empty() {
-            device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("empty world vertices"),
-                size: std::mem::size_of::<Vertex>() as u64,
-                usage: wgpu::BufferUsages::VERTEX,
-                mapped_at_creation: false,
-            })
-        } else {
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("world primitive vertices"),
-                contents: vertex_bytes,
-                usage: wgpu::BufferUsages::VERTEX,
-            })
-        };
+        // First cut: draw the surface camera through the Great Chain (the SOLE
+        // geometry path). First-frame budget printed, never gated (Rite III
+        // ordeal item 5).
+        let first_frame = Instant::now();
+        let surface_vertices = scene.select_vertices(&scene.camera, config.height);
+        let (surface_vertex_buffer, surface_vertex_count) =
+            build_vertex_buffer(&device, &surface_vertices, "surface chain cut")?;
+        let first_frame_millis = first_frame.elapsed().as_secs_f64() * 1e3;
         let offscreen = OffscreenTarget::new(&device, format, config.width, config.height);
         let surface_depth = create_depth_view(&device, config.width, config.height);
         eprintln!(
-            "[wgpu] world vertices={vertex_count}; raw-window-handle surface + offscreen framebuffer + depth: {format:?} {}x{}",
-            config.width, config.height
+            "[wgpu] chains={} first-cut vertices={surface_vertex_count} select={first_frame_millis:.1}ms; raw-window-handle surface + offscreen framebuffer + depth: {format:?} {}x{}",
+            scene.chains.len(),
+            config.width,
+            config.height
         );
         Ok(Self {
             surface,
@@ -738,14 +761,26 @@ impl Renderer {
             mesh_pipeline,
             frame_buffer,
             frame_bind_group,
-            vertex_buffer,
-            vertex_count,
+            surface_vertex_buffer,
+            surface_vertex_count,
             scene,
             offscreen,
             surface_depth,
             pixel_order,
             capture_sender,
         })
+    }
+
+    /// Re-select the surface camera's cut into `surface_vertex_buffer` — called
+    /// on resize (the projection scale depends on viewport height).
+    fn reselect_surface(&mut self) -> Result<(), String> {
+        let vertices = self
+            .scene
+            .select_vertices(&self.scene.camera, self.config.height);
+        let (buffer, count) = build_vertex_buffer(&self.device, &vertices, "surface chain cut")?;
+        self.surface_vertex_buffer = buffer;
+        self.surface_vertex_count = count;
+        Ok(())
     }
 
     fn resize(&mut self, size: PhysicalSize<u32>) {
@@ -764,14 +799,21 @@ impl Renderer {
             );
             self.surface_depth =
                 create_depth_view(&self.device, self.config.width, self.config.height);
+            // Projection scale tracks viewport height → re-cut the surface camera.
+            if let Err(error) = self.reselect_surface() {
+                eprintln!("[chain] surface re-selection failed on resize: {error}");
+            }
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn encode_world_pass(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
         depth_view: &wgpu::TextureView,
+        vertex_buffer: &wgpu::Buffer,
+        vertex_count: u32,
         label: &'static str,
     ) {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -800,10 +842,10 @@ impl Renderer {
         pass.set_bind_group(0, &self.frame_bind_group, &[]);
         pass.set_pipeline(&self.sky_pipeline);
         pass.draw(0..3, 0..1);
-        if self.vertex_count > 0 {
+        if vertex_count > 0 {
             pass.set_pipeline(&self.mesh_pipeline);
-            pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            pass.draw(0..self.vertex_count, 0..1);
+            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            pass.draw(0..vertex_count, 0..1);
         }
     }
 
@@ -835,6 +877,8 @@ impl Renderer {
             &mut encoder,
             &self.offscreen.view,
             &self.offscreen.depth_view,
+            &self.surface_vertex_buffer,
+            self.surface_vertex_count,
             "offscreen world pass",
         );
         if let Some(frame) = &surface_frame {
@@ -845,6 +889,8 @@ impl Renderer {
                 &mut encoder,
                 &view,
                 &self.surface_depth,
+                &self.surface_vertex_buffer,
+                self.surface_vertex_count,
                 "surface world pass",
             );
         }
@@ -936,6 +982,11 @@ impl Renderer {
         self.queue
             .write_buffer(&self.frame_buffer, 0, bytemuck::bytes_of(&frame_uniform));
 
+        // The moving eye picks its OWN Great Chain cut (view-dependent LOD).
+        let vertices = self.scene.select_vertices(&camera, height);
+        let (vertex_buffer, vertex_count) =
+            build_vertex_buffer(&self.device, &vertices, "scry chain cut")?;
+
         let target = OffscreenTarget::new(&self.device, self.config.format, width, height);
         let mut encoder = self
             .device
@@ -946,6 +997,8 @@ impl Renderer {
             &mut encoder,
             &target.view,
             &target.depth_view,
+            &vertex_buffer,
+            vertex_count,
             "scry world pass",
         );
         let slot = &target.slots[0];
@@ -1146,14 +1199,24 @@ fn main() {
     );
     let loaded = load_world_dir(&config.world_path, &mut core.world)
         .unwrap_or_else(|error| panic!("load GAIA_WORLD {}: {error}", config.world_path.display()));
+    let chain_start = Instant::now();
     let render_scene = RenderScene::from_ecs(&core.world, &config.scene)
         .unwrap_or_else(|error| panic!("materialize GAIA world render: {error}"));
+    let chain_millis = chain_start.elapsed().as_secs_f64() * 1e3;
+    let cluster_count: usize = render_scene
+        .chains
+        .iter()
+        .map(|chain| chain.dag.clusters.len())
+        .sum();
+    // Load budget: time to transmute the whole realm into the Great Chain
+    // (printed, never gated — Rite III ordeal item 5).
     eprintln!(
-        "[world] {} scene(s)={:?} entities={} render_vertices={}",
+        "[world] {} scene(s)={:?} entities={} chains={} clusters={} transmute={chain_millis:.1}ms",
         loaded.path.display(),
         loaded.scenes,
         loaded.entity_count,
-        render_scene.vertices.len()
+        render_scene.chains.len(),
+        cluster_count,
     );
 
     tauri::Builder::default()
