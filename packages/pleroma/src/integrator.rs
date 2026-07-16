@@ -19,10 +19,15 @@
 
 use crate::geometry::Ray;
 use crate::sampler::{
-    cosine_hemisphere, uniform, DIMS_PER_BOUNCE, DIM_HEMI_U1, DIM_HEMI_U2, DIM_RR,
+    cosine_hemisphere, ggx_half, reflect, smith_g2, uniform, DIMS_PER_BOUNCE, DIM_HEMI_U1,
+    DIM_HEMI_U2, DIM_LOBE, DIM_RR,
 };
 use crate::scene::Scene;
 use crate::vec::Vec3;
+
+/// Roughness at or below this is treated as a PERFECT MIRROR (delta specular
+/// lobe) — below it the GGX lobe would be a numerically degenerate spike.
+pub const MIRROR_ROUGHNESS: f64 = 1e-3;
 
 /// Integrator parameters. All dials, no hardcoding — these are the
 /// documented DEFAULTS (used by `Params::default`).
@@ -71,13 +76,50 @@ pub fn radiance(scene: &Scene, primary: Ray, pixel: u64, sample: u64, p: &Params
             break;
         }
 
-        // Lambertian bounce. Pure emitters have albedo 0 → path dies here.
+        // BSDF bounce. Pure emitters have albedo 0 → path dies here.
         let base = bounce as u64 * DIMS_PER_BOUNCE;
         let u1 = uniform(p.seed, pixel, sample, bounce as u64, base + DIM_HEMI_U1);
         let u2 = uniform(p.seed, pixel, sample, bounce as u64, base + DIM_HEMI_U2);
-        let (dir, _pdf) = cosine_hemisphere(h.normal, u1, u2);
-        // f_r·cosθ/pdf = albedo (cosine sampling); the multiply IS the albedo.
-        throughput = throughput.hadamard(mat.albedo);
+        let u_lobe = uniform(p.seed, pixel, sample, bounce as u64, base + DIM_LOBE);
+
+        // Stochastic lobe selection. Selecting the specular lobe with
+        // probability `metallic` and the diffuse lobe with probability
+        // (1-metallic) makes the metallic weight cancel the selection
+        // probability exactly, so each branch's throughput multiply is the
+        // PURE lobe weight (no variance-blowing 1/p factor).
+        let dir;
+        if u_lobe < mat.metallic {
+            // ── Specular (conductor) lobe ──────────────────────────────────
+            let wo = -ray.dir; // toward the viewer/incoming path
+            if mat.roughness <= MIRROR_ROUGHNESS {
+                // Perfect mirror (delta BRDF): reflect about the normal,
+                // throughput ×= albedo (exact, energy-conserving).
+                dir = reflect(ray.dir, h.normal);
+                throughput = throughput.hadamard(mat.albedo);
+            } else {
+                let alpha = mat.roughness * mat.roughness; // Disney remap
+                let m = ggx_half(h.normal, alpha, u1, u2);
+                let wi = reflect(ray.dir, m);
+                let cos_i = wi.dot(h.normal);
+                if cos_i <= 0.0 {
+                    break; // sampled below the surface → path dies
+                }
+                let cos_o = wo.dot(h.normal).abs().max(1e-6);
+                let cos_h = m.dot(h.normal).abs().max(1e-6);
+                // BSDF-sampling weight = F · G2 · |ωo·m| / (|ωo·n|·|m·n|),
+                // F = albedo (metal tint). Energy-conserving (Walter 2007).
+                let g = smith_g2(cos_o, cos_i, alpha);
+                let w = (g * wo.dot(m).abs()) / (cos_o * cos_h);
+                throughput = throughput.hadamard(mat.albedo) * w;
+                dir = wi;
+            }
+        } else {
+            // ── Diffuse (lambertian) lobe ──────────────────────────────────
+            let (d, _pdf) = cosine_hemisphere(h.normal, u1, u2);
+            // f_r·cosθ/pdf = albedo (cosine sampling); the multiply IS albedo.
+            throughput = throughput.hadamard(mat.albedo);
+            dir = d;
+        }
 
         if throughput.max_component() <= 0.0 {
             break;

@@ -10,11 +10,14 @@
 //!
 //! `dim` allocation within one path (documented so re-seeding never collides):
 //!   dim = bounce * DIMS_PER_BOUNCE + slot
-//!   slot 0,1 → cosine-hemisphere (u1,u2)   slot 2 → russian roulette
-pub const DIMS_PER_BOUNCE: u64 = 3;
+//!   slot 0,1 → BSDF direction sample (u1,u2 — cosine hemisphere OR GGX half)
+//!   slot 2   → russian roulette
+//!   slot 3   → lobe selection (diffuse vs specular)
+pub const DIMS_PER_BOUNCE: u64 = 4;
 pub const DIM_HEMI_U1: u64 = 0;
 pub const DIM_HEMI_U2: u64 = 1;
 pub const DIM_RR: u64 = 2;
+pub const DIM_LOBE: u64 = 3;
 
 use crate::vec::{vec3, Vec3};
 use std::f64::consts::PI;
@@ -61,6 +64,43 @@ pub fn cosine_hemisphere(normal: Vec3, u1: f64, u2: f64) -> (Vec3, f64) {
     let dir = (t * x + bt * y + normal * z).normalize();
     let pdf = z / PI;
     (dir, pdf)
+}
+
+/// Reflect incident direction `d` about unit normal `n` (both any handedness).
+/// `reflect(d, n) = d - 2(d·n)n`.
+pub fn reflect(d: Vec3, n: Vec3) -> Vec3 {
+    d - n * (2.0 * d.dot(n))
+}
+
+/// Sample a GGX (Trowbridge-Reitz) microfacet HALF-VECTOR about unit `normal`
+/// with roughness α (α = roughness², Disney remap — do the remap at the call
+/// site). Standard NDF importance sampling (Walter et al. 2007):
+///   cosθ_h = sqrt((1-u1) / (1 + (α²-1) u1)),   φ = 2π u2
+/// Returns the world-space unit half-vector m. The reflected direction is then
+/// `reflect(ω_o_incident, m)`; the caller weights by the Smith G ratio.
+pub fn ggx_half(normal: Vec3, alpha: f64, u1: f64, u2: f64) -> Vec3 {
+    let a2 = alpha * alpha;
+    let cos_t2 = ((1.0 - u1) / (1.0 + (a2 - 1.0) * u1)).clamp(0.0, 1.0);
+    let cos_t = cos_t2.sqrt();
+    let sin_t = (1.0 - cos_t2).max(0.0).sqrt();
+    let phi = 2.0 * PI * u2;
+    let x = sin_t * phi.cos();
+    let y = sin_t * phi.sin();
+    let (t, bt) = normal.onb();
+    (t * x + bt * y + normal * cos_t).normalize()
+}
+
+/// Smith masking-shadowing G2 for GGX (height-correlated, Heitz 2014), given
+/// the cosines of the incident/outgoing directions with the macro-normal.
+/// Used to form the BSDF-sampling weight `G2 · |ω_o·m| / (|ω_o·n|·|m·n|)`.
+pub fn smith_g2(cos_o: f64, cos_i: f64, alpha: f64) -> f64 {
+    let a2 = alpha * alpha;
+    let lambda = |c: f64| -> f64 {
+        let c = c.abs().max(1e-6);
+        let tan2 = (1.0 - c * c).max(0.0) / (c * c);
+        0.5 * (-1.0 + (1.0 + a2 * tan2).sqrt())
+    };
+    1.0 / (1.0 + lambda(cos_o) + lambda(cos_i))
 }
 
 /// The Vec3 unused-import guard for callers that only pull cosine sampling.

@@ -169,9 +169,14 @@ pub struct MeshPart {
     pub emissive: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub emissive_intensity: Option<Number>,
+    /// Microfacet roughness `[0,1]` (1 = pure lambertian, 0 = perfect
+    /// mirror). Read by the DreamForge integrator (pleroma/scrying-glass).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub roughness: Option<Number>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Metallic `[0,1]` (0 = dielectric/lambertian default, 1 = conductor;
+    /// the specular lobe is tinted by `color`). `metallic` is accepted as an
+    /// alias (DreamForge's canonical name); `metalness` is the three.js name.
+    #[serde(alias = "metallic", skip_serializing_if = "Option::is_none")]
     pub metalness: Option<Number>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub opacity: Option<Number>,
