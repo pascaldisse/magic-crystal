@@ -283,12 +283,13 @@ fn medium_single_scatter(o: vec3<f32>, d: vec3<f32>, t0: f32, t1: f32) -> vec2<f
 
 // The primary-segment medium compose: xyz = in-scattered radiance toward the
 // camera, w = transmittance of what lies behind. L = xyz + w*L_surface.
-fn medium_primary(o: vec3<f32>, d: vec3<f32>) -> vec4<f32> {
+// `t_first` is the distance to the first surface along the ray (or `far` on a
+// sky escape) — passed in from the caller, which already traced this exact
+// primary ray for the surface pass, so the medium never re-traverses the BVH.
+fn medium_primary(o: vec3<f32>, d: vec3<f32>, t_first: f32) -> vec4<f32> {
   if (u.med_march.w < 0.5) { return vec4<f32>(0.0, 0.0, 0.0, 1.0); }
   let eps = u.misc.y;
   let far = u.med_params.w;
-  let hit = trace_closest(o, d, eps, INF);
-  let t_first = select(far, hit.t, hit.ok);
   let t1 = min(t_first, far);
   if (t1 <= eps) { return vec4<f32>(0.0, 0.0, 0.0, 1.0); }
   // The scatter march also returns the total optical depth over [eps,t1] — the
@@ -405,7 +406,9 @@ fn tri_normal(i: u32, d: vec3<f32>) -> vec3<f32> {
   return select(n, -n, dot(n, d) > 0.0);
 }
 
-fn radiance(ray_o: vec3<f32>, ray_d: vec3<f32>, pixel: u32, sample: u32) -> vec3<f32> {
+// `first_hit` is the primary ray's closest hit, already traced by the caller
+// (shared with the medium compose) — the bounce-0 traversal is not repeated.
+fn radiance(ray_o: vec3<f32>, ray_d: vec3<f32>, pixel: u32, sample: u32, first_hit: Hit) -> vec3<f32> {
   var o = ray_o;
   var d = ray_d;
   var throughput = vec3<f32>(1.0, 1.0, 1.0);
@@ -414,8 +417,16 @@ fn radiance(ray_o: vec3<f32>, ray_d: vec3<f32>, pixel: u32, sample: u32) -> vec3
   let rr_start = u32(u.misc.z);
   let max_bounces = u.params.w;
   var bounce = 0u;
+  var pending_hit = first_hit;
+  var have_pending = true;
   loop {
-    let hit = trace_closest(o, d, eps, INF);
+    var hit: Hit;
+    if (have_pending) {
+      hit = pending_hit;
+      have_pending = false;
+    } else {
+      hit = trace_closest(o, d, eps, INF);
+    }
     if (!hit.ok) {
       // Escaped → environment. Primary miss shows the full sky (background);
       // indirect (bounced) misses gather the sky scaled by the ambient dial.
@@ -514,10 +525,14 @@ fn integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
     let sx = (2.0 * (f32(gid.x) + jx) * inv_w) - 1.0;
     let sy = 1.0 - (2.0 * (f32(gid.y) + jy) * inv_h);
     let dir = normalize(u.forward.xyz + u.right.xyz * sx + u.up.xyz * sy);
-    let surf = radiance(u.eye.xyz, dir, pixel, sample);
+    // Trace the primary ray ONCE; both the surface radiance (bounce 0) and the
+    // medium compose reuse this same first hit — no duplicate BVH traversal.
+    let prim = trace_closest(u.eye.xyz, dir, u.misc.y, INF);
+    let t_first = select(u.med_params.w, prim.t, prim.ok);
+    let surf = radiance(u.eye.xyz, dir, pixel, sample, prim);
     // The medium composes over the surface radiance in the SAME pass: it
     // attenuates what lies behind and adds its single-scattered light on top.
-    let med = medium_primary(u.eye.xyz, dir);
+    let med = medium_primary(u.eye.xyz, dir, t_first);
     frame_sum = frame_sum + med.xyz + med.w * surf;
   }
 
