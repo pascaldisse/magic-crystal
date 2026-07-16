@@ -1,8 +1,8 @@
 [package]
-name = "gaia-core"
+name = "crystal"
 version = "0.1.0"
 edition = "2021"
-description = "DreamForge core: ECS, protocol, scheduler, and package registry"
+description = "the Magic Crystal — DreamForge core: ECS, protocol, scheduler, and package registry"
 license = "MIT"
 
 [dependencies]

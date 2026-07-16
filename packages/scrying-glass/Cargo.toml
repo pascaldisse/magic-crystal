@@ -1,18 +1,22 @@
 [package]
-name = "render-window"
+name = "scrying-glass"
 version = "0.1.0"
 edition = "2024"
-description = "DreamForge native Tauri + wgpu render-window package"
+description = "the Scrying Glass — DreamForge native window spirit (Tauri + wgpu); a screenshot is a scrying"
 license = "MIT"
 
 [build-dependencies]
 tauri-build = "2.6.3"
 
 [dependencies]
-gaia-core = { path = "../../crates/gaia-core" }
+bytemuck = { version = "1.24.0", features = ["derive"] }
+crystal = { path = "../../crates/crystal" }
+glam = "0.30.9"
 png = "0.17.16"
 pollster = "0.4.0"
 raw-window-handle = "0.6.2"
+serde = "1"
+serde_json = "1"
 tauri = { version = "2.11.5", features = ["macos-private-api", "unstable"] }
 wgpu = "30.0.0"
 

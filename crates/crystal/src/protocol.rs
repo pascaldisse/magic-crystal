@@ -142,6 +142,18 @@ pub struct MeshPart {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shape: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<Vec<Number>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub radius: Option<Number>,
+    #[serde(rename = "radiusTop", skip_serializing_if = "Option::is_none")]
+    pub radius_top: Option<Number>,
+    #[serde(rename = "radiusBottom", skip_serializing_if = "Option::is_none")]
+    pub radius_bottom: Option<Number>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<Number>,
+    #[serde(rename = "radialSegments", skip_serializing_if = "Option::is_none")]
+    pub radial_segments: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub material: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preset: Option<String>,
@@ -149,6 +161,8 @@ pub struct MeshPart {
     pub position: Option<Vec<Number>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rotation: Option<Vec<Number>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scale: Option<NumberOrNumbers>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -327,6 +341,8 @@ pub struct Terrain {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Environment {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub sky: Option<Sky>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub background: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fog: Option<Value>,
@@ -338,6 +354,18 @@ pub struct Environment {
     pub sun: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bloom: Option<Value>,
+    #[serde(flatten)]
+    pub extra: JsonMap,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Sky {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preset: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub horizon: Option<String>,
     #[serde(flatten)]
     pub extra: JsonMap,
 }
@@ -786,9 +814,10 @@ mod tests {
         path::{Path, PathBuf},
     };
 
-    fn repo_root() -> PathBuf {
+    /// The committed crate-local fixture world (deterministic, always present).
+    fn fixture_world() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../..")
+            .join("fixtures/world")
             .canonicalize()
             .unwrap()
     }
@@ -813,11 +842,50 @@ mod tests {
         paths
     }
 
+    /// Deterministic roundtrip over the COMMITTED crate-local fixture — no
+    /// dependency on any untracked repo `world/` dir, so a clean `git archive`
+    /// of the crate builds and passes. Every scene/prefab/world/material doc in
+    /// the fixture typechecks, and the scene survives a value-exact roundtrip.
     #[test]
-    fn parses_every_authored_world_document_and_roundtrips_main_scene() {
-        let root = repo_root().join("world");
+    fn parses_and_roundtrips_the_committed_fixture_world() {
+        let root = fixture_world();
+        parse_world_dir(&root);
+
+        let source = json(&root.join("scenes/main.json"));
+        let scene: EntityMap = serde_json::from_value(source.clone()).unwrap();
+        // Value maps normalize to sorted keys, so equality is order-independent.
+        assert_eq!(serde_json::to_value(scene).unwrap(), source);
+    }
+
+    /// The FULL authored `world/` (the JS engine's hub world) is an external,
+    /// env-param'd sweep with graceful skip — mirroring the Boomtown pattern.
+    /// Set `GAIA_HUB_WORLD` to a world dir, or rely on the repo default.
+    #[test]
+    fn parses_the_external_hub_world_when_available() {
+        let root = std::env::var_os("GAIA_HUB_WORLD")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../../world")
+                    .to_path_buf()
+            });
+        if !root.join("scenes").is_dir() {
+            eprintln!("external hub world absent; skipping: {}", root.display());
+            return;
+        }
+        parse_world_dir(&root);
+    }
+
+    /// Typecheck every authored document under a world dir (scenes as
+    /// [`EntityMap`], prefabs as [`PrefabDoc`], the optional world.json /
+    /// materials.json).
+    fn parse_world_dir(root: &Path) {
         for dir in ["scenes", "prefabs"] {
-            let mut paths: Vec<_> = fs::read_dir(root.join(dir))
+            let sub = root.join(dir);
+            if !sub.is_dir() {
+                continue;
+            }
+            let mut paths: Vec<_> = fs::read_dir(&sub)
                 .unwrap()
                 .map(|entry| entry.unwrap().path())
                 .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
@@ -826,23 +894,24 @@ mod tests {
             for path in paths {
                 let source = json(&path);
                 if dir == "scenes" {
-                    let _: EntityMap = serde_json::from_value(source).unwrap();
+                    let _: EntityMap = serde_json::from_value(source)
+                        .unwrap_or_else(|e| panic!("scene {}: {e}", path.display()));
                 } else {
-                    let _: PrefabDoc = serde_json::from_value(source).unwrap();
+                    let _: PrefabDoc = serde_json::from_value(source)
+                        .unwrap_or_else(|e| panic!("prefab {}: {e}", path.display()));
                 }
             }
         }
-        let _: WorldMeta = serde_json::from_value(json(&root.join("world.json"))).unwrap();
+        let world_json = root.join("world.json");
+        if world_json.exists() {
+            let _: WorldMeta = serde_json::from_value(json(&world_json))
+                .unwrap_or_else(|e| panic!("world.json: {e}"));
+        }
         let materials = root.join("materials.json");
         if materials.exists() {
-            let _: MaterialLibrary = serde_json::from_value(json(&materials)).unwrap();
-        } else {
-            eprintln!("world/materials.json absent; server treats it as an empty material library");
+            let _: MaterialLibrary = serde_json::from_value(json(&materials))
+                .unwrap_or_else(|e| panic!("materials.json: {e}"));
         }
-
-        let source = json(&root.join("scenes/main.json"));
-        let scene: EntityMap = serde_json::from_value(source.clone()).unwrap();
-        assert_eq!(serde_json::to_value(scene).unwrap(), source);
     }
 
     #[test]

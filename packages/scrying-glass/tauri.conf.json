@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "GAIA Render Window",
+  "productName": "GAIA Scrying Glass",
   "version": "0.1.0",
-  "identifier": "world.gaia.render-window",
+  "identifier": "world.gaia.scrying-glass",
   "build": {
     "frontendDist": "ui"
   },

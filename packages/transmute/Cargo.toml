@@ -1,0 +1,34 @@
+[package]
+# TRUE NAME (GRIMOIRE, gaia-dreamforge repo): the offline pass is "the
+# transmutation". Package dir is `packages/transmute`; the crate is
+# `transmutation` (not `transmute`) because an unqualified `transmute()` free fn
+# would collide ergonomically with `std::mem::transmute` at every call site —
+# `transmutation::transmute()` stays unambiguous. The DAG is "the Great Chain"
+# (the b-word is forbidden vocabulary — DREAMFORGE.md).
+name = "transmutation"
+version = "0.1.0"
+edition = "2021"
+description = "DreamForge Transmutation — offline mesh → cluster-Great-Chain (RENDER.md R-milestone prep, CPU-only)"
+license = "MIT"
+
+[features]
+# METIS graph partitioner (real bindings, vendored+built by metis-sys via cc).
+# On by default; disabling falls back to the pure-Rust GreedyPartitioner behind
+# the SAME Partitioner trait. See src/partition.rs + FORMAT.md.
+default = ["metis"]
+metis = ["dep:metis"]
+# Exposes the deterministic balance-phase work counter (partition::take_balance_work)
+# for benches/regression harnesses OUTSIDE cfg(test). OFF by default — a production
+# release build carries no counter symbol (MF-1b). Tests see it via cfg(test).
+work-count = []
+
+[dependencies]
+meshopt = "0.6.2"        # BUY: meshlet build + simplifier (RENDER.md sole-pipeline ruling)
+metis = { version = "0.2.2", optional = true } # BUY: graph partitioner for meshlet grouping
+bytemuck = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+bincode = "1.3"
+
+[[bin]]
+name = "transmute-cli"
+path = "src/bin/transmute-cli.rs"
