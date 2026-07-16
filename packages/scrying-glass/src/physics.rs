@@ -135,11 +135,7 @@ impl Physics {
             let rigid = solver.spawn_rigid_box(
                 Vec3::new(center[0], center[1], center[2]),
                 Vec3::new(body.size[0], body.size[1], body.size[2]),
-                (
-                    body.resolution[0],
-                    body.resolution[1],
-                    body.resolution[2],
-                ),
+                (body.resolution[0], body.resolution[1], body.resolution[2]),
                 body.density,
                 body.rigidity,
                 body.contact_radius,

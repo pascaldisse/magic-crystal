@@ -13,8 +13,8 @@
 //!      wholly absent (`physics() == None`) and the realm is byte-unchanged
 //!      across ticks (the crate, now a plain mesh, never moves).
 
-use crystal::{load_world_dir, EcsWorld, QuerySpec};
-use scrying_glass::scene::{top_flat_surface_y, RenderScene, SceneParameters, SunDefaults};
+use crystal::{EcsWorld, QuerySpec, load_world_dir};
+use scrying_glass::scene::{RenderScene, SceneParameters, SunDefaults, top_flat_surface_y};
 use std::path::{Path, PathBuf};
 
 fn naruko_world() -> PathBuf {
@@ -69,7 +69,10 @@ fn two_runs_are_byte_identical_state_hashes() {
     let a = run();
     let b = run();
     assert_eq!(a.len(), 240, "ticked the full run");
-    assert_eq!(a, b, "two identical runs must fold to identical state hashes");
+    assert_eq!(
+        a, b,
+        "two identical runs must fold to identical state hashes"
+    );
     eprintln!(
         "[ordeal] ultradeterminism: 2 runs x 240 ticks, final state hash {:#018x}, byte-identical",
         a.last().unwrap()
@@ -116,11 +119,17 @@ fn crate_falls_and_rests_on_the_planks_at_derived_height() {
 
     eprintln!(
         "[ordeal] rest: start y={start:.4}  final=[{:.4},{:.4},{:.4}]  analytic={analytic_rest:.4}  Δ={:.5}  settled≈tick {settled_at:?}",
-        rest[0], rest[1], rest[2], (rest[1] - analytic_rest).abs()
+        rest[0],
+        rest[1],
+        rest[2],
+        (rest[1] - analytic_rest).abs()
     );
 
     // Fell (started well above, ended near the planks).
-    assert!(start > analytic_rest + 2.0, "crate started above the planks");
+    assert!(
+        start > analytic_rest + 2.0,
+        "crate started above the planks"
+    );
     // Came to rest at the derived analytic height. The measured settle residual
     // is 0.00087 m (≈ the 1 mm contact margin); REST_TOL = 0.005 m is ~6x that
     // — tight enough that a wrong rest height (±0.1 m) fails by ~20x, loose

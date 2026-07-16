@@ -25,6 +25,10 @@
 //!   naruko_lantern        x[-7.58,-6.95] y[0,4.05]   z[19.45,20.55]
 //!   naruko_stall_massing  x[-3.8,1.8]  y[0,2.9]      z[23,27.45]
 //!   naruko_chrome_orb     x[-12.4,-11.6] y[1.02,3.22] z[11.6,12.4] (post+orb union)
+//!   naruko_crate          x[-11.55,-10.75] y[4.1,4.9] z[12.6,13.4] (0.8 box, body
+//!                         hung above the pier near the stall; authored/rest pose
+//!                         — the physics only moves it at runtime, senses read the
+//!                         static scene) center [-11.15, 4.5, 13]
 //! Eye basis at yaw 0: fwd=(0,0,-1), right=(1,0,0), up=(0,1,0); FOV 60 vertical
 //! (aspect 1) ⇒ tan_half = tan(30°) = 0.5773502692.
 
@@ -96,9 +100,13 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
     // AABB center [-12, 2.12, 12], range 34.5227 from spawn) — the TWELFTH
     // meshed vessel. It sits x=-12 at z_view=32 ahead: |x_off|=12 < the 60°
     // half-width tan30·32 = 18.475, INSIDE the left plane ⇒ in-frustum.
+    // Then ELEMENTS P3 hung a wooden crate (a `body`) above the pier near the
+    // stall (AABB center [-11.15, 4.5, 13], range 33.0390 from spawn) — the
+    // THIRTEENTH meshed vessel. z_view = 44−13 = 31 ahead; |x_off| = 11.15 <
+    // the half-width tan30·31 = 17.898, INSIDE the left plane ⇒ in-frustum.
     assert_eq!(
-        g.entity_count, 12,
-        "exactly the twelve meshed vessels are in-frustum"
+        g.entity_count, 13,
+        "exactly the thirteen meshed vessels are in-frustum"
     );
     let caps = caption_ids(&g);
     for id in [
@@ -114,6 +122,7 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
         "naruko_stall_massing",
         "lighthouse_beacon",
         "naruko_chrome_orb",
+        "naruko_crate",
     ] {
         assert!(caps.contains(&id.to_string()), "{id} must be in-frustum");
     }
@@ -131,15 +140,17 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
 ///   lantern        center [-7.265, 2.025, 20] → √(52.78+24.75+576)  = 25.6320
 ///   chain_posts    center [-2, 1.95, 18]      → √(4+25.50+676)      = 26.5613
 ///   seawall        center [0, 0.7, 18]        → √(0+39.69+676)      = 26.7524
+///   crate          center [-11.15, 4.5, 13]   → √(124.32+6.25+961)  = 33.0390
 ///   chrome_orb     center [-12, 2.12, 12]     → √(144+23.81+1024)   = 34.5227
 ///   pier           center [-12, -0.8375, -2]  → √(144+61.43+2116)   = 48.1812
 ///   city_massing   center [54, 27, -37.5]     → √(2916+400+6642.25) = 99.7910
 ///   lighthouse_rock center[0, 8.5, -120]      → √(0+2.25+26896)     = 164.0069
 ///   lighthouse_tower center[0, 41, -120]      → √(1156+26896)       = 167.4873
 ///   (sea 604.06, terra 9.41 are SUPPORT — demoted.)
-/// So the default nearest_n=5 captions, in order (the chrome orb's 34.5227
-/// now displaces the pier out of the top-5 — pier falls to 6th at 48.1812):
-///   [stall_massing, lantern, chain_posts, seawall, chrome_orb].
+/// So the default nearest_n=5 captions, in order (the P3 crate's 33.0390 now
+/// displaces the chrome orb out of the top-5 — chrome orb falls to 6th at
+/// 34.5227, pier to 7th at 48.1812):
+///   [stall_massing, lantern, chain_posts, seawall, crate].
 /// TOLERANCE (DERIVED): each range is the live f32 √(Σ(center−eye)²) vs the f64
 /// reference above quoted to 4 decimals. The measured live-vs-reference
 /// discrepancy across all eleven ranges peaks at 6.1e-5 m (at the 604 m sea
@@ -161,9 +172,9 @@ fn canon_nearest_ordering_and_ranges_are_derived() {
             "naruko_lantern",
             "naruko_chain_posts",
             "naruko_seawall",
-            "naruko_chrome_orb",
+            "naruko_crate",
         ],
-        "default nearest-5 caption order (chrome orb 34.5227 displaces pier)"
+        "default nearest-5 caption order (P3 crate 33.0390 displaces chrome orb)"
     );
 
     // Support surfaces never eat a caption slot.
@@ -188,6 +199,7 @@ fn canon_nearest_ordering_and_ranges_are_derived() {
         ("naruko_lantern", 25.6320),
         ("naruko_chain_posts", 26.5613),
         ("naruko_seawall", 26.7524),
+        ("naruko_crate", 33.0390),
         ("naruko_chrome_orb", 34.5227),
         ("naruko_pier", 48.1812),
         ("naruko_city_massing", 99.7910),
