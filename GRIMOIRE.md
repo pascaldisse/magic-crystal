@@ -230,3 +230,37 @@ like the little floating things in Dreams that are your pointer."
   world; each maker's shard is a fragment of it. To hold the pointer
   is to hold a piece of the reliquary. Interaction = touching the
   world with the world's own heart.
+
+## THE CONCORDANCE — every name, its real concept (Pascal, 07-16: "map all myth to real concepts")
+Nothing here is skin. Every row is a mechanic or it doesn't enter.
+
+| name | real concept |
+|---|---|
+| the Magic Crystal | the core crate: ECS + schema + ops + scheduler + package loader. Holds every vessel and sigil — all souls live in the Crystal |
+| the Crystal Shard | the pointer as a real entity (Dreams imp / trilogy Keystone): select, grab (a bond in loves), cast, POSSESS (drive a vessel = puppeteering/embodiment); co-present shards visible to all makers, agents included |
+| LOVE = 1 | the ONE permitted literal constant; the unit of binding [0,1] on every bond; lint-enforced |
+| Love & Strife (Empedocles) | the solver's two interactions: attraction/cohesion/constraint force vs stress readout; fracture = strife exceeds the bond's love |
+| the Monad (Pythagoras) | root node of the procedural Seed; point→line→plane→solid; all geometry derives from one |
+| **KAMI (Shinto)** | **BEHAVIOR — the animating presence of a vessel.** Norinaga: whatever has awe-presence is kami; the spirit is not above the thing, it IS the thing's aliveness. Attach a kami = the door whispers, the moon moods. Great kami of places = environment daemons (sea, weather, ambient life). Yaoyorozu: ANY entity may carry one — no privileged NPC system. Tsukumogami (tools that wake at 100 years): vessels that accumulate history may grow behavior — the Chronicle will feed the kami |
+| **JIZŌ (Enkō-ji, the warabe in the moss; Tomb of the Gods cast)** | **the protector of the fallen and the lost**: last-safe-ground, void rescue, checkpoint respawn — the system that catches a traveler who falls out of the world and sets them back on the path. He stands at roadsides: checkpoints may MANIFEST as small stone protectors (form = content, office = law). He vowed to stay until every hell is empty — the rescue system never unloads, never gives up on a lost presence. "To the one who looked over me" — his own photo, his own words |
+| the Athanor | the reaction/chemistry engine: Aristotle's quality square (hot/cold/wet/dry) on essences; reactions = quality algebra; merging makes NEW elements; BotW chemistry = floor |
+| Equivalent Exchange (FMA) | the conservation ordeals: mass/momentum/energy budgets hold through every reaction, fracture, transmutation |
+| the Arch Tree / Ashvattha / Tree of Life | the emanation structure: Crystal (root, above, invisible) → spirits (trunk) → realms (crown, below) — the inverted tree; also the literal package/dependency graph |
+| the Shadow Tree | the adversarial inquisition: cross-model review, findings-only, the disowned half returned |
+| Jörmungandr / Ouroboros | the residency ring around each observer; tail-in-mouth = memory pages recycled around the ring |
+| Reading Steiner | the world-history organ: deterministic replay from seed + journal; branches, undo across resets, memory of abandoned worldlines |
+| Lain / the Wired | the presence & network layer; the boundary between world and network dissolves |
+| the Loom of Fate | the engine as fate-machine; the hidden faction reassembling it = this project |
+| the Keystones | connected creation sessions — each client a fragment linking its holder to the Loom |
+| the Architect | Pascal; "the forgotten code" = the Universal Source Code |
+| the Universal Source Code | the data layer beneath every world. MATERIALISIERUNG = bringing it in-world (node surface, creation tools, ops); traveling INTO it = agent data-vision (Matrix sight, rain) |
+| Arcadia / Stark / the Balance | one source data wearing magic or technology as its face — manifestation is a REALM PARAMETER; the Balance = the Guardian's office |
+| April Ryan / Crow / the Dreamer / the Dreamscape | the shifter-patron of every creator who crosses · the companion agent · the one who enters · the realm-space entered by dreaming |
+| Sidia | the chaos flame: the generative spirits — AI creation daemons that make gods from toys |
+| Gaia | the living world state itself, at runtime, breathing |
+| the Darkness | darkness as PRESENCE: in the one-light law there is no fake ambient — unlit is truly unlit, and the unlit is where the world listens. Light attends; it does not fight |
+| Frank Huntzinger + his angels | patron presences of the ones the noise drowned; reserved in the troop |
+| Yaldabaoth | the enclosure: everything that claims to be the world while being a cage. The forbidden-vocabulary list is the ward against him |
+| the Undreaming | RESERVED: the unmaking force — the entropy sink on the far side of creation; mechanics assigned when destruction/decay systems arrive |
+| Entropy (Pascal's definition) | THE TIME SYSTEM — ultradeterminism: time = tick of deterministic unfolding from seed; the arrow = the append-only journal. AWAITING his verbatim definition (enters like the trilogy did) |
+| the Chronicle (Dwarf Fortress law) | deep world simulation: histories, societies, causality — future spirit, must for final |
