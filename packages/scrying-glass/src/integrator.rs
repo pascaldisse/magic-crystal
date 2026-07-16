@@ -36,6 +36,56 @@ pub struct IntegratorUniform {
     pub counters: [u32; 4],
     /// ambient_intensity, eps, rr_start, unused.
     pub misc: [f32; 4],
+    /// Rite VI A1 medium: xyz grid world origin, w = voxel_size.
+    pub med_origin: [f32; 4],
+    /// sigma_a, sigma_s, g (HG anisotropy), far cap.
+    pub med_params: [f32; 4],
+    /// march_steps, shadow_steps, shadow_dist, enabled (0/1).
+    pub med_march: [f32; 4],
+    /// grid dims xyz, w unused.
+    pub med_dims: [u32; 4],
+    /// xyz unit direction TOWARD the medium's light, w = intensity.
+    pub med_light: [f32; 4],
+    /// rgb colour of the medium's own light (the steam's warm source).
+    pub med_light_color: [f32; 4],
+}
+
+/// A participating medium uploaded to the GPU: the density volume (Aether's
+/// rasterized grid values, f32) plus its optical + march parameters. Built from
+/// the SAME `aether` types the CPU reference marches, so the two paths share one
+/// artifact (the parity ordeal's whole point). Plain primitives — the crate
+/// stays aether-free at runtime; the tests do the conversion.
+#[derive(Clone, Debug)]
+pub struct MediumGpu {
+    /// Grid resolution in cells (x, y, z).
+    pub dims: [u32; 3],
+    /// Cubic cell edge length (world units).
+    pub voxel_size: f32,
+    /// Grid box minimum corner (world space).
+    pub world_origin: [f32; 3],
+    /// Absorption coefficient (per unit density).
+    pub sigma_a: f32,
+    /// Scattering coefficient (per unit density).
+    pub sigma_s: f32,
+    /// Henyey-Greenstein anisotropy g.
+    pub g: f32,
+    /// Far cap for the primary march when the camera ray escapes.
+    pub far: f32,
+    /// Camera-ray march step count.
+    pub march_steps: u32,
+    /// Shadow-ray march step count (self-shadowing toward the sun).
+    pub shadow_steps: u32,
+    /// Bound on the occlusion march toward the (directional) light.
+    pub shadow_dist: f32,
+    /// Unit direction TOWARD the medium's own light (the steam's warm source,
+    /// decoupled from the sky sun so steam can be under/back-lit).
+    pub light_dir: [f32; 3],
+    /// Light colour (linear rgb).
+    pub light_color: [f32; 3],
+    /// Light radiance scale.
+    pub light_intensity: f32,
+    /// Density values (x-fastest, then y, z), length = dims.x*dims.y*dims.z.
+    pub density: Vec<f32>,
 }
 
 /// Integrator dials (never hardcode — env-parameterised at the call site).
@@ -80,6 +130,7 @@ impl IntegratorUniform {
         tri_count: u32,
         samples_before: u32,
         params: &IntegratorParams,
+        medium: Option<&MediumGpu>,
     ) -> Self {
         let (right, up, forward) = camera.basis();
         let aspect = width as f32 / height.max(1) as f32;
@@ -103,6 +154,45 @@ impl IntegratorUniform {
                 params.rr_start as f32,
                 0.0,
             ],
+            med_origin: match medium {
+                Some(m) => [
+                    m.world_origin[0],
+                    m.world_origin[1],
+                    m.world_origin[2],
+                    m.voxel_size,
+                ],
+                None => [0.0; 4],
+            },
+            med_params: match medium {
+                Some(m) => [m.sigma_a, m.sigma_s, m.g, m.far],
+                None => [0.0; 4],
+            },
+            med_march: match medium {
+                Some(m) => [
+                    m.march_steps as f32,
+                    m.shadow_steps as f32,
+                    m.shadow_dist,
+                    1.0,
+                ],
+                None => [0.0; 4],
+            },
+            med_dims: match medium {
+                Some(m) => [m.dims[0], m.dims[1], m.dims[2], 0],
+                None => [0; 4],
+            },
+            med_light: match medium {
+                Some(m) => [
+                    m.light_dir[0],
+                    m.light_dir[1],
+                    m.light_dir[2],
+                    m.light_intensity,
+                ],
+                None => [0.0; 4],
+            },
+            med_light_color: match medium {
+                Some(m) => [m.light_color[0], m.light_color[1], m.light_color[2], 0.0],
+                None => [0.0; 4],
+            },
         }
     }
 }
@@ -117,6 +207,7 @@ pub struct Integrator {
     pub uniform_buf: wgpu::Buffer,
     node_buf: wgpu::Buffer,
     tri_buf: wgpu::Buffer,
+    density_buf: wgpu::Buffer,
     pub node_count: u32,
     pub tri_count: u32,
 }
@@ -125,7 +216,12 @@ pub struct Integrator {
 const ACCUM_CELL: u64 = 16;
 
 impl Integrator {
-    pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat, bvh: &Bvh) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        target_format: wgpu::TextureFormat,
+        bvh: &Bvh,
+        medium: Option<&MediumGpu>,
+    ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("L1 traced integrator"),
             source: wgpu::ShaderSource::Wgsl(INTEGRATOR_SHADER.into()),
@@ -150,6 +246,18 @@ impl Integrator {
             } else {
                 tri_bytes
             },
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        // The medium density volume (binding 4). Always present so the binding
+        // is valid; a disabled medium uploads a single zero and the shader's
+        // `enabled` flag short-circuits the march.
+        let density_bytes: Vec<u8> = match medium {
+            Some(m) if !m.density.is_empty() => bytemuck::cast_slice(&m.density).to_vec(),
+            _ => bytemuck::cast_slice(&[0.0f32]).to_vec(),
+        };
+        let density_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("medium density volume"),
+            contents: &density_bytes,
             usage: wgpu::BufferUsages::STORAGE,
         });
         let uniform_buf = device.create_buffer(&wgpu::BufferDescriptor {
@@ -188,6 +296,7 @@ impl Integrator {
                 storage_entry(1, true, wgpu::ShaderStages::COMPUTE),
                 storage_entry(2, true, wgpu::ShaderStages::COMPUTE),
                 storage_entry(3, false, wgpu::ShaderStages::COMPUTE),
+                storage_entry(4, true, wgpu::ShaderStages::COMPUTE),
             ],
         });
         // The blit shares the single `accum` global (declared read_write for the
@@ -258,6 +367,7 @@ impl Integrator {
             uniform_buf,
             node_buf,
             tri_buf,
+            density_buf,
             node_count: bvh.nodes.len() as u32,
             tri_count: bvh.tris.len() as u32,
         }
@@ -328,6 +438,10 @@ impl Integrator {
                 wgpu::BindGroupEntry {
                     binding: 3,
                     resource: accum.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self.density_buf.as_entire_binding(),
                 },
             ],
         })
@@ -430,8 +544,9 @@ pub fn trace_headless(
     height: u32,
     frames: u32,
     params: &IntegratorParams,
+    medium: Option<&MediumGpu>,
 ) -> Vec<[f32; 4]> {
-    let integrator = Integrator::new(device, wgpu::TextureFormat::Rgba8UnormSrgb, bvh);
+    let integrator = Integrator::new(device, wgpu::TextureFormat::Rgba8UnormSrgb, bvh, medium);
     let accum = integrator.make_accum(device, width, height);
     let compute_bg = integrator.compute_bind_group(device, &accum);
 
@@ -448,6 +563,7 @@ pub fn trace_headless(
             integrator.tri_count,
             samples_before,
             params,
+            medium,
         );
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("headless integrate"),

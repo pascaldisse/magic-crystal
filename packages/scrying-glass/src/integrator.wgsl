@@ -19,6 +19,13 @@ struct Uniform {
   params: vec4<u32>,       // width, height, spp, max_bounces
   counters: vec4<u32>,     // seed, samples_before, node_count, tri_count
   misc: vec4<f32>,         // ambient_intensity, eps, rr_start, _
+  // ── Rite VI A1: participating medium in the ONE light pass ──
+  med_origin: vec4<f32>,   // xyz grid world origin, w = voxel_size
+  med_params: vec4<f32>,   // sigma_a, sigma_s, g (HG anisotropy), far cap
+  med_march: vec4<f32>,    // march_steps, shadow_steps, shadow_dist, enabled
+  med_dims: vec4<u32>,     // grid dims xyz, w unused
+  med_light: vec4<f32>,    // xyz unit dir TOWARD the medium's light, w = intensity
+  med_light_color: vec4<f32>, // rgb light colour (the steam's own warm source)
 };
 
 struct Node {
@@ -40,6 +47,9 @@ struct Tri {
 @group(0) @binding(1) var<storage, read> nodes: array<Node>;
 @group(0) @binding(2) var<storage, read> tris: array<Tri>;
 @group(0) @binding(3) var<storage, read_write> accum: array<vec4<f32>>;
+// The medium density volume (Aether's rasterized grid, f32 — the SAME artifact
+// the CPU reference marches). Trilinearly sampled; zero outside the box.
+@group(0) @binding(4) var<storage, read> density: array<f32>;
 
 const PI: f32 = 3.14159265358979;
 const INF: f32 = 3.4e38;
@@ -111,6 +121,116 @@ fn smith_g2(cos_o: f32, cos_i: f32, alpha: f32) -> f32 {
 fn sky(dir: vec3<f32>) -> vec3<f32> {
   let h = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
   return mix(u.sky_horizon.rgb, u.sky_top.rgb, h);
+}
+
+// ── Rite VI A1: the participating medium, marched inside this same pass ──
+// Trilinear density lookup, matching Aether's DensityGrid::density EXACTLY
+// (cell centers at origin + voxel_size*(i+0.5); zero outside the box).
+fn grid_density(p: vec3<f32>) -> f32 {
+  let dims = u.med_dims.xyz;
+  let nx = f32(dims.x);
+  let ny = f32(dims.y);
+  let nz = f32(dims.z);
+  let vs = u.med_origin.w;
+  let local = (p - u.med_origin.xyz) / vs;
+  let gx = local.x - 0.5;
+  let gy = local.y - 0.5;
+  let gz = local.z - 0.5;
+  if (gx < -0.5 || gy < -0.5 || gz < -0.5) { return 0.0; }
+  if (gx > nx - 0.5 || gy > ny - 0.5 || gz > nz - 0.5) { return 0.0; }
+  let i0 = u32(clamp(floor(gx), 0.0, nx - 1.0));
+  let j0 = u32(clamp(floor(gy), 0.0, ny - 1.0));
+  let k0 = u32(clamp(floor(gz), 0.0, nz - 1.0));
+  let i1 = min(i0 + 1u, dims.x - 1u);
+  let j1 = min(j0 + 1u, dims.y - 1u);
+  let k1 = min(k0 + 1u, dims.z - 1u);
+  let tx = clamp(gx - f32(i0), 0.0, 1.0);
+  let ty = clamp(gy - f32(j0), 0.0, 1.0);
+  let tz = clamp(gz - f32(k0), 0.0, 1.0);
+  let dx = dims.x;
+  let dy = dims.y;
+  let s000 = density[(k0 * dy + j0) * dx + i0];
+  let s100 = density[(k0 * dy + j0) * dx + i1];
+  let s010 = density[(k0 * dy + j1) * dx + i0];
+  let s110 = density[(k0 * dy + j1) * dx + i1];
+  let s001 = density[(k1 * dy + j0) * dx + i0];
+  let s101 = density[(k1 * dy + j0) * dx + i1];
+  let s011 = density[(k1 * dy + j1) * dx + i0];
+  let s111 = density[(k1 * dy + j1) * dx + i1];
+  let c00 = s000 * (1.0 - tx) + s100 * tx;
+  let c10 = s010 * (1.0 - tx) + s110 * tx;
+  let c01 = s001 * (1.0 - tx) + s101 * tx;
+  let c11 = s011 * (1.0 - tx) + s111 * tx;
+  let c0 = c00 * (1.0 - ty) + c10 * ty;
+  let c1 = c01 * (1.0 - ty) + c11 * ty;
+  return c0 * (1.0 - tz) + c1 * tz;
+}
+
+// Henyey-Greenstein phase (matches Aether HomogeneousMedium::phase).
+fn hg_phase(cos_theta: f32) -> f32 {
+  let g = u.med_params.z;
+  let g2 = g * g;
+  let denom = max(1.0 + g2 - 2.0 * g * cos_theta, 1e-12);
+  return (1.0 - g2) / (4.0 * PI * pow(denom, 1.5));
+}
+
+// Optical depth along o+d*t for t in [t0,t1] (midpoint quadrature — matches
+// Aether optical_depth). d must be unit length.
+fn medium_optical_depth(o: vec3<f32>, d: vec3<f32>, t0: f32, t1: f32, steps: u32) -> f32 {
+  let n = max(steps, 1u);
+  let ds = (t1 - t0) / f32(n);
+  let sigma_t = u.med_params.x + u.med_params.y;
+  var tau = 0.0;
+  for (var s = 0u; s < n; s = s + 1u) {
+    let t = t0 + (f32(s) + 0.5) * ds;
+    tau = tau + sigma_t * grid_density(o + d * t) * ds;
+  }
+  return tau;
+}
+
+// Single-scatter radiance toward the camera along the primary segment, from one
+// bounce off the directional sun (matches Aether single_scatter with phase on).
+// Returns the SCALAR scatter factor (the sun's colour tints it at the call site).
+fn medium_single_scatter(o: vec3<f32>, d: vec3<f32>, t0: f32, t1: f32) -> f32 {
+  let steps = max(u32(u.med_march.x), 1u);
+  let shadow_steps = max(u32(u.med_march.y), 1u);
+  let shadow_dist = u.med_march.z;
+  let ds = (t1 - t0) / f32(steps);
+  let sigma_t = u.med_params.x + u.med_params.y;
+  let sigma_s = u.med_params.y;
+  let w_light = normalize(u.med_light.xyz);
+  let phase = hg_phase(dot(w_light, d));
+  var tau_before = 0.0;
+  var acc = 0.0;
+  for (var s = 0u; s < steps; s = s + 1u) {
+    let t = t0 + (f32(s) + 0.5) * ds;
+    let p = o + d * t;
+    let dens = grid_density(p);
+    let seg_tau = sigma_t * dens * ds;
+    let tc = exp(-(tau_before + 0.5 * seg_tau));
+    tau_before = tau_before + seg_tau;
+    if (dens > 0.0) {
+      let tl = exp(-medium_optical_depth(p, w_light, 0.0, shadow_dist, shadow_steps));
+      acc = acc + tc * sigma_s * dens * phase * tl * ds;
+    }
+  }
+  return acc;
+}
+
+// The primary-segment medium compose: xyz = in-scattered radiance toward the
+// camera, w = transmittance of what lies behind. L = xyz + w*L_surface.
+fn medium_primary(o: vec3<f32>, d: vec3<f32>) -> vec4<f32> {
+  if (u.med_march.w < 0.5) { return vec4<f32>(0.0, 0.0, 0.0, 1.0); }
+  let eps = u.misc.y;
+  let far = u.med_params.w;
+  let hit = trace_closest(o, d, eps, INF);
+  let t_first = select(far, hit.t, hit.ok);
+  let t1 = min(t_first, far);
+  if (t1 <= eps) { return vec4<f32>(0.0, 0.0, 0.0, 1.0); }
+  let scatter = medium_single_scatter(o, d, eps, t1);
+  let tr = exp(-medium_optical_depth(o, d, eps, t1, u32(u.med_march.x)));
+  let light_radiance = u.med_light_color.rgb * u.med_light.w;
+  return vec4<f32>(light_radiance * scatter, tr);
 }
 
 struct Hit {
@@ -326,7 +446,11 @@ fn integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
     let sx = (2.0 * (f32(gid.x) + jx) * inv_w) - 1.0;
     let sy = 1.0 - (2.0 * (f32(gid.y) + jy) * inv_h);
     let dir = normalize(u.forward.xyz + u.right.xyz * sx + u.up.xyz * sy);
-    frame_sum = frame_sum + radiance(u.eye.xyz, dir, pixel, sample);
+    let surf = radiance(u.eye.xyz, dir, pixel, sample);
+    // The medium composes over the surface radiance in the SAME pass: it
+    // attenuates what lies behind and adds its single-scattered light on top.
+    let med = medium_primary(u.eye.xyz, dir);
+    frame_sum = frame_sum + med.xyz + med.w * surf;
   }
 
   let prev = accum[pixel].xyz;

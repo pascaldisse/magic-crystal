@@ -23,6 +23,7 @@ tauri = { version = "2.11.5", features = ["macos-private-api", "unstable"] }
 wgpu = "30.0.0"
 
 [dev-dependencies]
+aether = { path = "../aether" }
 pleroma = { path = "../pleroma" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
