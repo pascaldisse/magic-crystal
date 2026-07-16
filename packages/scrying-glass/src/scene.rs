@@ -8,7 +8,7 @@ use crystal::{
 use elements::Triangle;
 use glam::{EulerRot, Mat3, Mat4, Quat, Vec3};
 use homunculus::Pose;
-use kami::{BindPose, Registry, TickContext};
+use kami::{BindPose, CatMind, Registry, TickContext};
 use sama::{Gait, GaitParams, Locomotion, LocomotionParams, gait_pose};
 
 use crate::player::Ground;
@@ -305,6 +305,17 @@ pub struct BodyInstance {
     pose: Pose,
     /// The commanded speed last fed to the state machine (walker velocity).
     commanded_speed: f32,
+    /// RITE V · V2 — the behavior spirit, if this body carries a `behavior`
+    /// `{kind:"cat"}`. A minded body drives its OWN commanded speed + world xz
+    /// from the clock (its idle loop), ignoring the walker's velocity; a mindless
+    /// body (nari) is still driven by the walker. `None` = no behavior.
+    mind: Option<CatMind>,
+    /// The DERIVED grounded y (paws on the floor) — held constant as the minded
+    /// body walks its flat circuit, so grounding never drifts on the move.
+    ground_y: f32,
+    /// The authored scale — kept to rebuild the model each animated tick (the
+    /// mind drives position + yaw; scale is authored).
+    base_scale: Vec3,
 }
 
 impl BodyInstance {
@@ -339,6 +350,41 @@ impl BodyInstance {
         self.commanded_speed = commanded_speed;
         self.pose = self.locomotion.step(&self.body.skeleton, commanded_speed);
         self.world_tris = skin_body(&self.body, &self.pose, self.model, &self.albedo);
+    }
+
+    /// RITE V · V2 — advance a MINDED body one tick against the world clock time
+    /// `t = clock · dt`. The cat's idle loop derives (position, yaw, speed); the
+    /// model is rebuilt from the grounded circuit position + heading, SAMA is
+    /// commanded with the loop's speed (idle when sitting, walk on the circuit),
+    /// and `world_tris` re-skin from the emitted pose. A no-op with no mind.
+    /// Deterministic in `(t, mind)` — same clock, byte-identical body.
+    pub fn animate(&mut self, t: f64) {
+        let Some(mind) = self.mind else {
+            return;
+        };
+        let drive = mind.drive(t);
+        let position = Vec3::new(drive.position[0] as f32, self.ground_y, drive.position[2] as f32);
+        self.model = transform_matrix(
+            position,
+            Vec3::new(0.0, drive.yaw as f32, 0.0),
+            self.base_scale,
+        );
+        self.commanded_speed = drive.speed as f32;
+        self.pose = self.locomotion.step(&self.body.skeleton, self.commanded_speed);
+        self.world_tris = skin_body(&self.body, &self.pose, self.model, &self.albedo);
+    }
+
+    /// Whether this body carries a behavior spirit (a minded body drives itself
+    /// from the clock; a mindless one from the walker).
+    pub fn is_minded(&self) -> bool {
+        self.mind.is_some()
+    }
+
+    /// The body's current world-space origin (the model's translation column) —
+    /// where the grounded body stands this tick. A minded body's xz rides its
+    /// idle-loop circuit; y is the derived grounded height.
+    pub fn world_origin(&self) -> [f32; 3] {
+        self.model.w_axis.truncate().to_array()
     }
 
     /// Re-skin the current pose into world-space triangles — the pure skinning
@@ -588,9 +634,18 @@ impl RenderScene {
     /// partition. Returns whether any body is animating (so the caller knows the
     /// dynamic BVH must re-splice even when the living models are still).
     pub fn command_bodies(&mut self, commanded_speed: f32) -> bool {
+        // RITE V · V2 — a MINDED body (the cat) drives itself from the world
+        // clock's idle loop, ignoring the walker's velocity; a mindless body
+        // (nari) is driven by the walker. The clock is the living layer's tick
+        // count × dt (read BEFORE `tick()` increments it, so frame N uses tick N).
+        let t = self.dynamics.clock as f64 * self.dynamics.dt;
         let mut animating = false;
         for body in &mut self.bodies {
-            body.command(commanded_speed);
+            if body.is_minded() {
+                body.animate(t);
+            } else {
+                body.command(commanded_speed);
+            }
             animating |= body.is_animating();
         }
         animating
@@ -773,6 +828,7 @@ fn body_instances(world: &EcsWorld, floor: &Ground) -> Result<Vec<BodyInstance>,
     let Some(body_id) = world.component_id("body") else {
         return Ok(Vec::new());
     };
+    let behavior_id = world.component_id("behavior");
     let Some(transform_id) = world.component_id("transform") else {
         return Ok(Vec::new());
     };
@@ -831,6 +887,16 @@ fn body_instances(world: &EcsWorld, floor: &Ground) -> Result<Vec<BodyInstance>,
 
         let world_tris = skin_body(&composed, &idle, model, &albedo);
 
+        // RITE V · V2 — attach the behavior spirit if this body carries a
+        // `behavior` component tagged `{kind:"cat", ...}`. The kind gate matters:
+        // CatMind's fields all default, so it would silently absorb ANY behavior
+        // JSON — only a `cat` kind may drive a cat. Other behaviors (or none)
+        // leave the body mindless (walker-driven).
+        let mind = behavior_id
+            .and_then(|bid| world.get_component(entity, bid).ok())
+            .filter(|raw| raw.get("kind").and_then(|k| k.as_str()) == Some("cat"))
+            .and_then(|raw| serde_json::from_value::<CatMind>(raw).ok());
+
         out.push(BodyInstance {
             gaia_id: id,
             preset: preset_name,
@@ -841,6 +907,9 @@ fn body_instances(world: &EcsWorld, floor: &Ground) -> Result<Vec<BodyInstance>,
             locomotion: Locomotion::new(LocomotionParams::default()),
             pose: idle,
             commanded_speed: 0.0,
+            mind,
+            ground_y: grounded_y,
+            base_scale: body_scale,
         });
     }
     Ok(out)
