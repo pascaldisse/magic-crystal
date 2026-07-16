@@ -1,0 +1,13 @@
+[package]
+name = "vessel"
+version = "0.1.0"
+edition = "2021"
+description = "DreamForge V0 body vessel: skeleton -> SDF -> marching-cubes body mesh, auto-skinned via homunculus. No manual UV, no manual rigging."
+license = "MIT"
+
+[dependencies]
+glam = "0.30.9"
+homunculus = { path = "../homunculus" }
+
+[dev-dependencies]
+glam = "0.30.9"
