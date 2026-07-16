@@ -42,6 +42,17 @@ impl Vec3 {
         self.dot(self).sqrt()
     }
 
+    /// The turning of two bindings against each other — the axis both are
+    /// perpendicular to. Needed for triangle normals and angular seeding.
+    #[inline]
+    pub fn cross(self, other: Vec3) -> Vec3 {
+        Vec3::new(
+            self.y * other.z - self.z * other.y,
+            self.z * other.x - self.x * other.z,
+            self.x * other.y - self.y * other.x,
+        )
+    }
+
     /// The direction of attraction, unit-normalized. Returns `None` when the
     /// two points coincide (the bond has no axis to pull along).
     #[inline]

@@ -7,20 +7,29 @@
 //! love. Time is the entropy coordinate: a fixed tick, no randomness, every
 //! replay byte-identical (see the ordeals in `tests/`).
 //!
-//! This is P1: the pure library — particles, compliant distance bindings, the
-//! bond/strife/fracture model, and determinism. No render, no ECS wiring
-//! (that is a later rite). CPU only, no main thread owed.
+//! P1 is the pure substrate — particles, compliant distance bindings, the
+//! bond/strife/fracture model, and determinism. P2 raises RIGID BODIES on it:
+//! particle clusters held by a shape-matching constraint ([`RigidBody`]) and
+//! WORLD COLLISION against a static triangle soup ([`Collider`]) with Coulomb
+//! friction and restitution. Still no render, no ECS wiring (a later rite).
+//! CPU only, no main thread owed.
 
+pub mod collision;
 pub mod constraint;
 pub mod hash;
+pub mod mat3;
 pub mod math;
 pub mod particles;
+pub mod rigid;
 pub mod solver;
 
+pub use collision::{Collider, Contact, ContactMaterial, Triangle};
 pub use constraint::{Bond, DistanceConstraint, FractureEvent};
 pub use hash::{hash3, jitter, StateHasher};
+pub use mat3::{polar_rotation, Mat3, PolarConfig};
 pub use math::Vec3;
 pub use particles::Particles;
+pub use rigid::RigidBody;
 pub use solver::{Solver, SolverConfig};
 
 /// **LOVE = 1.0** — the One Constant. The never-hardcode law has exactly one
