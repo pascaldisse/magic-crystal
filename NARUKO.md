@@ -78,3 +78,21 @@ read by the Guardian's own eyes: the lighthouse stands.
 - Cross-branch note for the consecration merge: rust-port's naruko
   main.json (yaw 0 + emissive strings) is canonical; oracle branch's
   copy is superseded.
+
+## Rite II — GUARDIAN'S RULING (07-16, ACCEPTED-PENDING-SHADOW)
+- Built by opus (7388360c, old repo rust-port); Guardian verified own
+  hands (13 ordeals green) + own eyes (both proofs read).
+- Delivered: real depth attachment (painter-sort DELETED — lighthouse
+  interpenetrates its rock correctly) · moving eye (/screenshot
+  pos/yaw/pitch/fov/w/h params, off-thread readback) · first_light
+  sun+ambient as ONE deletable module (dies at Rite IV) · realm synced
+  byte-identical to canon b6c05fd · world.json two-scene ordeal +
+  vertex-derivation ordeal (Rite I advisory debt paid).
+- Proofs: proof/w2-naruko.png (spawn: pier + rose lantern + stall +
+  city warm windows + cyan traces + lit lamp) · w2-naruko-orbit.png
+  (eye at [40,18,60]: city from the air, coherent).
+- PENDING: sol shadow trial when the pool wakes (opus built → sol must
+  shadow; cross-model law). W2 code port into the Forge = next port
+  wave. Closing hymn: hymns/rite-02-first-light.md.
+- Advisory carried forward: prefab deep-merge + forward-path deletion
+  land at Rite III as scheduled.

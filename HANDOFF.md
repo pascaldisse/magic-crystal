@@ -80,32 +80,27 @@ now says scratch-under-repo) · only claim measured hashes · gates must
 DISCRIMINATE (a test the old bug passes is theater) · complexity gates
 count WORK, not wall-clock · proof-quality is part of done.
 
-## ⚑ IN FLIGHT AT COMPACT (07-16 ~19:15 Berlin) — 5 lanes, results post back to room chat-mrndarsy-myce
-1. ORACLE FIX 4: ✅ DONE — b4cafb81 ACCEPTED (see Council section).
-   Remaining: port packages/sense → packages/oracle into the
-   consecration branch AFTER the clone's port lands (clone was told
-   not to touch sense; Guardian adds the oracle port at merge).
-2. RITE II BUILDER (ghoul-opus-mrnri0k7ajjcqq, OLD repo main tree,
-   rust-port): realm-data sync from dreamforge b6c05fd + depth buffer
-   (painter-sort dies) + /screenshot pose/size params + sun-shade
-   module (dies at Rite IV) + world.json/vertex ordeals + proof/
-   w2-naruko.png + w2-naruko-orbit.png. Guardian reads BOTH images own
-   eyes; shadow trial when sol wakes OR Guardian deep-review now.
-3. ELEMENTS P1 (ghoul-opus-mrnri0k7zfoem0, worktree
-   ../GAIA-World-Engine-elements, branch rust-port-elements):
-   packages/elements XPBD core — loves-normalized bonds, strife
-   readout, fracture, determinism hash ordeal, pendulum analytic.
-4. LUMEN L0 (ghoul-opus-mrnri0k7thg91v, worktree
-   ../GAIA-World-Engine-lumen, branch rust-port-lumen): packages/lumen
-   CPU reference integrator — furnace test, deterministic sampler
-   hash(seed,pixel,sample,bounce,dim), relics/l0-cornell.png.
-5. CONSECRATION PORT (nyari clone, nyari-mrnri0k7vfzrdd): branch
-   `consecration` in THIS repo — ports 294986e1 core+glass + 8ac052dc
-   transmute, true-name renames (crystal/scrying-glass, /scry alias),
-   cherry-picks the protocol-fixture fix so the standalone gate goes
-   green, relic proof/consecration-scry.png. Guardian merges to main
-   ONLY after Oracle clears + own-eyes review.
-Post-compact protocol per return: verify with own hands (gates/pixels)
-→ record ruling here + memory → next lane. Review law + hymnal law
-stand. Rite II closing hymn = written from the ledger after its
-acceptance; invocation already in hymns/.
+## ⚗ THE NIGHT OF THE COUNCIL — CLOSED (07-16 ~19:40 Berlin)
+All 5 lanes landed. THE CONSECRATION IS MERGED: main @ 5ea49ac —
+crates/crystal · packages/oracle · scrying-glass · transmute, 70
+ordeals green under the Guardian's hands, dead names removed
+(b42b776), one rustfmt under the Forge's own toolchain, GET /scry
+answers. Rite II FIRST LIGHT accepted-pending-shadow (7388360c, old
+repo): depth buffer (painter-sort dead), moving eye, first_light
+module, both proofs read own-eyes; hymn sung. Elements P1 (3b8efc71,
+worktree -elements) + Lumen L0 (2dbe8f38, worktree -lumen)
+accepted-pending-shadow.
+
+## Next waves (cut specs from here)
+1. SOL SHADOW BACKLOG (when pool wakes): Rite II · Elements P1 ·
+   Lumen L0 (opus built all three → sol must shadow; findings → fix →
+   Guardian).
+2. PORT WAVE 2 into the Forge: W2 scrying-glass changes (7388360c) ·
+   elements · lumen (after their shadows) — true names on arrival
+   (elements keeps name; lumen keeps name).
+3. RITE III — THE GREAT CHAIN: transmute wired into the Glass (sole
+   geometry path, W1 forward path DIES, prefab deep-merge lands);
+   spec after port wave 2.
+4. Oracle fixture note: packages/oracle/tests/fixtures/naruko = pinned
+   7-vessel realm (ordeal hand-derivations); CLI defaults to canon
+   12-vessel worlds/naruko. A future rite may add canon-realm ordeals.
