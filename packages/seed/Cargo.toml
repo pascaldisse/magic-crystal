@@ -1,0 +1,9 @@
+[package]
+name = "seed"
+version = "0.1.0"
+edition = "2021"
+description = "DreamForge procedural substrate: deterministic hash streams, noise fields, and scatter (the foliage-as-density groundwork)"
+license = "MIT"
+
+[dependencies]
+glam = "0.30.9"

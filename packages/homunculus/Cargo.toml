@@ -1,0 +1,12 @@
+[package]
+name = "homunculus"
+version = "0.1.0"
+edition = "2021"
+description = "DreamForge H0 body substrate: parametric skeletons, procedural skinning, FK pose + walk-cycle. No manual rigging."
+license = "MIT"
+
+[dependencies]
+glam = "0.30.9"
+
+[dev-dependencies]
+glam = "0.30.9"

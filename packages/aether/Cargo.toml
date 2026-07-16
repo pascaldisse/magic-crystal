@@ -1,0 +1,8 @@
+[package]
+name = "aether"
+version = "0.1.0"
+edition = "2021"
+description = "DreamForge Aether: participating-media substrate (CPU reference for Rite VI volumetrics)"
+license = "MIT"
+
+[dependencies]

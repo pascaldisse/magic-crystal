@@ -1,0 +1,11 @@
+[package]
+name = "steiner"
+version = "0.1.0"
+edition = "2021"
+description = "Reading Steiner: the DreamForge world-history organ — append-only op journals and (seed, journal) worldline replay"
+license = "MIT"
+
+[dependencies]
+crystal = { path = "../../crates/crystal" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
