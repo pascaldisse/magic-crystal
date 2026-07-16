@@ -1,0 +1,19 @@
+[package]
+name = "oracle"
+version = "0.1.0"
+edition = "2021"
+description = "the Oracle — the senses of the Crystal: pull-only, data-space looking over the ECS (no GPU, no rendering); looking is a verb"
+license = "MIT"
+
+[lib]
+name = "oracle"
+path = "src/lib.rs"
+
+[[bin]]
+name = "oracle-cli"
+path = "src/bin/oracle_cli.rs"
+
+[dependencies]
+crystal = { path = "../../crates/crystal" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
