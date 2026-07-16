@@ -24,8 +24,8 @@ struct Uniform {
   med_params: vec4<f32>,   // sigma_a, sigma_s, g (HG anisotropy), far cap
   med_march: vec4<f32>,    // march_steps, shadow_steps, shadow_dist, enabled
   med_dims: vec4<u32>,     // grid dims xyz, w unused
-  med_light: vec4<f32>,    // xyz unit dir TOWARD the medium's light, w = intensity
-  med_light_color: vec4<f32>, // rgb light colour (the steam's own warm source)
+  med_light: vec4<f32>,    // bound light: xyz = unit dir TOWARD it (directional) or world position (point); w = intensity
+  med_light_color: vec4<f32>, // rgb = light colour tint; w = kind (0 directional, 1 point)
 };
 
 struct Node {
@@ -189,17 +189,20 @@ fn medium_optical_depth(o: vec3<f32>, d: vec3<f32>, t0: f32, t1: f32, steps: u32
 }
 
 // Single-scatter radiance toward the camera along the primary segment, from one
-// bounce off the directional sun (matches Aether single_scatter with phase on).
-// Returns the SCALAR scatter factor (the sun's colour tints it at the call site).
+// bounce off the medium's BOUND scene light (A2): a directional sun/moon OR a
+// positional emitter glow with 1/dist² falloff (matches Aether single_scatter
+// + sample_light with phase on). Returns the SCALAR scatter factor (the light's
+// colour tints it at the call site); the scalar intensity (radiance, or
+// intensity/dist² for a point light) is folded in here, exactly as the CPU does.
 fn medium_single_scatter(o: vec3<f32>, d: vec3<f32>, t0: f32, t1: f32) -> f32 {
   let steps = max(u32(u.med_march.x), 1u);
   let shadow_steps = max(u32(u.med_march.y), 1u);
-  let shadow_dist = u.med_march.z;
+  let shadow_dist_dir = u.med_march.z;
   let ds = (t1 - t0) / f32(steps);
   let sigma_t = u.med_params.x + u.med_params.y;
   let sigma_s = u.med_params.y;
-  let w_light = normalize(u.med_light.xyz);
-  let phase = hg_phase(dot(w_light, d));
+  let is_point = u.med_light_color.w > 0.5;
+  let intensity = u.med_light.w;
   var tau_before = 0.0;
   var acc = 0.0;
   for (var s = 0u; s < steps; s = s + 1u) {
@@ -210,8 +213,24 @@ fn medium_single_scatter(o: vec3<f32>, d: vec3<f32>, t0: f32, t1: f32) -> f32 {
     let tc = exp(-(tau_before + 0.5 * seg_tau));
     tau_before = tau_before + seg_tau;
     if (dens > 0.0) {
-      let tl = exp(-medium_optical_depth(p, w_light, 0.0, shadow_dist, shadow_steps));
-      acc = acc + tc * sigma_s * dens * phase * tl * ds;
+      // Direction toward the light, incident radiance, occlusion-march bound.
+      var w_light: vec3<f32>;
+      var li: f32;
+      var sdist: f32;
+      if (is_point) {
+        let diff = u.med_light.xyz - p;
+        let dist = length(diff);
+        w_light = diff / max(dist, 1e-6);
+        li = intensity / max(dist * dist, 1e-12);
+        sdist = dist;
+      } else {
+        w_light = normalize(u.med_light.xyz);
+        li = intensity;
+        sdist = shadow_dist_dir;
+      }
+      let phase = hg_phase(dot(w_light, d));
+      let tl = exp(-medium_optical_depth(p, w_light, 0.0, sdist, shadow_steps));
+      acc = acc + tc * sigma_s * dens * phase * tl * li * ds;
     }
   }
   return acc;
@@ -229,8 +248,9 @@ fn medium_primary(o: vec3<f32>, d: vec3<f32>) -> vec4<f32> {
   if (t1 <= eps) { return vec4<f32>(0.0, 0.0, 0.0, 1.0); }
   let scatter = medium_single_scatter(o, d, eps, t1);
   let tr = exp(-medium_optical_depth(o, d, eps, t1, u32(u.med_march.x)));
-  let light_radiance = u.med_light_color.rgb * u.med_light.w;
-  return vec4<f32>(light_radiance * scatter, tr);
+  // The scalar intensity is already folded into `scatter` (per-sample for a
+  // point light's 1/dist² falloff); only the colour tint multiplies here.
+  return vec4<f32>(u.med_light_color.rgb * scatter, tr);
 }
 
 struct Hit {

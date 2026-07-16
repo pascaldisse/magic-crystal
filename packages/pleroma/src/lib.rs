@@ -44,6 +44,6 @@ pub use film::{write_png, Film};
 pub use geometry::{Hit, Ray, Shape};
 pub use integrator::{estimate, radiance, Params};
 pub use material::Material;
-pub use medium::{DirectionalSun, Medium};
+pub use medium::{DirectionalSun, Medium, MediumLight};
 pub use scene::{Primitive, Scene};
 pub use vec::{vec3, Vec3};

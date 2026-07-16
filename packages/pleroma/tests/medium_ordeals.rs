@@ -12,7 +12,7 @@
 //!      localized, not global.
 
 use aether::{DensityGrid, HomogeneousMedium, SteamColumn};
-use pleroma::{estimate, vec3, DirectionalSun, Material, Medium, Params, Ray, Scene, Shape, Vec3};
+use pleroma::{estimate, vec3, Material, Medium, MediumLight, Params, Ray, Scene, Shape, Vec3};
 
 fn constant_grid(density: f64, dims: [usize; 3], vsize: f64, origin: Vec3) -> DensityGrid {
     // A grid filled to a constant by rasterizing the Constant source.
@@ -51,15 +51,16 @@ fn ordeal_equivalent_exchange() {
     let origin = vec3(-0.5, -0.5, -6.5);
     let grid = constant_grid(1.0, dims, vsize, origin);
 
-    let sun = DirectionalSun {
+    let light = MediumLight::Directional {
         to_light: vec3(0.0, 1.0, 0.0),
-        radiance: Vec3::splat(le), // sun currency == emitter currency
+        color: Vec3::splat(le), // sun currency == emitter currency
+        intensity: 1.0,
     };
     let steps = 2048;
     let medium = Medium {
         optics,
         grid,
-        sun,
+        light,
         march_steps: steps,
         shadow_steps: 512,
         shadow_dist: 4.0,
@@ -160,9 +161,10 @@ fn ordeal_steam_localized() {
     let medium = Medium {
         optics,
         grid,
-        sun: DirectionalSun {
+        light: MediumLight::Directional {
             to_light: vec3(0.3, 1.0, 0.2),
-            radiance: Vec3::splat(2.5),
+            color: Vec3::splat(2.5),
+            intensity: 1.0,
         },
         march_steps: 256,
         shadow_steps: 64,
