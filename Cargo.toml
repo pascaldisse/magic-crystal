@@ -1,3 +1,3 @@
 [workspace]
-members = ["crates/crystal", "packages/aether", "packages/elements", "packages/homunculus", "packages/jormungandr", "packages/kami", "packages/oracle", "packages/pleroma", "packages/scrying-glass", "packages/seed", "packages/steiner", "packages/transmute", "packages/vessel", "packages/wired"]
+members = ["crates/crystal", "packages/aether", "packages/elements", "packages/homunculus", "packages/jormungandr", "packages/kami", "packages/oracle", "packages/pleroma", "packages/sama", "packages/scrying-glass", "packages/seed", "packages/steiner", "packages/transmute", "packages/vessel", "packages/wired"]
 resolver = "2"

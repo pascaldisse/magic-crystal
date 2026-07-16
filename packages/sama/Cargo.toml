@@ -1,0 +1,14 @@
+[package]
+name = "sama"
+version = "0.1.0"
+edition = "2021"
+description = "DreamForge S0 motion substrate: procedural gait generator, deterministic locomotion state machine (idle/walk/run), and additive gesture overlays over the homunculus pose substrate. Tick-indexed, no wall-clock, no RNG."
+license = "MIT"
+
+[dependencies]
+homunculus = { path = "../homunculus" }
+glam = "0.30.9"
+
+[dev-dependencies]
+homunculus = { path = "../homunculus" }
+glam = "0.30.9"
