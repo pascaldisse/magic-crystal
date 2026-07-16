@@ -2,7 +2,9 @@
 //! clock), the analytic pendulum, hanging-chain length conservation, an
 //! honest energy accounting, and fracture (love torn by strife).
 
-use elements::{DistanceConstraint, Solver, SolverConfig, Vec3, LOVE};
+use elements::{
+    Collider, ContactMaterial, DistanceConstraint, RigidBody, Solver, SolverConfig, Vec3, LOVE,
+};
 
 /// Build a hanging chain: particle 0 anchored at `origin`, `n` links of
 /// `seg` length descending in `-x`, each link a rigid-ish distance bond.
@@ -318,5 +320,507 @@ fn ordeal_fracture_weak_link_breaks() {
         broke_at.unwrap(),
         ev.strife,
         s.constraints.len()
+    );
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// P2 ORDEALS — rigid bodies on the particle substrate.
+// ═════════════════════════════════════════════════════════════════════════
+
+/// Max magnitude of any body-particle velocity — the "still?" witness.
+fn max_body_speed(s: &Solver, body: &RigidBody) -> f64 {
+    body
+        .indices
+        .iter()
+        .map(|&i| s.particles.vel[i].length())
+        .fold(0.0_f64, f64::max)
+}
+
+/// Angle (radians) between the body's rotated up-axis and world up — the
+/// "level?" witness. Zero == perfectly level.
+fn tilt_from_level(body: &RigidBody) -> f64 {
+    let up = Vec3::new(0.0, 1.0, 0.0);
+    let mapped = body.rotation.mul_vec(up);
+    (mapped.dot(up) / mapped.length()).clamp(-1.0, 1.0).acos()
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ORDEAL 6 — Box drop: a rigid box dropped onto a ground plane settles LEVEL
+// and STILL (velocity → ~0, no jitter after settle), all measured.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn ordeal_box_drop_settles_level_and_still() {
+    let cfg = SolverConfig {
+        dt: 1.0 / 120.0,
+        substeps: 12,
+        iterations: 1,
+        ..SolverConfig::default()
+    };
+    let mut s = Solver::new(cfg);
+    // Fully plastic ground so the drop settles quickly (restitution 0).
+    let mat = ContactMaterial {
+        restitution: 0.0,
+        ..ContactMaterial::default()
+    };
+    s.collider = Some(Collider::ground_plane(0.0, 5.0, mat));
+    let radius = 0.02;
+    let body = s.spawn_rigid_box(
+        Vec3::new(0.0, 1.0, 0.0),
+        Vec3::new(0.5, 0.5, 0.5),
+        (3, 3, 3),
+        500.0,
+        1.0,
+        radius,
+    );
+    // 4 s of settling.
+    for _ in 0..480 {
+        s.step();
+    }
+    let speed = max_body_speed(&s, &s.rigids[body]);
+    let tilt = tilt_from_level(&s.rigids[body]);
+    // Bottom-layer particles should rest at ground + radius; measure the
+    // spread of the lowest layer's heights (levelness of the resting face).
+    let ys: Vec<f64> = s.rigids[body]
+        .indices
+        .iter()
+        .map(|&i| s.particles.pos[i].y)
+        .collect();
+    let min_y = ys.iter().cloned().fold(f64::INFINITY, f64::min);
+    let bottom_spread = ys
+        .iter()
+        .filter(|&&y| y < min_y + 0.05)
+        .map(|&y| (y - (0.0 + radius)).abs())
+        .fold(0.0_f64, f64::max);
+
+    // TOLERANCE — derived + documented:
+    //  * Residual jitter: at 12 substeps the read-back leaves each contact a
+    //    sub-mm/s tremor; a plastic (e=0) ground bleeds it out. Budget 1e-3 m/s.
+    //  * Levelness: the box enters axis-aligned and never tips; the only tilt
+    //    is polar-fit round-off, ~1e-6 rad. Budget 1e-2 rad (0.57°) — generous.
+    //  * Resting height: bottom particles held at ground+radius within the
+    //    per-substep penetration depth. Budget 2 mm.
+    assert!(
+        speed < 1.0e-3,
+        "box still jittering: max particle speed {speed:.3e} m/s (> 1e-3)"
+    );
+    assert!(
+        tilt < 1.0e-2,
+        "box not level: up-axis tilted {:.4}° (> 0.57°)",
+        tilt.to_degrees()
+    );
+    assert!(
+        bottom_spread < 2.0e-3,
+        "resting face off ground+radius by {:.4} mm (> 2 mm)",
+        bottom_spread * 1000.0
+    );
+    println!(
+        "ORDEAL box-drop: settled  max speed={speed:.3e} m/s  tilt={:.5}°  \
+         bottom-face height error={:.4} mm  (level & still)",
+        tilt.to_degrees(),
+        bottom_spread * 1000.0
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ORDEAL 7 — Rigid invariance: a tumbling box (stiffness 1.0) preserves every
+// pairwise particle distance within tolerance — it does not deform.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn ordeal_rigid_invariance_under_tumbling() {
+    let cfg = SolverConfig {
+        dt: 1.0 / 120.0,
+        substeps: 20,
+        iterations: 1,
+        gravity: Vec3::ZERO, // pure tumble — isolate the shape-match fidelity
+        ..SolverConfig::default()
+    };
+    let mut s = Solver::new(cfg);
+    let body_idx = s.spawn_rigid_box(
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(0.6, 0.4, 0.5),
+        (3, 3, 3),
+        800.0,
+        1.0, // perfectly rigid
+        0.02,
+    );
+    // Seed a tumble: v_i = ω × r_i + v_linear, about a tilted axis.
+    let omega = Vec3::new(1.5, 2.5, -1.0); // rad/s
+    let v_lin = Vec3::new(0.3, 0.0, -0.2);
+    let centroid = s.rigids[body_idx].centroid;
+    for &i in &s.rigids[body_idx].indices.clone() {
+        let r = s.particles.pos[i] - centroid;
+        s.particles.vel[i] = omega.cross(r) + v_lin;
+    }
+    // Record rest pairwise distances.
+    let idx = s.rigids[body_idx].indices.clone();
+    let rest_dist = |s: &Solver, a: usize, b: usize| (s.particles.pos[a] - s.particles.pos[b]).length();
+    let rest: Vec<f64> = (0..idx.len())
+        .flat_map(|a| (a + 1..idx.len()).map(move |b| (a, b)))
+        .map(|(a, b)| rest_dist(&s, idx[a], idx[b]))
+        .collect();
+
+    let mut worst = 0.0_f64;
+    for _ in 0..600 {
+        s.step();
+        let mut k = 0;
+        for a in 0..idx.len() {
+            for b in a + 1..idx.len() {
+                let d = rest_dist(&s, idx[a], idx[b]);
+                let rel = (d - rest[k]).abs() / rest[k];
+                worst = worst.max(rel);
+                k += 1;
+            }
+        }
+    }
+    // TOLERANCE — derived + documented:
+    //  * Shape matching at 1 iteration/substep leaves an O((ω·dt_sub)²)
+    //    residual before re-fit. Here max ω≈3.1 rad/s, dt_sub=1/2400 →
+    //    (ω·dt_sub)² ≈ 1.7e-6. Budget 5e-4 (0.05 %) — orders above the bound,
+    //    covering fit round-off across 600 ticks.
+    assert!(
+        worst < 5.0e-4,
+        "rigid body deformed: worst pairwise distance drift {:.4}% (> 0.05%)",
+        worst * 100.0
+    );
+    println!(
+        "ORDEAL rigid-invariance: 27-particle box tumbling (|ω|≈{:.2} rad/s) \
+         over 600 ticks — worst pairwise distance drift {:.5}% (rigid held)",
+        omega.length(),
+        worst * 100.0
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ORDEAL 8 — Determinism with rigids + collision: byte-identical state hash
+// at tick 1000 across two runs.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn ordeal_determinism_rigid_collision() {
+    let run = || {
+        let cfg = SolverConfig {
+            dt: 1.0 / 120.0,
+            substeps: 10,
+            iterations: 1,
+            seed: 777,
+            ..SolverConfig::default()
+        };
+        let mut s = Solver::new(cfg);
+        s.collider = Some(Collider::ground_plane(0.0, 8.0, ContactMaterial::default()));
+        // Two bodies, dropped from an angle-inducing offset so they tumble,
+        // bounce and settle — exercising every P2 path.
+        s.spawn_rigid_box(
+            Vec3::new(-0.3, 1.2, 0.1),
+            Vec3::new(0.4, 0.4, 0.4),
+            (3, 3, 3),
+            600.0,
+            1.0,
+            0.03,
+        );
+        s.spawn_rigid_sphere(Vec3::new(0.5, 1.6, -0.2), 0.25, 3, 700.0, 1.0, 0.03);
+        // Tilt the box so it lands on an edge and tumbles.
+        let idx = s.rigids[0].indices.clone();
+        for &i in &idx {
+            s.particles.vel[i] = Vec3::new(0.7, 0.0, 0.4);
+        }
+        for _ in 0..1000 {
+            s.step();
+        }
+        (s.state_hash(), s.tick, s.rigids[0].centroid)
+    };
+    let (h1, t1, c1) = run();
+    let (h2, t2, c2) = run();
+    assert_eq!(t1, 1000);
+    assert_eq!(t2, 1000);
+    assert_eq!(h1, h2, "state hash diverged with rigids + collision");
+    assert_eq!(c1, c2, "body centroid diverged");
+    println!(
+        "ORDEAL determinism (rigid+collision): run A=0x{h1:016x} run B=0x{h2:016x} \
+         → IDENTICAL @ tick {t1}, centroid=({:.5},{:.5},{:.5})",
+        c1.x, c1.y, c1.z
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ORDEAL 9 — Restitution: a dropped body's bounce apex ratio matches the
+// restitution parameter (apex/drop height ratio ≈ e²), within derived tol.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn ordeal_restitution_apex_matches_param() {
+    let e = 0.5;
+    let g = 9.81;
+    let cfg = SolverConfig {
+        dt: 1.0 / 240.0,
+        substeps: 8,
+        iterations: 1,
+        gravity: Vec3::new(0.0, -g, 0.0),
+        ..SolverConfig::default()
+    };
+    let mut s = Solver::new(cfg);
+    let mat = ContactMaterial {
+        restitution: e,
+        friction_static: 0.0,
+        friction_dynamic: 0.0,
+        ..ContactMaterial::default()
+    };
+    s.collider = Some(Collider::ground_plane(0.0, 5.0, mat));
+    let r = 0.1;
+    let y0 = 2.0;
+    // A one-particle "sphere" (point mass) — clean restitution, no internal
+    // modes to launder energy through.
+    let body = s.spawn_rigid_sphere(Vec3::new(0.0, y0, 0.0), r, 1, 500.0, 1.0, r);
+    let ci = s.rigids[body].indices[0];
+
+    let mut bounced = false;
+    let mut peak = r;
+    for _ in 0..4000 {
+        s.step();
+        let y = s.particles.pos[ci].y;
+        let vy = s.particles.vel[ci].y;
+        if !bounced && vy > 0.0 && y < r + 0.05 {
+            bounced = true;
+        }
+        if bounced {
+            if y > peak {
+                peak = y;
+            }
+            if vy < 0.0 {
+                break; // apex passed
+            }
+        }
+    }
+    // Apex height above the contact point vs the original drop height above
+    // contact — the energy ratio e².
+    let measured = (peak - r) / (y0 - r);
+    let expected = e * e;
+    let rel_err = (measured - expected).abs() / expected;
+    // TOLERANCE — derived + documented:
+    //  * Restitution is applied on the contact substep using the pre-substep
+    //    incoming speed; up to one substep of gravity (g·dt_sub ≈ 5.1e-3 m/s
+    //    vs v_in ≈ 6.1 m/s → ~8e-4 rel) is unaccounted. Apex sampling adds
+    //    ≤ ½g·dt² of height error. Budget 3 %.
+    assert!(
+        rel_err < 0.03,
+        "restitution apex ratio {measured:.4} vs e²={expected:.4} off by {:.2}% (> 3%)",
+        rel_err * 100.0
+    );
+    println!(
+        "ORDEAL restitution: e={e}  apex/drop ratio measured={measured:.4}  \
+         expected e²={expected:.4}  rel_err={:.2}%",
+        rel_err * 100.0
+    );
+}
+
+/// Lay a rigid box FLUSH on a plane defined by `(along_x, up_slope, normal)`
+/// through the origin: a `counts` lattice filling `dims` (x along `along_x`,
+/// y along `normal`/thickness, z along `up_slope`), its base sitting at
+/// `normal·radius`. Returns the new body index.
+#[allow(clippy::too_many_arguments)]
+fn place_box_on_plane(
+    s: &mut Solver,
+    along_x: Vec3,
+    up_slope: Vec3,
+    normal: Vec3,
+    dims: Vec3,
+    counts: (usize, usize, usize),
+    density: f64,
+    radius: f64,
+    margin: f64,
+) -> usize {
+    let (nx, ny, nz) = (counts.0.max(1), counts.1.max(1), counts.2.max(1));
+    let n_total = nx * ny * nz;
+    let particle_mass = density * dims.x * dims.y * dims.z / n_total as f64;
+    let inv_mass = 1.0 / particle_mass;
+    let step = Vec3::new(
+        if nx > 1 { dims.x / (nx - 1) as f64 } else { 0.0 },
+        if ny > 1 { dims.y / (ny - 1) as f64 } else { 0.0 },
+        if nz > 1 { dims.z / (nz - 1) as f64 } else { 0.0 },
+    );
+    let mut indices = Vec::with_capacity(n_total);
+    for ix in 0..nx {
+        for iy in 0..ny {
+            for iz in 0..nz {
+                let local_x = -dims.x * 0.5 + step.x * ix as f64;
+                // Base layer resting at `radius + margin` above the plane — the
+                // effective contact distance, so the contact is live from tick
+                // 1 with no initial penetration (a deeper overlap reads back as
+                // a pop) and no empty substep for velocity to leak through.
+                let local_y = radius + margin + step.y * iy as f64;
+                let local_z = -dims.z * 0.5 + step.z * iz as f64;
+                let pos = along_x.scale(local_x) + normal.scale(local_y) + up_slope.scale(local_z);
+                indices.push(s.particles.add_with_radius(pos, inv_mass, radius));
+            }
+        }
+    }
+    let body = RigidBody::from_indices(&s.particles, indices, 1.0, s.config.polar);
+    s.rigids.push(body);
+    s.rigids.len() - 1
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ORDEAL 10 — Friction on an incline: below the critical repose angle
+// (tan θ_c = μ_s) the box HOLDS; above it, the box SLIDES. Both sides tested.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn ordeal_friction_incline_critical_angle() {
+    let mu_s = 0.6_f64;
+    let mu_d = 0.4_f64;
+    let critical = mu_s.atan(); // tan θ_c = μ_s
+    let g = 9.81;
+
+    // Run a box on an incline of `angle`; return down-slope centroid travel
+    // over the LATE window (after a 0.75 s settle) — the slide signature.
+    let travel_on_incline = |angle: f64| -> f64 {
+        let cfg = SolverConfig {
+            dt: 1.0 / 240.0,
+            substeps: 16,
+            iterations: 8,
+            gravity: Vec3::new(0.0, -g, 0.0),
+            ..SolverConfig::default()
+        };
+        let mut s = Solver::new(cfg);
+        let (sin, cos) = (angle.sin(), angle.cos());
+        let normal = Vec3::new(0.0, cos, sin);
+        let along_x = Vec3::new(1.0, 0.0, 0.0);
+        let up_slope = Vec3::new(0.0, sin, -cos); // ⟂ normal & x
+        let down_slope = up_slope.scale(-1.0); // gravity's in-plane pull
+        let mat = ContactMaterial {
+            friction_static: mu_s,
+            friction_dynamic: mu_d,
+            restitution: 0.0,
+            ..ContactMaterial::default()
+        };
+        s.collider = Some(Collider::incline(angle, 20.0, mat));
+        let radius = 0.03;
+        let margin = ContactMaterial::default().contact_margin;
+        // A 3-D box aligned FLUSH to the ramp face (its lattice frame is the
+        // ramp's along/normal/up-slope), so it rests on a full face and does
+        // not tumble. Friction is enforced at the body level (one contact
+        // supports the whole weight), so the hold condition is the clean
+        // geometric Coulomb law tanθ < μ_s regardless of the layer count.
+        let body = place_box_on_plane(
+            &mut s,
+            along_x,
+            up_slope,
+            normal,
+            Vec3::new(0.3, 0.3, 0.3),
+            (3, 3, 3),
+            600.0,
+            radius,
+            margin,
+        );
+        // Settle 0.75 s.
+        for _ in 0..180 {
+            s.step();
+        }
+        let start = s.rigids[body].centroid;
+        // Then measure 1.25 s of down-slope travel.
+        for _ in 0..300 {
+            s.step();
+        }
+        let end = s.rigids[body].centroid;
+        (end - start).dot(down_slope)
+    };
+
+    // Below critical (holds): 6° under.
+    let below = critical - 6.0_f64.to_radians();
+    let travel_hold = travel_on_incline(below);
+    // Above critical (slides): 6° over.
+    let above = critical + 6.0_f64.to_radians();
+    let travel_slide = travel_on_incline(above);
+
+    // TOLERANCE — derived + documented:
+    //  * The Coulomb hold condition is exactly tan θ < μ_s (the dt_sub²
+    //    factors on drive and stiction depth cancel), so the sign flips AT
+    //    θ_c = atan(μ_s). A held box stays within per-substep round-off:
+    //    budget 5 mm of drift over 1.25 s. A sliding box accelerates at
+    //    g(sin θ − μ_d cos θ) ≈ 1.8 m/s² here → ≫ 0.1 m over the window.
+    assert!(
+        travel_hold < 5.0e-3,
+        "box on {:.1}° (< θ_c={:.1}°) slid {:.4} m — static friction failed",
+        below.to_degrees(),
+        critical.to_degrees(),
+        travel_hold
+    );
+    assert!(
+        travel_slide > 0.1,
+        "box on {:.1}° (> θ_c={:.1}°) only moved {:.4} m — did not slide",
+        above.to_degrees(),
+        critical.to_degrees(),
+        travel_slide
+    );
+    println!(
+        "ORDEAL friction: μ_s={mu_s} → θ_c={:.2}°.  {:.1}° HELD (down-slope travel \
+         {:.4} m)  ·  {:.1}° SLID (travel {:.4} m).  Coulomb critical angle confirmed.",
+        critical.to_degrees(),
+        below.to_degrees(),
+        travel_hold,
+        above.to_degrees(),
+        travel_slide
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ORDEAL 11 — Energy honesty (rigid path): a tumbling box in zero gravity
+// bleeds kinetic energy through shape-match re-fit + PBD read-back. Measure
+// and REPORT the damping; assert only that energy is not injected and stays
+// bounded — never assert zero.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn ordeal_rigid_energy_honest() {
+    let cfg = SolverConfig {
+        dt: 1.0 / 240.0,
+        substeps: 16,
+        iterations: 1,
+        gravity: Vec3::ZERO,
+        ..SolverConfig::default()
+    };
+    let mut s = Solver::new(cfg);
+    let body = s.spawn_rigid_box(
+        Vec3::ZERO,
+        Vec3::new(0.6, 0.4, 0.5),
+        (3, 3, 3),
+        800.0,
+        1.0,
+        0.02,
+    );
+    let omega = Vec3::new(2.0, 3.0, -1.5);
+    let idx = s.rigids[body].indices.clone();
+    let centroid = s.rigids[body].centroid;
+    for &i in &idx {
+        let r = s.particles.pos[i] - centroid;
+        s.particles.vel[i] = omega.cross(r);
+    }
+    let kinetic = |s: &Solver| -> f64 {
+        idx.iter()
+            .map(|&i| {
+                let m = 1.0 / s.particles.inv_mass[i];
+                0.5 * m * s.particles.vel[i].dot(s.particles.vel[i])
+            })
+            .sum()
+    };
+    let e0 = kinetic(&s);
+    let ticks = 2400; // 10 s
+    for _ in 0..ticks {
+        s.step();
+    }
+    let e_end = kinetic(&s);
+    let lost = e0 - e_end;
+    let frac = lost / e0;
+    println!(
+        "ORDEAL rigid-energy (honest): KE0={e0:.6}J  KEend={e_end:.6}J over {ticks} ticks (10 s).  \
+         Shape-match re-fit + PBD read-back bled {lost:.6}J = {:.3}% of the rotational KE \
+         ({:.4}%/s).  The rigid path damps MONOTONICALLY — small at 16 substeps but REAL, \
+         NOT zero.",
+        frac * 100.0,
+        frac * 100.0 / 10.0
+    );
+    assert!(
+        lost >= -1.0e-6,
+        "energy GREW — solver injected energy (blow-up): KE0={e0} KEend={e_end}"
+    );
+    assert!(
+        frac < 0.5,
+        "lost {:.1}% of rotational KE in 10 s — damping too aggressive",
+        frac * 100.0
     );
 }

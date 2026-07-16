@@ -20,6 +20,10 @@ pub struct Particles {
     pub vel: Vec<Vec3>,
     /// Inverse masses (`w = 1/m`). Zero = infinite mass = anchored.
     pub inv_mass: Vec<f64>,
+    /// Collision radius — the particle's contact extent against the world's
+    /// triangle soup (P2). `0.0` = a pure point (no thickness), the P1
+    /// default: a bond lattice with no world to strike needs none.
+    pub radius: Vec<f64>,
 }
 
 impl Particles {
@@ -30,11 +34,18 @@ impl Particles {
     /// Birth a particle at `pos` with the given inverse mass. Returns its
     /// index — its name in this body's index space.
     pub fn add(&mut self, pos: Vec3, inv_mass: f64) -> usize {
+        self.add_with_radius(pos, inv_mass, 0.0)
+    }
+
+    /// Birth a particle with an explicit collision `radius` — its contact
+    /// thickness against the world (P2). All other lanes as [`Particles::add`].
+    pub fn add_with_radius(&mut self, pos: Vec3, inv_mass: f64, radius: f64) -> usize {
         let id = self.pos.len();
         self.pos.push(pos);
         self.prev.push(pos);
         self.vel.push(Vec3::ZERO);
         self.inv_mass.push(inv_mass);
+        self.radius.push(radius);
         id
     }
 

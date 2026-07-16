@@ -6,9 +6,12 @@
 //! the substep count, the iteration count, the gravity vector and the
 //! fracture threshold are all parameters carrying documented defaults.
 
+use crate::collision::{Collider, Contact, ContactMaterial};
 use crate::constraint::{DistanceConstraint, FractureEvent};
+use crate::mat3::PolarConfig;
 use crate::math::Vec3;
 use crate::particles::Particles;
+use crate::rigid::RigidBody;
 
 /// The world's dials. Defaults are declared here, once — every field is a
 /// parameter (never-hardcode law).
@@ -30,6 +33,9 @@ pub struct SolverConfig {
     /// The world seed — the root of all deterministic jitter (ENTROPY).
     /// Default `0`. No value drawn from it is random; all is `hash(seed, …)`.
     pub seed: u64,
+    /// Polar-decomposition dials for rigid shape matching (P2). Default
+    /// [`PolarConfig::default`].
+    pub polar: PolarConfig,
 }
 
 impl Default for SolverConfig {
@@ -41,6 +47,7 @@ impl Default for SolverConfig {
             gravity: Vec3::new(0.0, -9.81, 0.0),
             fracture_threshold: 1.0e4,
             seed: 0,
+            polar: PolarConfig::default(),
         }
     }
 }
@@ -53,6 +60,13 @@ pub struct Solver {
     pub config: SolverConfig,
     pub particles: Particles,
     pub constraints: Vec<DistanceConstraint>,
+    /// The rigid (and deformable) bodies — particle clusters held by a
+    /// shape-matching constraint (P2). Solved after the distance bindings
+    /// each substep, in index order.
+    pub rigids: Vec<RigidBody>,
+    /// The static world the particles strike, if any (P2). `None` = the free
+    /// void of P1 (bonds only, nothing to hit).
+    pub collider: Option<Collider>,
     /// The entropy coordinate — the tick index, the x-axis of this worldline.
     pub tick: u64,
     /// The journal of fractures written this run (append-only).
@@ -65,9 +79,105 @@ impl Solver {
             config,
             particles: Particles::new(),
             constraints: Vec::new(),
+            rigids: Vec::new(),
+            collider: None,
             tick: 0,
             fractures: Vec::new(),
         }
+    }
+
+    /// Spawn a solid rigid BOX centred at `center`, of full extents `dims`,
+    /// discretized into a `counts` (nx, ny, nz) particle lattice. Mass is
+    /// DERIVED, never authored: total = `density × volume`, split evenly
+    /// across the lattice (per-particle `density × cell_volume`). Each
+    /// particle gets a collision `radius` (its contact thickness). Returns
+    /// the new body's index in `rigids`.
+    pub fn spawn_rigid_box(
+        &mut self,
+        center: Vec3,
+        dims: Vec3,
+        counts: (usize, usize, usize),
+        density: f64,
+        stiffness: f64,
+        radius: f64,
+    ) -> usize {
+        let (nx, ny, nz) = (counts.0.max(1), counts.1.max(1), counts.2.max(1));
+        let n_total = nx * ny * nz;
+        let volume = dims.x * dims.y * dims.z;
+        let particle_mass = density * volume / n_total as f64;
+        // Lattice spacing: particles centred within each cell so the cluster
+        // fills `dims` symmetrically about `center`.
+        let step = Vec3::new(
+            if nx > 1 { dims.x / (nx - 1) as f64 } else { 0.0 },
+            if ny > 1 { dims.y / (ny - 1) as f64 } else { 0.0 },
+            if nz > 1 { dims.z / (nz - 1) as f64 } else { 0.0 },
+        );
+        let origin = center - dims.scale(0.5);
+        let mut indices = Vec::with_capacity(n_total);
+        for ix in 0..nx {
+            for iy in 0..ny {
+                for iz in 0..nz {
+                    let pos = origin
+                        + Vec3::new(
+                            step.x * ix as f64,
+                            step.y * iy as f64,
+                            step.z * iz as f64,
+                        );
+                    let inv_mass = 1.0 / particle_mass;
+                    indices.push(self.particles.add_with_radius(pos, inv_mass, radius));
+                }
+            }
+        }
+        let body = RigidBody::from_indices(&self.particles, indices, stiffness, self.config.polar);
+        self.rigids.push(body);
+        self.rigids.len() - 1
+    }
+
+    /// Spawn a solid rigid SPHERE centred at `center`, of the given `radius`,
+    /// sampled on a `subdiv`³ lattice (every lattice point inside the sphere
+    /// becomes a particle). Mass DERIVED: total = `density × (4/3)πr³`, split
+    /// evenly across the retained particles. Each particle's collision extent
+    /// is `particle_radius`. Returns the new body's index in `rigids`.
+    pub fn spawn_rigid_sphere(
+        &mut self,
+        center: Vec3,
+        radius: f64,
+        subdiv: usize,
+        density: f64,
+        stiffness: f64,
+        particle_radius: f64,
+    ) -> usize {
+        let n = subdiv.max(1);
+        // Gather lattice points inside the sphere first (to count them).
+        let mut points = Vec::new();
+        let step = if n > 1 { 2.0 * radius / (n - 1) as f64 } else { 0.0 };
+        for ix in 0..n {
+            for iy in 0..n {
+                for iz in 0..n {
+                    let offset = Vec3::new(
+                        -radius + step * ix as f64,
+                        -radius + step * iy as f64,
+                        -radius + step * iz as f64,
+                    );
+                    if offset.length() <= radius {
+                        points.push(center + offset);
+                    }
+                }
+            }
+        }
+        if points.is_empty() {
+            points.push(center); // never empty — the centre always qualifies
+        }
+        let volume = 4.0 / 3.0 * std::f64::consts::PI * radius * radius * radius;
+        let particle_mass = density * volume / points.len() as f64;
+        let inv_mass = 1.0 / particle_mass;
+        let indices: Vec<usize> = points
+            .into_iter()
+            .map(|p| self.particles.add_with_radius(p, inv_mass, particle_radius))
+            .collect();
+        let body = RigidBody::from_indices(&self.particles, indices, stiffness, self.config.polar);
+        self.rigids.push(body);
+        self.rigids.len() - 1
     }
 
     /// Advance the world one fixed tick: substep integrate → solve bindings →
@@ -93,12 +203,25 @@ impl Solver {
         }
 
         for _sub in 0..n {
+            // The velocity entering this substep — the incoming normal speed
+            // the restitution pass reflects (captured before gravity/solve).
+            let vel_pre = self.particles.vel.clone();
             self.integrate(dt_sub);
             self.reset_lambda();
+            let mut contacts: Vec<Contact> = Vec::new();
             for _it in 0..cfg.iterations.max(1) {
                 self.solve_distance(dt_sub);
+                self.solve_shape_matching();
+                contacts = self.solve_collision_normal();
             }
             self.read_back_velocity(dt_sub);
+            // Coulomb friction on VELOCITY, after the normal solve: rigid
+            // bodies are held at the BODY granularity (one contact supports the
+            // whole body's weight — a shape-matched rigid cannot build stacked
+            // contact force at its base), loose particles each carry their own
+            // weight. Then the restitution bounce.
+            self.apply_friction(&contacts, dt_sub);
+            self.apply_restitution(&contacts, &vel_pre);
             // The substep's constraint force = |lambda| / dt_sub² (XPBD:
             // f = lambda·∇C / Δt², ∇C is the unit axis). Accumulate the
             // strife the bond bore this substep.
@@ -129,6 +252,172 @@ impl Solver {
     fn reset_lambda(&mut self) {
         for c in &mut self.constraints {
             c.lambda = 0.0;
+        }
+    }
+
+    /// Solve every rigid body's shape-matching constraint, in index order
+    /// (order-stable — the determinism ordeal's bedrock extends to rigids).
+    fn solve_shape_matching(&mut self) {
+        for body in &mut self.rigids {
+            body.solve(&mut self.particles);
+        }
+    }
+
+    /// The NORMAL half of world collision: project each penetrating particle
+    /// out along the face normal. The effective contact radius carries the
+    /// surface skin (`contact_margin`) so a resting contact stays live every
+    /// substep. Returns the contacts (one per particle — its most recent face)
+    /// for the friction and restitution passes. Disjoint-field borrow:
+    /// `collider` read, `particles` written.
+    fn solve_collision_normal(&mut self) -> Vec<Contact> {
+        let mut contacts: Vec<Contact> = Vec::new();
+        let collider = match &self.collider {
+            Some(c) => c,
+            None => return contacts,
+        };
+        let mat = collider.material;
+        let p = &mut self.particles;
+        for i in 0..p.pos.len() {
+            if p.inv_mass[i] == 0.0 {
+                continue;
+            }
+            let radius = p.radius[i] + mat.contact_margin;
+            for tri in &collider.triangles {
+                let depth = match tri.contact_depth(p.pos[i], radius) {
+                    Some(d) => d,
+                    None => continue,
+                };
+                let n = tri.normal;
+                p.pos[i] = p.pos[i] + n.scale(depth);
+                match contacts.iter_mut().find(|c| c.particle == i) {
+                    Some(c) => c.normal = n,
+                    None => contacts.push(Contact {
+                        particle: i,
+                        normal: n,
+                        restitution: mat.restitution,
+                    }),
+                }
+            }
+        }
+        contacts
+    }
+
+    /// Coulomb friction as a change to a contact velocity. `v` is the velocity
+    /// under contact, `n` the outward surface normal, `g` the world gravity,
+    /// `dt` the substep. The surface supports the normal gravity `g_n = −g·n`;
+    /// friction opposes the tangential velocity `v_t`. STICK (return `−v_t`,
+    /// killing the slip) when the body is essentially at rest AND the
+    /// tangential DRIVE cannot overcome stiction (`|g_t| ≤ μ_s·g_n` — the
+    /// geometric Coulomb law `tanθ ≤ μ_s`); otherwise KINETIC, bleeding at most
+    /// `μ_d·g_n·dt` of speed opposing motion. `g_n ≤ 0` (gravity not pressing
+    /// into this face) yields no friction.
+    fn coulomb_dv(v: Vec3, n: Vec3, g: Vec3, dt: f64, mat: &ContactMaterial) -> Vec3 {
+        let g_n = -(g.dot(n));
+        if g_n <= 0.0 {
+            return Vec3::ZERO;
+        }
+        let v_t = v - n.scale(v.dot(n));
+        let vt_len = v_t.length();
+        if vt_len <= 0.0 {
+            return Vec3::ZERO;
+        }
+        let g_t = (g - n.scale(g.dot(n))).length();
+        let stick_capacity = mat.friction_static * g_n * dt;
+        if vt_len <= stick_capacity && g_t <= mat.friction_static * g_n {
+            v_t.scale(-1.0) // stiction: hold
+        } else {
+            let bleed = (mat.friction_dynamic * g_n * dt).min(vt_len);
+            v_t.scale(-bleed / vt_len) // kinetic: bounded drag
+        }
+    }
+
+    /// The friction pass (velocity level, after read-back). RIGID bodies are
+    /// held at the BODY granularity: the whole body's mass-weighted velocity
+    /// gets one Coulomb correction (its base contact supports the entire body
+    /// weight — per-particle base penetration cannot, a shape-matched rigid
+    /// builds no stacked contact pressure). Loose (non-rigid) contact
+    /// particles each carry their own weight and are corrected individually.
+    fn apply_friction(&mut self, contacts: &[Contact], dt_sub: f64) {
+        let mat = match &self.collider {
+            Some(c) => c.material,
+            None => return,
+        };
+        let g = self.config.gravity;
+        // Which particles belong to a rigid body (handled at body level).
+        let mut in_rigid = vec![false; self.particles.pos.len()];
+        for body in &self.rigids {
+            for &i in &body.indices {
+                in_rigid[i] = true;
+            }
+        }
+        // Rigid bodies — one body-level correction each.
+        for body in &self.rigids {
+            // Average contact normal + mass-weighted velocity over the body's
+            // contact particles (index order — determinism).
+            let mut n_sum = Vec3::ZERO;
+            let mut v_sum = Vec3::ZERO;
+            let mut m_sum = 0.0;
+            let mut touched = 0u32;
+            for c in contacts {
+                if let Some(k) = body.indices.iter().position(|&i| i == c.particle) {
+                    n_sum = n_sum + c.normal;
+                    let i = c.particle;
+                    let m = body.masses[k];
+                    v_sum = v_sum + self.particles.vel[i].scale(m);
+                    m_sum += m;
+                    touched += 1;
+                }
+            }
+            if touched == 0 || m_sum <= 0.0 {
+                continue;
+            }
+            let n = match n_sum.normalized() {
+                Some(n) => n,
+                None => continue,
+            };
+            let v_body = v_sum.scale(1.0 / m_sum);
+            let dv = Self::coulomb_dv(v_body, n, g, dt_sub, &mat);
+            if dv.x == 0.0 && dv.y == 0.0 && dv.z == 0.0 {
+                continue;
+            }
+            for &i in &body.indices {
+                if self.particles.inv_mass[i] != 0.0 {
+                    self.particles.vel[i] = self.particles.vel[i] + dv;
+                }
+            }
+        }
+        // Loose particles — each carries its own weight.
+        for c in contacts {
+            let i = c.particle;
+            if in_rigid[i] || self.particles.inv_mass[i] == 0.0 {
+                continue;
+            }
+            let dv = Self::coulomb_dv(self.particles.vel[i], c.normal, g, dt_sub, &mat);
+            self.particles.vel[i] = self.particles.vel[i] + dv;
+        }
+    }
+
+    /// The restitution velocity pass. The position solve has (inelastically)
+    /// killed each contact's normal velocity; here we ADD the bounce back:
+    /// outgoing normal speed = `e × |incoming|`, using the velocity captured
+    /// before this substep's integrate. One application per particle (a corner
+    /// meeting two faces bounces once).
+    fn apply_restitution(&mut self, contacts: &[Contact], vel_pre: &[Vec3]) {
+        let p = &mut self.particles;
+        let mut bounced = vec![false; p.pos.len()];
+        for c in contacts {
+            let i = c.particle;
+            if bounced[i] {
+                continue;
+            }
+            let vn_pre = vel_pre[i].dot(c.normal);
+            if vn_pre < 0.0 {
+                // moving into the surface — reflect scaled by restitution
+                let vn = p.vel[i].dot(c.normal);
+                let target = -c.restitution * vn_pre;
+                p.vel[i] = p.vel[i] + c.normal.scale(target - vn);
+                bounced[i] = true;
+            }
         }
     }
 
