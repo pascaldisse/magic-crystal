@@ -50,6 +50,9 @@ use crystal::{ComponentId, EcsWorld, Entity, Op, QuerySpec, SetOp};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+mod decorative;
+pub use decorative::{is_color_string, BindPose, Decorative, Sample};
+
 mod entropy;
 pub use entropy::hash;
 
@@ -154,6 +157,59 @@ fn default_retarget() -> f64 {
 }
 fn default_stop_range() -> f64 {
     1.5
+}
+
+/// Tick every entity carrying a DECORATIVE `behavior` (`{"type": ...}` — the
+/// [`Decorative`] six) + `transform`. Pure: reads the ECS, evaluates each kind
+/// at world time `entropy * dt` against its cached rest pose in `binds`, and
+/// returns ABSOLUTE `transform` `Set` ops (position/rotation/scale) in a
+/// deterministic (entity-sorted) order. Never mutates `world` — the caller
+/// applies the ops (Flow of Data), so re-reading the transform next tick never
+/// compounds (the bind pose is the fixed origin, not the live transform).
+///
+/// `binds` is keyed by gaia id; a missing entry falls back to
+/// [`BindPose::default`]. Entities whose `behavior` is not a decorative kind
+/// (e.g. the AI [`Behavior`] schema, tag `kind`) are skipped here — [`tick`]
+/// drives those.
+pub fn tick_decorative(
+    world: &EcsWorld,
+    reg: Registry,
+    binds: &std::collections::BTreeMap<String, BindPose>,
+    ctx: &TickContext,
+) -> Vec<Op> {
+    let mut entities = world.query(&QuerySpec {
+        all: vec![reg.behavior, reg.transform],
+        ..Default::default()
+    });
+    entities.sort_by_key(|e| (e.index, e.generation));
+    let t = ctx.entropy as f64 * ctx.dt;
+
+    let mut ops = Vec::new();
+    for entity in entities {
+        let Some(id) = world.gaia_id_for(entity) else {
+            continue;
+        };
+        let id = id.to_string();
+        let Ok(raw) = world.get_component(entity, reg.behavior) else {
+            continue;
+        };
+        let Ok(behavior) = serde_json::from_value::<Decorative>(raw) else {
+            continue; // not a decorative kind — the AI `tick` handles it
+        };
+        let bind = binds.get(&id).copied().unwrap_or_default();
+        let sample = behavior.eval(t, bind);
+        ops.push(Op::Set(SetOp {
+            id,
+            component: "transform".into(),
+            value: json!({
+                "position": sample.position,
+                "rotation": sample.rotation,
+                "scale": sample.scale,
+            }),
+            extra: Default::default(),
+        }));
+    }
+    ops
 }
 
 /// Tick every entity carrying a `behavior` + `transform`. Pure: reads the ECS,
