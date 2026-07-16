@@ -1,9 +1,15 @@
+use std::collections::BTreeMap;
+
 use bytemuck::{Pod, Zeroable};
 use crystal::{
     EcsWorld, Environment, Mesh, MeshPart, NumberOrNumbers, QuerySpec, Spawn, Transform,
 };
 use glam::{EulerRot, Mat3, Mat4, Quat, Vec3};
 use serde_json::Number;
+use transmutation::{
+    Bounds, Cluster, Dag, Mesh as ChainMesh, TransmuteParams, Vertex as ChainVertex,
+    transmute_default,
+};
 
 pub use first_light::FirstLight;
 
@@ -21,6 +27,11 @@ pub struct SceneParameters {
     pub camera_position: [f32; 3],
     pub camera_yaw: f32,
     pub camera_pitch: f32,
+    /// Great Chain cut threshold τ (screen-space error, ~pixels). A cluster is
+    /// drawn where `parent_error > τ ≥ error` projected through its group's
+    /// shared LOD sphere. Smaller = finer detail held longer. A PARAM (never
+    /// hardcode): env `GAIA_NATIVE_CLUSTER_ERROR`.
+    pub cluster_error_threshold: f32,
     /// First Light defaults, overridden per-scene by the `environment` component.
     pub first_light: first_light::FirstLightDefaults,
 }
@@ -102,14 +113,39 @@ impl Vertex {
     }
 }
 
+/// One transmuted material batch: a Great Chain (the SOLE geometry path) plus
+/// the flat colour/emissive its clusters draw with. Geometry stays generic —
+/// the chain knows nothing of colour; colour rides the batch, not the vertex
+/// stream, so identical geometry across colours never fragments the chain.
+pub struct MaterialChain {
+    pub dag: Dag,
+    pub color: [f32; 3],
+    pub emissive: f32,
+}
+
 pub struct RenderScene {
     /// Camera derived from the world `spawn`; the moving eye overrides it per request.
     pub camera: Camera,
     pub sky_top: [f32; 4],
     pub sky_horizon: [f32; 4],
     pub first_light: FirstLight,
-    /// World-space vertices: pose-independent so any camera can re-project them.
-    pub vertices: Vec<Vertex>,
+    /// Per-material transmuted Great Chains. THE geometry path: every draw is a
+    /// view-dependent cluster cut over these (the W1/W2 forward per-primitive
+    /// path is gone).
+    pub chains: Vec<MaterialChain>,
+    /// Great Chain cut threshold τ (screen-space error), carried from params.
+    pub error_threshold: f32,
+}
+
+/// Material batch key: quantised linear colour bits + emissive flag. Ordered so
+/// the chain vector is deterministic (byte-identical double builds).
+type MatKey = ([u32; 3], u32);
+
+struct MatBucket {
+    /// World-space triangle soup (position/normal/uv); transmuted at seal.
+    vertices: Vec<ChainVertex>,
+    color: [f32; 3],
+    emissive: f32,
 }
 
 impl RenderScene {
@@ -171,7 +207,9 @@ impl RenderScene {
             .unwrap_or_default();
         entities.sort_by(|a, b| world.gaia_id_for(*a).cmp(&world.gaia_id_for(*b)));
 
-        let mut vertices = Vec::<Vertex>::new();
+        // Tessellate every mesh part into world-space triangles, bucketed by
+        // material. Each bucket becomes ONE transmuted Great Chain below.
+        let mut buckets = BTreeMap::<MatKey, MatBucket>::new();
         for entity in entities {
             let (transform_id, mesh_id) = render_components.expect("render query has components");
             let id = world.gaia_id_for(entity).unwrap_or("<unbound>");
@@ -188,7 +226,7 @@ impl RenderScene {
             );
             for (index, part) in parts.iter().enumerate() {
                 append_part(
-                    &mut vertices,
+                    &mut buckets,
                     part,
                     entity_model,
                     default_color,
@@ -198,14 +236,55 @@ impl RenderScene {
             }
         }
 
-        // World-space vertices; the ruled depth buffer (W2) resolves occlusion, so no painter sort.
+        // Seal each material bucket into a Great Chain. `transmute` is
+        // deterministic (BTree ordering + canonical welds), so two builds of one
+        // world produce byte-identical chains.
+        let chain_params = TransmuteParams::default();
+        let mut chains = Vec::<MaterialChain>::with_capacity(buckets.len());
+        for bucket in buckets.into_values() {
+            if bucket.vertices.is_empty() {
+                continue;
+            }
+            let indices: Vec<u32> = (0..bucket.vertices.len() as u32).collect();
+            let mesh = ChainMesh::new(bucket.vertices, indices);
+            let dag = transmute_default(&mesh, &chain_params)
+                .map_err(|error| format!("transmute material chain: {error}"))?;
+            chains.push(MaterialChain {
+                dag,
+                color: bucket.color,
+                emissive: bucket.emissive,
+            });
+        }
+
         Ok(Self {
             camera,
             sky_top,
             sky_horizon,
             first_light,
-            vertices,
+            chains,
+            error_threshold: parameters.cluster_error_threshold,
         })
+    }
+
+    /// Select and expand the view-dependent cluster cut into draw vertices — the
+    /// ONE geometry path. For each chain, every cluster is drawn where its
+    /// group's projected `parent_error > τ ≥ error` (crack-free by the shared
+    /// LOD metric); leaves carry error 0, roots carry parent_error ∞, so exactly
+    /// one cut covers the surface. Colour/emissive come from the batch.
+    pub fn select_vertices(&self, camera: &Camera, viewport_height: u32) -> Vec<Vertex> {
+        let half_fov = (camera.fov_y_radians * 0.5).tan().max(1e-6);
+        let projection_scale = viewport_height.max(1) as f32 / (2.0 * half_fov);
+        let mut out = Vec::<Vertex>::new();
+        for chain in &self.chains {
+            select_chain(
+                chain,
+                camera,
+                projection_scale,
+                self.error_threshold,
+                &mut out,
+            );
+        }
+        out
     }
 
     /// Project the world-space scene through an arbitrary camera pose (the moving eye).
@@ -367,8 +446,70 @@ fn parts_of(mesh: Mesh) -> Result<Vec<MeshPart>, String> {
     Ok(Vec::new())
 }
 
+/// Project a cluster's LOD error through its group's SHARED bounds sphere to a
+/// screen-space error (~pixels). Error 0 (leaves) stays 0. Distance metric
+/// (Rite III); hardware visibility lands later.
+fn project_error(error: f32, bounds: &Bounds, camera: &Camera, projection_scale: f32) -> f32 {
+    if error <= 0.0 {
+        return 0.0;
+    }
+    let center = Vec3::from_array(bounds.center);
+    let distance = ((center - camera.eye).length() - bounds.radius).max(camera.near);
+    error * projection_scale / distance
+}
+
+/// Expand one chain's view-dependent cut into `out`. `error` side reads the
+/// PRODUCING group's sphere (`cluster.group`; None = leaf, error 0); the
+/// `parent_error` side reads the CONSUMING group's sphere (`cluster.parent_group`;
+/// None = terminal/root, ∞). Draw where `parent_sse > τ ≥ self_sse`.
+fn select_chain(
+    chain: &MaterialChain,
+    camera: &Camera,
+    projection_scale: f32,
+    tau: f32,
+    out: &mut Vec<Vertex>,
+) {
+    let dag = &chain.dag;
+    for cluster in &dag.clusters {
+        let self_sse = match cluster.group {
+            Some(group) => project_error(
+                cluster.error,
+                &dag.group(group).bounds,
+                camera,
+                projection_scale,
+            ),
+            None => 0.0,
+        };
+        let parent_sse = match cluster.parent_group {
+            Some(group) => project_error(
+                cluster.parent_error,
+                &dag.group(group).bounds,
+                camera,
+                projection_scale,
+            ),
+            None => f32::INFINITY,
+        };
+        if parent_sse > tau && tau >= self_sse {
+            emit_cluster(cluster, chain.color, chain.emissive, out);
+        }
+    }
+}
+
+fn emit_cluster(cluster: &Cluster, color: [f32; 3], emissive: f32, out: &mut Vec<Vertex>) {
+    out.reserve(cluster.indices.len());
+    for &index in &cluster.indices {
+        let vertex = &cluster.vertices[index as usize];
+        out.push(Vertex {
+            position: vertex.position,
+            normal: vertex.normal,
+            color,
+            emissive,
+        });
+    }
+}
+
 fn append_part(
-    output: &mut Vec<Vertex>,
+    buckets: &mut BTreeMap<MatKey, MatBucket>,
     part: &MeshPart,
     entity_model: Mat4,
     default_color: [f32; 3],
@@ -415,16 +556,27 @@ fn append_part(
         Some(color) => linear_rgb(color)?,
         None => default_color,
     };
-    output.extend(primitive.into_iter().flatten().map(|vertex| {
-        let world_position = model.transform_point3(vertex.position);
-        let normal = (normal_matrix * vertex.normal).normalize_or_zero();
-        Vertex {
-            position: world_position.to_array(),
-            normal: normal.to_array(),
-            color,
-            emissive: f32::from(emissive),
+    let emissive = f32::from(emissive);
+    let key: MatKey = (
+        [color[0].to_bits(), color[1].to_bits(), color[2].to_bits()],
+        emissive.to_bits(),
+    );
+    let bucket = buckets.entry(key).or_insert_with(|| MatBucket {
+        vertices: Vec::new(),
+        color,
+        emissive,
+    });
+    for triangle in primitive {
+        for vertex in triangle {
+            let world_position = model.transform_point3(vertex.position);
+            let normal = (normal_matrix * vertex.normal).normalize_or_zero();
+            bucket.vertices.push(ChainVertex::new(
+                world_position.to_array(),
+                normal.to_array(),
+                [0.0, 0.0],
+            ));
         }
-    }));
+    }
     Ok(())
 }
 
@@ -701,6 +853,7 @@ mod tests {
             camera_position: [0.0, 2.0, 22.0],
             camera_yaw: 0.0,
             camera_pitch: 0.0,
+            cluster_error_threshold: 1.0,
             first_light: first_light::FirstLightDefaults {
                 sun_color: "#ffe2b0".into(),
                 sun_intensity: 1.1,
@@ -737,17 +890,23 @@ mod tests {
 
         let scene = RenderScene::from_ecs(&world, &test_parameters()).unwrap();
 
-        // A box is 6 faces × 2 triangles × 3 vertices.
-        assert_eq!(scene.vertices.len(), 36);
+        // One box = one material chain; 12 tris ≤ shard budget → a single leaf.
+        assert_eq!(scene.chains.len(), 1);
+        assert_eq!(scene.chains[0].dag.leaf_tri_sum(), 12);
 
         // Camera reads the spawn pose verbatim.
         assert_eq!(scene.camera.eye, Vec3::new(0.0, 2.0, 10.0));
         assert_eq!(scene.camera.yaw, 0.0);
 
+        // The Great Chain draw path expands the cut back to the box: 6 faces ×
+        // 2 triangles × 3 vertices, world-space (a single leaf is always drawn).
+        let vertices = scene.select_vertices(&scene.camera, 640);
+        assert_eq!(vertices.len(), 36);
+
         // World-space AABB matches the authored box exactly (no camera-relative bake).
         let mut min = Vec3::splat(f32::INFINITY);
         let mut max = Vec3::splat(f32::NEG_INFINITY);
-        for vertex in &scene.vertices {
+        for vertex in &vertices {
             let position = Vec3::from_array(vertex.position);
             min = min.min(position);
             max = max.max(position);
@@ -783,5 +942,116 @@ mod tests {
         // Sun at +Y → direction toward sun is +Y.
         let direction = scene.first_light.sun_direction();
         assert!((direction[1] - 1.0).abs() < 1e-6);
+    }
+
+    // ---- Rite III ordeals: the Great Chain is THE geometry path ----
+
+    use crystal::load_world_dir;
+    use std::path::{Path, PathBuf};
+
+    fn naruko_world() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../worlds/naruko")
+    }
+
+    fn naruko_scene() -> RenderScene {
+        let mut world = EcsWorld::default();
+        load_world_dir(naruko_world(), &mut world).expect("load the Naruko realm");
+        RenderScene::from_ecs(&world, &test_parameters()).expect("transmute the realm")
+    }
+
+    fn mat_key(color: &str, emissive: bool) -> MatKey {
+        let rgb = linear_rgb(color).unwrap();
+        let emissive = f32::from(emissive);
+        (
+            [rgb[0].to_bits(), rgb[1].to_bits(), rgb[2].to_bits()],
+            emissive.to_bits(),
+        )
+    }
+
+    /// Two independent transmutations of the realm produce identical Great
+    /// Chains — same cluster count, byte-identical serialization (FORMAT.md
+    /// determinism invariant). Cluster count is READ from the build, never
+    /// hardcoded (it grows as the realm does).
+    #[test]
+    fn naruko_chain_is_deterministic_and_double_builds_byte_identical() {
+        let first = naruko_scene();
+        let second = naruko_scene();
+        assert_eq!(
+            first.chains.len(),
+            second.chains.len(),
+            "chain count stable"
+        );
+        assert!(!first.chains.is_empty(), "the realm has geometry");
+
+        let mut total_clusters = 0usize;
+        for (a, b) in first.chains.iter().zip(&second.chains) {
+            assert_eq!(a.color, b.color, "chain material order stable");
+            let bytes_a = transmutation::serialize(&a.dag).expect("serialize chain A");
+            let bytes_b = transmutation::serialize(&b.dag).expect("serialize chain B");
+            assert_eq!(bytes_a, bytes_b, "double build must be byte-identical");
+            total_clusters += a.dag.clusters.len();
+        }
+        eprintln!(
+            "[ordeal] Naruko Great Chain: {} chains, {} clusters",
+            first.chains.len(),
+            total_clusters
+        );
+        assert!(
+            total_clusters >= first.chains.len(),
+            "each chain has ≥1 cluster"
+        );
+    }
+
+    /// Draw-parity band assert: the transmuted draw path still carries every
+    /// signature material of the keyart — pier browns, lantern rose, warm
+    /// windows, the lit lamp — and the sky gradient survives. No material is
+    /// dropped by the Great Chain (the forward path's job, now the chain's).
+    #[test]
+    fn naruko_selected_cut_preserves_every_material_band() {
+        let scene = naruko_scene();
+        let vertices = scene.select_vertices(&scene.camera, 640);
+        assert!(!vertices.is_empty(), "the cut drew geometry");
+
+        let present: std::collections::BTreeSet<MatKey> = vertices
+            .iter()
+            .map(|v| {
+                (
+                    [
+                        v.color[0].to_bits(),
+                        v.color[1].to_bits(),
+                        v.color[2].to_bits(),
+                    ],
+                    v.emissive.to_bits(),
+                )
+            })
+            .collect();
+
+        for (label, color, emissive) in [
+            ("pier brown", "#4a3626", false),
+            ("lantern rose", "#ff9db0", true),
+            ("warm window", "#ffb46b", true),
+            ("lit lamp", "#f3e9ff", true),
+        ] {
+            assert!(
+                present.contains(&mat_key(color, emissive)),
+                "the cut lost the {label} band ({color}, emissive={emissive})"
+            );
+        }
+
+        // Sky gradient endpoints intact (linear sRGB of the night preset).
+        assert_eq!(scene.sky_top, linear_rgba("#2a1a3e").unwrap());
+        assert_eq!(scene.sky_horizon, linear_rgba("#d98ba8").unwrap());
+    }
+
+    /// At τ → 0 the cut selects the finest LOD everywhere: the emitted triangle
+    /// count equals the summed leaf triangles of every chain (geometry parity —
+    /// leaves are the loss-free shardized input).
+    #[test]
+    fn finest_threshold_reproduces_leaf_geometry() {
+        let mut scene = naruko_scene();
+        scene.error_threshold = 0.0;
+        let leaf_tris: usize = scene.chains.iter().map(|c| c.dag.leaf_tri_sum()).sum();
+        let vertices = scene.select_vertices(&scene.camera, 640);
+        assert_eq!(vertices.len(), leaf_tris * 3, "finest cut == all leaves");
     }
 }

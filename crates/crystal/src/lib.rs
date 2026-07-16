@@ -2,6 +2,7 @@
 
 pub mod command_buffer;
 pub mod component;
+pub mod prefab;
 pub mod protocol;
 pub mod scheduler;
 pub mod world;
@@ -12,6 +13,7 @@ pub use component::{
     component_default, ComponentDescriptor, ComponentId, ComponentType, FieldDescriptor, FieldSpec,
     FieldType,
 };
+pub use prefab::{deep_merge, diff_instance, expand_instance, prefab_name};
 pub use protocol::*;
 pub use scheduler::{
     ItemOptions, ScheduleOptions, Scheduler, SystemContext, DEFAULT_FIXED_DELTA,

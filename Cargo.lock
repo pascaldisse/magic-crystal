@@ -2942,6 +2942,7 @@ dependencies = [
  "serde_json",
  "tauri",
  "tauri-build",
+ "transmutation",
  "wgpu",
 ]
 

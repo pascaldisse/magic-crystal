@@ -9,6 +9,59 @@ fn twin_world() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/twin-world")
 }
 
+fn fixture_world() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/world")
+}
+
+/// A scene entry with a `prefab` key is an INSTANCE: the prefab's components
+/// (`prefabs/torch.json`) deep-merge under the entry's own deltas, so the
+/// `beacon` gains the torch mesh + light while its own transform wins. The
+/// expanded doc keeps the `{name}` link so write-back can diff (reference
+/// `expandDoc`). This ordeal proves the deep-merge landed in crystal.
+#[test]
+fn prefab_instance_deep_merges_under_its_deltas() {
+    let mut ecs = EcsWorld::default();
+    load_world_dir(fixture_world(), &mut ecs).expect("load the fixture world with a prefab");
+
+    let beacon = ecs
+        .entity_for_gaia("beacon")
+        .expect("the fixture carries a `beacon` prefab instance");
+
+    // torch's mesh + light merged in; the entry contributed neither directly.
+    let mesh = ecs.component_id("mesh").expect("mesh registered");
+    let light = ecs.component_id("light").expect("light registered");
+    let prefab = ecs.component_id("prefab").expect("prefab link registered");
+    let transform = ecs.component_id("transform").expect("transform registered");
+
+    let mesh_value = ecs
+        .get_component(beacon, mesh)
+        .expect("beacon has the torch mesh");
+    let parts = mesh_value
+        .get("parts")
+        .and_then(|parts| parts.as_array())
+        .expect("torch mesh has parts");
+    assert_eq!(parts.len(), 2, "both torch mesh parts merged in");
+
+    assert!(
+        ecs.get_component(beacon, light).is_ok(),
+        "the torch light merged onto the instance"
+    );
+    assert_eq!(
+        ecs.get_component(beacon, prefab).unwrap(),
+        serde_json::json!({ "name": "torch" }),
+        "the prefab link survives for write-back diffing"
+    );
+
+    // the instance's OWN transform delta wins over anything the prefab lacks.
+    let position = ecs
+        .get_component(beacon, transform)
+        .unwrap()
+        .get("position")
+        .cloned()
+        .expect("beacon transform position");
+    assert_eq!(position, serde_json::json!([0, 19, -120]));
+}
+
 #[test]
 fn world_json_composes_two_scenes_into_one_ecs() {
     let path = twin_world();
