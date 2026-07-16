@@ -74,7 +74,8 @@ Read in this order:
 | [DESIGN-BIBLE.md](DESIGN-BIBLE.md) | the Laws of Realms — the rules for worlds built in the forge; violations are machine-detectable |
 | [DREAMFORGE.md](DREAMFORGE.md) | the charter: 13 pillars, laws, forbidden vocabulary |
 | [RENDER.md](RENDER.md) · [GEOMETRY.md](GEOMETRY.md) · [PHYSICS.md](PHYSICS.md) · [NEURAL.md](NEURAL.md) · [CREATE.md](CREATE.md) · [VISIONFLOW.md](VISIONFLOW.md) · [RAIN.md](RAIN.md) | per-system rulings |
-| [FEATURES.md](FEATURES.md) | the parity contract against the reference web engine |
+| [FEATURES.md](FEATURES.md) + [PARITY.md](PARITY.md) | the parity contract against the reference web engine (79 features / 24 components / 9 tools) |
+| [docs/PHYSICS-ENGINE-REFERENCE.md](docs/PHYSICS-ENGINE-REFERENCE.md) | the Architect's own physics reference (Teardown-class voxel engine) — source material for PHYSICS.md |
 | [NARUKO.md](NARUKO.md) | the first realm — proof-of-concept world, built wave by wave |
 | [HANDOFF.md](HANDOFF.md) | working state anchor |
 | research/ | evidence files behind every ruling (17 studies: Nanite, Dreams, Teardown-class physics, Metal 4, and more) |
@@ -112,7 +113,11 @@ Founded 2026-07-16. Young and moving fast.
   default 8430)
 - ✅ First realm light: world dir → ECS → primitive render, sky
   gradient, spawn camera (image above)
+- ✅ Naruko Rite II realm data staged: pier, chain posts, gothic city
+  massing, lantern, stall — 12 entities / 73 parts awaiting the next
+  renderer wave
 - 🔄 In council trial: agent senses package · cluster-DAG builder
+  (cross-model adversarial loop converging: 10 → 4 → 1 findings)
 - ⏳ Next: depth + movable scrying camera, first lighting, the cluster
   pipeline end to end
 
