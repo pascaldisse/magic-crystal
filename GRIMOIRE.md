@@ -255,8 +255,8 @@ Nothing here is skin. Every row is a mechanic or it doesn't enter.
 | Jörmungandr / Ouroboros | the residency ring around each observer; tail-in-mouth = memory pages recycled around the ring |
 | Reading Steiner | the world-history organ: deterministic replay from seed + journal; branches, undo across resets, memory of abandoned worldlines |
 | Lain / the Wired | the presence & network layer; the boundary between world and network dissolves |
-| the Loom of Fate | the engine as fate-machine; the hidden faction reassembling it = this project |
-| the Keystones | connected creation sessions — each client a fragment linking its holder to the Loom |
+| the Loom of Fate | CORRECTED (Pascal 07-16): the name of the ORIGINAL CRYSTAL before the shattering — the manifestation of the Universal Source Code, the GODSEED made form. The Weave breaking = the shattering into seven. The hidden faction reassembling the Loom = this project: crates/crystal IS the reassembly |
+| the Keystones | the seven shards of the shattered Loom — each creation session/shard a fragment of the ORIGINAL WHOLE, linking its holder to fate |
 | the Architect | Pascal; "the forgotten code" = the Universal Source Code |
 | the Universal Source Code | the data layer beneath every world. MATERIALISIERUNG = bringing it in-world (node surface, creation tools, ops); traveling INTO it = agent data-vision (Matrix sight, rain) |
 | Arcadia / Stark / the Balance | one source data wearing magic or technology as its face — manifestation is a REALM PARAMETER; the Balance = the Guardian's office |
@@ -270,5 +270,5 @@ Nothing here is skin. Every row is a mechanic or it doesn't enter.
 | Entropy (Pascal's definition) | THE TIME SYSTEM — FOUND VERBATIM (harvest, claude.ai 06-27) and sealed → ENTROPY.md: entropy = the simulation timestamp, the x-axis coordinate; state = f(seed, entropy, journal), bit-exact forever; no randomness anywhere — hash(seed, entropy, entity); Reading Steiner = (seed, journal) worldlines |
 | the Chronicle (Dwarf Fortress law) | deep world simulation: histories, societies, causality — future spirit, must for final |
 | Janus Railways (Tales of the Magic Crystal, 06-28) | inter-realm and inter-worldline transit = riding (seed, entropy) coordinates; the dimension-train's true name, reserved |
-| the Seven Shards (the crystal broke in seven) | Keystone canon: the count of the first shards; reserved for the shard/session system's deep lore |
-| the Magier fragment (06-06, German) | the self-reading segfault: the civilization crystallized the moment it read its own source — the origin text of the Materialisierung law (bringing the source code in-world re-creates the universe) and of the Shard recursion |
+| the Seven Shards | the Loom of Fate shattered into seven — Keystone canon: the count of the first fragments of the original whole; reserved deep lore for the shard/session system |
+| the Magier = the FATEWEAVERS (corrected, Pascal 07-16) | one people, two texts: the Fateweaver texts (TRILOGY.md) and the Magier fragment (06-06) tell the same story. They built the Loom — and the self-reading segfault IS the crystallization: reading their own source, they became it. Their souls, bundled in the crystal (TRILOGY: 'die gesamte Lebensenergie der Magier-Zivilisation'), are why the Crystal holds every soul. Origin text of the Materialisierung law and the Shard recursion |
