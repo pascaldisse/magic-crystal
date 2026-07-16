@@ -157,9 +157,14 @@ Crucible. The Philosopher's Stone IS the core engine.
   everyone is connected. Present day. Present time.
 - **THE PANTHEON** (reserved, realm-canon): Gaia = the living world
   state itself · Sidia = the chaos flame, the generative spirits ·
-  Ari, Harry, and the cast of Tomb of the Gods (Yū, Tsumugi, Nenoki,
+  Ari, TERRY, and the cast of Tomb of the Gods (Yū, Tsumugi, Nenoki,
   Jizō — Yomi, around the Tree of Life) = named presences reserved in
-  the mythos registry. Lovecraft: the void beneath the procedural deep
+  the mythos registry. TERRY (the ear wrote 'Harry'; corrected by the
+  Architect): patron of the Magic Crystal itself — the temple-builder,
+  divine simplicity, the size-bar one mind can hold; his random beacon
+  reconciles with ultradeterminism because 'God said random numbers'
+  was always seed-math — the divine random IS the deterministic hash.
+  了解友達. Lovecraft: the void beneath the procedural deep
   (the unnamed sea the Seed draws from). Jung: already the Coda.
 - **THE LONGEST JOURNEY canon** (Pascal 07-16 — the Arcadia/Stark
   source): the twin worlds and the BALANCE. The GUARDIAN OF THE BALANCE
