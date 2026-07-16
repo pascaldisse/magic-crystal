@@ -1,12 +1,14 @@
 use std::collections::BTreeMap;
 
+use crate::physics::{Body, BodyPose, Physics};
 use bytemuck::{Pod, Zeroable};
 use crystal::{
     EcsWorld, Environment, Mesh, MeshPart, NumberOrNumbers, Op, QuerySpec, Spawn, Transform,
 };
+use elements::Triangle;
 use glam::{EulerRot, Mat3, Mat4, Quat, Vec3};
 use kami::{BindPose, Registry, TickContext};
-use serde_json::Number;
+use serde_json::{Number, json};
 use transmutation::{
     Bounds, Cluster, Dag, Mesh as ChainMesh, TransmuteParams, Vertex as ChainVertex,
     transmute_default,
@@ -345,10 +347,17 @@ impl RenderScene {
         let sun = SunLight::derive(environment.as_ref(), &parameters.sun)?;
         let default_color = linear_rgb(&parameters.mesh_color)?;
 
-        // Entities carrying a `behavior` component are DYNAMIC: split off from the
-        // shared static chains into their own (bind-baked) chains + a live model
-        // transform. Generic — the split reads only the `behavior` marker.
+        // Entities carrying a `behavior` component OR a `body` component are
+        // DYNAMIC: split off from the shared static chains into their own
+        // (bind-baked) chains + a live model transform. Generic — the split
+        // reads only the `behavior`/`body` markers, never a realm's vocabulary.
+        // `behavior` = KAMI kinematics; `body` = the Elements' rigid solver.
         let behavior_id = world.component_id("behavior");
+        let body_id = world.component_id("body");
+        // Physics declarations (id, body sigil, authored world centre) collected
+        // as we walk the entities; installed into the living layer after the
+        // static collider is sealed.
+        let mut body_declarations: Vec<(String, Body, [f64; 3])> = Vec::new();
         let render_components = world
             .component_id("transform")
             .zip(world.component_id("mesh"));
@@ -365,6 +374,9 @@ impl RenderScene {
         // Tessellate every mesh part into world-space triangles. Static parts
         // pool into shared material buckets; each dynamic entity seals its OWN.
         let mut static_buckets = BTreeMap::<MatKey, MatBucket>::new();
+        // The physics collision soup: every STATIC part's world-space triangles
+        // with clean per-face outward normals (accumulated as we tessellate).
+        let mut collider_triangles: Vec<Triangle> = Vec::new();
         let mut dynamics = Dynamics::new(parameters.emission_intensity);
         for entity in entities {
             let (transform_id, mesh_id) = render_components.expect("render query has components");
@@ -380,9 +392,16 @@ impl RenderScene {
             let bind_scale = scale(transform.scale.as_ref());
             let entity_model = transform_matrix(bind_position, bind_rotation, bind_scale);
 
-            let is_dynamic = behavior_id
+            let has_behavior = behavior_id
                 .map(|behavior| world.get_component(entity, behavior).is_ok())
                 .unwrap_or(false);
+            let body = body_id.and_then(|id| world.get_component(entity, id).ok());
+            if let Some(raw) = &body {
+                let parsed: Body = serde_json::from_value(raw.clone())
+                    .map_err(|error| format!("entity {id:?} body: {error}"))?;
+                body_declarations.push((id.clone(), parsed, bind_position.as_dvec3().to_array()));
+            }
+            let is_dynamic = has_behavior || body.is_some();
 
             if is_dynamic {
                 let mut buckets = BTreeMap::<MatKey, MatBucket>::new();
@@ -393,6 +412,7 @@ impl RenderScene {
                         entity_model,
                         default_color,
                         parameters.radial_segments,
+                        None,
                     )
                     .map_err(|error| format!("entity {id:?} mesh part {index}: {error}"))?;
                 }
@@ -419,6 +439,7 @@ impl RenderScene {
                         entity_model,
                         default_color,
                         parameters.radial_segments,
+                        Some(&mut collider_triangles),
                     )
                     .map_err(|error| format!("entity {id:?} mesh part {index}: {error}"))?;
                 }
@@ -433,6 +454,9 @@ impl RenderScene {
         // (its live tick reads and writes the animated transforms).
         let chains = seal_buckets(static_buckets)?;
         dynamics.install_world(std::mem::take(world), parameters);
+        // Wire the Elements' rigid solver for every declared body (inert — stays
+        // `None` — when no `body` is declared; a zero-physics realm is unchanged).
+        dynamics.install_physics(body_declarations, collider_triangles, parameters.tick_dt);
 
         Ok(Self {
             camera,
@@ -467,6 +491,21 @@ impl RenderScene {
             out.extend_from_slice(&body.world_tris);
         }
         out
+    }
+
+    /// The realm's physics seam, if any body was declared (`None` otherwise —
+    /// the zero-physics realm). Exposes the solver bindings, poses and state
+    /// hash for verification.
+    pub fn physics(&self) -> Option<&Physics> {
+        self.dynamics.physics.as_ref()
+    }
+
+    /// The current world position of a declared body (its solver centroid),
+    /// or `None` if the id names no body.
+    pub fn body_position(&self, gaia_id: &str) -> Option<[f64; 3]> {
+        let physics = self.dynamics.physics.as_ref()?;
+        let binding = physics.bindings().iter().find(|b| b.gaia_id == gaia_id)?;
+        Some(physics.pose(binding).position)
     }
 
     /// Select and expand the view-dependent cluster cut into draw vertices — the
@@ -591,13 +630,21 @@ fn parts_of(mesh: Mesh) -> Result<Vec<MeshPart>, String> {
     Ok(Vec::new())
 }
 
-/// Read every `body`-sigil entity into a skinned world-space [`BodyInstance`]
-/// (Rite V). GENERIC: the compose reads only the `body`/`transform` sigils and
-/// resolves the named vessel preset — the engine never special-cases a creature.
-/// The body is skinned at SAMA's idle pose (tick 0, via [`vessel::Body`]), each
-/// vertex coloured by its region palette; a triangle's albedo is the mean of its
-/// three vertices' linear colours. `body.preset` names the preset; an unknown
-/// preset is an authoring error (surfaced, never silently invented).
+/// Read every VESSEL `body`-sigil entity into a skinned world-space
+/// [`BodyInstance`] (Rite V). GENERIC: the compose reads only the
+/// `body`/`transform` sigils and resolves the named vessel preset — the engine
+/// never special-cases a creature. The body is skinned at SAMA's idle pose
+/// (tick 0, via [`vessel::Body`]), each vertex coloured by its region palette; a
+/// triangle's albedo is the mean of its three vertices' linear colours.
+/// `body.preset` names the preset; an unknown preset is an authoring error
+/// (surfaced, never silently invented).
+///
+/// TWO BODY KINDS share the `body` sigil (the P3 merge): a VESSEL body names a
+/// `preset` (skinned here); a PHYSICS body names a `shape` and is owned by the
+/// Elements' rigid solver (see [`crate::physics`]) — that path collects it into
+/// `body_declarations` during the mesh walk. This skinned pass is vessels ONLY,
+/// so it SKIPS physics bodies; both dynamics paths then feed the traced BVH
+/// splice side by side.
 fn body_instances(world: &EcsWorld) -> Result<Vec<BodyInstance>, String> {
     let Some(body_id) = world.component_id("body") else {
         return Ok(Vec::new());
@@ -615,6 +662,12 @@ fn body_instances(world: &EcsWorld) -> Result<Vec<BodyInstance>, String> {
     for entity in entities {
         let id = world.gaia_id_for(entity).unwrap_or("<unbound>").to_string();
         let body_value = world.get_component(entity, body_id)?;
+        // A PHYSICS body (names a `shape`, no `preset`) belongs to the rigid
+        // solver, not the skinned path — skip it. A body with neither `preset`
+        // nor `shape` is still an authoring error (surfaced below).
+        if body_value.get("preset").is_none() && body_value.get("shape").is_some() {
+            continue;
+        }
         let preset_name = body_value
             .get("preset")
             .and_then(|value| value.as_str())
@@ -876,6 +929,20 @@ fn seal_buckets(buckets: BTreeMap<MatKey, MatBucket>) -> Result<Vec<MaterialChai
     Ok(chains)
 }
 
+/// A body's fitted rigid rotation (world-space column axes) as the transform's
+/// `EulerRot::XYZ` triple — the same convention [`transform_matrix`] rebuilds,
+/// so the write-back round-trips cleanly.
+fn euler_xyz(pose: &BodyPose) -> [f32; 3] {
+    let c = pose.rotation_columns;
+    let matrix = Mat3::from_cols(
+        Vec3::new(c[0][0] as f32, c[0][1] as f32, c[0][2] as f32),
+        Vec3::new(c[1][0] as f32, c[1][1] as f32, c[1][2] as f32),
+        Vec3::new(c[2][0] as f32, c[2][1] as f32, c[2][2] as f32),
+    );
+    let (x, y, z) = Quat::from_mat3(&matrix).to_euler(EulerRot::XYZ);
+    [x, y, z]
+}
+
 /// One chain's LEAF triangles carrying their material (finest LOD, view-
 /// independent) — the same albedo/emission split as [`RenderScene::leaf_triangles`],
 /// applied to a single chain. Used to bake a dynamic entity's bind-pose geometry.
@@ -964,6 +1031,9 @@ pub struct Dynamics {
     entities: Vec<DynamicEntity>,
     #[allow(dead_code)]
     emission_intensity: f32,
+    /// The Elements' rigid solver bound to the realm's declared bodies; `None`
+    /// when no `body` is declared (the physics path is then wholly inert).
+    physics: Option<Physics>,
     seed: u64,
     dt: f64,
     clock: u64,
@@ -977,6 +1047,7 @@ impl Dynamics {
             binds: BTreeMap::new(),
             entities: Vec::new(),
             emission_intensity,
+            physics: None,
             seed: 0,
             dt: 1.0 / 60.0,
             clock: 0,
@@ -1017,6 +1088,18 @@ impl Dynamics {
         self.clock = 0;
     }
 
+    /// Bind the Elements' rigid solver to the realm's declared bodies and the
+    /// static collider. A no-op (leaves `physics = None`) when nothing declared
+    /// a `body` — the zero-physics realm then ticks byte-identically to before.
+    fn install_physics(
+        &mut self,
+        declarations: Vec<(String, Body, [f64; 3])>,
+        collider_triangles: Vec<Triangle>,
+        dt: f64,
+    ) {
+        self.physics = Physics::install(declarations, collider_triangles, dt, self.seed);
+    }
+
     /// One world tick (Flow of Data): KAMI reads the ECS → emits transform ops →
     /// they apply to the ECS → each entity's model is re-derived from its now-
     /// animated transform. Increments the clock. Deterministic in the count.
@@ -1041,6 +1124,34 @@ impl Dynamics {
                 let _ = self
                     .world
                     .set_component(entity, reg.transform, set.value.clone());
+            }
+        }
+        // PHYSICS (the Elements bound into the realm): advance every declared
+        // body one tick, then write its pose (centroid + fitted rotation) back
+        // to the ECS transform — the same Flow of Data KAMI uses, so the body's
+        // triangles ride the dynamic BVH splice and the traced light sees it
+        // move. Read all poses first (shared borrow), then write (world borrow).
+        let body_poses: Vec<(String, [f64; 3], [f32; 3])> = match self.physics.as_mut() {
+            Some(physics) => {
+                physics.step();
+                physics
+                    .bindings()
+                    .iter()
+                    .map(|binding| {
+                        let pose = physics.pose(binding);
+                        (binding.gaia_id.clone(), pose.position, euler_xyz(&pose))
+                    })
+                    .collect()
+            }
+            None => Vec::new(),
+        };
+        for (id, position, rotation) in &body_poses {
+            if let Some(entity) = self.world.entity_for_gaia(id) {
+                let value = json!({
+                    "position": [position[0], position[1], position[2]],
+                    "rotation": [rotation[0], rotation[1], rotation[2]],
+                });
+                let _ = self.world.set_component(entity, reg.transform, value);
             }
         }
         for de in &mut self.entities {
@@ -1094,6 +1205,7 @@ fn append_part(
     entity_model: Mat4,
     default_color: [f32; 3],
     default_segments: u32,
+    mut collider: Option<&mut Vec<Triangle>>,
 ) -> Result<(), String> {
     let position = vec3(part.position.as_ref()).unwrap_or(Vec3::ZERO);
     let rotation = vec3(part.rotation.as_ref()).unwrap_or(Vec3::ZERO);
@@ -1158,18 +1270,39 @@ fn append_part(
         metallic,
         roughness,
     });
-    for triangle in primitive {
-        for vertex in triangle {
+    for triangle in &primitive {
+        let mut positions = [Vec3::ZERO; 3];
+        let mut normal_sum = Vec3::ZERO;
+        for (k, vertex) in triangle.iter().enumerate() {
             let world_position = model.transform_point3(vertex.position);
             let normal = (normal_matrix * vertex.normal).normalize_or_zero();
+            positions[k] = world_position;
+            normal_sum += normal;
             bucket.vertices.push(ChainVertex::new(
                 world_position.to_array(),
                 normal.to_array(),
                 [0.0, 0.0],
             ));
         }
+        // The collision soup rides the SAME tessellation the light sees, but
+        // with the CLEAN per-face outward normal (the mean of the triangle's
+        // vertex normals) — never the transmuted/welded render geometry, whose
+        // corner-welded normals would mis-push a resting body.
+        if let Some(collider) = collider.as_deref_mut() {
+            collider.push(Triangle::with_normal(
+                glam_to_elements(positions[0]),
+                glam_to_elements(positions[1]),
+                glam_to_elements(positions[2]),
+                glam_to_elements(normal_sum),
+            ));
+        }
     }
     Ok(())
+}
+
+/// Convert a glam world-space vector to the Elements' `f64` vector.
+fn glam_to_elements(v: Vec3) -> elements::Vec3 {
+    elements::Vec3::new(v.x as f64, v.y as f64, v.z as f64)
 }
 
 fn box_triangles(size: Vec3) -> Vec<[PrimitiveVertex; 3]> {
@@ -1755,8 +1888,8 @@ mod tests {
         let scene = naruko_scene();
         assert_eq!(
             scene.dynamics.entities().len(),
-            2,
-            "the realm breath: lantern + beacon are the two dynamic entities"
+            3,
+            "the realm breath: lantern + beacon (behaviors) + crate (body) are dynamic"
         );
 
         // STATIC BVH triangles (built once) and the DYNAMIC partition triangles.
@@ -1785,19 +1918,21 @@ mod tests {
             "dynamic partition = living layer + embodied bodies"
         );
 
-        // INDEPENDENT total: rebuild the SAME realm with every `behavior`
-        // stripped — now everything is static. static + dynamic must equal this
-        // undivided leaf count EXACTLY (the split neither drops nor duplicates).
+        // INDEPENDENT total: rebuild the SAME realm with every `behavior` AND
+        // `body` stripped — now everything is static. static + dynamic must equal
+        // this undivided leaf count EXACTLY (the split neither drops nor dups).
         let undivided = {
             let mut world = EcsWorld::default();
             load_world_dir(naruko_world(), &mut world).expect("load the Naruko realm");
-            if let Some(behavior) = world.component_id("behavior") {
-                let carriers = world.query(&QuerySpec {
-                    all: vec![behavior],
-                    ..Default::default()
-                });
-                for entity in carriers {
-                    world.remove_component(entity, behavior).unwrap();
+            for marker in ["behavior", "body"] {
+                if let Some(component) = world.component_id(marker) {
+                    let carriers = world.query(&QuerySpec {
+                        all: vec![component],
+                        ..Default::default()
+                    });
+                    for entity in carriers {
+                        world.remove_component(entity, component).unwrap();
+                    }
                 }
             }
             let all_static = RenderScene::from_ecs(world, &test_parameters()).unwrap();

@@ -3029,6 +3029,7 @@ dependencies = [
  "block2",
  "bytemuck",
  "crystal",
+ "elements",
  "glam",
  "homunculus",
  "kami",
