@@ -1,8 +1,9 @@
 //! The H0 ordeals. Each test is one trial from the summons.
 
-use glam::{Affine3A, Vec3};
+use glam::{Affine3A, Quat, Vec3};
 use homunculus::{
-    skin::bind_weights, walk_pose, walk_pose_stream, BodyParams, Pose, Skeleton, WalkParams,
+    skin::bind_weights, walk_pose, walk_pose_stream, BodyParams, Pose, Skeleton, SocketSet,
+    WalkParams,
 };
 
 /// Directly fold local bind transforms into world space, independent of the FK
@@ -242,5 +243,161 @@ fn ordeal_morphology_continuity() {
             params.neck_count,
             params.tail_segments
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Serialize an affine to raw bytes for exact-equality checks.
+// ---------------------------------------------------------------------------
+fn affine_bytes(a: &Affine3A) -> Vec<u8> {
+    a.to_cols_array()
+        .iter()
+        .flat_map(|f| f.to_le_bytes())
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Ordeal 6 — socket world under identity == bind derivation, both morphologies.
+// ---------------------------------------------------------------------------
+#[test]
+fn ordeal_socket_bind_derivation() {
+    for (label, params) in [
+        ("humanoid", BodyParams::humanoid()),
+        ("quadruped", BodyParams::quadruped()),
+    ] {
+        let skel = Skeleton::from_params(&params);
+        let set = SocketSet::standard(&skel, &params);
+        assert!(!set.is_empty(), "{label} standard set empty");
+
+        // Reference bone world transforms via the direct bind fold.
+        let bind = direct_bind_world(&skel);
+        // Socket world transforms under the identity pose.
+        let ident = Pose::bind(&skel);
+
+        let mut worst = 0.0f32;
+        for s in &set.sockets {
+            let via_bind = bind[s.bone] * s.local.to_affine();
+            let via_fk = set.world_of(&s.name, &skel, &ident).unwrap();
+            let d = max_affine_diff(&[via_bind], &[via_fk]);
+            worst = worst.max(d);
+            assert!(
+                d == 0.0,
+                "{label} socket {} identity != bind (drift {d})",
+                s.name
+            );
+        }
+        println!(
+            "[socket] {label} sockets={} max|identity - bind|={worst:e}",
+            set.len()
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Ordeal 7 — under a 90° elbow bend, right_hand_grip follows the forearm/hand
+// exactly (derived), and it actually moved off its bind position.
+// ---------------------------------------------------------------------------
+#[test]
+fn ordeal_socket_follows_elbow() {
+    let params = BodyParams::humanoid();
+    let skel = Skeleton::from_params(&params);
+    let set = SocketSet::humanoid(&skel);
+
+    let elbow = skel.index_of("R.forearm").expect("R.forearm");
+    let mut pose = Pose::bind(&skel);
+    pose.local_rotations[elbow] = Quat::from_rotation_x(std::f32::consts::FRAC_PI_2);
+
+    // Grip world under the bent pose, from the set's shared FK.
+    let bent = set.world_of("right_hand_grip", &skel, &pose).unwrap();
+    // Independent reference: FK the same pose, compose the socket's own local.
+    let world = pose.forward_kinematics(&skel);
+    let grip = set.get("right_hand_grip").unwrap();
+    let reference = world[grip.bone] * grip.local.to_affine();
+    let drift = max_affine_diff(&[bent], &[reference]);
+    assert!(
+        drift == 0.0,
+        "grip does not follow the derived hand ({drift})"
+    );
+
+    // And it truly moved relative to bind (the elbow did something).
+    let at_bind = set
+        .world_of("right_hand_grip", &skel, &Pose::bind(&skel))
+        .unwrap();
+    let moved = max_affine_diff(&[at_bind], &[bent]);
+    println!("[socket] elbow 90°: grip drift-from-derived={drift:e} moved-from-bind={moved:e}");
+    assert!(moved > 0.1, "grip did not follow the elbow ({moved})");
+}
+
+// ---------------------------------------------------------------------------
+// Ordeal 8 — defaults preserve V0 bone counts/lengths byte-exact; the
+// neck/head split is opt-in and inserts exactly one zero-length pivot without
+// moving any bind-pose world position.
+// ---------------------------------------------------------------------------
+#[test]
+fn ordeal_defaults_preserve_v0() {
+    // Frozen V0 counts (pelvis + spine + neck + head + tail + 12 limb bones).
+    assert!(!BodyParams::humanoid().neck_head_split);
+    assert!(!BodyParams::quadruped().neck_head_split);
+    assert_eq!(Skeleton::humanoid().len(), 18, "V0 humanoid bone count");
+    assert_eq!(Skeleton::quadruped().len(), 30, "V0 quadruped bone count");
+    assert!(Skeleton::humanoid().head_yaw_bone().is_none());
+
+    // Turning on the split: +1 bone, a head.yaw pivot appears, and the head
+    // bone's bind-pose world position is byte-identical to the unsplit body.
+    let mut split = BodyParams::humanoid();
+    split.neck_head_split = true;
+    let base = Skeleton::humanoid();
+    let refined = Skeleton::from_params(&split);
+    assert_eq!(refined.len(), base.len() + 1, "split adds exactly one bone");
+    assert!(refined.head_yaw_bone().is_some(), "head.yaw pivot present");
+    assert_eq!(refined.bones[refined.head_yaw_bone().unwrap()].length, 0.0);
+
+    let base_head = direct_bind_world(&base)[base.head_bone().unwrap()];
+    let refined_head = direct_bind_world(&refined)[refined.head_bone().unwrap()];
+    assert_eq!(
+        affine_bytes(&base_head),
+        affine_bytes(&refined_head),
+        "split moved the head bind position"
+    );
+    // Head length unchanged too.
+    assert_eq!(
+        base.bones[base.head_bone().unwrap()].length,
+        refined.bones[refined.head_bone().unwrap()].length
+    );
+    println!(
+        "[refine] V0 counts 18/30 preserved; split humanoid bones={} head bind byte-identical",
+        refined.len()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Ordeal 9 — socket sets are a pure function of the skeleton: byte-identical
+// across rebuilds (determinism), both morphologies.
+// ---------------------------------------------------------------------------
+#[test]
+fn ordeal_socket_determinism() {
+    for (label, params) in [
+        ("humanoid", BodyParams::humanoid()),
+        ("quadruped", BodyParams::quadruped()),
+    ] {
+        let skel = Skeleton::from_params(&params);
+        let a = SocketSet::standard(&skel, &params);
+        let b = SocketSet::standard(&skel, &params);
+        assert_eq!(a, b, "{label} socket set not deterministic");
+
+        let ident = Pose::bind(&skel);
+        let ta: Vec<u8> = a
+            .world_transforms(&skel, &ident)
+            .iter()
+            .flat_map(affine_bytes)
+            .collect();
+        let tb: Vec<u8> = b
+            .world_transforms(&skel, &ident)
+            .iter()
+            .flat_map(affine_bytes)
+            .collect();
+        assert_eq!(ta, tb, "{label} socket transforms not byte-identical");
+        let names: Vec<&str> = a.sockets.iter().map(|s| s.name.as_str()).collect();
+        println!("[socket] {label} deterministic set {names:?}");
     }
 }
