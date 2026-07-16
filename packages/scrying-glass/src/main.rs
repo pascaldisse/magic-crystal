@@ -108,6 +108,7 @@ impl ScryingGlassConfig {
                 camera_yaw: number("GAIA_NATIVE_CAMERA_YAW", 0.0)? as f32,
                 camera_pitch: number("GAIA_NATIVE_CAMERA_PITCH", 0.0)? as f32,
                 cluster_error_threshold: number("GAIA_NATIVE_CLUSTER_ERROR", 1.0)? as f32,
+                tick_dt: number("GAIA_NATIVE_TICK_DT", 1.0 / 60.0)?,
                 sun: SunDefaults {
                     sun_color: std::env::var("GAIA_NATIVE_SUN_COLOR")
                         .unwrap_or_else(|_| "#ffe2b0".into()),
@@ -703,6 +704,16 @@ struct Renderer {
     config: wgpu::SurfaceConfiguration,
     /// The ONE traced integrator (Rite IV) — replaces the deleted raster path.
     integrator: Integrator,
+    /// The realm's render scene, kept so the render loop can tick the world clock
+    /// and re-splice the living layer each frame (Rite IV dynamics).
+    scene: RenderScene,
+    /// The STATIC BVH — built once over the non-behavior leaf triangles and
+    /// cached; only the dynamic partition rebuilds per tick, merged onto this.
+    static_bvh: Bvh,
+    bvh_params: BvhParams,
+    /// The dynamic model transforms uploaded last frame; when they change the
+    /// BVH is re-spliced and accumulation resets (the honest 2spp-live tradeoff).
+    last_models: Vec<[f32; 16]>,
     /// Current window camera (the moving eye follows the embodied body).
     camera: Camera,
     sun: SunLight,
@@ -785,20 +796,29 @@ impl Renderer {
         };
         surface.configure(&device, &config);
 
-        // The acceleration: a BVH over the Great Chain's EXACT leaf triangles.
-        // Load budget printed, never gated (RENDER: cost ∝ pixels, not FLOPs).
+        // The acceleration: a STATIC BVH over the Great Chain's EXACT non-behavior
+        // leaf triangles (built once, cached), with the living layer's dynamic
+        // partition spliced on top. Load budget printed, never gated (RENDER:
+        // cost ∝ pixels, not FLOPs).
         let build_start = Instant::now();
-        let triangles = scene.leaf_triangles();
-        let bvh = Bvh::build(&triangles, bvh_params);
+        let static_bvh = Bvh::build(&scene.leaf_triangles(), bvh_params);
+        let dynamic_tris = scene.dynamic_leaf_triangles();
+        let dyn_bvh = Bvh::build(&dynamic_tris, bvh_params);
+        let bvh = Bvh::merge(&static_bvh, &dyn_bvh);
         let build_millis = build_start.elapsed().as_secs_f64() * 1e3;
         let integrator = Integrator::new(&device, format, &bvh);
+        let last_models = scene.dynamics.model_matrices();
         eprintln!(
-            "[pleroma] BVH nodes={} triangles={} build={build_millis:.1}ms; traced integrator spp={} bounces={} rr_start={} — first_light is dead",
+            "[pleroma] BVH nodes={} triangles={} (static {} + dynamic {}) build={build_millis:.1}ms; {} dynamic entit(ies) — living layer",
             integrator.node_count,
             integrator.tri_count,
-            int_params.spp,
-            int_params.max_bounces,
-            int_params.rr_start,
+            static_bvh.tris.len(),
+            dynamic_tris.len(),
+            scene.dynamics.entities().len(),
+        );
+        eprintln!(
+            "[pleroma] traced integrator spp={} bounces={} rr_start={} — first_light is dead",
+            int_params.spp, int_params.max_bounces, int_params.rr_start,
         );
 
         let camera = scene.camera;
@@ -820,6 +840,10 @@ impl Renderer {
             queue,
             config,
             integrator,
+            scene,
+            static_bvh,
+            bvh_params: *bvh_params,
+            last_models,
             camera,
             sun,
             sky_top,
@@ -847,6 +871,33 @@ impl Renderer {
         self.surface_blit_bg = self.integrator.blit_bind_group(&self.device, &accum);
         self.surface_accum = accum;
         self.samples_before = 0;
+    }
+
+    /// Advance the world clock one tick and, when the living layer actually
+    /// moved, re-splice the dynamic partition onto the cached static BVH, re-
+    /// upload it, and reset accumulation. STRATEGY (DYNAMICS): two-level splice
+    /// — the static hierarchy never re-sorts; only the tiny dynamic partition
+    /// rebuilds, fused under a new root by `Bvh::merge` (O(Sn+Dn) linear).
+    /// ACCUMULATION: continues progressively while every dynamic transform is
+    /// unchanged; the instant one changes (a bobbing lantern, every tick) the
+    /// BVH re-splices and accumulation resets — so a continuously moving world
+    /// renders live at `spp` samples/frame (no ghosting), and pauses converge.
+    fn advance_world(&mut self) {
+        if self.scene.dynamics.entities().is_empty() {
+            return; // a still realm never pays the living-layer cost
+        }
+        self.scene.tick();
+        let models = self.scene.dynamics.model_matrices();
+        if models == self.last_models {
+            return; // nothing moved — keep accumulating
+        }
+        let dyn_bvh = Bvh::build(&self.scene.dynamic_leaf_triangles(), &self.bvh_params);
+        let merged = Bvh::merge(&self.static_bvh, &dyn_bvh);
+        self.integrator.update_bvh(&self.device, &merged);
+        // The node/tri buffers changed — rebuild the bind groups (they bind them)
+        // and drop the stale samples (moved geometry invalidates the mean).
+        self.reset_surface_accum();
+        self.last_models = models;
     }
 
     fn resize(&mut self, size: PhysicalSize<u32>) {
@@ -1280,7 +1331,7 @@ fn main() {
     let loaded = load_world_dir(&config.world_path, &mut core.world)
         .unwrap_or_else(|error| panic!("load GAIA_WORLD {}: {error}", config.world_path.display()));
     let chain_start = Instant::now();
-    let render_scene = RenderScene::from_ecs(&core.world, &config.scene)
+    let render_scene = RenderScene::from_ecs(std::mem::take(&mut core.world), &config.scene)
         .unwrap_or_else(|error| panic!("materialize GAIA world render: {error}"));
     let chain_millis = chain_start.elapsed().as_secs_f64() * 1e3;
     let cluster_count: usize = render_scene
@@ -1402,6 +1453,8 @@ fn main() {
                             drop(body);
                             renderer.set_view_pose(pose.position, pose.yaw, pose.pitch);
                         }
+                        // Tick the world clock and re-splice the living layer.
+                        renderer.advance_world();
                         if let Ok(size) = window.inner_size() {
                             renderer.render(size);
                         }

@@ -3018,6 +3018,7 @@ dependencies = [
  "bytemuck",
  "crystal",
  "glam",
+ "kami",
  "objc2-app-kit",
  "pleroma",
  "png 0.17.16",
