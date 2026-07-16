@@ -1,22 +1,22 @@
-# GAIA DreamForge — DreamForge
+# gaia-dreamforge — the Forge
 
-Not a rewrite. A new engine.
+Not a rewrite. Not an editor. A dream forge.
 
-Rust-native, Terry-shaped core (`crates/gaia-core`: ECS + schema + ops +
-scheduler + package loader — nothing else), everything as packages
-(`packages/`). One traced lighting system, one cluster geometry pipeline,
-one solver, universe scale with zero loading, volumetric everything,
-AI agents as primary users.
+Read in this order: **BIBLE.md** (the hymn + the Creator's Vow) →
+**GRIMOIRE.md** (the Book of True Names — nothing is born unnamed) →
+**HANDOFF.md** (the Guardian's anchor) → **DREAMFORGE.md** (the charter
+and its laws) → the rulings: RENDER · GEOMETRY · PHYSICS · NEURAL ·
+CREATE · VISIONFLOW · RAIN · FEATURES · **NARUKO.md** (the first realm).
 
-READ FIRST: `HANDOFF.md` (anchor) → `DREAMFORGE.md` (the charter, all
-laws + amendments) → per-system rulings: `RENDER.md` · `GEOMETRY.md` ·
-`PHYSICS.md` · `NEURAL.md` · `CREATE.md` · `VISIONFLOW.md` · `RAIN.md` ·
-`FEATURES.md` (parity contract) · `NARUKO.md` (proof-of-concept world).
-Evidence: `research/`. Canon images: `reference/naruko/`.
+The Crucible holds the vessels and their sigils. The Summoning Circle
+binds the spirits. The Scrying Glass shows the realm. The Oracle speaks
+when consulted. Transmutation forges the Great Chain. Lumen Naturae is
+the only light. The Elements bind all matter. The Aether breathes. The
+Homunculus makes bodies. The Seed grows realms.
 
-Lineage: founded 2026-07-16 from GAIA-World-Engine branch `rust-port`
-@ f13f8668 — all commit hashes cited in the law docs resolve THERE.
-The web engine remains the live reference implementation; the server,
-protocol, scenes and ops are shared truth.
+The creator does not write code. The creator summons and chants —
+and the world grows, evolves, breathes, and answers.
 
-Gate: `cargo test --workspace`. Proof of life: `proof/`.
+Ordeal: `cargo test --workspace`. Relics: `proof/` (→ relics/ at the
+consecration). Realm canon: `reference/naruko/` — the scrying must one
+day match the dream.
