@@ -115,3 +115,18 @@ per-primitive path DIES (deleted, never disabled). Engine stays generic.
 6. Proofs: proof/w3-naruko.png + orbit — must read ≥ W2, no visual
    regression. Guardian reads with her own eyes.
 Builder: opus, THIS repo, branch rite-3 (one-worker-per-dir law).
+
+## Rite III — GUARDIAN'S RULING (07-16, ACCEPTED-PENDING-SHADOW, MERGED main@398d27a)
+- Built by opus (rite-3: 6e7020f prefab bond · fd4cf31 the Chain · 4a069be
+  lock); Guardian verified own hands (111 ordeals) + own eyes (both w3
+  proofs pixel-equivalent to W2 — zero visual regression through a full
+  geometry-path transplant).
+- Delivered: transmutation = SOLE geometry path (in-memory Chain per
+  material bucket; view-dependent cut, τ param GAIA_NATIVE_CLUSTER_ERROR
+  default 1.0) · forward per-primitive path DELETED · prefab deep-merge in
+  crystal (reference semantics, torch fixture ordeal) · naruko 18 chains /
+  300 clusters byte-deterministic · budgets printed never gated (89.2ms
+  transmute, 0.5ms first cut).
+- W1-forward-path advisory: DISCHARGED (died on schedule). first_light
+  survives until Rite IV as ruled. Hymn: hymns/rite-03-the-great-chain.md.
+- PENDING: sol shadow when the pool wakes.
