@@ -7,7 +7,12 @@
 use std::path::Path;
 
 use crystal::{Core, load_world_dir};
-use scrying_glass::scene::{RenderScene, SceneParameters, SunDefaults};
+use homunculus::{Pose, Skeleton};
+use sama::{GaitParams, Locomotion, LocomotionParams};
+use scrying_glass::scene::{
+    BodyInstance, LeafTriangle, RenderScene, SceneParameters, SunDefaults, contact_passing_ticks,
+};
+use vessel::{Body, Preset};
 
 fn naruko_params() -> SceneParameters {
     SceneParameters {
@@ -149,4 +154,275 @@ fn v0_body_render_is_deterministic() {
         "the embodied body must compose byte-identically"
     );
     println!("[v0-render] body render bytes identical across loads");
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// RITE V · V1 — SHE WALKS. The walker's velocity drives sama; sama's pose
+// drives the skin per tick. These CPU ordeals prove the seam (pose == skin
+// input, determinism), the DERIVED foot-ground contact (Guardian finding 1 —
+// no hover), and that two cycle ticks read as visibly distinct limb configs.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Canonical byte image of a pose — the local rotations sama emits.
+fn pose_bytes(pose: &Pose) -> Vec<u8> {
+    let mut out = Vec::new();
+    for q in &pose.local_rotations {
+        for c in q.to_array() {
+            out.extend_from_slice(&c.to_le_bytes());
+        }
+    }
+    out
+}
+
+/// Canonical byte image of a skinned soup — positions + albedo.
+fn tris_bytes(tris: &[LeafTriangle]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for t in tris {
+        for p in &t.positions {
+            for c in p {
+                out.extend_from_slice(&c.to_le_bytes());
+            }
+        }
+        for c in &t.albedo {
+            out.extend_from_slice(&c.to_le_bytes());
+        }
+    }
+    out
+}
+
+/// A walk-then-idle command stream (walker velocity magnitudes, m·s⁻¹): idle,
+/// accelerate into a walk, hold, then stop. Long enough to cross the state
+/// machine's thresholds and a full blend.
+fn command_stream() -> Vec<f32> {
+    let mut s = vec![0.0; 6];
+    s.extend(std::iter::repeat_n(6.0, 60)); // walk speed (default GAIA_PLAYER_WALK)
+    s.extend(std::iter::repeat_n(0.0, 20)); // stop → blend back to idle
+    s
+}
+
+/// ORDEAL — sama's pose IS the skinning input, every tick (0e0 exact). An
+/// INDEPENDENT sama state machine, fed the same command stream, reproduces the
+/// pose the body skinned; and the body's `world_tris` are byte-identical to
+/// that pose skinned through the vessel — the pose is never re-derived or
+/// nudged between sama and the skin.
+#[test]
+fn v1_sama_pose_is_the_skinning_input_each_tick() {
+    let mut scene = RenderScene::from_ecs(load_naruko().world, &naruko_params()).expect("scene");
+    // The independent oracle: nari's skeleton + a fresh identical machine.
+    let skeleton = Skeleton::humanoid();
+    let mut oracle = Locomotion::new(LocomotionParams::default());
+
+    for (i, &speed) in command_stream().iter().enumerate() {
+        scene.command_bodies(speed);
+        let body: &BodyInstance = &scene.bodies[0];
+        let oracle_pose = oracle.step(&skeleton, speed);
+
+        // (1) The pose the body used == sama's pose, exactly.
+        assert_eq!(
+            pose_bytes(body.pose()),
+            pose_bytes(&oracle_pose),
+            "tick {i}: body pose must be sama's pose (0e0)"
+        );
+        // (2) world_tris ARE that pose skinned — no divergence in the skin step.
+        assert_eq!(
+            tris_bytes(&body.world_tris),
+            tris_bytes(&body.skin_current()),
+            "tick {i}: world_tris must be the current pose skinned (0e0)"
+        );
+    }
+    println!(
+        "[v1] sama pose == skinning input for all {} ticks (0e0)",
+        command_stream().len()
+    );
+}
+
+/// ORDEAL — the gait is byte-identical across two independent runs (ENTROPY).
+/// Two fresh scenes, driven by the same walker-velocity stream, skin the same
+/// world-space triangles every tick.
+#[test]
+fn v1_gait_is_deterministic_byte_identical() {
+    let mut a = RenderScene::from_ecs(load_naruko().world, &naruko_params()).expect("a");
+    let mut b = RenderScene::from_ecs(load_naruko().world, &naruko_params()).expect("b");
+    for &speed in &command_stream() {
+        a.command_bodies(speed);
+        b.command_bodies(speed);
+        assert_eq!(
+            tris_bytes(&a.bodies[0].world_tris),
+            tris_bytes(&b.bodies[0].world_tris),
+            "the walked body must be byte-identical across runs"
+        );
+    }
+    println!("[v1] gait byte-identical across two runs (all ticks)");
+}
+
+/// ORDEAL — DERIVED foot-ground contact (Guardian finding 1: she must NOT
+/// hover). The body's lowest world-space vertex at idle rests on the realm
+/// floor under her feet (the seawall top, read straight from the realm as the
+/// grounding source), within a tolerance DERIVED from the marching-cubes cell
+/// size — never nudged by eye. The residual is orders of magnitude under the
+/// cell (the placement is exact to float; the cell only bounds how well a
+/// discretised sole approximates the true skin).
+#[test]
+fn v1_derived_foot_ground_contact_no_hover() {
+    let scene = RenderScene::from_ecs(load_naruko().world, &naruko_params()).expect("scene");
+
+    // Ground truth from the realm: the seawall top face, derived from geometry.
+    let ground_y = scrying_glass::scene::top_flat_surface_y(&load_naruko().world, "naruko_seawall")
+        .expect("seawall query")
+        .expect("seawall is a flat slab");
+
+    // The body's lowest world vertex (idle) — the contact point.
+    let mut world_min = f32::INFINITY;
+    for t in &scene.bodies[0].world_tris {
+        for p in &t.positions {
+            world_min = world_min.min(p[1]);
+        }
+    }
+
+    // Tolerance DERIVED from mesh resolution: one marching-cubes cell. The cell
+    // is the idle mesh's largest bounding extent divided by the meshing
+    // resolution — the finest the discretised sole can resolve.
+    let preset = Preset::nari();
+    let body = Body::from_preset(&preset);
+    let (lo, hi) = body.idle_local_bounds().expect("idle bounds");
+    let extent = hi - lo;
+    let cell = extent.max_element() / preset.vessel.resolution as f32;
+
+    let residual = (world_min - ground_y).abs();
+    println!(
+        "[v1] contact: ground_y(seawall)={ground_y:.6} lowest_vertex_y={world_min:.6} \
+         residual={residual:.2e} tol(cell={cell:.4})",
+    );
+    assert!(
+        residual <= cell,
+        "the body must stand ON the floor (no hover): residual {residual:.2e} > cell {cell:.4}",
+    );
+}
+
+/// ORDEAL — two fixed cycle ticks read as CONTACT vs PASSING (visibly distinct
+/// limb configuration). The two ticks are DERIVED from the walk gait (swing
+/// foot lowest vs highest), and the leg pose between them differs beyond a
+/// derived floor: the summed absolute thigh-angle change across both legs is a
+/// large fraction of the stride swing, not noise.
+#[test]
+fn v1_contact_and_passing_are_distinct_poses() {
+    let preset = Preset::nari();
+    let body = Body::from_preset(&preset);
+    let params = GaitParams::walk();
+    let (contact, passing) = contact_passing_ticks(&body, &params);
+    assert_ne!(
+        contact, passing,
+        "contact and passing must be different ticks"
+    );
+
+    // The leg configuration difference, measured on the thigh bones (the primary
+    // stride signal). Sum the absolute angle change of every `.thigh` bone.
+    let skeleton = &preset.skeleton;
+    let pose_c = sama::gait_pose(skeleton, &params, contact);
+    let pose_p = sama::gait_pose(skeleton, &params, passing);
+    let mut leg_delta = 0.0f32;
+    for (i, bone) in skeleton.bones.iter().enumerate() {
+        if bone.name.ends_with(".thigh") {
+            let a = pose_c.local_rotations[i];
+            let b = pose_p.local_rotations[i];
+            leg_delta += a.angle_between(b);
+        }
+    }
+    // Derived floor: half the stride amplitude (radians) — a real stance change,
+    // not float noise. `stride` is the gait's leg swing amplitude.
+    let floor = 0.5 * params.stride;
+    println!(
+        "[v1] contact tick={contact} passing tick={passing} leg_delta={leg_delta:.4} rad \
+         (floor {floor:.4})",
+    );
+    assert!(
+        leg_delta > floor,
+        "contact and passing must be visibly distinct: leg_delta {leg_delta:.4} <= {floor:.4}",
+    );
+}
+
+/// ORDEAL — her traced occlusion REPAINTS the ground (Guardian finding 2). The
+/// pleroma already traces occlusion; this proves it with a traced probe in the
+/// lantern precedent's style: the direct-sun radiance on the seawall directly
+/// UNDER her body is darker than a spot BESIDE her by more than a derived floor
+/// (she blocks the sun there), while the SAME under-vs-beside probe taken FAR
+/// from her shows ~0 difference (the null — the darkening is HER shadow, not a
+/// global dip). No shadow code is written: the body is simply real to the light.
+#[test]
+fn v1_body_casts_a_traced_shadow_on_the_seawall() {
+    use scrying_glass::bvh::{Bvh, BvhParams};
+
+    let mut scene = RenderScene::from_ecs(load_naruko().world, &naruko_params()).expect("scene");
+    // She is walking (past the blend) when the light traces her.
+    for _ in 0..30 {
+        scene.command_bodies(6.0);
+    }
+    let sun = scene.sun;
+
+    // Every surface the light can hit — the realm plus her walking body.
+    let mut tris = scene.leaf_triangles();
+    tris.extend(scene.dynamic_leaf_triangles());
+    let bvh = Bvh::build(&tris, &BvhParams::default());
+
+    let seawall_top = 1.4_f32;
+    let eps = 5e-3_f32;
+    // Direct-sun luminance on a flat (normal +Y) ground point: sun colour ×
+    // intensity × max(0, N·L) × visibility toward the sun (the traced shadow).
+    let luminance = |c: [f32; 3]| 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    let n_dot_l = sun.direction[1].max(0.0);
+    let sun_lum = luminance(sun.color) * sun.intensity * n_dot_l;
+    let radiance = |x: f32, z: f32| -> f32 {
+        let origin = [x, seawall_top + eps, z];
+        let occluded = bvh.occluded(origin, sun.direction, eps, 500.0);
+        if occluded { 0.0 } else { sun_lum }
+    };
+
+    // Where her shadow FALLS is derived, not guessed: her body centroid,
+    // projected onto the seawall top ALONG the sun direction (the sun sits up
+    // and to +x/+z, so the shadow lands to -x/-z of her feet).
+    let mut centroid = [0.0f64; 3];
+    let mut n = 0.0f64;
+    for t in &scene.bodies[0].world_tris {
+        for p in &t.positions {
+            centroid[0] += p[0] as f64;
+            centroid[1] += p[1] as f64;
+            centroid[2] += p[2] as f64;
+            n += 1.0;
+        }
+    }
+    let centroid = [
+        (centroid[0] / n) as f32,
+        (centroid[1] / n) as f32,
+        (centroid[2] / n) as f32,
+    ];
+    let drop = (centroid[1] - seawall_top) / sun.direction[1];
+    let shadow_x = centroid[0] - drop * sun.direction[0];
+    let shadow_z = centroid[2] - drop * sun.direction[2];
+
+    // In her shadow vs beside her (3 m along +x, clear of her body on the same
+    // seawall band).
+    let under = radiance(shadow_x, shadow_z);
+    let beside = radiance(shadow_x + 3.0, shadow_z);
+    let shadow_diff = beside - under;
+
+    // The null: the identical probe pair 40 m away, where she casts nothing.
+    let far_under = radiance(shadow_x + 40.0, shadow_z);
+    let far_beside = radiance(shadow_x + 43.0, shadow_z);
+    let null_diff = (far_beside - far_under).abs();
+
+    // Derived floor: half the full direct-sun luminance — a real occlusion, not
+    // noise. (A full block gives the whole sun term.)
+    let floor = 0.5 * sun_lum;
+    println!(
+        "[v1-shadow] under={under:.4} beside={beside:.4} shadow_diff={shadow_diff:.4} \
+         null_diff={null_diff:.2e} floor={floor:.4} (sun_lum={sun_lum:.4})",
+    );
+    assert!(
+        shadow_diff > floor,
+        "her body must darken the ground under her: diff {shadow_diff:.4} <= floor {floor:.4}",
+    );
+    assert!(
+        null_diff < floor,
+        "far from her the ground is unshadowed (null): null_diff {null_diff:.2e} >= floor {floor:.4}",
+    );
 }

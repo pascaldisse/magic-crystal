@@ -7,7 +7,7 @@ use crystal::{
 use glam::{EulerRot, Mat3, Mat4, Quat, Vec3};
 use homunculus::Pose;
 use kami::{BindPose, Registry, TickContext};
-use sama::{Gait, Locomotion, LocomotionParams};
+use sama::{Gait, GaitParams, Locomotion, LocomotionParams, gait_pose};
 
 use crate::player::Ground;
 use serde_json::Number;
@@ -357,7 +357,11 @@ fn skin_body(body: &vessel::Body, pose: &Pose, model: Mat4, albedo: &[Vec3]) -> 
     mesh.indices
         .chunks_exact(3)
         .map(|tri| {
-            let corner = |i: u32| model.transform_point3(mesh.positions[i as usize]).to_array();
+            let corner = |i: u32| {
+                model
+                    .transform_point3(mesh.positions[i as usize])
+                    .to_array()
+            };
             let mean =
                 (albedo[tri[0] as usize] + albedo[tri[1] as usize] + albedo[tri[2] as usize]) / 3.0;
             LeafTriangle::lambertian(
@@ -765,9 +769,7 @@ fn body_instances(world: &EcsWorld, floor: &Ground) -> Result<Vec<BodyInstance>,
         let orient = transform_matrix(Vec3::ZERO, rotation, body_scale);
         let contact_local = lowest_contact_y(&composed, &mesh, orient);
         let ground_y = floor.height_at(position.x, position.z, f32::INFINITY);
-        let grounded_y = ground_y
-            .map(|g| g - contact_local)
-            .unwrap_or(position.y);
+        let grounded_y = ground_y.map(|g| g - contact_local).unwrap_or(position.y);
         let model = transform_matrix(
             Vec3::new(position.x, grounded_y, position.z),
             rotation,
@@ -789,6 +791,46 @@ fn body_instances(world: &EcsWorld, floor: &Ground) -> Result<Vec<BodyInstance>,
         });
     }
     Ok(out)
+}
+
+/// Two representative ticks of a `params` walk cycle, DERIVED from the gait
+/// (never eye-picked): the CONTACT tick (the swing foot at its LOWEST — nearest
+/// a plant, both feet down) and the PASSING tick (the swing foot at its HIGHEST
+/// — mid-swing, one foot lifted). The metric is the highest `.foot` vertex of
+/// the posed mesh over the cycle; contact = argmin, passing = argmax. The V1
+/// ordeal and the proof forge both read the SAME two poses through this.
+pub fn contact_passing_ticks(body: &vessel::Body, params: &GaitParams) -> (u64, u64) {
+    let cycle = (1.0 / (params.cadence * params.dt)).round().max(1.0) as u64;
+    let foot: Vec<usize> = (0..body.vessel.mesh.positions.len())
+        .filter(|&vi| {
+            body.vessel.weights.per_vertex[vi]
+                .first()
+                .map(|(bone, _)| body.skeleton.bones[*bone].name.ends_with(".foot"))
+                .unwrap_or(false)
+        })
+        .collect();
+    let lift = |tick: u64| -> f32 {
+        let pose = gait_pose(&body.skeleton, params, tick);
+        let mesh = body.vessel.posed(&body.skeleton, &pose);
+        foot.iter()
+            .map(|&vi| mesh.positions[vi].y)
+            .fold(f32::NEG_INFINITY, f32::max)
+    };
+    let mut contact = 0u64;
+    let mut passing = 0u64;
+    let (mut lo, mut hi) = (f32::INFINITY, f32::NEG_INFINITY);
+    for tick in 0..cycle {
+        let l = lift(tick);
+        if l < lo {
+            lo = l;
+            contact = tick;
+        }
+        if l > hi {
+            hi = l;
+            passing = tick;
+        }
+    }
+    (contact, passing)
 }
 
 /// The lowest CONTACT-vertex y of an idle mesh under an orientation (rotation +
