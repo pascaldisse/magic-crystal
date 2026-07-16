@@ -1817,6 +1817,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "kami"
+version = "0.1.0"
+dependencies = [
+ "crystal",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "keyboard-types"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
