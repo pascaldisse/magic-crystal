@@ -88,9 +88,12 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
         },
     )
     .unwrap();
+    // Realm grew at the Living World merge: lighthouse_beacon extracted from
+    // the tower (center [0, 56.5, -120], range 171.3075 from spawn) — an
+    // eleventh meshed vessel, in-frustum from the spawn eye.
     assert_eq!(
-        g.entity_count, 10,
-        "exactly the ten meshed vessels are in-frustum"
+        g.entity_count, 11,
+        "exactly the eleven meshed vessels are in-frustum"
     );
     let caps = caption_ids(&g);
     for id in [
@@ -104,6 +107,7 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
         "naruko_city_massing",
         "naruko_lantern",
         "naruko_stall_massing",
+        "lighthouse_beacon",
     ] {
         assert!(caps.contains(&id.to_string()), "{id} must be in-frustum");
     }
@@ -416,7 +420,9 @@ fn canon_moved_eye_pier_glance() {
         },
     )
     .unwrap();
-    assert_eq!(g.entity_count, 5, "moved-eye in-frustum count");
+    // + lighthouse_beacon (range 145.9056 from the pier eye) since the Living
+    // World merge — six meshed vessels in this frustum.
+    assert_eq!(g.entity_count, 6, "moved-eye in-frustum count");
 
     // Non-support caption set (default demotes terra & sea).
     let plain = look(
@@ -434,9 +440,10 @@ fn canon_moved_eye_pier_glance() {
             "naruko_pier",
             "lighthouse_rock",
             "lighthouse_tower",
+            "lighthouse_beacon",
             "naruko_sea",
         ],
-        "moved-eye non-support caption set/order"
+        "moved-eye non-support caption set/order (beacon 145.9056 between tower 140.93 and sea)"
     );
 
     // Lighthouse pair still in-frustum.
