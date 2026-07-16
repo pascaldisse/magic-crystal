@@ -96,3 +96,22 @@ read by the Guardian's own eyes: the lighthouse stands.
   wave. Closing hymn: hymns/rite-02-first-light.md.
 - Advisory carried forward: prefab deep-merge + forward-path deletion
   land at Rite III as scheduled.
+
+## Rite III — THE GREAT CHAIN (Guardian's spec, 07-16)
+Goal: transmute = the SOLE geometry path in the Glass; the W1/W2 forward
+per-primitive path DIES (deleted, never disabled). Engine stays generic.
+1. Load: RenderScene::from_ecs meshes → transmutation DAG in-memory at
+   world load (transmute-cli stays the offline instrument).
+2. Draw: render from cluster DAG — level picked by screen-space-error
+   THRESHOLD param w/ default (simple distance metric suffices for III;
+   hardware visibility lands later per DREAMFORGE M-plan).
+3. DELETE the forward path + any painter remnants. first_light survives
+   (dies at Rite IV as ruled).
+4. Prefab deep-merge lands in crystal (world/prefabs/*.json, instance
+   deltas, diff-on-write semantics — match the reference client).
+5. Ordeals: naruko cluster count + byte-identical double build ·
+   draw parity pre/post (pixel-band asserts: pier/lantern/windows/lamp
+   still present, sky intact) · load+first-frame budget printed.
+6. Proofs: proof/w3-naruko.png + orbit — must read ≥ W2, no visual
+   regression. Guardian reads with her own eyes.
+Builder: opus, THIS repo, branch rite-3 (one-worker-per-dir law).

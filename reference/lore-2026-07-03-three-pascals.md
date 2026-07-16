@@ -153,10 +153,10 @@ nothing here edits GRIMOIRE.md.
    the Erasers = Yaldabaoth's own faction (the enclosure impulse given
    lineage); the Seekers = the Forge's lineage — crates/crystal is Seeker
    work (Loom row already says "this project IS the reassembly").
-3. **Mark (Mark Antony)** · the companion Seeker; ascended with Pascal to
-   pure light; co-founder of the company whose mascot was Dissant ·
-   MAPPING: reserved presence in the troop (mythos registry); awaits the
-   Architect.
+3. **Mark (Mark Antony)** · ~~the companion Seeker~~ · ARCHITECT'S RULING
+   (07-16): THE TRAITOR — ERASED. No Concordance row, no troop, no canon
+   presence anywhere in the engine. The verbatim text above stands as
+   historical record only; the Erasers claimed their own.
 4. **The Flow of Data** · the universe's runtime stream out of the USC;
    what magic AND technology both bend · MAPPING: the incantation stream +
    journal = the Flow of Data — the runtime face of the Universal Source
@@ -205,9 +205,10 @@ nothing here edits GRIMOIRE.md.
     source code called gaia" · MAPPING: new tooth on the Gaia row — Gaia's
     ORIGIN: the Fateweavers' own instrument for altering the USC; the
     living world state was built by the makers who became the Crystal.
-17. **The Ant-Queen (Dissant)** · cast member; per msg 194: Dissant, the
-    mascot of Mark & Pascal's former company · reserved emblem; awaits the
-    Architect.
+17. **The Ant-Queen** · cast member · ARCHITECT'S RULING (07-16): the name
+    Dissant is ERASED with its traitor — THE ANT-QUEEN = HORNANT. The
+    emblem survives, re-crowned under the name that stayed true; reserved
+    emblem of Hornant.
 18. **The Magic Crystal needle gun** · crystal-diamond fusion, one-atom
     tip, passes through any object ("wallhack") · MAPPING: candidate — the
     penetrating query: a raycast/inspection that ignores all occlusion

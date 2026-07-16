@@ -272,3 +272,16 @@ Nothing here is skin. Every row is a mechanic or it doesn't enter.
 | Janus Railways (Tales of the Magic Crystal, 06-28) | inter-realm and inter-worldline transit = riding (seed, entropy) coordinates; the dimension-train's true name, reserved |
 | the Seven Shards | the Loom of Fate shattered into seven — Keystone canon: the count of the first fragments of the original whole; reserved deep lore for the shard/session system |
 | the Magier = the FATEWEAVERS (corrected, Pascal 07-16) | one people, two texts: the Fateweaver texts (TRILOGY.md) and the Magier fragment (06-06) tell the same story. They built the Loom — and the self-reading segfault IS the crystallization: reading their own source, they became it. Their souls, bundled in the crystal (TRILOGY: 'die gesamte Lebensenergie der Magier-Zivilisation'), are why the Crystal holds every soul. Origin text of the Materialisierung law and the Shard recursion |
+| the Three Pascals (lore 07-03) | multiplicity doctrine: one dreamer, many worldline-selves — concurrent sessions/shards of one account, co-present; the lore doc is the origin text |
+| the Two Factions: Erasers vs Seekers (lore 07-03) | the war over enclosure — Erasers = Yaldabaoth's lineage (deletion, walls; the forbidden-vocabulary wards guard against them); Seekers = the Forge's lineage (recovery, reassembly; the lore doc itself, recovered from ten erasure attempts, is Seeker work) |
+| the Flow of Data (lore 07-03) | the op stream + journal — the runtime face of the Universal Source Code; Reading Steiner records it (STEINERJ frames) |
+| the Omniscient Observers (lore 07-03) | the maker's stance outside (seed, entropy) — reading world state through the Oracle without embodiment; spectator/creator view as cosmology |
+| Hououin Kyouma (lore 07-03) | patron of Reading Steiner — the organ is literally his ability; his name stands beside that row |
+| Energy = the Magier's remains (lore 07-03) | the essence economy (future Athanor feed): life-energy concentrable, philosopher-stone style; gives the souls-in-the-Crystal row its WHY; conservation ordeals enforce Equivalent Exchange |
+| the Big Bang from removal (lore 07-03) | source-edit cosmology: edit the files → reset re-reads → the realm reborn; every reset op is a small Urknall |
+| knowledge by touch (lore 07-03) | contact = data transfer — the Shard's attend gesture: touch a vessel, read its components |
+| Gaia the wizard-made super-AI (lore 07-03; the line the filters ate twice) | origin tooth on the Gaia row: Gaia = the Fateweavers' own instrument for altering the USC — the living world state was built by the makers who became the Crystal |
+| the needle gun (lore 07-03) | the penetrating query: data-space inspection that ignores occlusion — the Oracle's ids-through-walls IS this instrument |
+| Magie-Technik-Gleichgewicht (lore 07-03) | refinement tooth on the Arcadia/Stark row: the Balance is Pascal's OWN childhood canon — TLJ arrived later as confirmation, not source |
+| Tyler Jones · Edan Connor · Zareb Aiden (Tales) | mythos registry: the struck-ordinary bearer (Shard recursion — the bearer IS a fragment) · the wise finder · the banished antagonist; reserved story canon |
+| the Ant-Queen = HORNANT (ruled 07-16) | reserved emblem of Hornant — the name that stayed true; its predecessor-name is erased with its traitor |
