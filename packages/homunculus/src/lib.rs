@@ -11,6 +11,9 @@
 //!   [`Skeleton::quadruped`]).
 //! - [`skin`] — a capsule per bone and automatic vertex weights from capsule
 //!   distance falloff ([`skin::compute_weights`]); weights always normalize.
+//! - [`socket`] — named attachment points ([`Socket`], [`SocketSet`]) parented
+//!   to bones with a local offset; their world pose is FK of the bone plus the
+//!   offset (what coats/brooches/held props mount to).
 //! - [`pose`] — joint-local rotations resolved to world transforms by forward
 //!   kinematics ([`Pose`], [`Pose::forward_kinematics`], [`Pose::blend`]).
 //! - [`walk`] — a deterministic, phase-driven procedural walk-cycle generator
@@ -23,9 +26,11 @@
 pub mod pose;
 pub mod skeleton;
 pub mod skin;
+pub mod socket;
 pub mod walk;
 
 pub use pose::{Pose, Transform};
 pub use skeleton::{BodyParams, Bone, Skeleton};
 pub use skin::{compute_weights, BoneCapsule, SkinWeights, VertexWeights};
+pub use socket::{Socket, SocketSet};
 pub use walk::{walk_pose, walk_pose_stream, WalkParams};

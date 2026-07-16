@@ -44,6 +44,14 @@ pub struct BodyParams {
     pub neck_count: u32,
     /// Number of tail segments (0 = no tail).
     pub tail_segments: u32,
+    /// Split the head into a yaw pivot + a pitch/end bone for cleaner look-at
+    /// deformation. `false` (the default) leaves the V0 topology byte-exact: a
+    /// single `head` bone. `true` inserts a zero-length `head.yaw` pivot bone
+    /// between the neck and the `head` bone at the neck tip — the `head` bone
+    /// then hangs off the pivot at zero offset, so every bind-pose world
+    /// position is unchanged; only the bone COUNT grows by one. A look-at layer
+    /// (sama's gesture) yaws `head.yaw` and pitches `head`.
+    pub neck_head_split: bool,
     /// Posture from 0 (upright biped) to 1 (horizontal quadruped).
     pub stance: f32,
 
@@ -94,6 +102,7 @@ impl BodyParams {
             spine_count: 3,
             neck_count: 1,
             tail_segments: 0,
+            neck_head_split: false,
             stance: 0.0,
             pelvis: 0.06,
             spine: 0.30,
@@ -119,6 +128,7 @@ impl BodyParams {
             spine_count: 6,
             neck_count: 2,
             tail_segments: 8,
+            neck_head_split: false,
             stance: 1.0,
             pelvis: 0.10,
             spine: 0.55,
@@ -145,6 +155,7 @@ impl BodyParams {
         1 + self.spine_count as usize
             + self.neck_count as usize
             + 1
+            + self.neck_head_split as usize
             + self.tail_segments as usize
             + 6
             + 6
@@ -178,6 +189,12 @@ impl BodyParams {
             spine_count: li(a.spine_count, b.spine_count),
             neck_count: li(a.neck_count, b.neck_count),
             tail_segments: li(a.tail_segments, b.tail_segments),
+            // Discrete flag: threshold at the midpoint like the integer counts.
+            neck_head_split: if t < 0.5 {
+                a.neck_head_split
+            } else {
+                b.neck_head_split
+            },
             stance: l(a.stance, b.stance),
             pelvis: l(a.pelvis, b.pelvis),
             spine: l(a.spine, b.spine),
@@ -235,6 +252,19 @@ impl Skeleton {
     /// Find a bone index by name.
     pub fn index_of(&self, name: &str) -> Option<usize> {
         self.bones.iter().position(|b| b.name == name)
+    }
+
+    /// Index of the `head` (pitch/end) bone, if present.
+    pub fn head_bone(&self) -> Option<usize> {
+        self.index_of("head")
+    }
+
+    /// Index of the `head.yaw` pivot bone — present only when the skeleton was
+    /// built with [`BodyParams::neck_head_split`]. A look-at layer yaws this
+    /// bone and pitches [`Skeleton::head_bone`]; when it is `None`, do both on
+    /// the head bone.
+    pub fn head_yaw_bone(&self) -> Option<usize> {
+        self.index_of("head.yaw")
     }
 
     /// Validate structural invariants: every parent index precedes its child,
@@ -318,10 +348,26 @@ impl Skeleton {
             nprev = bone;
             nprev_len = neck_seg;
         }
+        // Optionally split the head into a yaw pivot + pitch/end bone. The
+        // pivot is zero-length at the neck tip, and the head hangs off it at
+        // zero offset, so bind-pose world positions are unchanged — only the
+        // bone count grows by one.
+        let (head_parent, head_offset) = if params.neck_head_split {
+            let pivot = builder.push(Bone {
+                name: "head.yaw".into(),
+                parent: Some(nprev),
+                local_bind: Transform::from_translation(Vec3::new(0.0, nprev_len, 0.0)),
+                length: 0.0,
+                radius,
+            });
+            (pivot, Vec3::ZERO)
+        } else {
+            (nprev, Vec3::new(0.0, nprev_len, 0.0))
+        };
         builder.push(Bone {
             name: "head".into(),
-            parent: Some(nprev),
-            local_bind: Transform::from_translation(Vec3::new(0.0, nprev_len, 0.0)),
+            parent: Some(head_parent),
+            local_bind: Transform::from_translation(head_offset),
             length: params.head * params.height,
             radius,
         });
