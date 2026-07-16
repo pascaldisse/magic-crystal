@@ -16,14 +16,22 @@
 //! bound mesh into any [`Pose`]. Building is deterministic: identical params
 //! yield a byte-identical mesh (an ENTROPY-law ordeal), for humans and
 //! quadrupeds alike.
+//!
+//! 4. [`region`] / [`color`] — named body REGIONS (bone sets) and per-region
+//!    COLOR strings. Each vertex's region is that of its max-weight bone
+//!    (capsule ownership); a [`Palette`] paints the mesh with per-vertex color
+//!    strings (hard-edged or smoothly blended). [`Vessel::colored`] runs it.
 
 pub mod bind;
+pub mod color;
 pub mod mesh;
+pub mod region;
 pub mod sdf;
 pub mod tables;
 
 pub use bind::{bind_world, deform, skin};
 pub use mesh::{marching_cubes, Mesh};
+pub use region::{Blend, BodyRegions, ColoredMesh, Palette, Region};
 pub use sdf::{capsule_sdf, smin, BodySdf};
 
 use glam::Affine3A;
@@ -101,5 +109,13 @@ impl Vessel {
     pub fn posed(&self, skeleton: &Skeleton, pose: &Pose) -> Mesh {
         let posed_world = pose.forward_kinematics(skeleton);
         bind::deform(&self.mesh, &self.weights, &self.bind_world, &posed_world)
+    }
+
+    /// Paint the bound mesh with a `palette` over a `regions` partition,
+    /// returning per-vertex color strings + region assignment. The region of a
+    /// vertex is that of its max-weight bone (capsule ownership), so coloring
+    /// reuses the same bind weights the deformation does — no new binding.
+    pub fn colored(&self, regions: &BodyRegions, palette: &Palette) -> ColoredMesh {
+        palette.apply(regions, &self.weights, self.capsules.len())
     }
 }
