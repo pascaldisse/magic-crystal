@@ -103,7 +103,8 @@ pub fn subdivided_cube(size: f32, subdivisions: usize) -> Mesh {
     let h = size * 0.5;
     let mut mesh = Mesh::default();
     // (origin, u-axis, v-axis, normal) for the six faces, each spanning [-h,h].
-    let faces: [([f32; 3], [f32; 3], [f32; 3], [f32; 3]); 6] = [
+    type FaceFrame = ([f32; 3], [f32; 3], [f32; 3], [f32; 3]);
+    let faces: [FaceFrame; 6] = [
         (
             [-h, -h, h],
             [1.0, 0.0, 0.0],
