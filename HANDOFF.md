@@ -30,13 +30,18 @@ forward render path DELETED at III (never grown) · /scry camera params
   builds byte-identical d97af84e / debug d19babaa, ops-count scaling
   gate 4.01 vs 16.03 w/ bite proven). Guardian ran the final trial
   (sol capped mid-round).
-- ORACLE (packages/sense, branch rust-port-sense, last commit
-  b4994a4e): final fix pass IN FLIGHT (opus, 4 proof-quality
-  remainders: collection-phase id clones, discriminating sag tolerance
-  5e-5, one false derivation sentence + derived TOL, id-table bytes in
-  budget + serialization must omit unrequested channels). Then
-  GUARDIAN VERIFIES PERSONALLY (sol capped ~6.7 days; terra same pool;
-  sonnet banned).
+- ORACLE (packages/sense, branch rust-port-sense, final commit
+  b4cafb81): ⚗ ACCEPTED — Guardian's own hands (sol capped). 4 fix
+  rounds, frozen set N1–N6 fully discharged: index-only collection
+  (zero id work depth-only; ID_STRING_OPS counter spans the whole
+  call), null-free channel-absent serialization (sparse sentinel −1),
+  discriminating sag tolerance 5e-5 f64 (fixed Δ1.7e-5 pass / old
+  Δ1.76e-4 fail), corrected front-face path-length derivation + TOL
+  1e-3 (10× measured 3.25e-4), id-table+mapping in byte budget w/
+  try_reserve ×5. Workspace 38 green, fmt/clippy/rustdoc clean, CLI
+  real-path verified (depth-only renders '.', no id grid). ADVISORY
+  (later rite): caption pass clones ids for all visible then
+  truncates — defer to post-truncate for O(N).
 - Then THE CONSECRATION MERGE: port both branches here, resolve the
   Cargo.toml/lock conflict, rename to true names (gaia-core→
   crates/crystal · render-window→scrying-glass · sense→oracle ·
@@ -76,13 +81,10 @@ DISCRIMINATE (a test the old bug passes is theater) · complexity gates
 count WORK, not wall-clock · proof-quality is part of done.
 
 ## ⚑ IN FLIGHT AT COMPACT (07-16 ~19:15 Berlin) — 5 lanes, results post back to room chat-mrndarsy-myce
-1. ORACLE FIX 4 (ghoul-opus-mrnr288frbnql1): 4 proof-quality remainders
-   (collection-phase id clones + counter placement + serialization
-   omits unrequested channels/no null cells · sag tolerance 5e-5
-   discriminating · derivation front-face sentence + derived TOL 1e-3 ·
-   id-table bytes in budget + try_reserve). On return: GUARDIAN
-   VERIFIES PERSONALLY (run gates own hands like the Chain) → ACCEPT →
-   port packages/sense into the consecration branch as packages/oracle.
+1. ORACLE FIX 4: ✅ DONE — b4cafb81 ACCEPTED (see Council section).
+   Remaining: port packages/sense → packages/oracle into the
+   consecration branch AFTER the clone's port lands (clone was told
+   not to touch sense; Guardian adds the oracle port at merge).
 2. RITE II BUILDER (ghoul-opus-mrnri0k7ajjcqq, OLD repo main tree,
    rust-port): realm-data sync from dreamforge b6c05fd + depth buffer
    (painter-sort dies) + /screenshot pose/size params + sun-shade
