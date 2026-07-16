@@ -21,12 +21,16 @@
 
 pub mod client;
 pub mod codec;
+pub mod interp;
 
-pub use client::{default_url, fresh_client_id, Config, ReconnectPolicy, Status, Wired};
+pub use client::{
+    default_url, fresh_client_id, ClientEvent, Config, ReconnectPolicy, Resilience, Status, Wired,
+};
 pub use codec::{
     apply_op, despawn_op, hello, merge_op, move_presence_ops, ops_batch, set_op, spawn_presence_op,
     WorldView,
 };
+pub use interp::{sample_of, InterpConfig, Interpolator, Sample};
 
 // Re-export the protocol vocabulary so downstreams need only depend on wired.
 pub use crystal::{EntityDoc, EntityMap, Op, WsMessage};
