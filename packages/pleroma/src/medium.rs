@@ -14,9 +14,7 @@
 //! Marching the medium along bounce segments too is a later rite.
 
 use crate::vec::Vec3;
-use aether::{
-    single_scatter, transmittance, vec3 as avec3, DensityGrid, HomogeneousMedium, Light,
-};
+use aether::{single_scatter, transmittance, vec3 as avec3, DensityGrid, HomogeneousMedium, Light};
 
 /// A directional light the medium scatters toward (the sun / moon). Scalar
 /// Aether transport is tinted per-channel by `radiance` (steam is grey, so the
@@ -62,7 +60,11 @@ impl Medium {
     pub fn primary(&self, origin: Vec3, dir: Vec3, t0: f64, t_first: f64) -> (Vec3, f64) {
         let o = avec3(origin.x, origin.y, origin.z);
         let d = avec3(dir.x, dir.y, dir.z).normalize();
-        let to_light = avec3(self.sun.to_light.x, self.sun.to_light.y, self.sun.to_light.z);
+        let to_light = avec3(
+            self.sun.to_light.x,
+            self.sun.to_light.y,
+            self.sun.to_light.z,
+        );
         let t1 = t_first.min(self.far);
         if t1 <= t0 {
             return (Vec3::ZERO, 1.0);
