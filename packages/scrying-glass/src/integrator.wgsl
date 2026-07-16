@@ -32,8 +32,8 @@ struct Tri {
   v0: vec4<f32>,
   v1: vec4<f32>,
   v2: vec4<f32>,
-  albedo: vec4<f32>,
-  emission: vec4<f32>,
+  albedo: vec4<f32>,   // rgb = albedo/F0, w = metallic [0,1]
+  emission: vec4<f32>, // rgb = emission, w = roughness [0,1]
 };
 
 @group(0) @binding(0) var<uniform> u: Uniform;
@@ -79,6 +79,33 @@ fn cosine_hemisphere(n: vec3<f32>, u1: f32, u2: f32) -> vec3<f32> {
   let z = sqrt(max(1.0 - u1, 0.0));
   let basis = onb(n);
   return normalize(basis[0] * x + basis[1] * y + n * z);
+}
+
+// Roughness at/below this = a perfect mirror (delta specular lobe).
+const MIRROR_ROUGHNESS: f32 = 1e-3;
+
+// GGX (Trowbridge-Reitz) microfacet half-vector about n, roughness alpha=r^2.
+// NDF importance sampling (Walter et al. 2007) — matches the CPU Pleroma.
+fn ggx_half(n: vec3<f32>, alpha: f32, u1: f32, u2: f32) -> vec3<f32> {
+  let a2 = alpha * alpha;
+  let cos_t2 = clamp((1.0 - u1) / (1.0 + (a2 - 1.0) * u1), 0.0, 1.0);
+  let cos_t = sqrt(cos_t2);
+  let sin_t = sqrt(max(1.0 - cos_t2, 0.0));
+  let phi = 2.0 * PI * u2;
+  let x = sin_t * cos(phi);
+  let y = sin_t * sin(phi);
+  let basis = onb(n);
+  return normalize(basis[0] * x + basis[1] * y + n * cos_t);
+}
+
+// Smith height-correlated masking-shadowing G2 for GGX (Heitz 2014).
+fn smith_g2(cos_o: f32, cos_i: f32, alpha: f32) -> f32 {
+  let a2 = alpha * alpha;
+  let co = max(abs(cos_o), 1e-6);
+  let ci = max(abs(cos_i), 1e-6);
+  let lo = 0.5 * (-1.0 + sqrt(1.0 + a2 * (1.0 - co * co) / (co * co)));
+  let li = 0.5 * (-1.0 + sqrt(1.0 + a2 * (1.0 - ci * ci) / (ci * ci)));
+  return 1.0 / (1.0 + lo + li);
 }
 
 fn sky(dir: vec3<f32>) -> vec3<f32> {
@@ -211,25 +238,57 @@ fn radiance(ray_o: vec3<f32>, ray_d: vec3<f32>, pixel: u32, sample: u32) -> vec3
     let tri = tris[hit.tri];
     let p = o + d * hit.t;
     let n = tri_normal(hit.tri, d);
+    let metallic = tri.albedo.w;
+    let roughness = tri.emission.w;
 
     // Emissive surfaces glow at every hit (they are just emitters).
     L = L + throughput * tri.emission.xyz;
 
-    // Next-event: the sun (directional delta light) via a shadow ray.
+    // Next-event: the sun (directional delta light) via a shadow ray. Only the
+    // DIFFUSE lobe responds to a delta light (a mirror reaching the sun is a
+    // measure-zero event) → weight by (1 - metallic).
     let ndl = dot(n, u.sun_dir.xyz);
-    if (u.sun_color.w > 0.0 && ndl > 0.0) {
+    if (u.sun_color.w > 0.0 && ndl > 0.0 && metallic < 1.0) {
       if (!occluded(p + n * eps, u.sun_dir.xyz, eps, INF)) {
-        L = L + throughput * tri.albedo.xyz * u.sun_color.rgb * u.sun_color.w * ndl;
+        L = L + throughput * (1.0 - metallic) * tri.albedo.xyz
+              * u.sun_color.rgb * u.sun_color.w * ndl;
       }
     }
 
     if (bounce >= max_bounces) { break; }
-    // Cosine-weighted bounce: f_r·cosθ/pdf = albedo (the multiply IS the albedo).
-    let base = bounce * 3u;
+    // Stochastic lobe: specular w.p. metallic, diffuse w.p. (1-metallic). The
+    // selection probability cancels the lobe weight, so each branch multiplies
+    // throughput by the PURE lobe weight (matches the CPU Pleroma exactly).
+    let base = bounce * 4u;
     let u1 = urand(pixel, sample, base + 0u);
     let u2 = urand(pixel, sample, base + 1u);
-    let dir = cosine_hemisphere(n, u1, u2);
-    throughput = throughput * tri.albedo.xyz;
+    let u_lobe = urand(pixel, sample, base + 3u);
+    var dir: vec3<f32>;
+    if (u_lobe < metallic) {
+      // Conductor lobe. F0 = albedo (metal tint).
+      if (roughness <= MIRROR_ROUGHNESS) {
+        // Perfect mirror (delta): reflect about n, throughput *= albedo.
+        dir = reflect(d, n);
+        throughput = throughput * tri.albedo.xyz;
+      } else {
+        let alpha = roughness * roughness; // Disney remap
+        let wo = -d;
+        let m = ggx_half(n, alpha, u1, u2);
+        let wi = reflect(d, m);
+        let cos_i = dot(wi, n);
+        if (cos_i <= 0.0) { break; } // sampled below surface
+        let cos_o = max(abs(dot(wo, n)), 1e-6);
+        let cos_h = max(abs(dot(m, n)), 1e-6);
+        let g = smith_g2(cos_o, cos_i, alpha);
+        let w = g * abs(dot(wo, m)) / (cos_o * cos_h);
+        throughput = throughput * tri.albedo.xyz * w;
+        dir = wi;
+      }
+    } else {
+      // Cosine-weighted diffuse bounce: f_r·cosθ/pdf = albedo.
+      dir = cosine_hemisphere(n, u1, u2);
+      throughput = throughput * tri.albedo.xyz;
+    }
     if (max(throughput.x, max(throughput.y, throughput.z)) <= 0.0) { break; }
 
     // Russian roulette after rr_start (unbiased termination).

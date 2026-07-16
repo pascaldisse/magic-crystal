@@ -158,12 +158,29 @@ fn sun_vec3(value: Option<&serde_json::Value>, key: &str) -> Option<Vec3> {
 /// traced integrator intersects (view-independent, error 0). `albedo` is the
 /// lambertian reflectance (ZERO for a pure emitter, matching the Pleroma); `emission`
 /// is the radiance the surface glows with (material colour × emission intensity,
-/// ZERO for a non-emitter).
+/// ZERO for a non-emitter). `metallic`/`roughness` carry the L2 conductor lobe
+/// (defaults 0/1 = pure lambertian — see the Pleroma `Material`).
 #[derive(Clone, Copy, Debug)]
 pub struct LeafTriangle {
     pub positions: [[f32; 3]; 3],
     pub albedo: [f32; 3],
     pub emission: [f32; 3],
+    pub metallic: f32,
+    pub roughness: f32,
+}
+
+impl LeafTriangle {
+    /// Construct with the default lambertian material dials (metallic 0,
+    /// roughness 1) — the L0/L1 surface, so existing call sites read unchanged.
+    pub fn lambertian(positions: [[f32; 3]; 3], albedo: [f32; 3], emission: [f32; 3]) -> Self {
+        Self {
+            positions,
+            albedo,
+            emission,
+            metallic: 0.0,
+            roughness: 1.0,
+        }
+    }
 }
 
 #[repr(C)]
@@ -214,6 +231,10 @@ pub struct MaterialChain {
     pub dag: Dag,
     pub color: [f32; 3],
     pub emissive: f32,
+    /// L2 conductor lobe: metallic `[0,1]` (0 = lambertian default).
+    pub metallic: f32,
+    /// L2 conductor lobe: roughness `[0,1]` (1 = lambertian default).
+    pub roughness: f32,
 }
 
 pub struct RenderScene {
@@ -239,15 +260,18 @@ pub struct RenderScene {
     pub dynamics: Dynamics,
 }
 
-/// Material batch key: quantised linear colour bits + emissive flag. Ordered so
-/// the chain vector is deterministic (byte-identical double builds).
-type MatKey = ([u32; 3], u32);
+/// Material batch key: quantised linear colour bits + emissive flag +
+/// metallic/roughness bits. Ordered so the chain vector is deterministic
+/// (byte-identical double builds); distinct metallic/roughness never merge.
+type MatKey = ([u32; 3], u32, u32, u32);
 
 struct MatBucket {
     /// World-space triangle soup (position/normal/uv); transmuted at seal.
     vertices: Vec<ChainVertex>,
     color: [f32; 3],
     emissive: f32,
+    metallic: f32,
+    roughness: f32,
 }
 
 impl RenderScene {
@@ -488,6 +512,8 @@ impl RenderScene {
                             ],
                             albedo,
                             emission,
+                            metallic: chain.metallic,
+                            roughness: chain.roughness,
                         });
                     }
                 }
@@ -617,6 +643,8 @@ fn seal_buckets(buckets: BTreeMap<MatKey, MatBucket>) -> Result<Vec<MaterialChai
             dag,
             color: bucket.color,
             emissive: bucket.emissive,
+            metallic: bucket.metallic,
+            roughness: bucket.roughness,
         });
     }
     Ok(chains)
@@ -650,6 +678,8 @@ fn chain_leaf_triangles(chain: &MaterialChain, emission_intensity: f32) -> Vec<L
                     ],
                     albedo,
                     emission,
+                    metallic: chain.metallic,
+                    roughness: chain.roughness,
                 });
             }
         }
@@ -881,14 +911,26 @@ fn append_part(
         None => default_color,
     };
     let emissive = f32::from(emissive);
+    // L2 conductor dials (defaults 0/1 = pure lambertian). `metalness` carries
+    // `metallic` too (crystal alias). Clamp to [0,1].
+    let metallic = number(part.metalness.as_ref())
+        .unwrap_or(0.0)
+        .clamp(0.0, 1.0) as f32;
+    let roughness = number(part.roughness.as_ref())
+        .unwrap_or(1.0)
+        .clamp(0.0, 1.0) as f32;
     let key: MatKey = (
         [color[0].to_bits(), color[1].to_bits(), color[2].to_bits()],
         emissive.to_bits(),
+        metallic.to_bits(),
+        roughness.to_bits(),
     );
     let bucket = buckets.entry(key).or_insert_with(|| MatBucket {
         vertices: Vec::new(),
         color,
         emissive,
+        metallic,
+        roughness,
     });
     for triangle in primitive {
         for vertex in triangle {
@@ -1320,9 +1362,13 @@ mod tests {
     fn mat_key(color: &str, emissive: bool) -> MatKey {
         let rgb = linear_rgb(color).unwrap();
         let emissive = f32::from(emissive);
+        // Default lambertian dials (metallic 0, roughness 1) — this presence
+        // test cares only about the colour/emissive band.
         (
             [rgb[0].to_bits(), rgb[1].to_bits(), rgb[2].to_bits()],
             emissive.to_bits(),
+            0.0f32.to_bits(),
+            1.0f32.to_bits(),
         )
     }
 
@@ -1371,6 +1417,8 @@ mod tests {
         let vertices = scene.select_vertices(&scene.camera, 640);
         assert!(!vertices.is_empty(), "the cut drew geometry");
 
+        // The cut's `Vertex` carries only colour/emissive; pad with the default
+        // lambertian dials so the key type matches (this is a band-presence test).
         let vkey = |v: &Vertex| -> MatKey {
             (
                 [
@@ -1379,6 +1427,8 @@ mod tests {
                     v.color[2].to_bits(),
                 ],
                 v.emissive.to_bits(),
+                0.0f32.to_bits(),
+                1.0f32.to_bits(),
             )
         };
         let static_present: std::collections::BTreeSet<MatKey> =
@@ -1390,6 +1440,8 @@ mod tests {
                 present.insert((
                     [color[0].to_bits(), color[1].to_bits(), color[2].to_bits()],
                     f32::from(*emissive).to_bits(),
+                    0.0f32.to_bits(),
+                    1.0f32.to_bits(),
                 ));
             }
         }

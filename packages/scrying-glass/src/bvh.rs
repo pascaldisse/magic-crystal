@@ -19,7 +19,9 @@ use bytemuck::{Pod, Zeroable};
 use crate::scene::LeafTriangle;
 
 /// A triangle as the GPU integrator reads it: three corners (w padding) plus
-/// lambertian albedo and emissive radiance. 80 bytes; matches WGSL `Tri`.
+/// albedo (`.w` = metallic) and emissive radiance (`.w` = roughness). The L2
+/// conductor dials ride the unused `.w` lanes (no size change). 80 bytes;
+/// matches WGSL `Tri`.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub struct GpuTri {
@@ -106,8 +108,8 @@ impl Bvh {
                         v0: [t.positions[0][0], t.positions[0][1], t.positions[0][2], 0.0],
                         v1: [t.positions[1][0], t.positions[1][1], t.positions[1][2], 0.0],
                         v2: [t.positions[2][0], t.positions[2][1], t.positions[2][2], 0.0],
-                        albedo: [t.albedo[0], t.albedo[1], t.albedo[2], 0.0],
-                        emission: [t.emission[0], t.emission[1], t.emission[2], 0.0],
+                        albedo: [t.albedo[0], t.albedo[1], t.albedo[2], t.metallic],
+                        emission: [t.emission[0], t.emission[1], t.emission[2], t.roughness],
                     },
                     centroid,
                     min,
@@ -406,16 +408,8 @@ mod tests {
         let c = [half, y, half];
         let d = [-half, y, half];
         [
-            LeafTriangle {
-                positions: [a, b, c],
-                albedo,
-                emission,
-            },
-            LeafTriangle {
-                positions: [a, c, d],
-                albedo,
-                emission,
-            },
+            LeafTriangle::lambertian([a, b, c], albedo, emission),
+            LeafTriangle::lambertian([a, c, d], albedo, emission),
         ]
     }
 
