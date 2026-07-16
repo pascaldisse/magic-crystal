@@ -1,4 +1,7 @@
-use crate::{ComponentDescriptor, EcsWorld, EntityDoc, EntityMap, FieldSpec, WorldMeta};
+use crate::{
+    prefab, ComponentDescriptor, EcsWorld, EntityDoc, EntityMap, FieldSpec, JsonMap, PrefabDoc,
+    WorldMeta,
+};
 use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -44,6 +47,10 @@ pub fn load_world_dir(path: impl AsRef<Path>, world: &mut EcsWorld) -> Result<Lo
         }
     };
 
+    // Prefab library: world/prefabs/<name>.json, each a `{ name, components }`
+    // doc. Instances deep-merge their deltas over these (reference semantics).
+    let prefabs = load_prefabs(path)?;
+
     let mut authored = BTreeMap::<String, EntityDoc>::new();
     for scene in &scenes {
         validate_scene_name(scene)?;
@@ -64,7 +71,20 @@ pub fn load_world_dir(path: impl AsRef<Path>, world: &mut EcsWorld) -> Result<Lo
                 .as_object()
                 .cloned()
                 .ok_or_else(|| format!("entity {id:?} is not a component object"))?;
-            object.remove("prefab");
+            // A `prefab` key marks an instance: peel it off and deep-merge the
+            // entry's own deltas over the prefab's components (reference
+            // `expandDoc`). Non-instances pass through untouched.
+            let object = match object.remove("prefab") {
+                Some(link) => {
+                    let name = prefab::prefab_name(&link)
+                        .ok_or_else(|| format!("entity {id:?} prefab link {link} has no name"))?;
+                    let base = prefabs.get(&name).ok_or_else(|| {
+                        format!("entity {id:?} references unknown prefab {name:?}")
+                    })?;
+                    prefab::expand_instance(&name, base, &object)
+                }
+                None => object,
+            };
             Ok((id, object))
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -111,6 +131,33 @@ pub fn load_world_dir(path: impl AsRef<Path>, world: &mut EcsWorld) -> Result<Lo
         entity_count: component_values.len(),
         meta,
     })
+}
+
+/// Read `world/prefabs/*.json` into a name → components map. Each file is a
+/// [`PrefabDoc`] (`{ name, components }`); a later file with the same name wins
+/// (reference behaviour). Absent dir = empty library.
+fn load_prefabs(path: &Path) -> Result<BTreeMap<String, JsonMap>, String> {
+    let dir = path.join("prefabs");
+    if !dir.is_dir() {
+        return Ok(BTreeMap::new());
+    }
+    let mut files = fs::read_dir(&dir)
+        .map_err(|error| format!("read {}: {error}", dir.display()))?
+        .map(|entry| entry.map(|entry| entry.path()).map_err(|e| e.to_string()))
+        .collect::<Result<Vec<PathBuf>, String>>()?;
+    files.retain(|path| path.extension().is_some_and(|ext| ext == "json"));
+    files.sort();
+    let mut prefabs = BTreeMap::<String, JsonMap>::new();
+    for file in files {
+        let doc = read_json::<PrefabDoc>(&file)?;
+        let components = serde_json::to_value(&doc.components)
+            .map_err(|error| format!("serialize prefab {:?}: {error}", doc.name))?
+            .as_object()
+            .cloned()
+            .ok_or_else(|| format!("prefab {:?} components are not an object", doc.name))?;
+        prefabs.insert(doc.name, components);
+    }
+    Ok(prefabs)
 }
 
 fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, String> {
