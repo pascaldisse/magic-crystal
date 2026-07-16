@@ -2421,8 +2421,10 @@ name = "oracle"
 version = "0.1.0"
 dependencies = [
  "crystal",
+ "glam",
  "serde",
  "serde_json",
+ "vessel",
 ]
 
 [[package]]
@@ -3028,6 +3030,7 @@ dependencies = [
  "bytemuck",
  "crystal",
  "glam",
+ "homunculus",
  "kami",
  "objc2-app-kit",
  "pleroma",
@@ -3039,6 +3042,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "transmutation",
+ "vessel",
  "wgpu",
 ]
 

@@ -258,6 +258,25 @@ pub struct RenderScene {
     /// derived every world tick. Its transformed triangles form the per-tick
     /// DYNAMIC partition the traced BVH splices in ([`Dynamics`]).
     pub dynamics: Dynamics,
+    /// RITE V — THE EMBODIED ONES. Every entity carrying a `body` sigil, skinned
+    /// into world-space triangles at SAMA's canonical idle pose (tick 0). Like
+    /// the living layer, these are excluded from the static chains and re-fed to
+    /// the traced BVH every tick (`dynamic_leaf_triangles`) — the seam V1 drives
+    /// with a per-tick sama pose. GENERIC: any creature that names a preset.
+    pub bodies: Vec<BodyInstance>,
+}
+
+/// One embodied vessel: a realm entity's `body` skinned to world-space leaf
+/// triangles at sama's idle pose. `preset` is the named vessel preset; the
+/// triangles carry lambertian albedo from the body's per-vertex colours.
+#[derive(Clone, Debug)]
+pub struct BodyInstance {
+    /// The owning entity's gaia id.
+    pub gaia_id: String,
+    /// The named vessel preset (`body.preset`).
+    pub preset: String,
+    /// World-space idle-posed triangles carrying their albedo.
+    pub world_tris: Vec<LeafTriangle>,
 }
 
 /// Material batch key: quantised linear colour bits + emissive flag +
@@ -406,6 +425,10 @@ impl RenderScene {
             }
         }
 
+        // RITE V weld: read the embodied ones (`body` sigil) into world-space
+        // skinned triangles BEFORE the dynamics consume the ECS.
+        let bodies = body_instances(world)?;
+
         // Seal the shared static buckets; the dynamics take ownership of the ECS
         // (its live tick reads and writes the animated transforms).
         let chains = seal_buckets(static_buckets)?;
@@ -420,6 +443,7 @@ impl RenderScene {
             error_threshold: parameters.cluster_error_threshold,
             emission_intensity: parameters.emission_intensity,
             dynamics,
+            bodies,
         })
     }
 
@@ -433,11 +457,16 @@ impl RenderScene {
     }
 
     /// The DYNAMIC partition: every living entity's leaf triangles, TRANSFORMED
-    /// by its current model delta into world space — the exact geometry the
-    /// traced BVH splices in this tick (albedo/emission carried per triangle,
-    /// same split as [`RenderScene::leaf_triangles`]). Empty with no behaviors.
+    /// by its current model delta into world space, PLUS every embodied body's
+    /// skinned triangles (Rite V) — the exact geometry the traced BVH splices in
+    /// this tick (albedo/emission carried per triangle, same split as
+    /// [`RenderScene::leaf_triangles`]). Empty with no behaviors and no bodies.
     pub fn dynamic_leaf_triangles(&self) -> Vec<LeafTriangle> {
-        self.dynamics.leaf_triangles()
+        let mut out = self.dynamics.leaf_triangles();
+        for body in &self.bodies {
+            out.extend_from_slice(&body.world_tris);
+        }
+        out
     }
 
     /// Select and expand the view-dependent cluster cut into draw vertices — the
@@ -560,6 +589,81 @@ fn parts_of(mesh: Mesh) -> Result<Vec<MeshPart>, String> {
             .map_err(|error| error.to_string());
     }
     Ok(Vec::new())
+}
+
+/// Read every `body`-sigil entity into a skinned world-space [`BodyInstance`]
+/// (Rite V). GENERIC: the compose reads only the `body`/`transform` sigils and
+/// resolves the named vessel preset — the engine never special-cases a creature.
+/// The body is skinned at SAMA's idle pose (tick 0, via [`vessel::Body`]), each
+/// vertex coloured by its region palette; a triangle's albedo is the mean of its
+/// three vertices' linear colours. `body.preset` names the preset; an unknown
+/// preset is an authoring error (surfaced, never silently invented).
+fn body_instances(world: &EcsWorld) -> Result<Vec<BodyInstance>, String> {
+    let Some(body_id) = world.component_id("body") else {
+        return Ok(Vec::new());
+    };
+    let Some(transform_id) = world.component_id("transform") else {
+        return Ok(Vec::new());
+    };
+    let mut entities = world.query(&QuerySpec {
+        all: vec![body_id, transform_id],
+        ..Default::default()
+    });
+    entities.sort_by(|a, b| world.gaia_id_for(*a).cmp(&world.gaia_id_for(*b)));
+
+    let mut out = Vec::new();
+    for entity in entities {
+        let id = world.gaia_id_for(entity).unwrap_or("<unbound>").to_string();
+        let body_value = world.get_component(entity, body_id)?;
+        let preset_name = body_value
+            .get("preset")
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| format!("entity {id:?} body: missing string `preset`"))?
+            .to_string();
+        let preset = vessel::Preset::by_name(&preset_name)
+            .ok_or_else(|| format!("entity {id:?} body: unknown preset {preset_name:?}"))?;
+
+        let transform: Transform =
+            serde_json::from_value(world.get_component(entity, transform_id)?)
+                .map_err(|error| format!("entity {id:?} transform: {error}"))?;
+        let model = transform_matrix(
+            vec3(transform.position.as_ref()).unwrap_or(Vec3::ZERO),
+            vec3(transform.rotation.as_ref()).unwrap_or(Vec3::ZERO),
+            scale(transform.scale.as_ref()),
+        );
+
+        // Compose: skin + colour + idle pose (sama). The mesh is skeleton-local
+        // (pelvis at origin); the entity transform places it in the world.
+        let composed = vessel::Body::from_preset(&preset);
+        let mesh = composed.idle_mesh();
+        let albedo = composed.vertex_albedo();
+
+        let world_tris: Vec<LeafTriangle> = mesh
+            .indices
+            .chunks_exact(3)
+            .map(|tri| {
+                let corner = |i: u32| {
+                    let p = Vec3::from(mesh.positions[i as usize]);
+                    model.transform_point3(p).to_array()
+                };
+                let mean =
+                    (albedo[tri[0] as usize] + albedo[tri[1] as usize] + albedo[tri[2] as usize])
+                        / 3.0;
+                LeafTriangle::lambertian(
+                    [corner(tri[0]), corner(tri[1]), corner(tri[2])],
+                    mean.to_array(),
+                    [0.0, 0.0, 0.0],
+                )
+            })
+            .collect();
+
+        out.push(BodyInstance {
+            gaia_id: id,
+            preset: preset_name,
+            world_tris,
+        });
+    }
+    Ok(out)
 }
 
 /// A real emissive light source in the realm — one glowing mesh part: its

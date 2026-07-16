@@ -16,4 +16,6 @@ path = "src/bin/oracle_cli.rs"
 [dependencies]
 crystal = { path = "../../crates/crystal" }
 serde = { version = "1", features = ["derive"] }
+vessel = { path = "../vessel" }
+glam = "0.30.9"
 serde_json = "1"

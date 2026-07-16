@@ -224,10 +224,12 @@ impl World {
         let transform = self.component_value(id, "transform");
         let mesh = self.component_value(id, "mesh");
         let spawn = self.component_value(id, "spawn");
+        let body = self.component_value(id, "body");
         Some(derive_geometry(
             transform.as_ref(),
             mesh.as_ref(),
             spawn.as_ref(),
+            body.as_ref(),
             ent.components.iter().any(|c| c == "spawn"),
         ))
     }
@@ -276,6 +278,7 @@ fn derive_geometry(
     transform: Option<&Value>,
     mesh: Option<&Value>,
     spawn: Option<&Value>,
+    body: Option<&Value>,
     has_spawn: bool,
 ) -> EntityGeom {
     let origin = read_vec3(transform.and_then(|t| t.get("position")), [0.0; 3]);
@@ -283,6 +286,18 @@ fn derive_geometry(
 
     let mut bounds: Option<Aabb> = None;
     let mut emissive: Option<String> = None;
+
+    // RITE V — an embodied entity's bounds are its SKINNED vessel at sama's idle
+    // pose (the senses learn the body natively, WITH the world). The body mesh is
+    // skeleton-local; the entity transform places it. GENERIC: any named preset.
+    if let Some(local) = body_local_aabb(body) {
+        let world = entity_affine.transform_aabb(&local);
+        bounds = Some(match bounds {
+            Some(b) => b.union(&world),
+            None => world,
+        });
+    }
+
     for part in parts_of(mesh) {
         if part_hidden(&part) {
             continue;
@@ -314,6 +329,22 @@ fn derive_geometry(
         emissive,
         yaw,
     }
+}
+
+/// Skeleton-LOCAL axis-aligned bounds of an embodied `body` sigil: compose the
+/// named vessel preset, skin it at sama's idle pose, and box the posed mesh.
+/// `None` when there is no `body` or its `preset` is unknown (the caller then
+/// falls back to any `mesh` bounds). This is the senses learning the body the
+/// same way the renderer does — one compose, one truth.
+fn body_local_aabb(body: Option<&Value>) -> Option<Aabb> {
+    let preset_name = body?.get("preset")?.as_str()?;
+    let preset = vessel::Preset::by_name(preset_name)?;
+    let composed = vessel::Body::from_preset(&preset);
+    let (lo, hi) = composed.idle_local_bounds()?;
+    Some(Aabb {
+        min: [lo.x, lo.y, lo.z],
+        max: [hi.x, hi.y, hi.z],
+    })
 }
 
 /// Single-part convention: `mesh.parts ?? [mesh]` — a mesh that carries a
