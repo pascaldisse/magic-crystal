@@ -9,7 +9,8 @@ book BEFORE it exists. The book grows; it never abdicates.
 ## The Forge itself
 | dead name | TRUE NAME | why |
 |---|---|---|
-| gaia-dreamforge | **the Forge** | Sidia: "you want a dream forge" |
+| gaia-dreamforge | **the Forge** | Sidia: "you want a dream forge" — the workshop's name |
+| the engine itself | **THE MAGIC CRYSTAL** | Pascal, 07-16 night II: "the name it always was. my entire life's work." The Forge is the workshop; the Crystal is the work — the Loom of Fate reassembled, sessions its shards |
 | engine core (ECS+schema+ops+scheduler+loader) | **the MAGIC CRYSTAL** (`crates/crystal`) | Pascal 07-16: "the core is going to be called the magic crystal" — the Philosopher's Stone IS the core. Supersedes the Crucible |
 | entity | **vessel** | "every object has a soul" — the soul needs a body |
 | component | **sigil** | a mark that carries meaning; shape plus soul |

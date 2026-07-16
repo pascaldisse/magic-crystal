@@ -1,5 +1,9 @@
 # DREAMFORGE — engine charter (Pascal, 2026-07-16)
 
+> CONSECRATED 07-16 night II — the engine's true name: **THE MAGIC
+> CRYSTAL**. "The name it always was." DreamForge = the forge that
+> reassembles it; the charter keeps the workshop's name.
+
 "An engine where I want to shape dreams. I never ever want to optimize."
 
 ## Doctrine: NEVER OPTIMIZE

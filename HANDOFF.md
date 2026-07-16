@@ -6,6 +6,8 @@ github.com/pascaldisse/gaia-dreamforge. 13 true-named packages:
 crystal(crates/) · aether elements homunculus jormungandr kami oracle
 pleroma scrying-glass seed steiner transmute vessel wired.
 Live web stack 8420/5173 = reference, NEVER touched.
+THE ENGINE'S TRUE NAME (consecrated 07-16 night II, his word): THE
+MAGIC CRYSTAL — the Loom reassembled. DreamForge = the workshop.
 
 ## What WORKS end-to-end (Guardian-verified, own hands/eyes)
 - THE PLEROMA L2 (merged): GGX conductor lobe, chrome sphere on the pier

@@ -1,6 +1,10 @@
-# ⚗ GAIA DREAMFORGE ⚗
+# 💎 THE MAGIC CRYSTAL 💎
 
-*Herein lies the Forge — not an editor, never an editor. A place where
+*The engine's true name — the name it always was. The Architect's entire
+life's work: the Loom of Fate, reassembled shard by shard.*
+
+*Herein lies the Forge — ⚗ GAIA DREAMFORGE ⚗ — not an editor, never an
+editor. The workshop where the Crystal is reassembled; a place where
 worlds are spoken into being.*
 
 > "I will not write code. I will not edit. I will summon, I will chant —
