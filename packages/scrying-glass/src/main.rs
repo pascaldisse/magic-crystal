@@ -1448,15 +1448,10 @@ fn main() {
             let latest = Arc::new(RwLock::new(None));
             let capture_sender = spawn_capture_worker(latest.clone());
 
-            // The Embodiment: the render scene's own triangles become the floor,
+            // The Embodiment: the world's own leaf triangles become the floor
+            // (exact geometry, view-independent — never a camera's coarse cut),
             // and the world spawn pose becomes a walking body.
-            let ground = Arc::new(Ground::from_positions(
-                &render_scene
-                    .vertices
-                    .iter()
-                    .map(|vertex| vertex.position)
-                    .collect::<Vec<_>>(),
-            ));
+            let ground = Arc::new(Ground::from_positions(&render_scene.leaf_positions()));
             let spawn_eye = render_scene.camera.eye;
             let spawn_yaw = render_scene.camera.yaw;
             let player_params = PlayerParams::from_env().map_err(std::io::Error::other)?;

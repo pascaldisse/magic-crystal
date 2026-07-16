@@ -287,6 +287,24 @@ impl RenderScene {
         out
     }
 
+    /// Every leaf triangle's corner positions, world-space, view-independent —
+    /// the EXACT geometry (error 0, the world itself). The Embodiment's floor:
+    /// a body stands on the world, never on a camera's coarse cut.
+    pub fn leaf_positions(&self) -> Vec<[f32; 3]> {
+        let mut out = Vec::new();
+        for chain in &self.chains {
+            if let Some(leaf_ids) = chain.dag.levels.first() {
+                for &id in leaf_ids {
+                    let cluster = chain.dag.cluster(id);
+                    for &index in &cluster.indices {
+                        out.push(cluster.vertices[index as usize].position);
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// Project the world-space scene through an arbitrary camera pose (the moving eye).
     pub fn frame_uniform(&self, width: u32, height: u32, camera: &Camera) -> FrameUniform {
         let aspect = width as f32 / height.max(1) as f32;
