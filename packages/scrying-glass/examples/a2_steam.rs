@@ -359,6 +359,29 @@ fn main() {
         Some(&medium),
     );
 
+    // PROFILE SPLIT (front view): isolate the shadow (self-occlusion) march by
+    // rendering the SAME medium with shadow_steps=1. (full - no_shadow) ≈ shadow
+    // march cost; (no_shadow - off) ≈ primary march cost. Honest numbers, not feel.
+    let medium_noshadow = MediumGpu {
+        shadow_steps: 1,
+        ..steam_medium(&bound, counter_top_y)
+    };
+    let (_img_ns, ms_noshadow) = render(
+        &device,
+        &queue,
+        &bvh,
+        &cam_front,
+        &scene,
+        w,
+        h,
+        frames,
+        &int_params,
+        Some(&medium_noshadow),
+    );
+    println!("[a2] ── MEDIUM MARCH SPLIT (front, {w}x{h}) ──");
+    println!("[a2]   primary march ≈ {:.2} ms  (no-shadow {ms_noshadow:.2} − off {ms_off:.2})", ms_noshadow - ms_off);
+    println!("[a2]   shadow march  ≈ {:.2} ms  (full {ms_on:.2} − no-shadow {ms_noshadow:.2})", ms_on - ms_noshadow);
+
     let proof = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../proof");
     write_png(&img_on, w, h, exposure, &proof.join("a2-steam.png"));
     write_png(
