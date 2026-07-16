@@ -361,7 +361,17 @@ fn point_light_parity_gpu_matches_aether_reference() {
         None,
     );
     let gpu = resolve(&trace_headless(
-        &device, &queue, &bvh, &camera, &sun, [0.0; 4], [0.0; 4], w, h, frames, &params,
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &sun,
+        [0.0; 4],
+        [0.0; 4],
+        w,
+        h,
+        frames,
+        &params,
         Some(&medium),
     ));
 
@@ -385,7 +395,17 @@ fn point_light_parity_gpu_matches_aether_reference() {
         None,
     );
     let gpu_moved = resolve(&trace_headless(
-        &device, &queue, &bvh, &camera, &sun, [0.0; 4], [0.0; 4], w, h, frames, &params,
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &sun,
+        [0.0; 4],
+        [0.0; 4],
+        w,
+        h,
+        frames,
+        &params,
         Some(&moved),
     ));
 
@@ -409,8 +429,16 @@ fn point_light_parity_gpu_matches_aether_reference() {
             let o = avec3(eye[0] as f64, eye[1] as f64, eye[2] as f64);
             let d = avec3(dir.x as f64, dir.y as f64, dir.z as f64);
             let scatter = single_scatter(
-                &optics, &grid, o, d, eps, far as f64, march_steps as usize, &light,
-                shadow_dist as f64, shadow_steps as usize,
+                &optics,
+                &grid,
+                o,
+                d,
+                eps,
+                far as f64,
+                march_steps as usize,
+                &light,
+                shadow_dist as f64,
+                shadow_steps as usize,
             );
             cpu[(y * w + x) as usize] = GVec3::new(
                 (light_rgb[0] as f64 * scatter) as f32,

@@ -1,27 +1,37 @@
-//! A1 relic forge — the ramen steam plume rises above the Naruko stall, lit by
+//! A2 relic forge — the ramen steam plume rises above the Naruko stall, lit by
 //! the SAME traced light as every surface (Rite VI, the Aether entering the
-//! Pleroma). Loads the real Naruko realm, splices a participating-medium steam
-//! column above the stall, and renders three relics headlessly on the GPU:
+//! Pleroma). A2 makes the binding TRUE: the plume's light is a REAL emitter read
+//! from the realm (the stall's lantern — position + colour + intensity derived,
+//! never invented), and the plume is GROUNDED on the stall's serving surface
+//! (its y-min derived from the geometry — no clip through the counter). Loads the
+//! real Naruko realm and renders three relics headlessly on the GPU:
 //!
-//!   proof/a1-steam.png        — the plume, steam ON
-//!   proof/a1-steam-orbit.png  — the same plume from another angle
-//!   proof/a1-steam-off.png    — steam OFF (for the localized-diff report)
+//!   proof/a2-steam.png        — the plume, steam ON (bound light, grounded)
+//!   proof/a2-steam-orbit.png  — the same plume from another angle
+//!   proof/a2-steam-off.png    — steam OFF (for the localized-diff report)
 //!
 //! It prints the honest frame cost (ms/frame with the medium marching) and the
 //! steam-on-vs-off difference split into the PLUME region and the far sky (the
 //! discriminating claim: the plume changes, the far sky does not).
 //!
-//! Run:  cargo run -p scrying-glass --release --example a1_steam
+//! Run:  cargo run -p scrying-glass --release --example a2_steam
 
 use std::path::Path;
 use std::time::Instant;
+
+use std::f32::consts::PI;
 
 use aether::{DensityGrid, HomogeneousMedium, SteamColumn};
 use crystal::{Core, load_world_dir};
 use glam::Vec3 as GVec3;
 use scrying_glass::bvh::{Bvh, BvhParams};
-use scrying_glass::integrator::{IntegratorParams, MediumGpu, headless_device, resolve};
-use scrying_glass::scene::{Camera, RenderScene, SceneParameters, SunDefaults};
+use scrying_glass::integrator::{
+    IntegratorParams, MediumGpu, MediumLightGpu, headless_device, resolve,
+};
+use scrying_glass::scene::{
+    Camera, EmissiveSource, RenderScene, SceneParameters, SunDefaults, SunLight, emissive_sources,
+    top_flat_surface_y,
+};
 
 /// Naruko scene parameters (mirrors the window defaults in `main.rs` — the same
 /// realm a player boots). Nothing here is hardcoded into the engine; these are
@@ -50,40 +60,109 @@ fn naruko_params() -> SceneParameters {
     }
 }
 
-/// The steam plume above the ramen stall. The stall (`naruko_stall_massing`) is
-/// at world [-1,0,25]; its counter sits ~y=0.9 and its roof ~y=2.9. The plume
-/// rises from just above the counter. Every value is a dial (never hardcoded in
-/// the medium law) with a documented choice.
-fn steam_medium() -> MediumGpu {
-    // The density source: a rising, turbulent column (Aether preset, param set).
+/// The steam plume above the ramen stall. Both the plume's GROUNDING and its
+/// LIGHT are derived from the realm, never invented (A2 true binding + clip):
+///
+/// - `counter_top_y` is the world-space top of the stall's serving surface
+///   (`top_flat_surface_y`) — the plume's y-min sits exactly there, so the
+///   column rises FROM the counter instead of clipping down through it.
+/// - `light` is a real emitter read from the realm (`emissive_sources`): its
+///   world position and colour bind the medium's in-scatter light, and its
+///   radiant intensity is derived as radiance (emission colour × the world's
+///   emission-intensity dial) × the emitter's projected area (πr²) — no
+///   free-floating 'own light'.
+///
+/// The steam OPTICS (scattering coefficients, height, turbulence) are honest
+/// medium dials with documented choices; only the light and the ground are
+/// bound to the world.
+/// A resolved medium light: the GPU light (real position/direction), its colour
+/// tint, and its scalar intensity — all bound to a real scene source.
+struct BoundLight {
+    light: MediumLightGpu,
+    color: [f32; 3],
+    intensity: f32,
+    label: String,
+}
+
+/// Bind the medium's in-scatter light to a REAL scene source. Parameterized
+/// selection: the NEAREST emissive entity to the plume — the stall's own glow
+/// (its lantern) — with the sky sun/moon as the fallback when the realm has no
+/// emitters near the plume. Position/direction, colour and intensity are all
+/// read from the world; nothing is invented. The nearest emitter is bound
+/// because it is the light that actually sits with the stall and back-lights
+/// its steam toward a viewer (forward scatter), the way a night stall reads.
+/// `fallback_reach` (world units) is how near an emitter must be to be chosen
+/// over the sun — a documented dial, not a hidden constant.
+fn select_medium_light(
+    sources: &[EmissiveSource],
+    sun: &SunLight,
+    emission_intensity: f32,
+    plume_center: [f32; 3],
+    fallback_reach: f32,
+) -> BoundLight {
+    let nearest = sources.iter().min_by(|a, b| {
+        let da = dist2(a.position, plume_center);
+        let db = dist2(b.position, plume_center);
+        da.total_cmp(&db)
+    });
+    match nearest {
+        Some(source) if dist2(source.position, plume_center).sqrt() <= fallback_reach => {
+            BoundLight {
+                light: MediumLightGpu::Point {
+                    position: source.position,
+                },
+                color: source.color,
+                // Radiant intensity DERIVED from the real emitter: the world's
+                // emission-radiance dial × the emitter's emitting area (πr²).
+                intensity: emission_intensity * PI * source.radius * source.radius,
+                label: source.id.clone(),
+            }
+        }
+        _ => BoundLight {
+            light: MediumLightGpu::Directional {
+                to_light: sun.direction,
+            },
+            color: sun.color,
+            intensity: sun.intensity,
+            label: "sun".into(),
+        },
+    }
+}
+
+fn dist2(a: [f32; 3], b: [f32; 3]) -> f32 {
+    (a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)
+}
+
+fn steam_medium(bound: &BoundLight, counter_top_y: f32) -> MediumGpu {
+    // The plume is grounded ON the counter surface (derived), rising over a
+    // documented height. Base radius and turbulence are steam dials.
+    let plume_height = 3.4_f64;
     let column = SteamColumn {
-        base: aether::vec3(-1.0, 1.1, 25.6),
-        height: 4.6,
+        base: aether::vec3(-1.0, counter_top_y as f64, 25.6),
+        height: plume_height,
         radius: 0.55,
-        peak: 1.0,
-        turbulence: 0.65,
+        peak: 1.1,
+        turbulence: 0.6,
         ..SteamColumn::default()
     };
     // Rasterize into the grid the GPU uploads (the SAME artifact the CPU marches).
+    // The grid's y-MIN is the counter surface — nothing exists below it (clip).
     let vsize = 0.12;
-    let dims = [30usize, 46, 30];
-    // Box centered on the column base in x/z, rising over its height.
-    let origin = aether::vec3(-2.8, 1.0, 23.8);
+    let dims = [30usize, 32, 30];
+    let origin = aether::vec3(-2.8, counter_top_y as f64, 23.8);
     let grid = DensityGrid::rasterize(dims, vsize, origin, &column);
 
-    // Optics: bright steam — nearly pure scattering, strongly forward (g=0.6) so
-    // the warm BACKLIGHT behind the plume forward-scatters toward the camera and
-    // the wisp GLOWS (the way real backlit steam does over a night stall).
-    let optics = HomogeneousMedium::new(0.05, 2.2, 0.6);
+    // Optics: THIN, near-pure-scattering steam, sharply forward (g=0.8). Thin
+    // so the plume stays TRANSLUCENT — the dusk sky shows through and the wisp
+    // does not occlude into a dark column; sharply forward so the real lantern
+    // BEHIND the plume forward-scatters its warm glow toward the camera as a
+    // soft pink veil. Honest steam dials against the real (modest) lantern —
+    // never a boosted light. This is what backlit steam over a night stall is:
+    // a luminous breath, not an opaque smokestack.
+    let optics = HomogeneousMedium::new(0.02, 2.6, 0.82);
     let d = grid.dims();
     let o = grid.world_origin();
-    // The steam's OWN light: a warm source behind + above the plume (decoupled
-    // from the sky sun). Direction TOWARD it ≈ the camera's view direction, so
-    // forward scatter carries its light to the eye. A dial, not hardcoded law.
-    let light_dir = {
-        let v = GVec3::new(-0.4, 0.5, -0.8).normalize();
-        [v.x, v.y, v.z]
-    };
+
     MediumGpu {
         dims: [d[0] as u32, d[1] as u32, d[2] as u32],
         voxel_size: grid.voxel_size() as f32,
@@ -95,9 +174,9 @@ fn steam_medium() -> MediumGpu {
         march_steps: 128,
         shadow_steps: 32,
         shadow_dist: 7.0,
-        light_dir,
-        light_color: [1.0, 0.62, 0.34], // warm lantern glow (linear rgb)
-        light_intensity: 9.0,
+        light: bound.light,
+        light_color: bound.color,
+        light_intensity: bound.intensity,
         density: grid.data().to_vec(),
     }
 }
@@ -176,12 +255,12 @@ fn write_png(img: &[GVec3], w: u32, h: u32, exposure: f32, path: &Path) {
         .unwrap()
         .write_image_data(&bytes)
         .unwrap();
-    eprintln!("[a1] wrote {}", path.display());
+    eprintln!("[a2] wrote {}", path.display());
 }
 
 fn main() {
     let Some((device, queue)) = headless_device() else {
-        panic!("[a1] no GPU adapter on this host — cannot forge the relic");
+        panic!("[a2] no GPU adapter on this host — cannot forge the relic");
     };
 
     // Load the real Naruko realm.
@@ -189,16 +268,42 @@ fn main() {
     let mut core = Core::default();
     load_world_dir(&world_path, &mut core.world).expect("load naruko");
     let params = naruko_params();
+
+    // A2 binding + clip: read the real emitters + the stall's serving surface
+    // from the realm BEFORE the render scene consumes the world.
+    let sources = emissive_sources(&core.world).expect("emissive sources");
+    let counter_top_y = top_flat_surface_y(&core.world, "naruko_stall_massing")
+        .expect("stall surface")
+        .expect("the stall has a flat serving surface");
+
     let scene =
         RenderScene::from_ecs(std::mem::take(&mut core.world), &params).expect("render scene");
+
+    // The plume centre (its base is grounded on the counter; the light selection
+    // uses the mid-column point).
+    let plume_center = [-1.0, counter_top_y + 1.7, 25.6];
+    // An emitter within this reach of the plume is "the stall's light"; beyond
+    // it, fall back to the sun/moon. The stall lantern sits ~9 m away.
+    let fallback_reach = 12.0;
+    let bound = select_medium_light(
+        &sources,
+        &scene.sun,
+        params.emission_intensity,
+        plume_center,
+        fallback_reach,
+    );
+    eprintln!(
+        "[a2] bound light = {:?}  colour {:?}  intensity {:.3}  |  counter top y = {:.2}",
+        bound.label, bound.color, bound.intensity, counter_top_y
+    );
 
     // Static + dynamic geometry into one BVH (as the window does).
     let mut tris = scene.leaf_triangles();
     tris.extend(scene.dynamic_leaf_triangles());
     let bvh = Bvh::build(&tris, &BvhParams::default());
-    eprintln!("[a1] naruko: {} leaf triangles", tris.len());
+    eprintln!("[a2] naruko: {} leaf triangles", tris.len());
 
-    let medium = steam_medium();
+    let medium = steam_medium(&bound, counter_top_y);
 
     let (w, h) = (900u32, 600u32);
     let frames = 40u32;
@@ -255,15 +360,15 @@ fn main() {
     );
 
     let proof = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../proof");
-    write_png(&img_on, w, h, exposure, &proof.join("a1-steam.png"));
+    write_png(&img_on, w, h, exposure, &proof.join("a2-steam.png"));
     write_png(
         &img_orbit,
         w,
         h,
         exposure,
-        &proof.join("a1-steam-orbit.png"),
+        &proof.join("a2-steam-orbit.png"),
     );
-    write_png(&img_off, w, h, exposure, &proof.join("a1-steam-off.png"));
+    write_png(&img_off, w, h, exposure, &proof.join("a2-steam-off.png"));
 
     // Localized-diff report: split the ON-vs-OFF difference into the PLUME
     // region (a column of pixels over the stall) and the FAR SKY (top-left
@@ -295,18 +400,18 @@ fn main() {
     let plume_diff = plume_sum / plume_n.max(1.0);
     let sky_diff = sky_sum / sky_n.max(1.0);
 
-    println!("[a1] ── FRAME COST (honest, {w}x{h}, {frames} accum frames) ──");
-    println!("[a1]   steam ON  : {ms_on:.2} ms/frame");
+    println!("[a2] ── FRAME COST (honest, {w}x{h}, {frames} accum frames) ──");
+    println!("[a2]   steam ON  : {ms_on:.2} ms/frame");
     println!(
-        "[a1]   steam OFF : {ms_off:.2} ms/frame  (medium overhead {:.2} ms)",
+        "[a2]   steam OFF : {ms_off:.2} ms/frame  (medium overhead {:.2} ms)",
         ms_on - ms_off
     );
-    println!("[a1]   orbit ON  : {ms_orbit:.2} ms/frame");
-    println!("[a1] ── STEAM ON vs OFF (localized diff) ──");
-    println!("[a1]   plume region mean |Δ| = {plume_diff:.5}");
-    println!("[a1]   far-sky      mean |Δ| = {sky_diff:.6}");
+    println!("[a2]   orbit ON  : {ms_orbit:.2} ms/frame");
+    println!("[a2] ── STEAM ON vs OFF (localized diff) ──");
+    println!("[a2]   plume region mean |Δ| = {plume_diff:.5}");
+    println!("[a2]   far-sky      mean |Δ| = {sky_diff:.6}");
     println!(
-        "[a1]   plume/sky ratio = {:.1}x  (discriminating: the plume changes, the sky does not)",
+        "[a2]   plume/sky ratio = {:.1}x  (discriminating: the plume changes, the sky does not)",
         plume_diff / sky_diff.max(1e-9)
     );
 }

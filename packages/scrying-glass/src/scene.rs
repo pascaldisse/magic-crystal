@@ -562,6 +562,128 @@ fn parts_of(mesh: Mesh) -> Result<Vec<MeshPart>, String> {
     Ok(Vec::new())
 }
 
+/// A real emissive light source in the realm — one glowing mesh part: its
+/// world-space centre and its emissive colour (linear rgb). The medium binds
+/// its in-scatter light to one of these REAL sources (A2 true binding), never
+/// an invented light. Read straight from the ECS entities, before the render
+/// scene consumes the world.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EmissiveSource {
+    /// The owning entity's gaia id — the selection handle.
+    pub id: String,
+    /// World-space centre of the glowing part.
+    pub position: [f32; 3],
+    /// Emissive colour, linear rgb.
+    pub color: [f32; 3],
+    /// Effective emitter radius (world units): a sphere's radius, or the
+    /// projected-area equivalent of a box's largest face (`√(A_max/π)`). Lets a
+    /// caller derive a point light's radiant intensity as radiance × πr² — the
+    /// emitter's real emitting area — never a plucked scale. A long thin strip
+    /// gets its true (small) face area, not a fat bounding radius.
+    pub radius: f32,
+}
+
+/// Every emissive mesh part in the realm as an [`EmissiveSource`] (entity id,
+/// world-space centre, linear-rgb colour), sorted by gaia id (deterministic).
+/// The medium's A2 binding selects one of these — the stall's lantern glow —
+/// instead of inventing a light. Reads the SAME transform/mesh the render scene
+/// tessellates, so the position is the exact authored world location.
+pub fn emissive_sources(world: &EcsWorld) -> Result<Vec<EmissiveSource>, String> {
+    let Some((transform_id, mesh_id)) = world
+        .component_id("transform")
+        .zip(world.component_id("mesh"))
+    else {
+        return Ok(Vec::new());
+    };
+    let mut entities = world.query(&QuerySpec {
+        all: vec![transform_id, mesh_id],
+        ..Default::default()
+    });
+    entities.sort_by(|a, b| world.gaia_id_for(*a).cmp(&world.gaia_id_for(*b)));
+    let mut out = Vec::new();
+    for entity in entities {
+        let id = world.gaia_id_for(entity).unwrap_or("<unbound>").to_string();
+        let transform: Transform =
+            serde_json::from_value(world.get_component(entity, transform_id)?)
+                .map_err(|error| format!("entity {id:?} transform: {error}"))?;
+        let mesh: Mesh = serde_json::from_value(world.get_component(entity, mesh_id)?)
+            .map_err(|error| format!("entity {id:?} mesh: {error}"))?;
+        let parts = parts_of(mesh).map_err(|error| format!("entity {id:?} mesh: {error}"))?;
+        let entity_model = transform_matrix(
+            vec3(transform.position.as_ref()).unwrap_or(Vec3::ZERO),
+            vec3(transform.rotation.as_ref()).unwrap_or(Vec3::ZERO),
+            scale(transform.scale.as_ref()),
+        );
+        for part in &parts {
+            let Some(hex) = part.emissive.as_deref() else {
+                continue;
+            };
+            let color = linear_rgb(hex)?;
+            let part_center = vec3(part.position.as_ref()).unwrap_or(Vec3::ZERO);
+            let world_center = entity_model.transform_point3(part_center);
+            // Effective radius: a sphere's radius, else the projected-area
+            // equivalent of the box's largest face (√(A_max/π)), so a long thin
+            // neon strip contributes its true face area, not a fat radius.
+            let radius = match number(part.radius.as_ref()) {
+                Some(r) => r,
+                None => vec3(part.size.as_ref())
+                    .map(|s| {
+                        let a_max = (s.x * s.y).max((s.x * s.z).max(s.y * s.z));
+                        (a_max / std::f32::consts::PI).sqrt()
+                    })
+                    .unwrap_or(0.5),
+            };
+            out.push(EmissiveSource {
+                id: id.clone(),
+                position: world_center.to_array(),
+                color,
+                radius,
+            });
+        }
+    }
+    Ok(out)
+}
+
+/// The world-space y of the topmost flat slab of an entity — the surface a prop
+/// (or a steam plume) rests ON. A "flat slab" is a box part whose vertical
+/// extent is its smallest dimension (a serving counter / table top / roof, not
+/// an upright post). Returns the highest such top face in world space, DERIVED
+/// from the realm geometry — the plume's y-min is grounded here, never plucked.
+/// `None` when the entity has no flat box part (or does not exist).
+pub fn top_flat_surface_y(world: &EcsWorld, gaia_id: &str) -> Result<Option<f32>, String> {
+    let (Some(transform_id), Some(mesh_id)) =
+        (world.component_id("transform"), world.component_id("mesh"))
+    else {
+        return Ok(None);
+    };
+    let Some(entity) = world.entity_for_gaia(gaia_id) else {
+        return Ok(None);
+    };
+    let transform: Transform = serde_json::from_value(world.get_component(entity, transform_id)?)
+        .map_err(|error| format!("entity {gaia_id:?} transform: {error}"))?;
+    let mesh: Mesh = serde_json::from_value(world.get_component(entity, mesh_id)?)
+        .map_err(|error| format!("entity {gaia_id:?} mesh: {error}"))?;
+    let parts = parts_of(mesh).map_err(|error| format!("entity {gaia_id:?} mesh: {error}"))?;
+    let entity_y = vec3(transform.position.as_ref()).unwrap_or(Vec3::ZERO).y;
+    let mut best: Option<f32> = None;
+    for part in &parts {
+        if part.shape.as_deref().unwrap_or("box") != "box" {
+            continue;
+        }
+        let Some(size) = vec3(part.size.as_ref()) else {
+            continue;
+        };
+        // A flat slab: the vertical extent is the smallest of the three.
+        if size.y > size.x.min(size.z) {
+            continue;
+        }
+        let part_y = vec3(part.position.as_ref()).unwrap_or(Vec3::ZERO).y;
+        let top = entity_y + part_y + size.y * 0.5;
+        best = Some(best.map_or(top, |b| b.max(top)));
+    }
+    Ok(best)
+}
+
 /// Project a cluster's LOD error through its group's SHARED bounds sphere to a
 /// screen-space error (~pixels). Error 0 (leaves) stays 0. Distance metric
 /// (Rite III); hardware visibility lands later.
@@ -1342,6 +1464,53 @@ mod tests {
         let mut world = EcsWorld::default();
         load_world_dir(naruko_world(), &mut world).expect("load the Naruko realm");
         RenderScene::from_ecs(world, &test_parameters()).expect("transmute the realm")
+    }
+
+    // ── A2 · the medium light is BOUND to real realm entities ──
+
+    /// `emissive_sources` reads the real emitters from the realm: the stall's
+    /// lantern is present at its authored world position with its emissive
+    /// colour — the medium binds to THIS, never an invented light.
+    #[test]
+    fn emissive_sources_read_the_real_lantern() {
+        let mut world = EcsWorld::default();
+        load_world_dir(naruko_world(), &mut world).expect("load the Naruko realm");
+        let sources = emissive_sources(&world).expect("emissive sources");
+        assert!(!sources.is_empty(), "the realm has emitters");
+        let lantern = sources
+            .iter()
+            .find(|s| s.id == "naruko_lantern")
+            .expect("the stall lantern is an emissive source");
+        // Authored: entity [-7.5,0,20] + emissive sphere part [0,3.5,0].
+        assert!((lantern.position[0] - (-7.5)).abs() < 1e-4, "{lantern:?}");
+        assert!((lantern.position[1] - 3.5).abs() < 1e-4, "{lantern:?}");
+        assert!((lantern.position[2] - 20.0).abs() < 1e-4, "{lantern:?}");
+        // #ff9db0 → linear: red channel saturates to 1.0, warm pink.
+        assert!((lantern.color[0] - 1.0).abs() < 1e-4, "{lantern:?}");
+        assert!(lantern.color[1] < lantern.color[0] && lantern.color[2] < lantern.color[0]);
+        // The emissive SPHERE radius is read verbatim (0.55) for the πr² area.
+        assert!((lantern.radius - 0.55).abs() < 1e-4, "{lantern:?}");
+    }
+
+    /// `top_flat_surface_y` derives the plume's grounding from the stall's
+    /// geometry — the top face of its highest flat slab (the serving surface),
+    /// not a plucked constant. The upright posts (vertical extent largest) are
+    /// correctly rejected.
+    #[test]
+    fn stall_top_flat_surface_is_derived_from_geometry() {
+        let mut world = EcsWorld::default();
+        load_world_dir(naruko_world(), &mut world).expect("load the Naruko realm");
+        let y = top_flat_surface_y(&world, "naruko_stall_massing")
+            .expect("query")
+            .expect("the stall has a flat serving surface");
+        // The roof slab [5.6,0.3,4] at entity y=0, part y=2.75 → top 2.75+0.15.
+        assert!((y - 2.9).abs() < 1e-4, "derived surface y = {y}");
+        // A realm without the entity yields None (no plucked fallback).
+        assert!(
+            top_flat_surface_y(&world, "no_such_entity")
+                .expect("query")
+                .is_none()
+        );
     }
 
     /// Mean y of every corner of a triangle set — a cheap centroid to watch a

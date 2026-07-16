@@ -94,7 +94,7 @@ pub struct MediumGpu {
 }
 
 /// The medium's bound scene light on the GPU — the SAME split the CPU
-/// [`pleroma::MediumLight`] carries (A2 true binding). The vector field means a
+/// `pleroma::MediumLight` carries (A2 true binding). The vector field means a
 /// unit direction (directional) or a world position (point); the `kind` byte
 /// selects which in the shader.
 #[derive(Clone, Copy, Debug)]
