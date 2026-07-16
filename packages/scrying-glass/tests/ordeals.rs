@@ -18,8 +18,22 @@ use scrying_glass::bvh::{Bvh, BvhParams};
 use scrying_glass::integrator::{IntegratorParams, headless_device, resolve, trace_headless};
 use scrying_glass::scene::{Camera, LeafTriangle, SunLight};
 
-/// A horizontal square of two triangles in the `y` plane, side `2*half`.
+/// A horizontal square of two triangles in the `y` plane, side `2*half`
+/// (lambertian material).
 fn quad(y: f32, half: f32, albedo: [f32; 3], emission: [f32; 3]) -> [LeafTriangle; 2] {
+    metal_quad(y, half, albedo, emission, 0.0, 1.0)
+}
+
+/// A horizontal square with explicit metallic/roughness dials (the L2 conductor
+/// lobe). `metallic 0, roughness 1` = the lambertian `quad`.
+fn metal_quad(
+    y: f32,
+    half: f32,
+    albedo: [f32; 3],
+    emission: [f32; 3],
+    metallic: f32,
+    roughness: f32,
+) -> [LeafTriangle; 2] {
     let a = [-half, y, -half];
     let b = [half, y, -half];
     let c = [half, y, half];
@@ -29,11 +43,15 @@ fn quad(y: f32, half: f32, albedo: [f32; 3], emission: [f32; 3]) -> [LeafTriangl
             positions: [a, b, c],
             albedo,
             emission,
+            metallic,
+            roughness,
         },
         LeafTriangle {
             positions: [a, c, d],
             albedo,
             emission,
+            metallic,
+            roughness,
         },
     ]
 }
@@ -175,6 +193,151 @@ fn parity_gpu_tracer_matches_pleroma() {
     let tol = 0.05;
     println!("[PARITY] {total_spp} spp  mean-abs-diff={mad:.5}  tol={tol}");
     assert!(mad < tol, "GPU/Pleroma parity: mad {mad} exceeds tol {tol}");
+}
+
+// ── ORDEAL 1b · SPECULAR PARITY — GPU mirror vs the CPU Pleroma mirror ────
+// A committed analytic scene WITH a perfect MIRROR: a flat mirror floor (y=0,
+// metallic 1, roughness 0, reflectance 0.9) reflecting an emissive quad
+// overhead (y=6). The camera looks down at an angle so the reflected emitter
+// fills much of the frame. Flat mirror = analytically identical geometry in
+// BOTH integrators (CPU Plane vs GPU quad, exact — a tessellated sphere would
+// inject normal error that MASKS the BRDF parity we are testing here; the
+// chrome SPHERE is verified with eyes in proof/l2-chrome.png). The mirror lobe
+// is a delta (near-zero variance), so parity is TIGHT.
+//
+// DISCRIMINATION: the same GPU scene with the mirror BROKEN (roughness forced
+// to 1 → the surface scatters diffusely instead of reflecting) is scored
+// against the SAME mirror reference; its MAD must blow far past the gate — so
+// a broken mirror cannot pass.
+#[test]
+fn specular_parity_gpu_mirror_matches_pleroma() {
+    use pleroma::{Camera as LCamera, Film, Material, Params, Scene, Shape, Vec3 as LVec3, vec3};
+
+    let Some((device, queue)) = headless_device() else {
+        eprintln!("[SPECULAR PARITY] no GPU adapter on this host — ordeal could not run");
+        return;
+    };
+
+    let refl = [0.9, 0.9, 0.9];
+    let emit = [3.0, 3.0, 3.0];
+    let floor_half = 40.0;
+    let emit_half = 4.0;
+    let emit_y = 6.0;
+    let (w, h) = (64u32, 64u32);
+    let eye = [0.0, 7.0, 11.0];
+    let look = [0.0, 0.0, -3.0];
+    let fov = 55.0f32;
+    let camera = look_camera(eye, look, fov);
+    let frames = 64u32;
+    let params = IntegratorParams {
+        spp: 4,
+        max_bounces: 4,
+        rr_start: 3,
+        seed: 0x1234,
+        eps: 1e-3,
+    };
+    let total_spp = frames * params.spp;
+
+    // GPU scene with a mirror (roughness 0) and, for discrimination, a broken
+    // one (roughness 1 = diffuse scatter).
+    let gpu_image = |floor_roughness: f32| {
+        let mut tris = Vec::new();
+        tris.extend(metal_quad(
+            0.0,
+            floor_half,
+            refl,
+            [0.0; 3],
+            1.0,
+            floor_roughness,
+        ));
+        tris.extend(quad(emit_y, emit_half, [0.0; 3], emit));
+        let bvh = Bvh::build(&tris, &BvhParams::default());
+        let accum = trace_headless(
+            &device,
+            &queue,
+            &bvh,
+            &camera,
+            &no_sun(),
+            [0.0; 4],
+            [0.0; 4],
+            w,
+            h,
+            frames,
+            &params,
+        );
+        resolve(&accum)
+    };
+    let gpu_mirror = gpu_image(0.0);
+    let gpu_broken = gpu_image(1.0);
+
+    // CPU reference: the SAME mirror (Plane, metal reflectance 0.9, roughness 0)
+    // + a thin emissive box at y=6.
+    let mut scene = Scene::new();
+    scene.add(
+        Shape::Plane {
+            point: LVec3::ZERO,
+            normal: vec3(0.0, 1.0, 0.0),
+        },
+        Material::metal(vec3(0.9, 0.9, 0.9), 0.0),
+    );
+    scene.add(
+        Shape::Box {
+            min: vec3(-(emit_half as f64), emit_y as f64, -(emit_half as f64)),
+            max: vec3(emit_half as f64, emit_y as f64 + 0.02, emit_half as f64),
+        },
+        Material::emissive(vec3(3.0, 3.0, 3.0)),
+    );
+    let lcam = LCamera::new(
+        vec3(eye[0] as f64, eye[1] as f64, eye[2] as f64),
+        vec3(look[0] as f64, look[1] as f64, look[2] as f64),
+        vec3(0.0, 1.0, 0.0),
+        fov as f64,
+        w as f64 / h as f64,
+    );
+    let lp = Params {
+        spp: total_spp,
+        max_bounces: params.max_bounces,
+        rr_start: params.rr_start,
+        eps: params.eps as f64,
+        seed: params.seed as u64,
+    };
+    let film = Film::render(&scene, &lcam, w, h, &lp);
+
+    let mad = |img: &[glam::Vec3]| -> f64 {
+        let mut sum = 0.0f64;
+        let mut n = 0.0f64;
+        for y in 0..h {
+            for x in 0..w {
+                let g = img[(y * w + x) as usize];
+                let l = film.get(x, y);
+                sum += (g.x as f64 - l.x).abs();
+                sum += (g.y as f64 - l.y).abs();
+                sum += (g.z as f64 - l.z).abs();
+                n += 3.0;
+            }
+        }
+        sum / n
+    };
+    let mad_mirror = mad(&gpu_mirror);
+    let mad_broken = mad(&gpu_broken);
+
+    // Derived tolerance: the delta mirror lobe is near-zero-variance, so the
+    // residual is combined MC error on the EMITTER's finite solid angle +
+    // f32-vs-f64 rounding + finite-floor-vs-infinite-plane edges. Averaged over
+    // 64*64*3 samples this sits under 0.05 (same class as the diffuse parity).
+    let tol = 0.05;
+    println!(
+        "[SPECULAR PARITY] {total_spp} spp  mirror mad={mad_mirror:.5} (tol {tol})  broken(rough=1) mad={mad_broken:.5}"
+    );
+    assert!(
+        mad_mirror < tol,
+        "GPU/Pleroma mirror parity: mad {mad_mirror} exceeds tol {tol}"
+    );
+    // The gate must DISCRIMINATE: a broken mirror scores far worse than the gate.
+    assert!(
+        mad_broken > tol * 3.0,
+        "broken mirror scored {mad_broken}, too close to the gate {tol} — gate does not discriminate"
+    );
 }
 
 // ── ORDEAL 2 · SHADOW — an occluded point receives no sun ────────────────
