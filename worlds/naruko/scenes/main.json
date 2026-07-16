@@ -144,5 +144,19 @@
       { "shape": "cylinder", "radius": 0.12, "height": 1.4, "position": [0, 1.72, 0], "color": "#20303a", "metallic": 0.6, "roughness": 0.35 },
       { "shape": "sphere", "radius": 0.4, "position": [0, 2.82, 0], "color": "#dfe6ee", "metallic": 1.0, "roughness": 0.05 }
     ] }
+  },
+  "naruko_crate": {
+    "transform": { "position": [-11.15, 4.5, 13] },
+    "mesh": { "parts": [
+      { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#6a4a2c", "roughness": 0.85 }
+    ] },
+    "body": {
+      "shape": "box",
+      "size": [0.8, 0.8, 0.8],
+      "density": 500,
+      "resolution": [3, 3, 3],
+      "contact_radius": 0.05,
+      "rigidity": 1.0
+    }
   }
 }

@@ -3027,6 +3027,7 @@ dependencies = [
  "block2",
  "bytemuck",
  "crystal",
+ "elements",
  "glam",
  "kami",
  "objc2-app-kit",

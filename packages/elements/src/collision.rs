@@ -58,10 +58,22 @@ impl Triangle {
     /// If `pos` (a particle of the given `radius`) is in contact with this
     /// face, return the penetration `depth` (how far to push along `normal`).
     /// `None` when the particle is clear of the face or off its footprint.
+    ///
+    /// A triangle is a thin SURFACE PATCH, not a half-space: contact is the
+    /// front-side shell `signed ∈ (−radius, radius)`. The upper bound rejects a
+    /// particle floating above the face; the LOWER bound (`signed ≤ −radius`)
+    /// rejects a particle more than its own radius BEHIND the face — it is on
+    /// the far side of an unrelated patch, not penetrating it. Without this
+    /// bound a distant face's infinite plane grabs a body 100 m away in a
+    /// triangle soup (the P1/P2 single-plane ordeals never exposed it because a
+    /// lone finite plane has no far side a resting body reaches). Slow contact
+    /// keeps `|signed| < radius` per substep, so nothing real is dropped; a body
+    /// moving fast enough to tunnel a full radius per substep is a CCD concern,
+    /// out of this face model's scope by construction.
     pub fn contact_depth(&self, pos: Vec3, radius: f64) -> Option<f64> {
         let signed = (pos - self.v0).dot(self.normal);
-        if signed >= radius {
-            return None; // above the face by more than the contact radius
+        if !(-radius < signed && signed < radius) {
+            return None; // clear of the front-side contact shell (either side)
         }
         let foot = pos - self.normal.scale(signed); // projection onto plane
         if !self.contains_projection(foot) {

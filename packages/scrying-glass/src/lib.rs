@@ -3,6 +3,7 @@ use crystal::{Core, GaiaPackage, PackageManifest};
 pub mod bvh;
 pub mod input;
 pub mod integrator;
+pub mod physics;
 pub mod player;
 pub mod scene;
 
