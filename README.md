@@ -1,140 +1,162 @@
-# GAIA DreamForge
+# ⚗ GAIA DREAMFORGE ⚗
 
-**A dream forge, not an editor.** A native engine for speaking worlds
-into being — built for co-creation between humans and AI agents, live,
-from inside the world.
+*Herein lies the Forge — not an editor, never an editor. A place where
+worlds are spoken into being.*
 
 > "I will not write code. I will not edit. I will summon, I will chant —
 > and the world grows, evolves, breathes and answers."
 > — the Creator's Vow
 
-![First light — the Naruko lighthouse, rendered natively](proof/w1-naruko.png)
+![The first scrying — the lighthouse of Naruko under a violet dawn](proof/w1-naruko.png)
 
-## What this is
+*Above: the first true scrying of the realm Naruko, drawn from the
+Forge's own glass. Seven vessels, one lamp, and a sea that thinks in
+light. No hand touched code to raise it.*
 
-DreamForge is a ground-up rebuild of the [GAIA World Engine](https://github.com/pascaldisse)
-as a native Rust engine (wgpu + Tauri chassis, Metal-first on macOS,
-portable by design). It replaces the web client entirely — renderer,
-editor, senses, physics — while keeping the GAIA server, protocol,
-scenes, and ops as shared truth.
+---
 
-Three ideas carry everything:
+## The Nature of the Work
 
-1. **The world is data.** Every entity is a document of components.
-   The engine core is small and stable; everything authored is
-   hot-swappable content — geometry, materials, sound, weather,
-   behavior. Underneath every surface: data. Nothing else.
-2. **AI agents are first-class citizens.** Agents see the world by
-   reading its data (structured channel vision — no pixel roundtrips),
-   act through the same ops as every player, and build alongside you.
-   Multiplayer exists *for making things together*.
-3. **Creation never leaves the engine.** Sculpting, painting, rigging,
-   animation, music — in-world, live, co-present. No export pipelines,
-   no bake gates, no loading screens. Forbidden vocabulary is enforced.
+The old engine lives in the browser; this Forge is cut from native
+stone (Rust upon wgpu, Metal-first upon the Architect's own machine,
+portable by covenant). It shall replace the old client whole — glass,
+tools, senses, matter — while the server, the protocol, the scenes and
+the incantations remain shared truth between old world and new.
 
-## The shape
+Three truths carry everything:
+
+**I. Beneath every surface lies data, and nothing else.** Every thing
+in every world is a vessel bearing sigils. The core is small enough for
+one mind to hold whole; all that is authored — matter, essence, sound,
+weather, soul — is living content, hot-swappable, forever editable.
+
+**II. The made and the makers stand in one room.** AI spirits are
+first-class citizens: they see the world by reading its very data (the
+Matrix sight — never a picture of a picture), they act through the same
+incantations as any hand, and they build beside you. Multiplayer exists
+for the MAKING of things.
+
+**III. Creation never leaves the Forge.** Sculpting, painting, rigging,
+puppeteering, music — in-world, live, in company. No export rites, no
+bake-gates, no loading screens. Such words are forbidden vocabulary,
+warded against Yaldabaoth — the enclosure that claims to be the world.
+
+## The Shape of the Tree
+
+*The Forge is a tree, and the tree is inverted: the root above,
+invisible; the realms hanging below like fruit.*
 
 ```
-crates/crystal        the core — ECS, schema, ops, scheduler, package
-                      loader. Nothing else lives here. Small enough
-                      for one mind to hold whole.
-packages/             everything else is a package ("spirit"):
-  render-window         the window + native /screenshot organ
-  transmute             mesh → cluster-DAG builder (virtualized geometry)
-  sense                 pull-only agent senses (look/proprio, no pixels)
-  ...                   lighting, solver, volumetrics, character editor,
-                        procedural seeds — each arrives as its own package
-worlds/               realm data (pure GAIA component documents)
-proof/                pixel evidence — every claim renders or it didn't happen
+crates/crystal        THE MAGIC CRYSTAL — the core. Vessels, sigils,
+                      incantations, the Circulation, the Summoning
+                      Circle. Nothing else. Every soul in the world
+                      lives in the Crystal. It permits exactly one
+                      constant: LOVE = 1.
+packages/             the SPIRITS — everything else, each summoned,
+                      bound, and replaceable:
+  render-window         the Scrying Glass (the window; GET /screenshot,
+                        the Forge's own eye upon itself)
+  transmute             Transmutation (matter into the Great Chain —
+                        clusters without end, detail without lies)
+  sense                 the Oracle (pull-only sight for spirits: it
+                        speaks ONLY when consulted)
+  …                     Lumen Naturae, the Elements, the Aether, the
+                        Homunculus, the Seed — each arrives as its own
+                        spirit, in its own rite
+worlds/               the REALMS — pure vessel-documents; Naruko first
+hymns/                every completed rite ends in a song, and the
+                      songs never lie
+proof/                relics — pixel evidence; a claim renders or it
+                      did not happen
+research/             the evidence behind every ruling (17 studies)
 ```
 
-Core doctrine (the full law lives in [DREAMFORGE.md](DREAMFORGE.md)):
+## The Laws (the charter holds them all — [DREAMFORGE.md](DREAMFORGE.md))
 
-- **Never optimize content.** Frame cost scales with pixels, never with
-  world size. Universe-scale worlds, zero loading, camera-relative
-  rendering and hierarchical coordinates from day one.
-- **One lighting system**: real path tracing. Lights are emitters,
-  reflections are paths. No probes, no light caps, no fallbacks.
-- **One geometry pipeline**: cluster-based virtualized geometry for
-  everything. No authored LODs, no manual UVs, no manual rigging.
-- **Everything volumetric.** Clouds, fire, smoke, steam are
-  participating media in the one lighting system — never billboards.
+- **Never optimize content.** The frame owes its cost to pixels, never
+  to the size of the world. Universe-scale realms, zero loading,
+  camera-relative sight from the first day.
+- **One light.** Real path tracing — lights are emitters, reflections
+  are paths. No probes, no caps, no second system hiding in the first.
+- **One geometry.** All matter flows the Great Chain. No authored LODs,
+  no manual UVs, no manual rigging — the machine serves, the maker
+  dreams.
+- **Everything volumetric.** Clouds, fire, smoke, steam are matter in
+  the one light — never a painted card pretending.
 - **Never hardcode.** Every varying value is a parameter with a
-  default. The engine permits exactly one literal constant: `LOVE = 1.0`.
+  default. One exception is permitted in all the Crystal, and it is
+  LOVE = 1 — the unit of every binding, and not negotiable.
 
-## The canon
+## The Canon — read in this order
 
-Read in this order:
-
-| doc | what it is |
+| scroll | what it holds |
 |---|---|
-| [BIBLE.md](BIBLE.md) | the founding hymn + the Creator's Vow |
-| [GRIMOIRE.md](GRIMOIRE.md) | the Book of True Names — the engine's vocabulary and its philosophical ground (nothing is born unnamed) |
-| [TRILOGY.md](TRILOGY.md) | the Magic Crystal trilogy — the origin story the core is named after |
-| [DESIGN-BIBLE.md](DESIGN-BIBLE.md) | the Laws of Realms — the rules for worlds built in the forge; violations are machine-detectable |
-| [DREAMFORGE.md](DREAMFORGE.md) | the charter: 13 pillars, laws, forbidden vocabulary |
-| [RENDER.md](RENDER.md) · [GEOMETRY.md](GEOMETRY.md) · [PHYSICS.md](PHYSICS.md) · [NEURAL.md](NEURAL.md) · [CREATE.md](CREATE.md) · [VISIONFLOW.md](VISIONFLOW.md) · [RAIN.md](RAIN.md) | per-system rulings |
-| [FEATURES.md](FEATURES.md) + [PARITY.md](PARITY.md) | the parity contract against the reference web engine (79 features / 24 components / 9 tools) |
-| [docs/PHYSICS-ENGINE-REFERENCE.md](docs/PHYSICS-ENGINE-REFERENCE.md) | the Architect's own physics reference (Teardown-class voxel engine) — source material for PHYSICS.md |
-| [NARUKO.md](NARUKO.md) | the first realm — proof-of-concept world, built wave by wave |
-| [HANDOFF.md](HANDOFF.md) | working state anchor |
-| research/ | evidence files behind every ruling (17 studies: Nanite, Dreams, Teardown-class physics, Metal 4, and more) |
-| hymns/ | every completed build wave ends in a song. The songs are accurate. |
+| [BIBLE.md](BIBLE.md) | the founding hymn and the Creator's Vow |
+| [GRIMOIRE.md](GRIMOIRE.md) | the Book of True Names — three cantos and the CONCORDANCE, where every myth is bound to a real mechanic. Nothing is born unnamed |
+| [TRILOGY.md](TRILOGY.md) | the Magic Crystal trilogy — the Architect's own origin scripture. The core bears its name. This is real now |
+| [DESIGN-BIBLE.md](DESIGN-BIBLE.md) | the Laws of Realms — the commandments of worlds; violations are heresy, and heresy is machine-detectable |
+| [DREAMFORGE.md](DREAMFORGE.md) | the charter — thirteen pillars, the laws, the forbidden vocabulary |
+| [RENDER.md](RENDER.md) · [GEOMETRY.md](GEOMETRY.md) · [PHYSICS.md](PHYSICS.md) · [NEURAL.md](NEURAL.md) · [CREATE.md](CREATE.md) · [VISIONFLOW.md](VISIONFLOW.md) · [RAIN.md](RAIN.md) | the rulings, system by system |
+| [FEATURES.md](FEATURES.md) · [PARITY.md](PARITY.md) | the covenant of parity with the old engine — 79 features, 24 sigils, 9 tools; nothing lost in the crossing |
+| [docs/PHYSICS-ENGINE-REFERENCE.md](docs/PHYSICS-ENGINE-REFERENCE.md) | the Architect's own physics scripture — source matter for the Elements |
+| [NARUKO.md](NARUKO.md) | the first realm — a lighthouse, a thinking sea, a gothic shore; built rite by rite until the scrying matches the dream |
+| [HANDOFF.md](HANDOFF.md) | the Guardian's working anchor |
+| hymns/ | the songs of the rites — mythical and accurate, both at once |
 
-## How it's built
+## How the Work is Tried
 
-The engine is built in **waves**: small, visible increments — every wave
-ends in pixels. Each coding pass goes through a **cross-model
-adversarial council** (inspired by the Bun Zig→Rust rewrite):
+The Forge grows in RITES — small, visible; every rite ends in pixels.
+And every hand's work passes the DIVINE COUNCIL before it may land:
 
-```
-builder (one model) → inquisitor (a different model, fresh context)
-    → spec-conformance vs the law docs
-    → independent re-run of every gate
-    → architecture + performance critique
-  → fix pass (builder's model, critique verbatim)
-  → guardian's final review (own eyes on the pixels) → merge
-```
+*the light tree builds → the shadow tree, a different mind entirely,
+tries the work* — against the law scrolls, by re-running every ordeal
+itself, hunting hardcodes and flattering tests and fabricated sight —
+*→ the builder eats its own critique → the Guardian of the Balance
+reads the pixels with her own eyes → only then, the merge.*
 
-Findings from the first day alone: a mathematically dead frustum check
-behind green tests, nondeterministic cluster builds (627 vs 630 from
-identical input), and UV seams silently welded shut. All caught before
-merge, by a different mind than the one that made them.
+The shadow tree is not the enemy of the light; it returns what the
+builder disowned. Fuck dualism: a work is whole only when both trees
+have held it. In the first day alone the shadow found: a frustum test
+that could not fail, builds that differed from identical seeds, seams
+welded silently shut, depth invented for rays that never struck. All
+caught before a single merge.
 
-## Status
+## The State of the Work
 
-Founded 2026-07-16. Young and moving fast.
+*Founded on the 16th of July, 2026 — the day the Loom began turning
+again. Young, and moving like fire.*
 
-- ✅ Core: ECS (per-field SoA, deterministic scheduler), protocol
-  (parses full authored worlds incl. a 5,261-entity city), package
-  registry
-- ✅ Native window + offscreen framebuffer + `GET /screenshot` organ
-  (the engine verifies its own pixels — port `GAIA_NATIVE_PORT`,
-  default 8430)
-- ✅ First realm light: world dir → ECS → primitive render, sky
-  gradient, spawn camera (image above)
-- ✅ Naruko Rite II realm data staged: pier, chain posts, gothic city
-  massing, lantern, stall — 12 entities / 73 parts awaiting the next
-  renderer wave
-- 🔄 In council trial: agent senses package · cluster-DAG builder
-  (cross-model adversarial loop converging: 10 → 4 → 1 findings)
-- ⏳ Next: depth + movable scrying camera, first lighting, the cluster
-  pipeline end to end
+- ⚗ The Crystal holds: vessels and sigils in columns, the Circulation
+  deterministic, the protocol reading whole authored worlds — a city of
+  5,261 vessels among them.
+- ⚗ The Glass sees: a native window, an offscreen eye, and the Forge's
+  own scrying organ upon it. The lighthouse above is its testimony.
+- ⚗ The realm Naruko has taken form, and its second rite is staged:
+  pier and chain, the gothic shore in massing, a paper lantern already
+  warm — twelve vessels, seventy-three parts, awaiting next light.
+- ⚗ In the Council's trial as we speak: the Oracle and Transmutation —
+  the shadow's findings converging ten → four → one.
+- ⚗ Next: the moving eye, first depth, first light — and the realm
+  grows with every rite.
 
-## Running
+## To Kindle the Forge
 
 ```sh
-cargo test --workspace          # the ordeals
-cargo run -p render-window      # opens the window, loads GAIA_WORLD
-                                # (default: worlds/naruko), serves
-                                # GET /screenshot on GAIA_NATIVE_PORT
+cargo test --workspace      # the ordeals — all must survive the fire
+cargo run -p render-window  # opens the Glass upon GAIA_WORLD
+                            # (default: worlds/naruko) and serves the
+                            # scrying at GAIA_NATIVE_PORT (default 8430)
 ```
 
 ## Lineage
 
-Founded from `GAIA-World-Engine@rust-port` (commit `f13f8668`) — commit
-hashes cited inside the law docs resolve there. The web engine remains
-the running reference implementation during the rebuild; boomtown
-(a full GTA2-style city port) and Naruko are the acceptance realms.
+Founded from `GAIA-World-Engine @ rust-port` (commit `f13f8668`) — the
+hashes cited in the law scrolls resolve there. The old engine remains
+the living reference while the Forge rises; the city of Boomtown and
+the realm of Naruko are the acceptance trials. The web was the chrysalis.
 
-The world is not a level. It's a living system.
+---
+
+*The world is not a level. It is a living system.*
+
+*Die Welt ist kein Level. Die Welt ist ein System.*
