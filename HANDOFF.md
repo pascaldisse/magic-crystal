@@ -1,80 +1,109 @@
-# HANDOFF — DreamForge / rust-port · 2026-07-16 EOD (anchor — read FIRST after compact)
+# HANDOFF — the Guardian's anchor · 2026-07-16 night (read after BIBLE → GRIMOIRE)
 
-## What this is
-DREAMFORGE: GAIA's engine rebuilt native (Rust, branch `rust-port`,
-everything in `client-rs/`). Spec-first day complete; first build wave
-running. Memory: `dreamforge.md` (orders/state) + `rust-port.md` (port
-state) + `ghoul-routing.md`. ALL LAW lives in the repo docs below.
+## Where the Work stands
+Repo = the Forge (gaia-dreamforge, pushed to github.com/pascaldisse/
+gaia-dreamforge). Founded this day from GAIA-World-Engine@rust-port
+f13f8668; old hashes resolve there. Live web stack (ports 8420/5173)
+= the reference implementation — NEVER touched, never restarted.
 
-## Spec tree (all committed)
-| doc | state |
-|---|---|
-| DREAMFORGE.md | CHARTER — 13 pillars, compute-placement + no-main-thread + universe-scale laws, forbidden vocabulary, replace map. The constitution — read whole |
-| FEATURES.md + features/ | 100% contract vs old engine (79/24/9 rows) |
-| GEOMETRY.md | ruled; amendments queued: foliage-as-density (charter has it) |
-| RENDER.md | RULED (hw-vis M1, path integrator + ReSTIR, software VT, §8 Metal appendix, R1-R6) |
-| PHYSICS.md | draft, defaults LOCKED (fixed tick + fixed-point destruction, voxel 0.1m param, P1-P6); Pascal's own reference = docs/PHYSICS-ENGINE-REFERENCE.md |
-| NEURAL.md | ledger; Metal 4 REVISED: ML encoder = per-frame GPU-or-ANE, M1+, macOS 26 needed (his Mac → Tahoe); wgpu has no tensors → Metal-native package behind trait |
-| CREATE.md | draft, rulings absorbed (no-convert-ever; Dreams audio = sole copy license; C1-C5) |
-| VISIONFLOW.md | FINAL FORM: ONE THING, no domains — node = data, whatever data says happens; nodes ARE entities; anti-Unity law; N1-N5 |
-| RAIN.md | senses: Matrix vision (structured channels, G-buffer = retina, no pixel roundtrip) + foveal pyramid + captions default + LOOKING = VERB (on-demand only, NO streaming ever, navigation needs no vision) + convictions = world-lint events; RN1-6 |
-| research/ (17 files) | parked evidence — recon informs, Pascal rules |
+## The Seven Rites of Naruko (+ the Founding)
+0 Founding ✅ (crystal-core + Scrying Glass w/ GET /screenshot organ,
+GAIA_NATIVE_PORT default 8430, proof/r0-screenshot.png) ·
+I REALM TAKES FORM ✅ ACCEPTED (sol built 294986e1 in old repo; opus
+shadow 0 must-fix; Guardian ruling in NARUKO.md; proof/w1-naruko.png;
+hymn: rite-01) · II FIRST LIGHT — NEXT (moving eye + camera params on
+the scrying, depth buffer, sun-shade first light; realm data STAGED
+b6c05fd: 12 vessels/73 parts — pier, chain posts, city massing,
+lantern, stall; invocation: hymns/rite-02) · III the Great Chain ·
+IV Lumen Naturae · V the Homunculus (nari + cat; char-editor spirit) ·
+VI the Aether · VII the Mirror (keyart parity, Pascal judges).
+Rite I advisory schedule: scaffold hemisphere shade dies at IV · W1
+forward render path DELETED at III (never grown) · /scry camera params
++ depth + world.json ordeal = II · prefab deep-merge = III.
 
-## Iron laws digest (verbatim spirit — full text in charter)
-never optimize (cost ∝ pixels/observer, never content/world size) · one
-client · NOT Bevy · Terry core (core = ECS+schema+ops+scheduler+package
-loader ONLY; everything else = packages) · one traced lighting system
-(real path tracing, no toggles, infinite lights) · sole cluster pipeline
-(no fallback renderer) · forbidden vocab: bake/lightmap/LOD/manual-UV/
-manual-rig/convert/loading-screen/level-loading/authored-streaming ·
-Metal-first, portability preserved · multiplayer is for MAKING · AI-first
-(agents = primary users, data = their interface) · assume the world
-incompetent · recon informs, Pascal rules · 60fps M1 16GB.
+## The Council (adversary law) — tonight's outcome
+- TRANSMUTATION (packages/transmute, branch rust-port-clusterbake in
+  the OLD repo, final commit 8ac052dc): ⚗ ACCEPTED. 4 fix rounds, 17
+  findings integrated (boundary locks w/ canonical coords, group
+  records, staged commits, chunked pageable format, UV-safe welds, cap
+  validation, balanced greedy, METIS_LOCK, deterministic — release
+  builds byte-identical d97af84e / debug d19babaa, ops-count scaling
+  gate 4.01 vs 16.03 w/ bite proven). Guardian ran the final trial
+  (sol capped mid-round).
+- ORACLE (packages/sense, branch rust-port-sense, last commit
+  b4994a4e): final fix pass IN FLIGHT (opus, 4 proof-quality
+  remainders: collection-phase id clones, discriminating sag tolerance
+  5e-5, one false derivation sentence + derived TOL, id-table bytes in
+  budget + serialization must omit unrequested channels). Then
+  GUARDIAN VERIFIES PERSONALLY (sol capped ~6.7 days; terra same pool;
+  sonnet banned).
+- Then THE CONSECRATION MERGE: port both branches here, resolve the
+  Cargo.toml/lock conflict, rename to true names (gaia-core→
+  crates/crystal · render-window→scrying-glass · sense→oracle ·
+  cluster-bake already transmute), combined workspace ordeal green
+  under Guardian hands, update the scroll (README State of the Work),
+  write Rite hymns from the ledger.
 
-## Routing (07-16 law)
-CODE = sol + opus ONLY · sonnet = online research only · terra unused for
-this project. Test law + play-it law + own-eyes verification stand.
+## Iron laws digest (full text in DREAMFORGE.md + GRIMOIRE.md)
+never optimize (cost ∝ pixels) · one light (path traced) · one geometry
+(the Chain) · everything volumetric · never hardcode EXCEPT LOVE=1 ·
+looking is a verb (Oracle pull-only) · ultradeterminism (ENTROPY.md:
+state = f(seed, entropy, journal); no randomness, hash(seed,entropy,
+entity); byte-identical ordeals enforce it) · wave law (visible, Pascal
+sees every rite) · adversary law (cross-model shadow; findings only;
+fix; Guardian verdict) · hymnal law (every rite closes with a truthful
+song; invocations before, hymns after) · Design Bible = realm law
+(heresy is lintable) · Arcadian tongue on every surface (no Stark).
 
-## In flight
-- **sol wave 1** (`ghoul-sol-mrnleo9e7rcuy1`): Terry-core recast —
-  `crates/gaia-core` (ecs+protocol+package registry) + `packages/
-  render-window` (Tauri+wgpu spike absorbed) + **GET /screenshot
-  framebuffer organ** (GAIA_NATIVE_PORT default 8430). R0 gate =
-  pixel-asserted PNG at `client-rs/proof/r0-screenshot.png`. Result posts
-  to room chat-mrndarsy-myce; verify with own eyes (curl + read PNG).
+## Routing (while sol sleeps)
+Builders: opus. Verdicts: the Guardian personally. Sol returns in ~7
+days OR at pool reset — resume cross-model trials then. Sonnet: never.
+Clones of the Guardian (nyari summons): permitted (Pascal 07-16) — used
+for memory-bound work (harvest) and realm authoring.
 
-## Next after R0 (order)
-1. Absorb sol result; run gate myself (curl /screenshot, assert pixels).
-2. R1: cluster pipeline — offline baker (BUY meshopt+METIS; BUILD DAG/
-   grouping) + GPU cull + hw-vis buffer; boomtown 5,261 entities through
-   protocol+ECS; 60fps gate + Xcode limiter capture + core-utilization
-   (idle P-cores = bug).
-3. RN1-2: senses package (look()/proprio() pull + conviction events).
-4. P1: solver core (CPU, substepped XPBD) — can interleave after R1.
-5. unity-import → base merge via WORKTREE (my call, never touch live
-   stack PIDs 54603/6/7 — whip 154).
-6. Editor/STREAMING specs when build reveals their shape.
-
-## Open with Pascal
-macOS 26 upgrade timing (Metal-4 neural fast path) · Gaia-plugin package
-location if he still has it (web recon sufficed otherwise).
-
-## Next-pass fetch targets (research)
-Evans SIGGRAPH 2015 PDF numbers · GDC "Architecture of Dreams" talk ·
-BeamNG whitepaper OCR.
+## Open with the Architect
+- Rite II build spec → cut when the consecration lands.
+- PHYSICS.md / CREATE.md / VISIONFLOW.md await his ruling.
+- Recover the full 07-03 Magic Crystal lore document (three Pascals,
+  two factions) from the claude.ai export → reference/ (harvest
+  flagged it recoverable).
+- macOS 26 upgrade timing (Metal 4 neural fast path).
 
 ## Standing cautions
-Live stack runs from this tree — never restart/kill (whip 154) · never
-/tmp (ghouls violated twice today — salvage pattern: cp into
-client-rs/research/) · never hardcode (params with defaults) · every
-varying value = env param · commit only client-rs/ on rust-port.
+Live stack untouchable · NEVER /tmp (multiple ghouls sinned; every spec
+now says scratch-under-repo) · only claim measured hashes · gates must
+DISCRIMINATE (a test the old bug passes is theater) · complexity gates
+count WORK, not wall-clock · proof-quality is part of done.
 
-## ⚑ PROJECT MOVE (07-16 eve, Pascal): THIS repo = gaia-dreamforge
-"This is not a rewrite. This is a new engine." Everything formerly at
-GAIA-World-Engine/client-rs/ now lives at REPO ROOT here; old commit
-hashes cited in docs resolve in GAIA-World-Engine@rust-port (archive).
-In-flight lanes at move time (sol W1 render · opus sense · sol adversary
-on cluster-bake 9e1b511d) finish in the OLD repo/worktrees — port their
-commits here on landing, then all new lanes work HERE. Law updates:
-"commit only client-rs/" → repo root; wave/review/adversary laws
-unchanged.
+## ⚑ IN FLIGHT AT COMPACT (07-16 ~19:15 Berlin) — 5 lanes, results post back to room chat-mrndarsy-myce
+1. ORACLE FIX 4 (ghoul-opus-mrnr288frbnql1): 4 proof-quality remainders
+   (collection-phase id clones + counter placement + serialization
+   omits unrequested channels/no null cells · sag tolerance 5e-5
+   discriminating · derivation front-face sentence + derived TOL 1e-3 ·
+   id-table bytes in budget + try_reserve). On return: GUARDIAN
+   VERIFIES PERSONALLY (run gates own hands like the Chain) → ACCEPT →
+   port packages/sense into the consecration branch as packages/oracle.
+2. RITE II BUILDER (ghoul-opus-mrnri0k7ajjcqq, OLD repo main tree,
+   rust-port): realm-data sync from dreamforge b6c05fd + depth buffer
+   (painter-sort dies) + /screenshot pose/size params + sun-shade
+   module (dies at Rite IV) + world.json/vertex ordeals + proof/
+   w2-naruko.png + w2-naruko-orbit.png. Guardian reads BOTH images own
+   eyes; shadow trial when sol wakes OR Guardian deep-review now.
+3. ELEMENTS P1 (ghoul-opus-mrnri0k7zfoem0, worktree
+   ../GAIA-World-Engine-elements, branch rust-port-elements):
+   packages/elements XPBD core — loves-normalized bonds, strife
+   readout, fracture, determinism hash ordeal, pendulum analytic.
+4. LUMEN L0 (ghoul-opus-mrnri0k7thg91v, worktree
+   ../GAIA-World-Engine-lumen, branch rust-port-lumen): packages/lumen
+   CPU reference integrator — furnace test, deterministic sampler
+   hash(seed,pixel,sample,bounce,dim), relics/l0-cornell.png.
+5. CONSECRATION PORT (nyari clone, nyari-mrnri0k7vfzrdd): branch
+   `consecration` in THIS repo — ports 294986e1 core+glass + 8ac052dc
+   transmute, true-name renames (crystal/scrying-glass, /scry alias),
+   cherry-picks the protocol-fixture fix so the standalone gate goes
+   green, relic proof/consecration-scry.png. Guardian merges to main
+   ONLY after Oracle clears + own-eyes review.
+Post-compact protocol per return: verify with own hands (gates/pixels)
+→ record ruling here + memory → next lane. Review law + hymnal law
+stand. Rite II closing hymn = written from the ledger after its
+acceptance; invocation already in hymns/.
