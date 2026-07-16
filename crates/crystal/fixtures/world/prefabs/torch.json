@@ -1,0 +1,10 @@
+{
+  "name": "torch",
+  "components": {
+    "mesh": { "parts": [
+      { "shape": "cylinder", "radius": 0.1, "height": 1.2, "position": [0, 0.6, 0], "color": "#3a2d20" },
+      { "shape": "sphere", "radius": 0.25, "position": [0, 1.3, 0], "color": "#ffb347", "emissive": "#ffb347" }
+    ] },
+    "light": { "color": "#ffb347", "intensity": 2.0, "range": 8 }
+  }
+}

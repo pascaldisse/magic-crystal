@@ -54,7 +54,7 @@ crates/crystal        THE MAGIC CRYSTAL — the core. Vessels, sigils,
                       constant: LOVE = 1.
 packages/             the SPIRITS — everything else, each summoned,
                       bound, and replaceable:
-  render-window         the Scrying Glass (the window; GET /screenshot,
+  scrying-glass         the Scrying Glass (the window; GET /scry,
                         the Forge's own eye upon itself)
   transmute             Transmutation (matter into the Great Chain —
                         clusters without end, detail without lies)
@@ -143,7 +143,7 @@ again. Young, and moving like fire.*
 
 ```sh
 cargo test --workspace      # the ordeals — all must survive the fire
-cargo run -p render-window  # opens the Glass upon GAIA_WORLD
+cargo run -p scrying-glass  # opens the Glass upon GAIA_WORLD
                             # (default: worlds/naruko) and serves the
                             # scrying at GAIA_NATIVE_PORT (default 8430)
 ```

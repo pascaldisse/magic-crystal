@@ -1,0 +1,29 @@
+{
+  "env": {
+    "environment": {
+      "sky": { "preset": "night", "top": "#2a1a3e", "horizon": "#d98ba8" },
+      "fog": { "color": "#3d2a5c", "density": 0.008 }
+    }
+  },
+  "world_spawn": {
+    "spawn": { "position": [0, 4, 38], "yaw": 0 }
+  },
+  "ground": {
+    "transform": { "position": [0, 0, 0] },
+    "mesh": { "parts": [
+      { "shape": "box", "size": [400, 0.5, 60], "position": [0, -0.25, 38], "color": "#604276" }
+    ] }
+  },
+  "beacon": {
+    "prefab": "torch",
+    "transform": { "position": [0, 19, -120] }
+  },
+  "tower": {
+    "transform": { "position": [0, 19, -120] },
+    "mesh": { "parts": [
+      { "shape": "cylinder", "radius": 4.5, "height": 34, "position": [0, 17, 0], "color": "#2e2440" },
+      { "shape": "sphere", "radius": 2.6, "position": [0, 37.5, 0], "color": "#f3e9ff", "emissive": "#f3e9ff" },
+      { "shape": "cone", "radius": 4, "height": 5, "position": [0, 41.5, 0], "color": "#1c1426" }
+    ] }
+  }
+}
