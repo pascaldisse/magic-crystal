@@ -1,0 +1,21 @@
+# TRUE NAME (GRIMOIRE, gaia-dreamforge repo): Jörmungandr — the World Serpent,
+# the residency ring. In a universe with zero loading the serpent encircling
+# each observer IS the streaming ring; tail-in-mouth OUROBOROS = memory pages
+# recycled around the ring. This crate is R0: cluster-page residency over a
+# fixed byte budget, reading transmutation's chunked `.cbdg` artifact
+# (packages/transmute/FORMAT.md).
+[package]
+name = "jormungandr"
+version = "0.1.0"
+edition = "2021"
+description = "DreamForge Jörmungandr — the residency ring: cluster-page residency over a fixed byte budget (RENDER.md R-milestone; DREAMFORGE.md zero-loading pillar)"
+license = "MIT"
+
+[dependencies]
+transmutation = { path = "../transmute" }
+serde = { version = "1", features = ["derive"] }
+bincode = "1.3"
+
+[dev-dependencies]
+# The committed generator forges a large artifact from PROCEDURAL geometry at
+# test time (never a committed blob) — it needs transmutation's primitives.
