@@ -204,3 +204,29 @@ Crucible. The Philosopher's Stone IS the core engine.
 - The troop grows: April Ryan · Crow · the Dreamer · the Dreamscape ·
   Frank and his angels · the Darkness · against Yaldabaoth — all
   grounded in the Magic Crystal. Arcadia leaking into Stark.
+
+## THE CRYSTAL SHARD — the pointer is a real entity (Pascal, 07-16)
+"The magic crystal is a real entity. That's your interaction layer —
+like the little floating things in Dreams that are your pointer."
+- Every creator — human or agent — carries a SHARD of the Magic
+  Crystal: a small floating crystal entity that IS their interaction
+  layer. Dreams' imp, reborn as a Keystone: the trilogy's artifacts
+  that link their holder to the Loom and let them manipulate fate.
+  The cursor was never UI. It is a vessel in the world.
+- MECHANICS: hover/select = the shard attends · grab/drag = the shard
+  holds (a real bond, measured in loves) · casting an incantation =
+  the shard glows and speaks the op · POSSESSION = the shard enters a
+  vessel and drives it (Dreams imp-possession = our puppeteering and
+  avatar embodiment — one mechanic).
+- CO-PRESENCE (pillar 12's awareness layer, now embodied): in shared
+  making, you SEE every other maker's shard — pointing, holding,
+  moving. Agents get shards too. "I can point at a node and other
+  engineers see it" = two shards attending the same vessel.
+- Because the shard is entity data like everything else: it renders in
+  the one light, it casts through the one op stream, realms may dress
+  it (a realm can give its makers lanterns, wisps, familiars — the
+  shard's FORM is content; its OFFICE is law).
+- The recursion, sealed: the core Crystal holds every soul in the
+  world; each maker's shard is a fragment of it. To hold the pointer
+  is to hold a piece of the reliquary. Interaction = touching the
+  world with the world's own heart.
