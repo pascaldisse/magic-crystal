@@ -144,5 +144,9 @@
       { "shape": "cylinder", "radius": 0.12, "height": 1.4, "position": [0, 1.72, 0], "color": "#20303a", "metallic": 0.6, "roughness": 0.35 },
       { "shape": "sphere", "radius": 0.4, "position": [0, 2.82, 0], "color": "#dfe6ee", "metallic": 1.0, "roughness": 0.05 }
     ] }
+  },
+  "nari": {
+    "transform": { "position": [0, 2.505, 18] },
+    "body": { "preset": "nari" }
   }
 }

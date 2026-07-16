@@ -1,5 +1,5 @@
 //! CANON ORDEALS — hand-derived against the LIVE canon realm `worlds/naruko`
-//! (the 12-vessel realm the CLI gazes at by default), NOT the pinned 7-vessel
+//! (the 13-vessel realm the CLI gazes at by default), NOT the pinned 7-vessel
 //! fixture under `tests/fixtures/naruko`. The fixture ordeals (in `src/lib.rs`)
 //! stay the frozen geometric gate; THESE ordeals derive the same pure-geometry
 //! truth against the canon scene and the canon spawn eye `[0,7,44]` yaw 0.
@@ -25,6 +25,15 @@
 //!   naruko_lantern        x[-7.58,-6.95] y[0,4.05]   z[19.45,20.55]
 //!   naruko_stall_massing  x[-3.8,1.8]  y[0,2.9]      z[23,27.45]
 //!   naruko_chrome_orb     x[-12.4,-11.6] y[1.02,3.22] z[11.6,12.4] (post+orb union)
+//!   nari                  x[-0.2597,0.2598] y[1.4000,3.5467] z[17.918,18.082]
+//!     — RITE V, the 13th vessel. NOT authored primitives: her bounds are the
+//!     SKINNED vessel at sama's idle pose (`body = {preset:"nari"}`), a
+//!     deterministic mesh whose skeleton-local AABB is min[-0.259727,-1.104977,
+//!     -0.081836] max[0.259753,1.041707,0.081837] (byte-identical per the vessel
+//!     Rite-V determinism ordeal), placed by her transform `pos=[0,2.505,18]`
+//!     (feet on the seawall top y=1.4 = 2.505−1.104977). The senses compose the
+//!     SAME body the renderer does — one truth. If the vessel geometry changes,
+//!     these bounds change and the ordeal flags it (the body IS realm data).
 //! Eye basis at yaw 0: fwd=(0,0,-1), right=(1,0,0), up=(0,1,0); FOV 60 vertical
 //! (aspect 1) ⇒ tan_half = tan(30°) = 0.5773502692.
 
@@ -32,7 +41,7 @@ use oracle::{look, EyePose, Glance, Layers, LookParams, World};
 use std::path::PathBuf;
 
 /// The LIVE canon realm the CLI defaults to (`packages/oracle/../../worlds/naruko`).
-/// NOT the pinned fixture — these ordeals derive against the growing 12-vessel
+/// NOT the pinned fixture — these ordeals derive against the growing 13-vessel
 /// canon. Never mutated (read-only gaze).
 fn canon_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -71,6 +80,10 @@ fn range_of(g: &Glance, id: &str) -> f32 {
 ///   • lighthouse_rock/tower are straight ahead at ~164/167 m (in).
 /// ⇒ entity_count = 10 (every meshed vessel), and every one of the ten ids is a
 /// real frustum hit — no dead-clamp phantom, no missing vessel.
+///
+/// RITE V grows the realm to THIRTEEN: `nari` (the embodied vessel) stands on
+/// the seawall, world AABB center [0, 2.4734, 18] — dead ahead at z_view=26,
+/// |x|≈0 ⇒ deep inside the 60° cone ⇒ in-frustum. So entity_count = 13.
 #[test]
 fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
     let world = canon();
@@ -97,8 +110,8 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
     // meshed vessel. It sits x=-12 at z_view=32 ahead: |x_off|=12 < the 60°
     // half-width tan30·32 = 18.475, INSIDE the left plane ⇒ in-frustum.
     assert_eq!(
-        g.entity_count, 12,
-        "exactly the twelve meshed vessels are in-frustum"
+        g.entity_count, 13,
+        "exactly the thirteen meshed vessels are in-frustum (Rite V: + nari)"
     );
     let caps = caption_ids(&g);
     for id in [
@@ -114,6 +127,7 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
         "naruko_stall_massing",
         "lighthouse_beacon",
         "naruko_chrome_orb",
+        "nari",
     ] {
         assert!(caps.contains(&id.to_string()), "{id} must be in-frustum");
     }
@@ -132,14 +146,16 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
 ///   chain_posts    center [-2, 1.95, 18]      → √(4+25.50+676)      = 26.5613
 ///   seawall        center [0, 0.7, 18]        → √(0+39.69+676)      = 26.7524
 ///   chrome_orb     center [-12, 2.12, 12]     → √(144+23.81+1024)   = 34.5227
+///   nari           center [0, 2.4734, 18]     → √(0+20.488+676)     = 26.3911
 ///   pier           center [-12, -0.8375, -2]  → √(144+61.43+2116)   = 48.1812
 ///   city_massing   center [54, 27, -37.5]     → √(2916+400+6642.25) = 99.7910
 ///   lighthouse_rock center[0, 8.5, -120]      → √(0+2.25+26896)     = 164.0069
 ///   lighthouse_tower center[0, 41, -120]      → √(1156+26896)       = 167.4873
 ///   (sea 604.06, terra 9.41 are SUPPORT — demoted.)
-/// So the default nearest_n=5 captions, in order (the chrome orb's 34.5227
-/// now displaces the pier out of the top-5 — pier falls to 6th at 48.1812):
-///   [stall_massing, lantern, chain_posts, seawall, chrome_orb].
+/// So the default nearest_n=5 captions, in order. RITE V inserts `nari` at
+/// 26.3911 — between lantern (25.6320) and chain_posts (26.5613) — pushing the
+/// chrome orb (34.5227) out of the top-5:
+///   [stall_massing, lantern, nari, chain_posts, seawall].
 /// TOLERANCE (DERIVED): each range is the live f32 √(Σ(center−eye)²) vs the f64
 /// reference above quoted to 4 decimals. The measured live-vs-reference
 /// discrepancy across all eleven ranges peaks at 6.1e-5 m (at the 604 m sea
@@ -159,11 +175,11 @@ fn canon_nearest_ordering_and_ranges_are_derived() {
         vec![
             "naruko_stall_massing",
             "naruko_lantern",
+            "nari",
             "naruko_chain_posts",
             "naruko_seawall",
-            "naruko_chrome_orb",
         ],
-        "default nearest-5 caption order (chrome orb 34.5227 displaces pier)"
+        "default nearest-5 caption order (Rite V: nari 26.3911 slots 3rd)"
     );
 
     // Support surfaces never eat a caption slot.
@@ -188,6 +204,7 @@ fn canon_nearest_ordering_and_ranges_are_derived() {
         ("naruko_lantern", 25.6320),
         ("naruko_chain_posts", 26.5613),
         ("naruko_seawall", 26.7524),
+        ("nari", 26.3911),
         ("naruko_chrome_orb", 34.5227),
         ("naruko_pier", 48.1812),
         ("naruko_city_massing", 99.7910),

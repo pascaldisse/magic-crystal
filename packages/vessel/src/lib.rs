@@ -25,12 +25,14 @@
 pub mod bind;
 pub mod color;
 pub mod mesh;
+pub mod preset;
 pub mod region;
 pub mod sdf;
 pub mod tables;
 
 pub use bind::{bind_world, deform, skin};
 pub use mesh::{marching_cubes, Mesh};
+pub use preset::{idle_pose, Body, Preset};
 pub use region::{Blend, BodyRegions, ColoredMesh, Palette, Region};
 pub use sdf::{capsule_sdf, smin, BodySdf};
 

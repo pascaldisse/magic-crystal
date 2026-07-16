@@ -445,3 +445,46 @@ fn ordeal_both_morphologies_valid() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// RITE V · V0 — SAMA is the SOLE pose source for a standing body. A fresh
+// Locomotion begins in Idle; commanding zero speed at tick 0 emits the idle
+// pose, which must be EXACTLY the skeleton's bind pose (byte-identical local
+// rotations). This pins the Rite V weld's "sama's canonical idle (tick 0)" to a
+// real sama call — the body stands on the motion spirit, not on a bare bind.
+// ---------------------------------------------------------------------------
+#[test]
+fn v0_sama_idle_tick0_is_bind_pose() {
+    for label in ["humanoid", "quadruped"] {
+        let skeleton = match label {
+            "humanoid" => Skeleton::humanoid(),
+            _ => Skeleton::quadruped(),
+        };
+        let mut locomotion = Locomotion::new(LocomotionParams::default());
+        assert_eq!(locomotion.state(), Gait::Idle, "{label} starts Idle");
+        let idle = locomotion.step(&skeleton, 0.0);
+        let bind = Pose::bind(&skeleton);
+        assert_eq!(
+            idle.local_rotations.len(),
+            bind.local_rotations.len(),
+            "{label} bone count"
+        );
+        for (i, (a, b)) in idle
+            .local_rotations
+            .iter()
+            .zip(bind.local_rotations.iter())
+            .enumerate()
+        {
+            assert_eq!(
+                a.to_array(),
+                b.to_array(),
+                "{label} bone {i}: sama idle != bind (sama must be the pose source)"
+            );
+        }
+        assert_eq!(locomotion.state(), Gait::Idle, "{label} stays Idle at rest");
+        println!(
+            "[v0-sama-idle] {label}: idle tick0 == bind, {} bones",
+            skeleton.len()
+        );
+    }
+}

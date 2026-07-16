@@ -8,6 +8,8 @@ license = "MIT"
 [dependencies]
 glam = "0.30.9"
 homunculus = { path = "../homunculus" }
+sama = { path = "../sama" }
 
 [dev-dependencies]
 glam = "0.30.9"
+sama = { path = "../sama" }
