@@ -2,9 +2,10 @@ use std::collections::BTreeMap;
 
 use bytemuck::{Pod, Zeroable};
 use crystal::{
-    EcsWorld, Environment, Mesh, MeshPart, NumberOrNumbers, QuerySpec, Spawn, Transform,
+    EcsWorld, Environment, Mesh, MeshPart, NumberOrNumbers, Op, QuerySpec, Spawn, Transform,
 };
 use glam::{EulerRot, Mat3, Mat4, Quat, Vec3};
+use kami::{BindPose, Registry, TickContext};
 use serde_json::Number;
 use transmutation::{
     Bounds, Cluster, Dag, Mesh as ChainMesh, TransmuteParams, Vertex as ChainVertex,
@@ -28,6 +29,10 @@ pub struct SceneParameters {
     /// shared LOD sphere. Smaller = finer detail held longer. A PARAM (never
     /// hardcode): env `GAIA_NATIVE_CLUSTER_ERROR`.
     pub cluster_error_threshold: f32,
+    /// World-clock tick delta (seconds) for the living layer's entropy tick.
+    /// A PARAM (never hardcode), default 1/60: env `GAIA_NATIVE_TICK_DT`. The
+    /// tick is closed-form on the tick INDEX (entropy), never wall time.
+    pub tick_dt: f64,
     /// Sun + sky-ambient defaults, overridden per-scene by the `environment`
     /// component. These feed the TRACED integrator (Rite IV) — no fake shading.
     pub sun: SunDefaults,
@@ -226,6 +231,12 @@ pub struct RenderScene {
     pub error_threshold: f32,
     /// Emissive radiance scale (material colour × this = emission).
     pub emission_intensity: f32,
+    /// The LIVING LAYER (Rite IV dynamics): every entity carrying a `behavior`
+    /// component. Excluded from the static `chains` (and so from the STATIC BVH),
+    /// each keeps its own bind-baked leaf triangles + a live model transform re-
+    /// derived every world tick. Its transformed triangles form the per-tick
+    /// DYNAMIC partition the traced BVH splices in ([`Dynamics`]).
+    pub dynamics: Dynamics,
 }
 
 /// Material batch key: quantised linear colour bits + emissive flag. Ordered so
@@ -240,7 +251,13 @@ struct MatBucket {
 }
 
 impl RenderScene {
-    pub fn from_ecs(world: &EcsWorld, parameters: &SceneParameters) -> Result<Self, String> {
+    /// Materialize the render scene from an OWNED ECS. The living layer
+    /// ([`Dynamics`]) takes ownership of the world so its per-tick clock can read
+    /// `behavior` and write the animated `transform`s back (senses/pose then read
+    /// the moving world). Static geometry seals into the shared chains exactly as
+    /// before; behavior-carriers split off into their own bind-baked chains.
+    pub fn from_ecs(mut world: EcsWorld, parameters: &SceneParameters) -> Result<Self, String> {
+        let world = &mut world;
         if !(parameters.fov_y_degrees > 0.0 && parameters.fov_y_degrees < 180.0) {
             return Err("GAIA_NATIVE_FOV must be between 0 and 180 degrees".into());
         }
@@ -285,6 +302,10 @@ impl RenderScene {
         let sun = SunLight::derive(environment.as_ref(), &parameters.sun)?;
         let default_color = linear_rgb(&parameters.mesh_color)?;
 
+        // Entities carrying a `behavior` component are DYNAMIC: split off from the
+        // shared static chains into their own (bind-baked) chains + a live model
+        // transform. Generic — the split reads only the `behavior` marker.
+        let behavior_id = world.component_id("behavior");
         let render_components = world
             .component_id("transform")
             .zip(world.component_id("mesh"));
@@ -298,54 +319,73 @@ impl RenderScene {
             .unwrap_or_default();
         entities.sort_by(|a, b| world.gaia_id_for(*a).cmp(&world.gaia_id_for(*b)));
 
-        // Tessellate every mesh part into world-space triangles, bucketed by
-        // material. Each bucket becomes ONE transmuted Great Chain below.
-        let mut buckets = BTreeMap::<MatKey, MatBucket>::new();
+        // Tessellate every mesh part into world-space triangles. Static parts
+        // pool into shared material buckets; each dynamic entity seals its OWN.
+        let mut static_buckets = BTreeMap::<MatKey, MatBucket>::new();
+        let mut dynamics = Dynamics::new(parameters.emission_intensity);
         for entity in entities {
             let (transform_id, mesh_id) = render_components.expect("render query has components");
-            let id = world.gaia_id_for(entity).unwrap_or("<unbound>");
+            let id = world.gaia_id_for(entity).unwrap_or("<unbound>").to_string();
             let transform: Transform =
                 serde_json::from_value(world.get_component(entity, transform_id)?)
                     .map_err(|error| format!("entity {id:?} transform: {error}"))?;
             let mesh: Mesh = serde_json::from_value(world.get_component(entity, mesh_id)?)
                 .map_err(|error| format!("entity {id:?} mesh: {error}"))?;
             let parts = parts_of(mesh).map_err(|error| format!("entity {id:?} mesh: {error}"))?;
-            let entity_model = transform_matrix(
-                vec3(transform.position.as_ref()).unwrap_or(Vec3::ZERO),
-                vec3(transform.rotation.as_ref()).unwrap_or(Vec3::ZERO),
-                scale(transform.scale.as_ref()),
-            );
-            for (index, part) in parts.iter().enumerate() {
-                append_part(
-                    &mut buckets,
-                    part,
+            let bind_position = vec3(transform.position.as_ref()).unwrap_or(Vec3::ZERO);
+            let bind_rotation = vec3(transform.rotation.as_ref()).unwrap_or(Vec3::ZERO);
+            let bind_scale = scale(transform.scale.as_ref());
+            let entity_model = transform_matrix(bind_position, bind_rotation, bind_scale);
+
+            let is_dynamic = behavior_id
+                .map(|behavior| world.get_component(entity, behavior).is_ok())
+                .unwrap_or(false);
+
+            if is_dynamic {
+                let mut buckets = BTreeMap::<MatKey, MatBucket>::new();
+                for (index, part) in parts.iter().enumerate() {
+                    append_part(
+                        &mut buckets,
+                        part,
+                        entity_model,
+                        default_color,
+                        parameters.radial_segments,
+                    )
+                    .map_err(|error| format!("entity {id:?} mesh part {index}: {error}"))?;
+                }
+                let chains =
+                    seal_buckets(buckets).map_err(|error| format!("entity {id:?}: {error}"))?;
+                let bind = BindPose {
+                    position: bind_position.as_dvec3().to_array(),
+                    rotation: bind_rotation.as_dvec3().to_array(),
+                    scale: bind_scale.as_dvec3().to_array(),
+                    intensity: 1.0,
+                };
+                dynamics.push(
+                    &id,
+                    chains,
+                    bind,
                     entity_model,
-                    default_color,
-                    parameters.radial_segments,
-                )
-                .map_err(|error| format!("entity {id:?} mesh part {index}: {error}"))?;
+                    parameters.emission_intensity,
+                );
+            } else {
+                for (index, part) in parts.iter().enumerate() {
+                    append_part(
+                        &mut static_buckets,
+                        part,
+                        entity_model,
+                        default_color,
+                        parameters.radial_segments,
+                    )
+                    .map_err(|error| format!("entity {id:?} mesh part {index}: {error}"))?;
+                }
             }
         }
 
-        // Seal each material bucket into a Great Chain. `transmute` is
-        // deterministic (BTree ordering + canonical welds), so two builds of one
-        // world produce byte-identical chains.
-        let chain_params = TransmuteParams::default();
-        let mut chains = Vec::<MaterialChain>::with_capacity(buckets.len());
-        for bucket in buckets.into_values() {
-            if bucket.vertices.is_empty() {
-                continue;
-            }
-            let indices: Vec<u32> = (0..bucket.vertices.len() as u32).collect();
-            let mesh = ChainMesh::new(bucket.vertices, indices);
-            let dag = transmute_default(&mesh, &chain_params)
-                .map_err(|error| format!("transmute material chain: {error}"))?;
-            chains.push(MaterialChain {
-                dag,
-                color: bucket.color,
-                emissive: bucket.emissive,
-            });
-        }
+        // Seal the shared static buckets; the dynamics take ownership of the ECS
+        // (its live tick reads and writes the animated transforms).
+        let chains = seal_buckets(static_buckets)?;
+        dynamics.install_world(std::mem::take(world), parameters);
 
         Ok(Self {
             camera,
@@ -355,7 +395,25 @@ impl RenderScene {
             chains,
             error_threshold: parameters.cluster_error_threshold,
             emission_intensity: parameters.emission_intensity,
+            dynamics,
         })
+    }
+
+    /// Advance the world clock one fixed tick (Flow of Data): KAMI reads the ECS
+    /// → emits transform ops → they apply to the ECS → each dynamic entity's
+    /// model transform is re-derived from its (now animated) transform.
+    /// Deterministic in the tick count — never wall time. Call once per frame;
+    /// the traced BVH then re-splices the dynamic partition (`main.rs`).
+    pub fn tick(&mut self) {
+        self.dynamics.tick();
+    }
+
+    /// The DYNAMIC partition: every living entity's leaf triangles, TRANSFORMED
+    /// by its current model delta into world space — the exact geometry the
+    /// traced BVH splices in this tick (albedo/emission carried per triangle,
+    /// same split as [`RenderScene::leaf_triangles`]). Empty with no behaviors.
+    pub fn dynamic_leaf_triangles(&self) -> Vec<LeafTriangle> {
+        self.dynamics.leaf_triangles()
     }
 
     /// Select and expand the view-dependent cluster cut into draw vertices — the
@@ -397,9 +455,11 @@ impl RenderScene {
         out
     }
 
-    /// Every leaf triangle carrying its material, world-space — the EXACT
-    /// geometry the traced integrator's BVH is built over (view-independent,
-    /// error 0). Extends `leaf_positions` with per-triangle albedo/emission from
+    /// Every STATIC leaf triangle carrying its material, world-space — the EXACT
+    /// geometry the traced integrator's STATIC BVH is built over (view-
+    /// independent, error 0, built once and cached; the living layer's triangles
+    /// are the separate [`RenderScene::dynamic_leaf_triangles`] partition).
+    /// Extends `leaf_positions` with per-triangle albedo/emission from
     /// the material batch: a pure emitter gets albedo 0 + emission colour×scale
     /// (matching the Pleroma), a non-emitter gets albedo colour + emission 0.
     pub fn leaf_triangles(&self) -> Vec<LeafTriangle> {
@@ -535,6 +595,240 @@ fn emit_cluster(cluster: &Cluster, color: [f32; 3], emissive: f32, out: &mut Vec
             color,
             emissive,
         });
+    }
+}
+
+/// Seal material buckets into transmuted Great Chains. `transmute` is
+/// deterministic (BTree ordering + canonical welds), so two builds of one input
+/// produce byte-identical chains. Shared by the static pool and every dynamic
+/// entity's own chains.
+fn seal_buckets(buckets: BTreeMap<MatKey, MatBucket>) -> Result<Vec<MaterialChain>, String> {
+    let chain_params = TransmuteParams::default();
+    let mut chains = Vec::<MaterialChain>::with_capacity(buckets.len());
+    for bucket in buckets.into_values() {
+        if bucket.vertices.is_empty() {
+            continue;
+        }
+        let indices: Vec<u32> = (0..bucket.vertices.len() as u32).collect();
+        let mesh = ChainMesh::new(bucket.vertices, indices);
+        let dag = transmute_default(&mesh, &chain_params)
+            .map_err(|error| format!("transmute material chain: {error}"))?;
+        chains.push(MaterialChain {
+            dag,
+            color: bucket.color,
+            emissive: bucket.emissive,
+        });
+    }
+    Ok(chains)
+}
+
+/// One chain's LEAF triangles carrying their material (finest LOD, view-
+/// independent) — the same albedo/emission split as [`RenderScene::leaf_triangles`],
+/// applied to a single chain. Used to bake a dynamic entity's bind-pose geometry.
+fn chain_leaf_triangles(chain: &MaterialChain, emission_intensity: f32) -> Vec<LeafTriangle> {
+    let emitter = chain.emissive > 0.5;
+    let albedo = if emitter { [0.0; 3] } else { chain.color };
+    let emission = if emitter {
+        [
+            chain.color[0] * emission_intensity,
+            chain.color[1] * emission_intensity,
+            chain.color[2] * emission_intensity,
+        ]
+    } else {
+        [0.0; 3]
+    };
+    let mut out = Vec::new();
+    if let Some(leaf_ids) = chain.dag.levels.first() {
+        for &id in leaf_ids {
+            let cluster = chain.dag.cluster(id);
+            for triangle in cluster.indices.chunks_exact(3) {
+                out.push(LeafTriangle {
+                    positions: [
+                        cluster.vertices[triangle[0] as usize].position,
+                        cluster.vertices[triangle[1] as usize].position,
+                        cluster.vertices[triangle[2] as usize].position,
+                    ],
+                    albedo,
+                    emission,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// One dynamic entity of the living layer: its bind-baked leaf triangles (world-
+/// space, at the AUTHORED rest pose) plus the live model delta that animates
+/// them. `model` = `M(animated) · M(bind)⁻¹`; applying it to the bind-baked
+/// world-space corners yields the current world-space triangles the BVH splices.
+pub struct DynamicEntity {
+    pub gaia_id: String,
+    /// The entity's material bands: (linear colour, emissive-flag), one per
+    /// chain — the exact keys `RenderScene::from_ecs` bucketed by (no lossy
+    /// reconstruction from baked emission).
+    pub materials: Vec<([f32; 3], bool)>,
+    /// Leaf triangles at the authored BIND world pose (material carried).
+    pub bind_tris: Vec<LeafTriangle>,
+    /// The bind transform matrix (world-space) the triangles were baked at.
+    pub bind_model: Mat4,
+    /// Current animated delta transform (identity until the first tick).
+    pub model: Mat4,
+}
+
+impl DynamicEntity {
+    /// This entity's leaf triangles transformed into current world space by the
+    /// live `model` delta — the geometry the traced BVH sees this tick.
+    pub fn world_triangles(&self) -> Vec<LeafTriangle> {
+        self.bind_tris
+            .iter()
+            .map(|t| {
+                let mut out = *t;
+                for (k, p) in t.positions.iter().enumerate() {
+                    out.positions[k] = self.model.transform_point3(Vec3::from_array(*p)).to_array();
+                }
+                out
+            })
+            .collect()
+    }
+}
+
+/// The living layer of a scene: the ECS the world clock ticks, the dynamic
+/// entities' bind geometry + live models, and the fixed-dt clock. The tick is
+/// closed-form on the tick INDEX (entropy), never wall time — N ticks reproduce
+/// byte-identical model transforms across runs (the determinism ordeal).
+pub struct Dynamics {
+    /// The live ECS: the tick reads `behavior` here and writes animated
+    /// `transform`s back (so senses/pose read the moving world).
+    world: EcsWorld,
+    /// Registered `transform`/`behavior` handles; `None` until `install_world`.
+    reg: Option<Registry>,
+    /// Rest poses keyed by gaia id — the fixed origin each kind animates around,
+    /// so re-reading the transform each tick never compounds.
+    binds: BTreeMap<String, BindPose>,
+    entities: Vec<DynamicEntity>,
+    #[allow(dead_code)]
+    emission_intensity: f32,
+    seed: u64,
+    dt: f64,
+    clock: u64,
+}
+
+impl Dynamics {
+    fn new(emission_intensity: f32) -> Self {
+        Self {
+            world: EcsWorld::default(),
+            reg: None,
+            binds: BTreeMap::new(),
+            entities: Vec::new(),
+            emission_intensity,
+            seed: 0,
+            dt: 1.0 / 60.0,
+            clock: 0,
+        }
+    }
+
+    fn push(
+        &mut self,
+        id: &str,
+        chains: Vec<MaterialChain>,
+        bind: BindPose,
+        bind_model: Mat4,
+        emission_intensity: f32,
+    ) {
+        let mut bind_tris = Vec::new();
+        let mut materials = Vec::new();
+        for chain in &chains {
+            bind_tris.extend(chain_leaf_triangles(chain, emission_intensity));
+            materials.push((chain.color, chain.emissive > 0.5));
+        }
+        self.binds.insert(id.to_string(), bind);
+        self.entities.push(DynamicEntity {
+            gaia_id: id.to_string(),
+            materials,
+            bind_tris,
+            bind_model,
+            model: Mat4::IDENTITY,
+        });
+    }
+
+    /// Take ownership of the live ECS and lock in the tick's dt. Registration is
+    /// idempotent — the loader already registered `transform`/`behavior`, so the
+    /// existing ids are reused.
+    fn install_world(&mut self, mut world: EcsWorld, parameters: &SceneParameters) {
+        self.reg = Some(Registry::register(&mut world));
+        self.world = world;
+        self.dt = parameters.tick_dt;
+        self.clock = 0;
+    }
+
+    /// One world tick (Flow of Data): KAMI reads the ECS → emits transform ops →
+    /// they apply to the ECS → each entity's model is re-derived from its now-
+    /// animated transform. Increments the clock. Deterministic in the count.
+    pub fn tick(&mut self) {
+        let Some(reg) = self.reg else {
+            return;
+        };
+        if self.entities.is_empty() {
+            return;
+        }
+        let ctx = TickContext {
+            seed: self.seed,
+            entropy: self.clock,
+            dt: self.dt,
+        };
+        let ops = kami::tick_decorative(&self.world, reg, &self.binds, &ctx);
+        for op in &ops {
+            let Op::Set(set) = op else {
+                continue;
+            };
+            if let Some(entity) = self.world.entity_for_gaia(&set.id) {
+                let _ = self
+                    .world
+                    .set_component(entity, reg.transform, set.value.clone());
+            }
+        }
+        for de in &mut self.entities {
+            let Some(entity) = self.world.entity_for_gaia(&de.gaia_id) else {
+                continue;
+            };
+            let Ok(value) = self.world.get_component(entity, reg.transform) else {
+                continue;
+            };
+            let Ok(transform) = serde_json::from_value::<Transform>(value) else {
+                continue;
+            };
+            let animated = transform_matrix(
+                vec3(transform.position.as_ref()).unwrap_or(Vec3::ZERO),
+                vec3(transform.rotation.as_ref()).unwrap_or(Vec3::ZERO),
+                scale(transform.scale.as_ref()),
+            );
+            de.model = animated * de.bind_model.inverse();
+        }
+        self.clock += 1;
+    }
+
+    /// Every dynamic entity's leaf triangles transformed into current world
+    /// space — the DYNAMIC partition the traced BVH splices this tick.
+    pub fn leaf_triangles(&self) -> Vec<LeafTriangle> {
+        let mut out = Vec::new();
+        for de in &self.entities {
+            out.extend(de.world_triangles());
+        }
+        out
+    }
+
+    /// The per-entity model transforms (column-major mat4), in `entities()`
+    /// order. Byte-identical given the tick count (the tick-determinism ordeal
+    /// reads exactly these bytes).
+    pub fn model_matrices(&self) -> Vec<[f32; 16]> {
+        self.entities
+            .iter()
+            .map(|entity| entity.model.to_cols_array())
+            .collect()
+    }
+
+    pub fn entities(&self) -> &[DynamicEntity] {
+        &self.entities
     }
 }
 
@@ -884,6 +1178,7 @@ mod tests {
             camera_yaw: 0.0,
             camera_pitch: 0.0,
             cluster_error_threshold: 1.0,
+            tick_dt: 1.0 / 60.0,
             sun: SunDefaults {
                 sun_color: "#ffe2b0".into(),
                 sun_intensity: 1.1,
@@ -918,7 +1213,7 @@ mod tests {
             .unwrap();
         world.bind_gaia_id("known_box", box_entity).unwrap();
 
-        let scene = RenderScene::from_ecs(&world, &test_parameters()).unwrap();
+        let scene = RenderScene::from_ecs(world, &test_parameters()).unwrap();
 
         // One box = one material chain; 12 tris ≤ shard budget → a single leaf.
         assert_eq!(scene.chains.len(), 1);
@@ -963,7 +1258,7 @@ mod tests {
             .unwrap();
         world.bind_gaia_id("env", env_entity).unwrap();
 
-        let scene = RenderScene::from_ecs(&world, &test_parameters()).unwrap();
+        let scene = RenderScene::from_ecs(world, &test_parameters()).unwrap();
         // #ff0000 → linear red 1.0, others 0.0; intensity read from the env.
         assert!((scene.sun.color[0] - 1.0).abs() < 1e-6);
         assert!(scene.sun.color[1] < 1e-6 && scene.sun.color[2] < 1e-6);
@@ -1004,7 +1299,22 @@ mod tests {
     fn naruko_scene() -> RenderScene {
         let mut world = EcsWorld::default();
         load_world_dir(naruko_world(), &mut world).expect("load the Naruko realm");
-        RenderScene::from_ecs(&world, &test_parameters()).expect("transmute the realm")
+        RenderScene::from_ecs(world, &test_parameters()).expect("transmute the realm")
+    }
+
+    /// Mean y of every corner of a triangle set — a cheap centroid to watch a
+    /// bob move geometry through the pipeline.
+    fn centroid_y(tris: &[LeafTriangle]) -> f64 {
+        if tris.is_empty() {
+            return 0.0;
+        }
+        let mut sum = 0.0f64;
+        for t in tris {
+            for p in &t.positions {
+                sum += p[1] as f64;
+            }
+        }
+        sum / (tris.len() as f64 * 3.0)
     }
 
     fn mat_key(color: &str, emissive: bool) -> MatKey {
@@ -1050,45 +1360,219 @@ mod tests {
         );
     }
 
-    /// Draw-parity band assert: the transmuted draw path still carries every
-    /// signature material of the keyart — pier browns, lantern rose, warm
-    /// windows, the lit lamp — and the sky gradient survives. No material is
-    /// dropped by the Great Chain (the forward path's job, now the chain's).
+    /// Draw-parity band assert: the WHOLE traced surface (static cut ∪ the living
+    /// layer) still carries every signature material of the keyart. The lantern
+    /// rose and the lit beacon now ride the DYNAMIC partition (they carry
+    /// behaviors), so the UNION — not the static cut alone — must preserve them,
+    /// and the dynamic materials must have LEFT the static chains (clean split).
     #[test]
     fn naruko_selected_cut_preserves_every_material_band() {
         let scene = naruko_scene();
         let vertices = scene.select_vertices(&scene.camera, 640);
         assert!(!vertices.is_empty(), "the cut drew geometry");
 
-        let present: std::collections::BTreeSet<MatKey> = vertices
-            .iter()
-            .map(|v| {
-                (
-                    [
-                        v.color[0].to_bits(),
-                        v.color[1].to_bits(),
-                        v.color[2].to_bits(),
-                    ],
-                    v.emissive.to_bits(),
-                )
-            })
-            .collect();
+        let vkey = |v: &Vertex| -> MatKey {
+            (
+                [
+                    v.color[0].to_bits(),
+                    v.color[1].to_bits(),
+                    v.color[2].to_bits(),
+                ],
+                v.emissive.to_bits(),
+            )
+        };
+        let static_present: std::collections::BTreeSet<MatKey> =
+            vertices.iter().map(vkey).collect();
+        let mut present = static_present.clone();
+        // The living layer contributes its own material bands — fold them in.
+        for entity in scene.dynamics.entities() {
+            for (color, emissive) in &entity.materials {
+                present.insert((
+                    [color[0].to_bits(), color[1].to_bits(), color[2].to_bits()],
+                    f32::from(*emissive).to_bits(),
+                ));
+            }
+        }
 
         for (label, color, emissive) in [
             ("pier brown", "#4a3626", false),
             ("lantern rose", "#ff9db0", true),
             ("warm window", "#ffb46b", true),
-            ("lit lamp", "#f3e9ff", true),
+            ("lit beacon", "#f3e9ff", true),
         ] {
             assert!(
                 present.contains(&mat_key(color, emissive)),
-                "the cut lost the {label} band ({color}, emissive={emissive})"
+                "the traced surface lost the {label} band ({color}, emissive={emissive})"
             );
         }
+
+        // The dynamic materials must NOT leak into the static cut (split clean).
+        assert!(
+            !static_present.contains(&mat_key("#ff9db0", true)),
+            "lantern rose must have left the static chains (it is dynamic)"
+        );
+        assert!(
+            !static_present.contains(&mat_key("#f3e9ff", true)),
+            "lit beacon must have left the static chains (it is dynamic)"
+        );
 
         // Sky gradient endpoints intact (linear sRGB of the night preset).
         assert_eq!(scene.sky_top, linear_rgba("#2a1a3e").unwrap());
         assert_eq!(scene.sky_horizon, linear_rgba("#d98ba8").unwrap());
+    }
+
+    /// DYNAMIC SPLIT correctness + leaf parity through the TRACED path: entities
+    /// carrying a `behavior` are excluded from the static BVH triangles and kept
+    /// as the dynamic partition, with NO triangle lost or duplicated. Naruko
+    /// carries the lantern (bob) + beacon (pulse).
+    #[test]
+    fn dynamic_split_leaf_parity_holds() {
+        let scene = naruko_scene();
+        assert_eq!(
+            scene.dynamics.entities().len(),
+            2,
+            "the realm breath: lantern + beacon are the two dynamic entities"
+        );
+
+        // STATIC BVH triangles (built once) and the DYNAMIC partition triangles.
+        let static_tris = scene.leaf_triangles().len();
+        let dyn_tris = scene.dynamic_leaf_triangles().len();
+        assert!(dyn_tris > 0, "dynamic entities carry geometry");
+        // The dynamic partition equals the bind triangle sum (transform preserves count).
+        let bind_sum: usize = scene
+            .dynamics
+            .entities()
+            .iter()
+            .map(|e| e.bind_tris.len())
+            .sum();
+        assert_eq!(dyn_tris, bind_sum, "transform never drops a triangle");
+
+        // INDEPENDENT total: rebuild the SAME realm with every `behavior`
+        // stripped — now everything is static. static + dynamic must equal this
+        // undivided leaf count EXACTLY (the split neither drops nor duplicates).
+        let undivided = {
+            let mut world = EcsWorld::default();
+            load_world_dir(naruko_world(), &mut world).expect("load the Naruko realm");
+            if let Some(behavior) = world.component_id("behavior") {
+                let carriers = world.query(&QuerySpec {
+                    all: vec![behavior],
+                    ..Default::default()
+                });
+                for entity in carriers {
+                    world.remove_component(entity, behavior).unwrap();
+                }
+            }
+            let all_static = RenderScene::from_ecs(world, &test_parameters()).unwrap();
+            assert!(
+                all_static.dynamics.entities().is_empty(),
+                "stripping behaviors leaves no dynamic entities"
+            );
+            all_static.leaf_triangles().len()
+        };
+        assert_eq!(
+            static_tris + dyn_tris,
+            undivided,
+            "static BVH tris + dynamic tris == the undivided realm's leaves (no loss, no dup)"
+        );
+
+        // And the MERGED BVH the GPU walks carries exactly that total.
+        use crate::bvh::{Bvh, BvhParams};
+        let params = BvhParams::default();
+        let static_bvh = Bvh::build(&scene.leaf_triangles(), &params);
+        let dyn_bvh = Bvh::build(&scene.dynamic_leaf_triangles(), &params);
+        let merged = Bvh::merge(&static_bvh, &dyn_bvh);
+        assert_eq!(
+            merged.tris.len(),
+            static_tris + dyn_tris,
+            "the spliced BVH carries every static + dynamic triangle"
+        );
+        eprintln!(
+            "[ordeal] dynamic split: {static_tris} static tris + {dyn_tris} dynamic tris = {} total (merged BVH {} nodes)",
+            static_tris + dyn_tris,
+            merged.nodes.len(),
+        );
+    }
+
+    /// TICK DETERMINISM: the clock counts ticks, never wall time. Two runs of N
+    /// ticks produce byte-identical dynamic model-transform buffers at every step.
+    #[test]
+    fn tick_determinism_byte_identical_model_buffer() {
+        let run = || {
+            let mut scene = naruko_scene();
+            let mut bytes = Vec::new();
+            for _ in 0..300u64 {
+                scene.tick();
+                for m in scene.dynamics.model_matrices() {
+                    bytes.extend_from_slice(bytemuck::bytes_of(&m));
+                }
+            }
+            bytes
+        };
+        let a = run();
+        let b = run();
+        assert_eq!(a.len(), b.len(), "model-buffer stream length");
+        assert_eq!(a, b, "model transforms must be byte-identical across runs");
+        eprintln!(
+            "[ordeal] tick determinism: 2 runs × 300 ticks, {} bytes, byte-identical",
+            a.len()
+        );
+    }
+
+    /// BOB math matches KAMI's formula THROUGH the full traced pipeline: data →
+    /// `tick_decorative` → ECS transform → model delta → world-space triangle.
+    /// The lantern's model y-translation must equal `sin(t·speed+phase)·amplitude`
+    /// at every tick, and its transformed triangles must ride that same offset.
+    #[test]
+    fn bob_matches_kami_through_the_pipeline() {
+        let dt = 1.0f64 / 60.0;
+        let bob = kami::Decorative::Bob {
+            speed: 0.8,
+            phase: 0.0,
+            amplitude: 0.12,
+        };
+        let bind = kami::BindPose {
+            position: [-7.5, 0.0, 20.0],
+            ..kami::BindPose::default()
+        };
+        let mut scene = naruko_scene();
+        // Capture the lantern's bind triangle centroid (before any tick).
+        let bind_centroid = {
+            let lantern = scene
+                .dynamics
+                .entities()
+                .iter()
+                .find(|e| e.gaia_id == "naruko_lantern")
+                .expect("the lantern is a dynamic entity");
+            centroid_y(&lantern.bind_tris)
+        };
+        let mut worst = 0.0f64;
+        for k in 0..240u64 {
+            scene.tick(); // after this call clock==k+1, model reflects t = k*dt
+            let t = k as f64 * dt;
+            let want_dy = bob.eval(t, bind).position[1]; // == sin(t*0.8)*0.12
+            let lantern = scene
+                .dynamics
+                .entities()
+                .iter()
+                .find(|e| e.gaia_id == "naruko_lantern")
+                .expect("the lantern is a dynamic entity");
+            // model = M(animated) * M(bind)⁻¹ = pure y-translation for a bob.
+            let got_dy = lantern.model.to_cols_array()[13] as f64;
+            worst = worst.max((got_dy - want_dy).abs());
+            assert!(
+                (got_dy - want_dy).abs() <= 1e-5,
+                "tick {k}: model dy {got_dy} != kami bob {want_dy}"
+            );
+            assert!(got_dy.abs() <= 0.12 + 1e-6, "bob within amplitude 0.12");
+            // The TRANSFORMED triangles ride the same offset (the traced proof in
+            // miniature: geometry the BVH sees actually moved by want_dy).
+            let world_centroid = centroid_y(&lantern.world_triangles());
+            assert!(
+                (world_centroid - (bind_centroid + want_dy)).abs() <= 1e-4,
+                "tick {k}: world triangle centroid didn't follow the bob"
+            );
+        }
+        eprintln!("[ordeal] bob pipeline parity: 240 ticks vs kami eval, worst err={worst:.3e}");
     }
 
     /// At τ → 0 the cut selects the finest LOD everywhere: the emitted triangle

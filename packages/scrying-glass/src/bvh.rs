@@ -138,6 +138,76 @@ impl Bvh {
         Bvh { nodes, tris }
     }
 
+    /// Splice a cached STATIC BVH and a freshly-built DYNAMIC BVH into one flat
+    /// tree the GPU integrator walks unchanged — the two-level dynamics update
+    /// (DYNAMICS.md). The static hierarchy is built once and never re-sorted;
+    /// only the (tiny) dynamic partition rebuilds per tick, then this O(Sn+Dn)
+    /// linear splice fuses them under a new two-child root. Correct by
+    /// construction (the `merge_equals_full_rebuild` ordeal proves traversal
+    /// parity vs a from-scratch build over the union).
+    ///
+    /// Node layout (right child is always `left_first + 1`, the flat invariant):
+    /// `[root, static_root, dynamic_root, static_rest.., dynamic_rest..]`.
+    /// Triangles: `static.tris ++ dynamic.tris` (static indices unchanged,
+    /// dynamic leaf tri-indices shifted by the static triangle count).
+    pub fn merge(static_bvh: &Bvh, dynamic_bvh: &Bvh) -> Bvh {
+        // Degenerate sides: with nothing dynamic the static tree IS the answer
+        // (a still world never pays the merge), and vice-versa.
+        if dynamic_bvh.tris.is_empty() {
+            return static_bvh.clone();
+        }
+        if static_bvh.tris.is_empty() {
+            return dynamic_bvh.clone();
+        }
+        let sn = static_bvh.nodes.len();
+        let dn = dynamic_bvh.nodes.len();
+        let st = static_bvh.tris.len() as u32;
+        // Remap: static root→1, static rest i→i+2; dynamic root→2, rest j→j+Sn+1.
+        let rs = |i: usize| -> u32 { if i == 0 { 1 } else { (i + 2) as u32 } };
+        let rd = |j: usize| -> u32 { if j == 0 { 2 } else { (j + sn + 1) as u32 } };
+
+        let mut nodes = vec![GpuNode::zeroed(); 1 + sn + dn];
+        // The new root spans both children (static_root at 1, dynamic_root at 2).
+        let sr = &static_bvh.nodes[0];
+        let dr = &dynamic_bvh.nodes[0];
+        let mut mn = [0.0f32; 3];
+        let mut mx = [0.0f32; 3];
+        for k in 0..3 {
+            mn[k] = sr.min[k].min(dr.min[k]);
+            mx[k] = sr.max[k].max(dr.max[k]);
+        }
+        nodes[0] = GpuNode {
+            min: mn,
+            left_first: 1,
+            max: mx,
+            count: 0,
+        };
+        for (i, node) in static_bvh.nodes.iter().enumerate() {
+            let mut copy = *node;
+            if node.count == 0 {
+                // Internal: children move with the static remap (stay adjacent).
+                copy.left_first = rs(node.left_first as usize);
+            }
+            // Leaf keeps its triangle index (static tris come first, unshifted).
+            nodes[rs(i) as usize] = copy;
+        }
+        for (j, node) in dynamic_bvh.nodes.iter().enumerate() {
+            let mut copy = *node;
+            if node.count == 0 {
+                copy.left_first = rd(node.left_first as usize);
+            } else {
+                // Leaf: dynamic triangles sit after the static block.
+                copy.left_first = node.left_first + st;
+            }
+            nodes[rd(j) as usize] = copy;
+        }
+
+        let mut tris = Vec::with_capacity(static_bvh.tris.len() + dynamic_bvh.tris.len());
+        tris.extend_from_slice(&static_bvh.tris);
+        tris.extend_from_slice(&dynamic_bvh.tris);
+        Bvh { nodes, tris }
+    }
+
     /// Nearest ray-triangle hit in (t_min, t_max]. Returns `(t, tri_index)`.
     /// CPU mirror of the WGSL traversal — the ordeals' ground for occlusion.
     pub fn hit(
@@ -397,5 +467,93 @@ mod tests {
         assert!(bvh.occluded([0.0, 0.01, 0.0], [0.0, 1.0, 0.0], 1e-3, 1e9));
         // From above the ceiling toward +y → nothing above, escapes.
         assert!(!bvh.occluded([0.0, 6.0, 0.0], [0.0, 1.0, 0.0], 1e-3, 1e9));
+    }
+
+    /// The two-level splice is traversal-identical to a from-scratch build over
+    /// the union: for a fan of rays, `merge(static, dynamic)` and a whole rebuild
+    /// agree on hit/miss and hit distance (tri indices differ by ordering; the
+    /// GEOMETRY the ray meets is the same). This is the correctness proof the
+    /// dynamics update leans on.
+    #[test]
+    fn merge_equals_full_rebuild() {
+        // Static: a wide floor at y=0. Dynamic: a small occluder slab at y=3.
+        let mut static_tris = Vec::new();
+        static_tris.extend(quad(0.0, 20.0, [0.6, 0.6, 0.6], [0.0; 3]));
+        for i in 1..8 {
+            static_tris.extend(quad(-(i as f32), 20.0, [0.4, 0.4, 0.4], [0.0; 3]));
+        }
+        let mut dyn_tris = Vec::new();
+        dyn_tris.extend(quad(3.0, 2.0, [0.0; 3], [1.0, 1.0, 1.0]));
+        dyn_tris.extend(quad(4.5, 1.0, [0.0; 3], [0.8, 0.8, 0.8]));
+
+        let params = BvhParams::default();
+        let static_bvh = Bvh::build(&static_tris, &params);
+        let dyn_bvh = Bvh::build(&dyn_tris, &params);
+        let merged = Bvh::merge(&static_bvh, &dyn_bvh);
+
+        let mut union = static_tris.clone();
+        union.extend_from_slice(&dyn_tris);
+        let full = Bvh::build(&union, &params);
+
+        // Node/tri counts: the splice adds exactly one root over the two trees.
+        assert_eq!(
+            merged.nodes.len(),
+            static_bvh.nodes.len() + dyn_bvh.nodes.len() + 1
+        );
+        assert_eq!(merged.tris.len(), static_tris.len() + dyn_tris.len());
+
+        // A grid of rays fired from above straight down and at angles: hit/miss
+        // and distance must match the full rebuild to floating-point tolerance.
+        let mut checked = 0;
+        for gx in -6..=6 {
+            for gz in -6..=6 {
+                let ox = gx as f32 * 1.5;
+                let oz = gz as f32 * 1.5;
+                for dir in [[0.0, -1.0, 0.0], [0.2, -1.0, 0.1], [-0.15, -1.0, -0.25]] {
+                    let o = [ox, 12.0, oz];
+                    let a = merged.hit(o, dir, 1e-3, 1e9);
+                    let b = full.hit(o, dir, 1e-3, 1e9);
+                    assert_eq!(
+                        a.is_some(),
+                        b.is_some(),
+                        "hit/miss parity at {o:?} dir {dir:?}"
+                    );
+                    if let (Some((ta, _)), Some((tb, _))) = (a, b) {
+                        assert!(
+                            (ta - tb).abs() < 1e-4,
+                            "distance parity: merged {ta} vs full {tb}"
+                        );
+                    }
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 100, "fired a real fan of rays");
+        eprintln!("[ordeal] merge == full rebuild: {checked} rays, byte-parity of geometry");
+    }
+
+    /// Merge handles the degenerate single-leaf sides (Sn==1 and/or Dn==1)
+    /// without breaking the flat adjacency invariant.
+    #[test]
+    fn merge_handles_single_leaf_sides() {
+        let params = BvhParams::default();
+        let s = Bvh::build(&quad(0.0, 5.0, [0.5, 0.5, 0.5], [0.0; 3]), &params);
+        let d = Bvh::build(&quad(2.0, 1.0, [0.0; 3], [1.0, 1.0, 1.0]), &params);
+        assert_eq!(s.nodes.len(), 1, "single leaf static");
+        assert_eq!(d.nodes.len(), 1, "single leaf dynamic");
+        let m = Bvh::merge(&s, &d);
+        // Down onto the dynamic slab from above → hits it first (t≈8 from y=10).
+        let hit = m.hit([0.0, 10.0, 0.0], [0.0, -1.0, 0.0], 1e-3, 1e9);
+        assert!(hit.is_some());
+        // Every triangle reachable in exactly one leaf.
+        let mut covered = vec![0u32; m.tris.len()];
+        for node in &m.nodes {
+            if node.count > 0 {
+                for k in 0..node.count {
+                    covered[(node.left_first + k) as usize] += 1;
+                }
+            }
+        }
+        assert!(covered.iter().all(|&c| c == 1), "each tri in one leaf");
     }
 }

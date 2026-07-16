@@ -3,8 +3,9 @@
 //! crystal ECS, applying the emitted ops between ticks (Flow of Data).
 
 use crystal::{EcsWorld, Op};
-use kami::{tick, Behavior, Registry, TickContext};
+use kami::{is_color_string, tick, Behavior, BindPose, Decorative, Registry, TickContext};
 use serde_json::{json, Value};
+use std::f64::consts::{FRAC_PI_2, PI, TAU};
 
 /// A live world plus the KAMI registration handles.
 struct Harness {
@@ -338,4 +339,365 @@ fn ordeal_look_at_yaw_error_goes_to_zero() {
         assert!(err <= tol, "yaw error {err} > tol {tol} at tick {t}");
     }
     eprintln!("ORDEAL look-at: 360 headings swept, worst yaw error={worst:.3e} (tol={tol:.0e})");
+}
+
+// ==========================================================================
+// KAMI K1 — THE DECORATIVE SIX (reference-parity ordeals)
+//
+// Oracle values are computed FROM the exact reference JS formulas
+//   shared/motion.js         (orbit, bob, path)
+//   client/kernel/behaviors.js (spin, pulse, flicker)
+// Each oracle constant below was produced by evaluating the reference JS
+// formula (cited per case) in a f64 harness, then annotated with its hand
+// check. The Rust eval transcribes the SAME formula; parity = agreement.
+//
+// f32-DERIVED TOLERANCE: decorative outputs ultimately land in the ECS's f32
+// transform/light columns. f32 has a 24-bit mantissa → ulp(M) ≈ M·2⁻²³. The
+// largest sampled magnitude is spin yaw ≈ 20.25 → ulp ≈ 20.25·2⁻²³ ≈ 2.4e-6.
+// TOL = 1e-5 covers that storage floor (and dwarfs the ~1e-15 last-bit gap
+// between Rust's f64 transcendentals and the JS f64 oracle). The pure eval is
+// f64, so the OBSERVED error is ~1e-13; the gate is the f32 floor.
+const TOL: f64 = 1e-5;
+
+fn close(got: f64, want: f64, what: &str) {
+    let err = (got - want).abs();
+    assert!(
+        err <= TOL,
+        "{what}: got {got}, want {want}, err {err:e} > TOL {TOL:e}"
+    );
+}
+
+// --- ORDEAL 6: spin parity — yaw(t) = bindYaw + speed*t --------------------
+#[test]
+fn ordeal_spin_formula_parity() {
+    // speed=2, bindYaw=0.25. Reference behaviors.js is incremental; closed
+    // form on the world clock is bindYaw + speed*t (see decorative module note).
+    let b = Decorative::Spin { speed: 2.0 };
+    let bind = BindPose {
+        rotation: [0.0, 0.25, 0.0],
+        ..BindPose::default()
+    };
+    // (t, oracle yaw): 0.25 + 2t
+    let cases = [
+        (0.0_f64, 0.250000000000000), // 0.25 + 0
+        (0.5, 1.25),                  // 0.25 + 1.0
+        (1.0, 2.25),                  // 0.25 + 2.0
+        (PI, 6.533_185_307_179_586),  // 0.25 + 2π (phase-like boundary)
+        (10.0, 20.25),                // 0.25 + 20
+    ];
+    let mut worst = 0.0f64;
+    for (t, want) in cases {
+        let got = b.eval(t, bind).rotation[1];
+        worst = worst.max((got - want).abs());
+        close(got, want, &format!("spin yaw t={t}"));
+    }
+    eprintln!("ORDEAL spin: 5 samples vs reference yaw=bindYaw+speed*t, worst err={worst:.3e}");
+}
+
+// --- ORDEAL 7: bob parity — y += sin(t*speed+phase)*amplitude --------------
+#[test]
+fn ordeal_bob_formula_parity() {
+    let b = Decorative::Bob {
+        speed: 2.0,
+        phase: 0.5,
+        amplitude: 1.5,
+    };
+    let bind = BindPose {
+        position: [0.0, 3.0, 0.0],
+        ..BindPose::default()
+    };
+    let cases = [
+        (0.0_f64, 3.719138307906305),   // 3 + sin(0.5)*1.5
+        (0.5, 4.496242479906082),       // 3 + sin(1.5)*1.5
+        (FRAC_PI_2, 2.280861692093696), // t=π/2: 3 + sin(π+0.5)*1.5
+        (3.0, 3.322679982131723),       // 3 + sin(6.5)*1.5
+        (7.3, 3.856795304489983),
+    ];
+    let mut worst = 0.0f64;
+    for (t, want) in cases {
+        let s = b.eval(t, bind);
+        worst = worst.max((s.position[1] - want).abs());
+        close(s.position[1], want, &format!("bob y t={t}"));
+        // untouched channels stay bind
+        close(s.position[0], 0.0, "bob x");
+        close(s.position[2], 0.0, "bob z");
+    }
+    eprintln!("ORDEAL bob: 5 samples vs reference y=baseY+sin(t·s+φ)·A, worst err={worst:.3e}");
+}
+
+// --- ORDEAL 8: orbit parity — circle in xz, y=cy+height --------------------
+#[test]
+fn ordeal_orbit_formula_parity() {
+    let b = Decorative::Orbit {
+        center: [1.0, 2.0, -3.0],
+        radius: 8.0,
+        speed: 0.5,
+        phase: 0.2,
+        height: 4.0,
+    };
+    let bind = BindPose::default();
+    // (t, [x, y, z]) — y is constant cy+height = 2+4 = 6.
+    let cases = [
+        (0.0_f64, [8.840532622729933, 6.0, -1.410_645_353_639_51]), // angle=0.2
+        (1.0, [7.118737498275908, 6.0, 2.153741497901528]),         // angle=0.7
+        (PI, [-0.589354646360489, 6.0, 4.840532622729933]),         // t=π
+        (TAU, [-6.840532622729933, 6.0, -4.589354646360491]),       // t=2π
+        (12.5, [8.888_949_310_340_1, 6.0, -1.671663153080342]),
+    ];
+    let mut worst = 0.0f64;
+    for (t, want) in cases {
+        let p = b.eval(t, bind).position;
+        for (k, &wv) in want.iter().enumerate() {
+            worst = worst.max((p[k] - wv).abs());
+            close(p[k], wv, &format!("orbit axis {k} t={t}"));
+        }
+    }
+    eprintln!(
+        "ORDEAL orbit: 5 samples (incl t=0,π,2π) vs cx+cos·r / cz+sin·r, worst err={worst:.3e}"
+    );
+}
+
+// --- ORDEAL 9: path parity — dwell/travel walk + facing --------------------
+#[test]
+fn ordeal_path_formula_parity() {
+    // points=[[0,0,0,1],[10,0,0],[10,0,8,0.5],[0,0,8]] speed=4 loop → total=8.5s.
+    // legs (dwell,travel): (1,2.5)(0,2)(0.5,2.5) from motion.js pathLegs.
+    let b = Decorative::Path {
+        points: vec![
+            vec![0.0, 0.0, 0.0, 1.0],
+            vec![10.0, 0.0, 0.0],
+            vec![10.0, 0.0, 8.0, 0.5],
+            vec![0.0, 0.0, 8.0],
+        ],
+        speed: 4.0,
+        start: 0.0,
+        phase: 0.0,
+        loop_: true,
+    };
+    let bind = BindPose::default();
+    // (t, pos, yaw)
+    let cases = [
+        (0.0_f64, [0.0, 0.0, 0.0], 0.0), // parked (dwell), no move → bind yaw 0
+        (0.5, [0.0, 0.0, 0.0], 0.0),     // still in the 1s dwell
+        (1.0, [0.0, 0.0, 0.0], FRAC_PI_2), // dwell end (boundary): about to head +x → yaw π/2
+        (3.5, [10.0, 0.0, 0.0], 0.0),    // reached wp1, now heading +z
+        (6.5, [8.0, 0.0, 8.0], -FRAC_PI_2), // on leg2 heading -x → yaw -π/2
+        (10.0, [2.0, 0.0, 0.0], FRAC_PI_2), // wrapped (t%8.5=1.5), on leg0 heading +x
+    ];
+    let mut worst = 0.0f64;
+    for (t, wp, wyaw) in cases {
+        let s = b.eval(t, bind);
+        for (k, &wv) in wp.iter().enumerate() {
+            worst = worst.max((s.position[k] - wv).abs());
+            close(s.position[k], wv, &format!("path axis {k} t={t}"));
+        }
+        close(s.rotation[1], wyaw, &format!("path yaw t={t}"));
+    }
+    eprintln!("ORDEAL path: 6 samples (dwell, boundary t=1, wrap) vs motion.js walk, worst err={worst:.3e}");
+}
+
+// --- ORDEAL 10: pulse parity — scale = base.scale * (1+sin(t·s)·A) ---------
+#[test]
+fn ordeal_pulse_formula_parity() {
+    let b = Decorative::Pulse {
+        speed: 3.0,
+        amount: 0.2,
+    };
+    let bind = BindPose {
+        scale: [1.0, 1.0, 1.0],
+        ..BindPose::default()
+    };
+    // (t, k) — scale is k on every axis (base.scale = 1).
+    let cases = [
+        (0.0_f64, 1.000000000000000), // 1 + sin(0)*0.2
+        (0.5235987755982988, 1.2),    // t=π/6: sin(π/2)=1 → 1.2 (peak boundary)
+        (1.0, 1.028224001611973),     // 1 + sin(3)*0.2
+        (2.0, 0.944116900360215),     // 1 + sin(6)*0.2
+        (5.5, 0.857642931526175),
+    ];
+    let mut worst = 0.0f64;
+    for (t, k) in cases {
+        let s = b.eval(t, bind);
+        for a in 0..3 {
+            worst = worst.max((s.scale[a] - k).abs());
+            close(s.scale[a], k, &format!("pulse scale axis {a} t={t}"));
+        }
+        // REFERENCE FINDING: pulse drives SCALE (a float), never emissive.
+        assert!(
+            s.emissive.is_none(),
+            "pulse must not write emissive (reference drives scale)"
+        );
+    }
+    eprintln!("ORDEAL pulse: 5 samples vs 1+sin(t·s)·A (incl peak t=π/6), worst err={worst:.3e}");
+}
+
+// --- ORDEAL 11: flicker parity — intensity = baseI*(1+noise·A) -------------
+#[test]
+fn ordeal_flicker_formula_parity() {
+    let b = Decorative::Flicker { amount: 0.3 };
+    let bind = BindPose {
+        intensity: 1.0,
+        ..BindPose::default()
+    };
+    // noise = sin(t*31)*0.5 + sin(t*47+1.3)*0.5 ; intensity = 1*(1+noise*0.3)
+    let cases = [
+        (0.0_f64, 1.144533727812579), // 1 + (sin0*.5 + sin(1.3)*.5)*0.3
+        (0.1, 0.964324774635155),
+        (0.5, 0.981974853374961),
+        (1.0, 0.800926758442087),
+        (3.33, 1.164309301247115),
+    ];
+    let mut worst = 0.0f64;
+    for (t, want) in cases {
+        let s = b.eval(t, bind);
+        worst = worst.max((s.intensity - want).abs());
+        close(s.intensity, want, &format!("flicker intensity t={t}"));
+        // REFERENCE FINDING: flicker drives LIGHT INTENSITY (a float), never emissive.
+        assert!(
+            s.emissive.is_none(),
+            "flicker must not write emissive (reference drives intensity)"
+        );
+    }
+    eprintln!(
+        "ORDEAL flicker: 5 samples vs 1+noise·A (two incommensurate sines), worst err={worst:.3e}"
+    );
+}
+
+// --- ORDEAL 12: determinism — same t → byte-identical ops across runs ------
+#[test]
+fn ordeal_decorative_determinism_byte_identical() {
+    let six: Vec<(&str, Decorative)> = vec![
+        ("spinner", Decorative::Spin { speed: 2.0 }),
+        (
+            "bobber",
+            Decorative::Bob {
+                speed: 2.0,
+                phase: 0.5,
+                amplitude: 1.5,
+            },
+        ),
+        (
+            "orbiter",
+            Decorative::Orbit {
+                center: [1.0, 2.0, -3.0],
+                radius: 8.0,
+                speed: 0.5,
+                phase: 0.2,
+                height: 4.0,
+            },
+        ),
+        (
+            "walker",
+            Decorative::Path {
+                points: vec![
+                    vec![0.0, 0.0, 0.0, 1.0],
+                    vec![10.0, 0.0, 0.0],
+                    vec![10.0, 0.0, 8.0, 0.5],
+                    vec![0.0, 0.0, 8.0],
+                ],
+                speed: 4.0,
+                start: 0.0,
+                phase: 0.0,
+                loop_: true,
+            },
+        ),
+        (
+            "pulser",
+            Decorative::Pulse {
+                speed: 3.0,
+                amount: 0.2,
+            },
+        ),
+        ("flame", Decorative::Flicker { amount: 0.25 }),
+    ];
+    let bind = BindPose::default();
+    let run = || {
+        let mut out = Vec::new();
+        for k in 0..500u64 {
+            let t = k as f64 * 0.02;
+            for (id, b) in &six {
+                let ops = b.ops(id, t, bind);
+                out.extend_from_slice(serde_json::to_vec(&ops).unwrap().as_slice());
+                out.push(b'\n');
+            }
+        }
+        out
+    };
+    let a = run();
+    let c = run();
+    assert_eq!(a.len(), c.len(), "op-stream length");
+    assert_eq!(a, c, "decorative op streams must be byte-identical");
+    eprintln!(
+        "ORDEAL decorative determinism: 6 kinds × 500 t, {} bytes, byte-identical",
+        a.len()
+    );
+}
+
+// --- ORDEAL 13: EMISSIVE = COLOR STRING law (never bool/float) -------------
+#[test]
+fn ordeal_emissive_is_always_a_color_string() {
+    // The six never write emissive (pulse→scale, flicker→intensity), so the
+    // law holds vacuously: to_ops must NEVER emit an emissive/material op with
+    // a non-string value. We scan every op of every kind across many t and
+    // assert any material.emissive present is a valid color string.
+    let six: Vec<Decorative> = vec![
+        Decorative::Spin { speed: 1.5 },
+        Decorative::Bob {
+            speed: 1.0,
+            phase: 0.0,
+            amplitude: 0.5,
+        },
+        Decorative::Orbit {
+            center: [0.0, 0.0, 0.0],
+            radius: 10.0,
+            speed: 0.3,
+            phase: 0.0,
+            height: 0.0,
+        },
+        Decorative::Path {
+            points: vec![vec![0.0, 0.0, 0.0], vec![5.0, 0.0, 5.0]],
+            speed: 2.0,
+            start: 0.0,
+            phase: 0.0,
+            loop_: false,
+        },
+        Decorative::Pulse {
+            speed: 2.0,
+            amount: 0.08,
+        },
+        Decorative::Flicker { amount: 0.25 },
+    ];
+    let bind = BindPose::default();
+    let mut emissive_ops = 0usize;
+    for k in 0..300u64 {
+        let t = k as f64 * 0.03;
+        for b in &six {
+            let s = b.eval(t, bind);
+            // Sample-level: emissive is None for all six.
+            assert!(s.emissive.is_none(), "no decorative kind may emit emissive");
+            for op in s.to_ops("e") {
+                let crystal::Op::Set(set) = op else {
+                    continue;
+                };
+                if set.component == "material" {
+                    if let Some(em) = set.value.get("emissive") {
+                        emissive_ops += 1;
+                        assert!(
+                            is_color_string(em),
+                            "emissive must be a color string, got {em}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+    // Sanity of the guard itself: bools/floats are rejected, colors accepted.
+    assert!(!is_color_string(&json!(true)));
+    assert!(!is_color_string(&json!(0.5)));
+    assert!(is_color_string(&json!("#ffc46b")));
+    assert!(is_color_string(&json!("red")));
+    eprintln!(
+        "ORDEAL emissive-law: 6 kinds × 300 t, {emissive_ops} emissive ops emitted (0 expected: \
+         pulse→scale, flicker→intensity); guard rejects bool/float, accepts #hex/named"
+    );
 }

@@ -263,6 +263,36 @@ impl Integrator {
         }
     }
 
+    /// Re-upload the acceleration structure after the living layer re-splices the
+    /// dynamic partition (Rite IV dynamics). Recreates the node/tri storage
+    /// buffers (their sizes track the moving geometry) and updates the counts;
+    /// the caller must then rebuild any bind groups that reference them (they
+    /// bind these buffers) and reset accumulation (moved geometry invalidates it).
+    pub fn update_bvh(&mut self, device: &wgpu::Device, bvh: &Bvh) {
+        let node_bytes = bytemuck::cast_slice(&bvh.nodes);
+        let tri_bytes = bytemuck::cast_slice(&bvh.tris);
+        self.node_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("bvh nodes"),
+            contents: if node_bytes.is_empty() {
+                &[0u8; 32]
+            } else {
+                node_bytes
+            },
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        self.tri_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("bvh triangles"),
+            contents: if tri_bytes.is_empty() {
+                &[0u8; 80]
+            } else {
+                tri_bytes
+            },
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        self.node_count = bvh.nodes.len() as u32;
+        self.tri_count = bvh.tris.len() as u32;
+    }
+
     /// Allocate a fresh accumulation buffer for a `width×height` frame, zeroed.
     pub fn make_accum(&self, device: &wgpu::Device, width: u32, height: u32) -> wgpu::Buffer {
         let cells = (width as u64) * (height as u64);

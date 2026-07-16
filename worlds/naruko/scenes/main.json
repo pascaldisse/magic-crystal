@@ -53,8 +53,14 @@
     "mesh": { "parts": [
       { "shape": "cylinder", "radius": 4.5, "height": 34, "position": [0, 17, 0], "color": "#2e2440" },
       { "shape": "cylinder", "radius": 5.5, "height": 2, "position": [0, 35, 0], "color": "#1c1426" },
-      { "shape": "sphere", "radius": 2.6, "position": [0, 37.5, 0], "color": "#f3e9ff", "emissive": "#f3e9ff" },
       { "shape": "cone", "radius": 4, "height": 5, "position": [0, 41.5, 0], "color": "#1c1426" }
+    ] }
+  },
+  "lighthouse_beacon": {
+    "transform": { "position": [0, 56.5, -120] },
+    "behavior": { "type": "pulse", "speed": 1.4, "amount": 0.12 },
+    "mesh": { "parts": [
+      { "shape": "sphere", "radius": 2.6, "position": [0, 0, 0], "color": "#f3e9ff", "emissive": "#f3e9ff" }
     ] }
   },
   "naruko_pier": {
@@ -115,6 +121,7 @@
   },
   "naruko_lantern": {
     "transform": { "position": [-7.5, 0, 20] },
+    "behavior": { "type": "bob", "speed": 0.8, "amplitude": 0.12, "phase": 0 },
     "mesh": { "parts": [
       { "shape": "cylinder", "radius": 0.08, "height": 3.2, "position": [0, 1.6, 0], "color": "#3a2a1e" },
       { "shape": "sphere", "radius": 0.55, "position": [0, 3.5, 0], "color": "#ff9db0", "emissive": "#ff9db0" }

@@ -12,6 +12,7 @@ tauri-build = "2.6.3"
 bytemuck = { version = "1.24.0", features = ["derive"] }
 crystal = { path = "../../crates/crystal" }
 glam = "0.30.9"
+kami = { path = "../kami" }
 png = "0.17.16"
 pollster = "0.4.0"
 raw-window-handle = "0.6.2"
