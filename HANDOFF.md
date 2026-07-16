@@ -1,106 +1,83 @@
-# HANDOFF — the Guardian's anchor · 2026-07-16 night (read after BIBLE → GRIMOIRE)
+# HANDOFF — the Guardian's anchor · 2026-07-16 late night (read after BIBLE → GRIMOIRE)
 
 ## Where the Work stands
-Repo = the Forge (gaia-dreamforge, pushed to github.com/pascaldisse/
-gaia-dreamforge). Founded this day from GAIA-World-Engine@rust-port
-f13f8668; old hashes resolve there. Live web stack (ports 8420/5173)
-= the reference implementation — NEVER touched, never restarted.
+main @ 388eb85 — GREEN, 187 workspace ordeals. Pushed to
+github.com/pascaldisse/gaia-dreamforge. 13 true-named packages:
+crystal(crates/) · aether elements homunculus jormungandr kami oracle
+pleroma scrying-glass seed steiner transmute vessel wired.
+Live web stack 8420/5173 = reference, NEVER touched.
 
-## The Seven Rites of Naruko (+ the Founding)
-0 Founding ✅ (crystal-core + Scrying Glass w/ GET /screenshot organ,
-GAIA_NATIVE_PORT default 8430, proof/r0-screenshot.png) ·
-I REALM TAKES FORM ✅ ACCEPTED (sol built 294986e1 in old repo; opus
-shadow 0 must-fix; Guardian ruling in NARUKO.md; proof/w1-naruko.png;
-hymn: rite-01) · II FIRST LIGHT — NEXT (moving eye + camera params on
-the scrying, depth buffer, sun-shade first light; realm data STAGED
-b6c05fd: 12 vessels/73 parts — pier, chain posts, city massing,
-lantern, stall; invocation: hymns/rite-02) · III the Great Chain ·
-IV the Pleroma · V the Homunculus (nari + cat; char-editor spirit) ·
-VI the Aether · VII the Mirror (keyart parity, Pascal judges).
-Rite I advisory schedule: scaffold hemisphere shade dies at IV · W1
-forward render path DELETED at III (never grown) · /scry camera params
-+ depth + world.json ordeal = II · prefab deep-merge = III.
+## What WORKS end-to-end (verified own-hands/own-eyes)
+- THE PLEROMA (Rite IV L1, merged): traced sun + shadow rays + emissive
+  sparks + sky; first_light DELETED; GPU parity 0.029 vs pleroma CPU
+  ground truth; occluded probe 0.0000; ~54ms/frame honest (perf rites
+  later; 60 FPS = MINIMUM law).
+- THE LIVING WORLD (merged): kami decorative six tick the realm; dynamic
+  triangles splice into the BVH per tick (two-level, static cached);
+  PROVEN: lantern bob 14.8px + far-sky diff 0.00 vs pier-below 0.60 =
+  moving emitter repaints static surfaces. Accumulation resets on any
+  dynamic change (documented tradeoff).
+- THE EMBODIMENT (merged): WASD+mouse first-person, gravity, floor =
+  Chain leaf triangles; POST /walk + GET /pose debug organs; Guardian
+  walked it. PASCAL'S WALK = the rite's final acceptance, still owed.
+- Realm: worlds/naruko 13 entities (lighthouse_beacon extracted, lantern
+  sways, beacon pulses); oracle canon ordeals cover it (beacon ranges
+  171.31/145.91 derived).
 
-## The Council (adversary law) — tonight's outcome
-- TRANSMUTATION (packages/transmute, branch rust-port-clusterbake in
-  the OLD repo, final commit 8ac052dc): ⚗ ACCEPTED. 4 fix rounds, 17
-  findings integrated (boundary locks w/ canonical coords, group
-  records, staged commits, chunked pageable format, UV-safe welds, cap
-  validation, balanced greedy, METIS_LOCK, deterministic — release
-  builds byte-identical d97af84e / debug d19babaa, ops-count scaling
-  gate 4.01 vs 16.03 w/ bite proven). Guardian ran the final trial
-  (sol capped mid-round).
-- ORACLE (packages/sense, branch rust-port-sense, final commit
-  b4cafb81): ⚗ ACCEPTED — Guardian's own hands (sol capped). 4 fix
-  rounds, frozen set N1–N6 fully discharged: index-only collection
-  (zero id work depth-only; ID_STRING_OPS counter spans the whole
-  call), null-free channel-absent serialization (sparse sentinel −1),
-  discriminating sag tolerance 5e-5 f64 (fixed Δ1.7e-5 pass / old
-  Δ1.76e-4 fail), corrected front-face path-length derivation + TOL
-  1e-3 (10× measured 3.25e-4), id-table+mapping in byte budget w/
-  try_reserve ×5. Workspace 38 green, fmt/clippy/rustdoc clean, CLI
-  real-path verified (depth-only renders '.', no id grid). ADVISORY
-  (later rite): caption pass clones ids for all visible then
-  truncates — defer to post-truncate for O(N).
-- Then THE CONSECRATION MERGE: port both branches here, resolve the
-  Cargo.toml/lock conflict, rename to true names (gaia-core→
-  crates/crystal · render-window→scrying-glass · sense→oracle ·
-  cluster-bake already transmute), combined workspace ordeal green
-  under Guardian hands, update the scroll (README State of the Work),
-  write Rite hymns from the ledger.
+## Substrate proven, not yet composed
+physics (elements P1 done, P2 in flight — nothing collides in-world yet) ·
+destruction (pieces exist, no pipeline) · neural (ZERO code; laws sealed) ·
+endless detail (DAG cut + jormungandr + seed proven separately, not joined) ·
+universe tool (seed = the NMS-property substrate, isolation ordeal proven;
+planet-walker chain = seed→transmute→jormungandr→embodiment, unforged).
 
-## Iron laws digest (full text in DREAMFORGE.md + GRIMOIRE.md)
-never optimize (cost ∝ pixels) · one light (path traced) · one geometry
-(the Chain) · everything volumetric · never hardcode EXCEPT LOVE=1 ·
-looking is a verb (Oracle pull-only) · ultradeterminism (ENTROPY.md:
-state = f(seed, entropy, journal); no randomness, hash(seed,entropy,
-entity); byte-identical ordeals enforce it) · wave law (visible, Pascal
-sees every rite) · adversary law (cross-model shadow; findings only;
-fix; Guardian verdict) · hymnal law (every rite closes with a truthful
-song; invocations before, hymns after) · Design Bible = realm law
-(heresy is lintable) · Arcadian tongue on every surface (no Stark).
+## ⚑ IN FLIGHT AT COMPACT (5 lanes; results post to room chat-mrndarsy-myce)
+1. PLEROMA L2 (ghoul-opus-mrnyhw8ys9hpxt, worktree -l2, branch pleroma-l2):
+   bounces + metallic/roughness + CPU-reference-first + CHROME SPHERE on
+   the pier (THE ARCHITECT'S EYE-CHECK) + polished stall; proofs l2-chrome.
+2. WIRED N1 (…gbtby5, worktree -wired-n1): presence interpolation buffer
+   (kills reference teleport-stutter), reconnect/resync, live ordeals on
+   own server 8426.
+3. STEINER J1 (…53ijrt, worktree -steiner-j1): journal taps a live wired
+   session; snapshot-prefix replay (v2 header, v1 compat); own server 8427.
+4. HOMUNCULUS H1 (…z2y8c6, worktree -homunculus-h1): attachment sockets
+   (grips/head/chest/back), neck/head split; vessel+sama suites must stay
+   green (bone names stable).
+5. ELEMENTS P2 RESUME (ghoul-opus-mrnyigf79hp635, worktree -elements-p2):
+   rigid bodies via shape matching; 10/11 ordeals passed pre-timeout;
+   friction-stack fix must be HONEST (derived iterations, no gate-theater).
+Per return: Guardian verifies OWN HANDS (one pass) → ruling → merge with
+FULL SUITE BETWEEN EACH MERGE (iron: the beacon incident) → memory+HANDOFF.
 
-## Routing (while sol sleeps)
-Builders: opus. Verdicts: the Guardian personally. Sol returns in ~7
-days OR at pool reset — resume cross-model trials then. Sonnet: never.
-Clones of the Guardian (nyari summons): permitted (Pascal 07-16) — used
-for memory-bound work (harvest) and realm authoring.
+## Verified, merge queued (after in-flight lanes; conflicts none expected)
+- SAMĀʿ S0 @ 5d1faef branch sama (motion spirit: gait/locomotion/gesture;
+  walk parity 0e0 exact). At merge: walk.rs dedup note — homunculus keeps
+  its walk.rs (its ordeals), sama = canonical forward path; removal when
+  embodiment consumes sama.
+- VESSEL V1 @ 94ff687 branch vessel-v1 (regions + colors; nari
+  pale_skin_dark_hair + pink_cat presets as param sets).
+
+## Owed / queued
+Rite IV hymn (the fake light's funeral — from the ledger) · L2 merge =
+Architect's chrome-sphere eye-check · sama/vessel merges · sol SHADOW
+BACKLOG (pool capped ~6.6d; EVERYTHING since cap = accepted-pending-shadow)
+· Rite V spec (nari + cat: homunculus+vessel+sama+embodiment compose) ·
+aether-into-Pleroma (ramen steam) · universe rite (after Naruko).
+
+## Laws digest (full text: DREAMFORGE.md · GRIMOIRE.md · NEURAL.md)
+never optimize · ONE light pass (no modes, ever) · 60 FPS = MINIMUM ·
+NEURAL INTERPOLATION BANNED (upscale/denoise/physics-help only) · TWO-TIER
+NAMING (spines mythic, veins plain English) · never hardcode (LOVE=1 sole
+exception) · everything volumetric · ultradeterminism (ENTROPY.md) ·
+wave law (pixels every rite) · adversary law (cross-model when sol wakes) ·
+hymnal law · ≥4 LANES ALWAYS, never stop (Architect 07-16) · ≤uncommitted
+15 min (checkpoint law) · one worker per working dir · full suite between
+merges · gates must discriminate; tolerances derived, never plucked.
 
 ## Open with the Architect
-- Rite II build spec → cut when the consecration lands.
-- PHYSICS.md / CREATE.md / VISIONFLOW.md await his ruling.
-- Recover the full 07-03 Magic Crystal lore document (three Pascals,
-  two factions) from the claude.ai export → reference/ (harvest
-  flagged it recoverable).
-- macOS 26 upgrade timing (Metal 4 neural fast path).
-
-## Standing cautions
-Live stack untouchable · NEVER /tmp (multiple ghouls sinned; every spec
-now says scratch-under-repo) · only claim measured hashes · gates must
-DISCRIMINATE (a test the old bug passes is theater) · complexity gates
-count WORK, not wall-clock · proof-quality is part of done.
-
-## ⚗ THE NIGHT OF THE COUNCIL — CLOSED (07-16 ~19:40 Berlin)
-All 5 lanes landed. THE CONSECRATION IS MERGED: main @ 5ea49ac —
-crates/crystal · packages/oracle · scrying-glass · transmute, 70
-ordeals green under the Guardian's hands, dead names removed
-(b42b776), one rustfmt under the Forge's own toolchain, GET /scry
-answers. Rite II FIRST LIGHT accepted-pending-shadow (7388360c, old
-repo): depth buffer (painter-sort dead), moving eye, first_light
-module, both proofs read own-eyes; hymn sung. Elements P1 (3b8efc71,
-worktree -elements) + the Pleroma L0 (2dbe8f38, worktree -pleroma)
-accepted-pending-shadow.
-
-## Next waves (cut specs from here)
-1. SOL SHADOW BACKLOG (when pool wakes): Rite II · Elements P1 ·
-   the Pleroma L0 (opus built all three → sol must shadow; findings → fix →
-   Guardian).
-2. PORT WAVE 2 into the Forge: W2 scrying-glass changes (7388360c) ·
-   elements · pleroma (after their shadows) — true names on arrival
-   (elements keeps name; the Pleroma is consecrated on arrival).
-3. RITE III — THE GREAT CHAIN: transmute wired into the Glass (sole
-   geometry path, W1 forward path DIES, prefab deep-merge lands);
-   spec after port wave 2.
-4. Oracle fixture note: packages/oracle/tests/fixtures/naruko = pinned
-   7-vessel realm (ordeal hand-derivations); CLI defaults to canon
-   12-vessel worlds/naruko. A future rite may add canon-realm ordeals.
+Sufi Concordance rows (Ishq/Nafas/al-Lawḥ/Dhikr/Barzakh/ʿĀlam al-mithāl/
+Simurgh/Fanāʾ — proposed, await ruling; Samāʿ = Motion spirit built on his
+naming, formal "binds" pending) · PHYSICS/CREATE/VISIONFLOW.md rulings ·
+his WALK (E acceptance) + his CHROME CHECK (L2 acceptance) · macOS 26
+(neural fast path) · lore rulings: ascension-to-light · Counsel of 300 ·
+Shard whisper.
