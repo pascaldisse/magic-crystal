@@ -379,8 +379,14 @@ fn main() {
         Some(&medium_noshadow),
     );
     println!("[a2] ── MEDIUM MARCH SPLIT (front, {w}x{h}) ──");
-    println!("[a2]   primary march ≈ {:.2} ms  (no-shadow {ms_noshadow:.2} − off {ms_off:.2})", ms_noshadow - ms_off);
-    println!("[a2]   shadow march  ≈ {:.2} ms  (full {ms_on:.2} − no-shadow {ms_noshadow:.2})", ms_on - ms_noshadow);
+    println!(
+        "[a2]   primary march ≈ {:.2} ms  (no-shadow {ms_noshadow:.2} − off {ms_off:.2})",
+        ms_noshadow - ms_off
+    );
+    println!(
+        "[a2]   shadow march  ≈ {:.2} ms  (full {ms_on:.2} − no-shadow {ms_noshadow:.2})",
+        ms_on - ms_noshadow
+    );
 
     let proof = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../proof");
     write_png(&img_on, w, h, exposure, &proof.join("a2-steam.png"));
