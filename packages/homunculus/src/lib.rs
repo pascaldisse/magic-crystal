@@ -5,6 +5,11 @@
 //! parameters. One parametric generator spans the whole morphological range
 //! from a standing human to a walking cat.
 //!
+//! The body substrate proper is the skeleton, skin, sockets, and pose FK;
+//! cyclic locomotion (the former walk-cycle generator) is now the canonical
+//! forward path of the `sama` motion spirit (`sama::gait`), built over this
+//! [`Pose`] substrate.
+//!
 //! Four layers, each its own module:
 //! - [`skeleton`] — hierarchical [`Bone`]s and the parametric [`BodyParams`]
 //!   generator ([`Skeleton::from_params`], [`Skeleton::humanoid`],
@@ -16,21 +21,17 @@
 //!   offset (what coats/brooches/held props mount to).
 //! - [`pose`] — joint-local rotations resolved to world transforms by forward
 //!   kinematics ([`Pose`], [`Pose::forward_kinematics`], [`Pose::blend`]).
-//! - [`walk`] — a deterministic, phase-driven procedural walk-cycle generator
-//!   ([`walk::WalkParams`], [`walk::walk_pose`]) — no keyframe assets.
 //!
-//! Determinism is a law here (see `ENTROPY.md`): the walk generator is a pure
-//! function of `(params, tick)` and produces a byte-identical pose stream on
-//! every run.
+//! Determinism is a law here (see `ENTROPY.md`): every generator is a pure
+//! function of its parameters and produces a byte-identical result on every
+//! run.
 
 pub mod pose;
 pub mod skeleton;
 pub mod skin;
 pub mod socket;
-pub mod walk;
 
 pub use pose::{Pose, Transform};
 pub use skeleton::{BodyParams, Bone, Skeleton};
 pub use skin::{compute_weights, BoneCapsule, SkinWeights, VertexWeights};
 pub use socket::{Socket, SocketSet};
-pub use walk::{walk_pose, walk_pose_stream, WalkParams};

@@ -1,10 +1,7 @@
 //! The H0 ordeals. Each test is one trial from the summons.
 
 use glam::{Affine3A, Quat, Vec3};
-use homunculus::{
-    skin::bind_weights, walk_pose, walk_pose_stream, BodyParams, Pose, Skeleton, SocketSet,
-    WalkParams,
-};
+use homunculus::{skin::bind_weights, BodyParams, Pose, Skeleton, SocketSet};
 
 /// Directly fold local bind transforms into world space, independent of the FK
 /// pose path — the reference the roundtrip is checked against.
@@ -170,39 +167,11 @@ fn ordeal_generator_counts_and_lengths() {
 }
 
 // ---------------------------------------------------------------------------
-// Ordeal 4 — walk determinism: same params/seed -> byte-identical stream.
+// Ordeal 4 — the walk-cycle determinism ordeal moved with its generator: the
+// cyclic-locomotion path now lives in `sama::gait` (canonical forward path),
+// and its byte-identity / motion / seed guarantees are proven by
+// `sama`'s `ordeal_gait_walk_determinism` and `ordeal_walk_parity_with_canon`.
 // ---------------------------------------------------------------------------
-#[test]
-fn ordeal_walk_determinism() {
-    let skel = Skeleton::humanoid();
-    let params = WalkParams::default();
-
-    let a = walk_pose_stream(&skel, &params, 128);
-    let b = walk_pose_stream(&skel, &params, 128);
-
-    let bytes_a: Vec<u8> = a.iter().flat_map(|p| p.to_le_bytes()).collect();
-    let bytes_b: Vec<u8> = b.iter().flat_map(|p| p.to_le_bytes()).collect();
-    assert_eq!(bytes_a, bytes_b, "walk stream not byte-identical");
-
-    // Tick 100 specifically.
-    let t100_x = walk_pose(&skel, &params, 100).to_le_bytes();
-    let t100_y = walk_pose(&skel, &params, 100).to_le_bytes();
-    assert_eq!(t100_x, t100_y, "tick 100 not byte-identical");
-
-    // The gait is actually moving (not a frozen bind pose) at tick 100.
-    let bind = Pose::bind(&skel).to_le_bytes();
-    assert_ne!(t100_x, bind, "walk pose equals bind — no motion");
-
-    // Seed changes the stream (seed is honored).
-    let seeded = WalkParams { seed: 42, ..params };
-    let t100_seeded = walk_pose(&skel, &seeded, 100).to_le_bytes();
-    println!(
-        "[walk] stream bytes={} tick100 deterministic=true seed-sensitive={}",
-        bytes_a.len(),
-        t100_seeded != t100_x
-    );
-    assert_ne!(t100_seeded, t100_x, "seed had no effect");
-}
 
 // ---------------------------------------------------------------------------
 // Ordeal 5 — morphology continuity: human -> cat stays valid at 10 samples.
