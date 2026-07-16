@@ -1,5 +1,11 @@
 use crystal::{Core, GaiaPackage, PackageManifest};
 
+pub mod bvh;
+pub mod input;
+pub mod integrator;
+pub mod player;
+pub mod scene;
+
 pub const PACKAGE_NAME: &str = "scrying-glass";
 pub const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
 

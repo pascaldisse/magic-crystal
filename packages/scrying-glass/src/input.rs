@@ -1,9 +1,9 @@
 //! Window input for the Embodiment (Rite E0): keyboard + mouse-look that drive
-//! the [`Player`](crate::player::Player) in the native Scrying Glass window.
+//! the [`Player`] in the native Scrying Glass window.
 //!
 //! macOS-only, matching this package's existing native click monitor: a single
 //! `NSEvent` local monitor observes key up/down, modifier flags (Shift), and
-//! relative mouse motion, translating them into [`Key`](crate::player::Key)
+//! relative mouse motion, translating them into [`Key`]
 //! intents and look deltas on the shared player. Click captures the pointer
 //! (cursor hidden + disassociated so mouse-look never hits a screen edge); Esc
 //! releases it. Speeds and sensitivity live in

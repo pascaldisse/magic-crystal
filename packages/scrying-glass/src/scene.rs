@@ -11,10 +11,6 @@ use transmutation::{
     transmute_default,
 };
 
-pub use first_light::FirstLight;
-
-pub const WORLD_SHADER: &str = include_str!("world.wgsl");
-
 #[derive(Clone, Debug)]
 pub struct SceneParameters {
     pub fov_y_degrees: f32,
@@ -32,8 +28,12 @@ pub struct SceneParameters {
     /// shared LOD sphere. Smaller = finer detail held longer. A PARAM (never
     /// hardcode): env `GAIA_NATIVE_CLUSTER_ERROR`.
     pub cluster_error_threshold: f32,
-    /// First Light defaults, overridden per-scene by the `environment` component.
-    pub first_light: first_light::FirstLightDefaults,
+    /// Sun + sky-ambient defaults, overridden per-scene by the `environment`
+    /// component. These feed the TRACED integrator (Rite IV) — no fake shading.
+    pub sun: SunDefaults,
+    /// Emissive radiance = material colour × this intensity (a dial; env
+    /// `GAIA_NATIVE_EMISSIVE_INTENSITY`). Lanterns/windows glow by this much.
+    pub emission_intensity: f32,
 }
 
 /// A camera pose. `yaw` turns around +Y, `pitch` is negative looking down.
@@ -57,20 +57,108 @@ impl Camera {
             -self.yaw.cos() * cos_pitch,
         )
     }
+
+    /// Camera-space basis for primary-ray generation (the traced view). Returns
+    /// (right, up, forward) — a right-handed orthonormal frame, forward = the
+    /// look direction. `right`/`up` span the image plane; a pixel ray is
+    /// `forward + right·sx·tan(fov/2)·aspect + up·sy·tan(fov/2)` with
+    /// sx,sy ∈ [-1,1].
+    pub fn basis(&self) -> (Vec3, Vec3, Vec3) {
+        let forward = self.direction();
+        let right = forward.cross(Vec3::Y).normalize_or_zero();
+        let right = if right.length_squared() < 1e-8 {
+            Vec3::X
+        } else {
+            right
+        };
+        let up = right.cross(forward).normalize_or_zero();
+        (right, up, forward)
+    }
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Pod, Zeroable)]
-pub struct FrameUniform {
-    pub view_projection: [f32; 16],
-    pub sky_top: [f32; 4],
-    pub sky_horizon: [f32; 4],
-    /// First Light: direction TOWARD the sun (xyz), w unused.
-    pub sun_direction: [f32; 4],
-    /// First Light: sun colour (rgb) and intensity (w).
-    pub sun_color: [f32; 4],
-    /// First Light: ambient colour (rgb) and intensity (w).
-    pub ambient: [f32; 4],
+/// Resolved sun + sky-ambient for the traced integrator. The sun is a
+/// directional (delta) emitter reached by a shadow ray (next-event); the sky
+/// ambient scales the sky-gradient environment gathered by escaped rays.
+/// There is NO fake constant floor (GRIMOIRE: unlit is truly unlit).
+#[derive(Clone, Copy, Debug)]
+pub struct SunLight {
+    /// Unit direction TOWARD the sun.
+    pub direction: [f32; 3],
+    /// Sun colour (linear rgb).
+    pub color: [f32; 3],
+    /// Sun radiance scale.
+    pub intensity: f32,
+    /// Sky-ambient scale applied to the sky-gradient environment radiance.
+    pub ambient_intensity: f32,
+}
+
+/// Env-parameterised sun/sky defaults (never hardcoded at the shading site).
+#[derive(Clone, Debug)]
+pub struct SunDefaults {
+    pub sun_color: String,
+    pub sun_intensity: f32,
+    pub sun_position: [f32; 3],
+    pub ambient_intensity: f32,
+}
+
+impl SunLight {
+    /// Read `environment.sun` / `environment.hemisphere` when present, else
+    /// defaults. `sun.position` is a point the sun sits at → direction toward it.
+    pub fn derive(
+        environment: Option<&Environment>,
+        defaults: &SunDefaults,
+    ) -> Result<Self, String> {
+        let sun = environment.and_then(|environment| environment.sun.as_ref());
+        let hemisphere = environment.and_then(|environment| environment.hemisphere.as_ref());
+
+        let sun_color = sun_string(sun, "color").unwrap_or(&defaults.sun_color);
+        let color = linear_rgb(sun_color)?;
+        let intensity =
+            sun_number(sun, "intensity").unwrap_or(defaults.sun_intensity as f64) as f32;
+        let position = sun_vec3(sun, "position").unwrap_or(Vec3::from_array(defaults.sun_position));
+        let direction = position.normalize_or_zero();
+        let direction = if direction.length_squared() < 1e-8 {
+            Vec3::Y
+        } else {
+            direction
+        };
+        let ambient_intensity =
+            sun_number(hemisphere, "intensity").unwrap_or(defaults.ambient_intensity as f64) as f32;
+
+        Ok(Self {
+            direction: direction.to_array(),
+            color,
+            intensity,
+            ambient_intensity,
+        })
+    }
+}
+
+fn sun_string<'a>(value: Option<&'a serde_json::Value>, key: &str) -> Option<&'a str> {
+    value?.get(key)?.as_str()
+}
+fn sun_number(value: Option<&serde_json::Value>, key: &str) -> Option<f64> {
+    value?.get(key)?.as_f64()
+}
+fn sun_vec3(value: Option<&serde_json::Value>, key: &str) -> Option<Vec3> {
+    let array = value?.get(key)?.as_array()?;
+    let numbers: Vec<Number> = array
+        .iter()
+        .filter_map(|item| item.as_f64().and_then(Number::from_f64))
+        .collect();
+    vec3(Some(&numbers))
+}
+
+/// One world-space leaf triangle carrying its material — the EXACT geometry the
+/// traced integrator intersects (view-independent, error 0). `albedo` is the
+/// lambertian reflectance (ZERO for a pure emitter, matching Lumen); `emission`
+/// is the radiance the surface glows with (material colour × emission intensity,
+/// ZERO for a non-emitter).
+#[derive(Clone, Copy, Debug)]
+pub struct LeafTriangle {
+    pub positions: [[f32; 3]; 3],
+    pub albedo: [f32; 3],
+    pub emission: [f32; 3],
 }
 
 #[repr(C)]
@@ -128,13 +216,16 @@ pub struct RenderScene {
     pub camera: Camera,
     pub sky_top: [f32; 4],
     pub sky_horizon: [f32; 4],
-    pub first_light: FirstLight,
+    /// Traced sun + sky-ambient (Rite IV — replaces the deleted First Light).
+    pub sun: SunLight,
     /// Per-material transmuted Great Chains. THE geometry path: every draw is a
     /// view-dependent cluster cut over these (the W1/W2 forward per-primitive
     /// path is gone).
     pub chains: Vec<MaterialChain>,
     /// Great Chain cut threshold τ (screen-space error), carried from params.
     pub error_threshold: f32,
+    /// Emissive radiance scale (material colour × this = emission).
+    pub emission_intensity: f32,
 }
 
 /// Material batch key: quantised linear colour bits + emissive flag. Ordered so
@@ -191,7 +282,7 @@ impl RenderScene {
             .unwrap_or(&parameters.sky_horizon);
         let sky_top = linear_rgba(sky_top)?;
         let sky_horizon = linear_rgba(sky_horizon)?;
-        let first_light = FirstLight::derive(environment.as_ref(), &parameters.first_light)?;
+        let sun = SunLight::derive(environment.as_ref(), &parameters.sun)?;
         let default_color = linear_rgb(&parameters.mesh_color)?;
 
         let render_components = world
@@ -260,9 +351,10 @@ impl RenderScene {
             camera,
             sky_top,
             sky_horizon,
-            first_light,
+            sun,
             chains,
             error_threshold: parameters.cluster_error_threshold,
+            emission_intensity: parameters.emission_intensity,
         })
     }
 
@@ -305,123 +397,43 @@ impl RenderScene {
         out
     }
 
-    /// Project the world-space scene through an arbitrary camera pose (the moving eye).
-    pub fn frame_uniform(&self, width: u32, height: u32, camera: &Camera) -> FrameUniform {
-        let aspect = width as f32 / height.max(1) as f32;
-        // Camera-relative view: translate world into the eye frame in one look_to.
-        let view = Mat4::look_to_rh(camera.eye, camera.direction(), Vec3::Y);
-        let projection =
-            Mat4::perspective_rh(camera.fov_y_radians, aspect, camera.near, camera.far);
-        FrameUniform {
-            view_projection: (projection * view).to_cols_array(),
-            sky_top: self.sky_top,
-            sky_horizon: self.sky_horizon,
-            sun_direction: self.first_light.sun_direction(),
-            sun_color: self.first_light.sun_color(),
-            ambient: self.first_light.ambient(),
+    /// Every leaf triangle carrying its material, world-space — the EXACT
+    /// geometry the traced integrator's BVH is built over (view-independent,
+    /// error 0). Extends `leaf_positions` with per-triangle albedo/emission from
+    /// the material batch: a pure emitter gets albedo 0 + emission colour×scale
+    /// (matching Lumen), a non-emitter gets albedo colour + emission 0.
+    pub fn leaf_triangles(&self) -> Vec<LeafTriangle> {
+        let mut out = Vec::new();
+        for chain in &self.chains {
+            let emitter = chain.emissive > 0.5;
+            let albedo = if emitter { [0.0; 3] } else { chain.color };
+            let emission = if emitter {
+                [
+                    chain.color[0] * self.emission_intensity,
+                    chain.color[1] * self.emission_intensity,
+                    chain.color[2] * self.emission_intensity,
+                ]
+            } else {
+                [0.0; 3]
+            };
+            if let Some(leaf_ids) = chain.dag.levels.first() {
+                for &id in leaf_ids {
+                    let cluster = chain.dag.cluster(id);
+                    for triangle in cluster.indices.chunks_exact(3) {
+                        out.push(LeafTriangle {
+                            positions: [
+                                cluster.vertices[triangle[0] as usize].position,
+                                cluster.vertices[triangle[1] as usize].position,
+                                cluster.vertices[triangle[2] as usize].position,
+                            ],
+                            albedo,
+                            emission,
+                        });
+                    }
+                }
+            }
         }
-    }
-}
-
-/// First Light — the ONE deletable sun+ambient scaffold module.
-/// Dies at Rite IV (Lumen Naturae) when the path integrator takes over shading.
-pub mod first_light {
-    use super::{linear_rgb, vec3};
-    use crystal::Environment;
-    use glam::Vec3;
-    use serde_json::Value;
-
-    /// Env-parameterised defaults (never hardcoded at the shading site).
-    #[derive(Clone, Debug)]
-    pub struct FirstLightDefaults {
-        pub sun_color: String,
-        pub sun_intensity: f32,
-        pub sun_position: [f32; 3],
-        pub ambient_color: String,
-        pub ambient_intensity: f32,
-    }
-
-    /// Resolved directional sun + ambient, ready for the frame uniform.
-    #[derive(Clone, Copy, Debug)]
-    pub struct FirstLight {
-        sun_direction: Vec3,
-        sun_color: [f32; 3],
-        sun_intensity: f32,
-        ambient_color: [f32; 3],
-        ambient_intensity: f32,
-    }
-
-    impl FirstLight {
-        /// Read `environment.sun` / `environment.hemisphere` when present, else defaults.
-        pub fn derive(
-            environment: Option<&Environment>,
-            defaults: &FirstLightDefaults,
-        ) -> Result<Self, String> {
-            let sun = environment.and_then(|environment| environment.sun.as_ref());
-            let hemisphere = environment.and_then(|environment| environment.hemisphere.as_ref());
-
-            let sun_color = string_field(sun, "color").unwrap_or(&defaults.sun_color);
-            let sun_color = linear_rgb(sun_color)?;
-            let sun_intensity =
-                value_number(sun, "intensity").unwrap_or(defaults.sun_intensity as f64) as f32;
-            let sun_position =
-                value_vec3(sun, "position").unwrap_or(Vec3::from_array(defaults.sun_position));
-            let sun_direction = sun_position.normalize_or_zero();
-
-            let ambient_color = string_field(hemisphere, "sky").unwrap_or(&defaults.ambient_color);
-            let ambient_color = linear_rgb(ambient_color)?;
-            let ambient_intensity = value_number(hemisphere, "intensity")
-                .unwrap_or(defaults.ambient_intensity as f64)
-                as f32;
-
-            Ok(Self {
-                sun_direction,
-                sun_color,
-                sun_intensity,
-                ambient_color,
-                ambient_intensity,
-            })
-        }
-
-        pub fn sun_direction(&self) -> [f32; 4] {
-            [
-                self.sun_direction.x,
-                self.sun_direction.y,
-                self.sun_direction.z,
-                0.0,
-            ]
-        }
-        pub fn sun_color(&self) -> [f32; 4] {
-            [
-                self.sun_color[0],
-                self.sun_color[1],
-                self.sun_color[2],
-                self.sun_intensity,
-            ]
-        }
-        pub fn ambient(&self) -> [f32; 4] {
-            [
-                self.ambient_color[0],
-                self.ambient_color[1],
-                self.ambient_color[2],
-                self.ambient_intensity,
-            ]
-        }
-    }
-
-    fn string_field<'a>(value: Option<&'a Value>, key: &str) -> Option<&'a str> {
-        value?.get(key)?.as_str()
-    }
-    fn value_number(value: Option<&Value>, key: &str) -> Option<f64> {
-        value?.get(key)?.as_f64()
-    }
-    fn value_vec3(value: Option<&Value>, key: &str) -> Option<Vec3> {
-        let array = value?.get(key)?.as_array()?;
-        let numbers: Vec<serde_json::Number> = array
-            .iter()
-            .filter_map(|item| item.as_f64().and_then(serde_json::Number::from_f64))
-            .collect();
-        vec3(Some(&numbers))
+        out
     }
 }
 
@@ -872,13 +884,13 @@ mod tests {
             camera_yaw: 0.0,
             camera_pitch: 0.0,
             cluster_error_threshold: 1.0,
-            first_light: first_light::FirstLightDefaults {
+            sun: SunDefaults {
                 sun_color: "#ffe2b0".into(),
                 sun_intensity: 1.1,
                 sun_position: [60.0, 90.0, 30.0],
-                ambient_color: "#8fb3ff".into(),
                 ambient_intensity: 0.32,
             },
+            emission_intensity: 2.5,
         }
     }
 
@@ -940,7 +952,7 @@ mod tests {
     }
 
     #[test]
-    fn first_light_reads_environment_sun_over_defaults() {
+    fn sun_reads_environment_over_defaults() {
         let mut world = EcsWorld::default();
         let environment = buffer_component(&mut world, "environment");
         let env_entity = world
@@ -952,14 +964,32 @@ mod tests {
         world.bind_gaia_id("env", env_entity).unwrap();
 
         let scene = RenderScene::from_ecs(&world, &test_parameters()).unwrap();
-        let sun_color = scene.first_light.sun_color();
-        // #ff0000 → linear red 1.0, others 0.0; intensity carried in w.
-        assert!((sun_color[0] - 1.0).abs() < 1e-6);
-        assert!(sun_color[1] < 1e-6 && sun_color[2] < 1e-6);
-        assert!((sun_color[3] - 2.0).abs() < 1e-6);
+        // #ff0000 → linear red 1.0, others 0.0; intensity read from the env.
+        assert!((scene.sun.color[0] - 1.0).abs() < 1e-6);
+        assert!(scene.sun.color[1] < 1e-6 && scene.sun.color[2] < 1e-6);
+        assert!((scene.sun.intensity - 2.0).abs() < 1e-6);
         // Sun at +Y → direction toward sun is +Y.
-        let direction = scene.first_light.sun_direction();
-        assert!((direction[1] - 1.0).abs() < 1e-6);
+        assert!((scene.sun.direction[1] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn leaf_triangles_split_albedo_and_emission_by_material() {
+        let scene = naruko_scene();
+        let tris = scene.leaf_triangles();
+        assert!(!tris.is_empty(), "the realm has leaf geometry");
+        // Leaf triangle sum equals the summed leaf triangles of every chain
+        // (loss-free — the BVH sees the whole exact surface).
+        let leaf_tris: usize = scene.chains.iter().map(|c| c.dag.leaf_tri_sum()).sum();
+        assert_eq!(tris.len(), leaf_tris);
+        // Emitters carry emission and zero albedo; non-emitters the reverse.
+        let emitters = tris.iter().filter(|t| t.emission != [0.0; 3]).count();
+        let reflectors = tris.iter().filter(|t| t.albedo != [0.0; 3]).count();
+        assert!(emitters > 0, "lanterns/windows glow");
+        assert!(reflectors > 0, "piers/terra reflect");
+        for t in &tris {
+            let is_emitter = t.emission != [0.0; 3];
+            assert_eq!(is_emitter, t.albedo == [0.0; 3], "emitter xor reflector");
+        }
     }
 
     // ---- Rite III ordeals: the Great Chain is THE geometry path ----

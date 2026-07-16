@@ -3009,6 +3009,7 @@ dependencies = [
  "bytemuck",
  "crystal",
  "glam",
+ "lumen",
  "objc2-app-kit",
  "png 0.17.16",
  "pollster",
