@@ -24,8 +24,8 @@ struct Uniform {
   med_params: vec4<f32>,   // sigma_a, sigma_s, g (HG anisotropy), far cap
   med_march: vec4<f32>,    // march_steps, shadow_steps, shadow_dist, enabled
   med_dims: vec4<u32>,     // grid dims xyz, w unused
-  med_light: vec4<f32>,    // xyz unit dir TOWARD the medium's light, w = intensity
-  med_light_color: vec4<f32>, // rgb light colour (the steam's own warm source)
+  med_light: vec4<f32>,    // bound light: xyz = unit dir TOWARD it (directional) or world position (point); w = intensity
+  med_light_color: vec4<f32>, // rgb = light colour tint; w = kind (0 directional, 1 point)
 };
 
 struct Node {
@@ -174,63 +174,132 @@ fn hg_phase(cos_theta: f32) -> f32 {
   return (1.0 - g2) / (4.0 * PI * pow(denom, 1.5));
 }
 
+// The density grid's world AABB [origin, origin + dims*voxel_size]. Density is
+// EXACTLY zero outside it (grid_density early-outs), so any march sample beyond
+// this box contributes nothing — the basis for empty-space skipping.
+// Returns (t_enter, t_exit); t_enter > t_exit means the ray misses the box.
+fn medium_box_range(o: vec3<f32>, d: vec3<f32>) -> vec2<f32> {
+  let lo = u.med_origin.xyz;
+  let hi = lo + vec3<f32>(u.med_dims.xyz) * u.med_origin.w;
+  let inv = 1.0 / d;
+  let ta = (lo - o) * inv;
+  let tb = (hi - o) * inv;
+  let tmin = min(ta, tb);
+  let tmax = max(ta, tb);
+  let enter = max(max(tmin.x, tmin.y), tmin.z);
+  let exit = min(min(tmax.x, tmax.y), tmax.z);
+  return vec2<f32>(enter, exit);
+}
+
 // Optical depth along o+d*t for t in [t0,t1] (midpoint quadrature — matches
-// Aether optical_depth). d must be unit length.
+// Aether optical_depth). d must be unit length. EMPTY-SPACE SKIP: only the
+// step centers inside the density box are evaluated; every skipped sample has
+// density 0, so the sum is bit-identical to the full march (x + 0.0 == x).
 fn medium_optical_depth(o: vec3<f32>, d: vec3<f32>, t0: f32, t1: f32, steps: u32) -> f32 {
   let n = max(steps, 1u);
   let ds = (t1 - t0) / f32(n);
   let sigma_t = u.med_params.x + u.med_params.y;
+  let box_range = medium_box_range(o, d);
+  let a = max(t0, box_range.x);
+  let b = min(t1, box_range.y);
   var tau = 0.0;
-  for (var s = 0u; s < n; s = s + 1u) {
-    let t = t0 + (f32(s) + 0.5) * ds;
-    tau = tau + sigma_t * grid_density(o + d * t) * ds;
+  if (b > a) {
+    let s_lo = max(i32(ceil((a - t0) / ds - 0.5)), 0);
+    let s_hi = min(i32(floor((b - t0) / ds - 0.5)), i32(n) - 1);
+    var s = s_lo;
+    loop {
+      if (s > s_hi) { break; }
+      let t = t0 + (f32(s) + 0.5) * ds;
+      tau = tau + sigma_t * grid_density(o + d * t) * ds;
+      s = s + 1;
+    }
   }
   return tau;
 }
 
 // Single-scatter radiance toward the camera along the primary segment, from one
-// bounce off the directional sun (matches Aether single_scatter with phase on).
-// Returns the SCALAR scatter factor (the sun's colour tints it at the call site).
-fn medium_single_scatter(o: vec3<f32>, d: vec3<f32>, t0: f32, t1: f32) -> f32 {
+// bounce off the medium's BOUND scene light (A2): a directional sun/moon OR a
+// positional emitter glow with 1/dist² falloff (matches Aether single_scatter
+// + sample_light with phase on). Returns (scalar scatter factor, total optical
+// depth over [t0,t1]) — the light's colour tints the scatter at the call site;
+// the total optical depth is REUSED for the segment's transmittance (fused, so
+// the second march is gone). The scalar intensity (radiance, or intensity/dist²
+// for a point light) is folded in here, exactly as the CPU does.
+//
+// EMPTY-SPACE SKIP: only step centers inside the density box are evaluated;
+// every skipped sample has density 0, so both the accumulation and the returned
+// optical depth are bit-identical to the full march (x + 0.0 == x).
+fn medium_single_scatter(o: vec3<f32>, d: vec3<f32>, t0: f32, t1: f32) -> vec2<f32> {
   let steps = max(u32(u.med_march.x), 1u);
   let shadow_steps = max(u32(u.med_march.y), 1u);
-  let shadow_dist = u.med_march.z;
+  let shadow_dist_dir = u.med_march.z;
   let ds = (t1 - t0) / f32(steps);
   let sigma_t = u.med_params.x + u.med_params.y;
   let sigma_s = u.med_params.y;
-  let w_light = normalize(u.med_light.xyz);
-  let phase = hg_phase(dot(w_light, d));
+  let is_point = u.med_light_color.w > 0.5;
+  let intensity = u.med_light.w;
+  let box_range = medium_box_range(o, d);
+  let a = max(t0, box_range.x);
+  let b = min(t1, box_range.y);
   var tau_before = 0.0;
   var acc = 0.0;
-  for (var s = 0u; s < steps; s = s + 1u) {
-    let t = t0 + (f32(s) + 0.5) * ds;
-    let p = o + d * t;
-    let dens = grid_density(p);
-    let seg_tau = sigma_t * dens * ds;
-    let tc = exp(-(tau_before + 0.5 * seg_tau));
-    tau_before = tau_before + seg_tau;
-    if (dens > 0.0) {
-      let tl = exp(-medium_optical_depth(p, w_light, 0.0, shadow_dist, shadow_steps));
-      acc = acc + tc * sigma_s * dens * phase * tl * ds;
+  if (b > a) {
+    let s_lo = max(i32(ceil((a - t0) / ds - 0.5)), 0);
+    let s_hi = min(i32(floor((b - t0) / ds - 0.5)), i32(steps) - 1);
+    var s = s_lo;
+    loop {
+      if (s > s_hi) { break; }
+      let t = t0 + (f32(s) + 0.5) * ds;
+      let p = o + d * t;
+      let dens = grid_density(p);
+      let seg_tau = sigma_t * dens * ds;
+      let tc = exp(-(tau_before + 0.5 * seg_tau));
+      tau_before = tau_before + seg_tau;
+      if (dens > 0.0) {
+        // Direction toward the light, incident radiance, occlusion-march bound.
+        var w_light: vec3<f32>;
+        var li: f32;
+        var sdist: f32;
+        if (is_point) {
+          let diff = u.med_light.xyz - p;
+          let dist = length(diff);
+          w_light = diff / max(dist, 1e-6);
+          li = intensity / max(dist * dist, 1e-12);
+          sdist = dist;
+        } else {
+          w_light = normalize(u.med_light.xyz);
+          li = intensity;
+          sdist = shadow_dist_dir;
+        }
+        let phase = hg_phase(dot(w_light, d));
+        let tl = exp(-medium_optical_depth(p, w_light, 0.0, sdist, shadow_steps));
+        acc = acc + tc * sigma_s * dens * phase * tl * li * ds;
+      }
+      s = s + 1;
     }
   }
-  return acc;
+  return vec2<f32>(acc, tau_before);
 }
 
 // The primary-segment medium compose: xyz = in-scattered radiance toward the
 // camera, w = transmittance of what lies behind. L = xyz + w*L_surface.
-fn medium_primary(o: vec3<f32>, d: vec3<f32>) -> vec4<f32> {
+// `t_first` is the distance to the first surface along the ray (or `far` on a
+// sky escape) — passed in from the caller, which already traced this exact
+// primary ray for the surface pass, so the medium never re-traverses the BVH.
+fn medium_primary(o: vec3<f32>, d: vec3<f32>, t_first: f32) -> vec4<f32> {
   if (u.med_march.w < 0.5) { return vec4<f32>(0.0, 0.0, 0.0, 1.0); }
   let eps = u.misc.y;
   let far = u.med_params.w;
-  let hit = trace_closest(o, d, eps, INF);
-  let t_first = select(far, hit.t, hit.ok);
   let t1 = min(t_first, far);
   if (t1 <= eps) { return vec4<f32>(0.0, 0.0, 0.0, 1.0); }
-  let scatter = medium_single_scatter(o, d, eps, t1);
-  let tr = exp(-medium_optical_depth(o, d, eps, t1, u32(u.med_march.x)));
-  let light_radiance = u.med_light_color.rgb * u.med_light.w;
-  return vec4<f32>(light_radiance * scatter, tr);
+  // The scatter march also returns the total optical depth over [eps,t1] — the
+  // transmittance is exp(-that), so the separate transmittance march is gone
+  // (bit-identical, one 128-step march removed per pixel).
+  let res = medium_single_scatter(o, d, eps, t1);
+  let tr = exp(-res.y);
+  // The scalar intensity is already folded into `res.x` (per-sample for a
+  // point light's 1/dist² falloff); only the colour tint multiplies here.
+  return vec4<f32>(u.med_light_color.rgb * res.x, tr);
 }
 
 struct Hit {
@@ -337,7 +406,9 @@ fn tri_normal(i: u32, d: vec3<f32>) -> vec3<f32> {
   return select(n, -n, dot(n, d) > 0.0);
 }
 
-fn radiance(ray_o: vec3<f32>, ray_d: vec3<f32>, pixel: u32, sample: u32) -> vec3<f32> {
+// `first_hit` is the primary ray's closest hit, already traced by the caller
+// (shared with the medium compose) — the bounce-0 traversal is not repeated.
+fn radiance(ray_o: vec3<f32>, ray_d: vec3<f32>, pixel: u32, sample: u32, first_hit: Hit) -> vec3<f32> {
   var o = ray_o;
   var d = ray_d;
   var throughput = vec3<f32>(1.0, 1.0, 1.0);
@@ -346,8 +417,16 @@ fn radiance(ray_o: vec3<f32>, ray_d: vec3<f32>, pixel: u32, sample: u32) -> vec3
   let rr_start = u32(u.misc.z);
   let max_bounces = u.params.w;
   var bounce = 0u;
+  var pending_hit = first_hit;
+  var have_pending = true;
   loop {
-    let hit = trace_closest(o, d, eps, INF);
+    var hit: Hit;
+    if (have_pending) {
+      hit = pending_hit;
+      have_pending = false;
+    } else {
+      hit = trace_closest(o, d, eps, INF);
+    }
     if (!hit.ok) {
       // Escaped → environment. Primary miss shows the full sky (background);
       // indirect (bounced) misses gather the sky scaled by the ambient dial.
@@ -446,10 +525,14 @@ fn integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
     let sx = (2.0 * (f32(gid.x) + jx) * inv_w) - 1.0;
     let sy = 1.0 - (2.0 * (f32(gid.y) + jy) * inv_h);
     let dir = normalize(u.forward.xyz + u.right.xyz * sx + u.up.xyz * sy);
-    let surf = radiance(u.eye.xyz, dir, pixel, sample);
+    // Trace the primary ray ONCE; both the surface radiance (bounce 0) and the
+    // medium compose reuse this same first hit — no duplicate BVH traversal.
+    let prim = trace_closest(u.eye.xyz, dir, u.misc.y, INF);
+    let t_first = select(u.med_params.w, prim.t, prim.ok);
+    let surf = radiance(u.eye.xyz, dir, pixel, sample, prim);
     // The medium composes over the surface radiance in the SAME pass: it
     // attenuates what lies behind and adds its single-scattered light on top.
-    let med = medium_primary(u.eye.xyz, dir);
+    let med = medium_primary(u.eye.xyz, dir, t_first);
     frame_sum = frame_sum + med.xyz + med.w * surf;
   }
 

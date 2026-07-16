@@ -17,7 +17,7 @@ use glam::Vec3 as GVec3;
 
 use scrying_glass::bvh::{Bvh, BvhParams};
 use scrying_glass::integrator::{
-    IntegratorParams, MediumGpu, headless_device, resolve, trace_headless,
+    IntegratorParams, MediumGpu, MediumLightGpu, headless_device, resolve, trace_headless,
 };
 use scrying_glass::scene::{Camera, SunLight};
 
@@ -43,7 +43,7 @@ fn medium_gpu(
     march_steps: u32,
     shadow_steps: u32,
     shadow_dist: f32,
-    light_dir: [f32; 3],
+    light: MediumLightGpu,
     light_color: [f32; 3],
     light_intensity: f32,
     g_override: Option<f32>,
@@ -61,7 +61,7 @@ fn medium_gpu(
         march_steps,
         shadow_steps,
         shadow_dist,
-        light_dir,
+        light,
         light_color,
         light_intensity,
         density: grid.data().to_vec(),
@@ -137,7 +137,9 @@ fn medium_parity_gpu_matches_aether_reference() {
         march_steps,
         shadow_steps,
         shadow_dist,
-        sun_dir.to_array(),
+        MediumLightGpu::Directional {
+            to_light: sun_dir.to_array(),
+        },
         sun_rgb,
         sun_intensity,
         None,
@@ -167,7 +169,9 @@ fn medium_parity_gpu_matches_aether_reference() {
         march_steps,
         shadow_steps,
         shadow_dist,
-        sun_dir.to_array(),
+        MediumLightGpu::Directional {
+            to_light: sun_dir.to_array(),
+        },
         sun_rgb,
         sun_intensity,
         Some(-optics.g as f32),
@@ -275,5 +279,204 @@ fn medium_parity_gpu_matches_aether_reference() {
     assert!(
         mad_broken > tol * 3.0,
         "broken-phase medium scored {mad_broken}, too close to gate {tol} — gate does not discriminate"
+    );
+}
+
+// ── ORDEAL 2 · POINT-LIGHT PARITY (A2 true binding) ─────────────────────
+// The medium bound to a POSITIONAL emitter (the stall's lantern kind): the GPU
+// point-light march (1/dist² falloff + shadow ray toward the true source
+// distance) must match the CPU Aether `Light::Point` reference within a DERIVED
+// tolerance. DISCRIMINATING: MOVING the light to the OPPOSITE side (position
+// negated) is a gross transport error the gate rejects — proof the shader reads
+// the real position, not a fixed direction.
+#[test]
+fn point_light_parity_gpu_matches_aether_reference() {
+    let Some((device, queue)) = headless_device() else {
+        eprintln!("[POINT PARITY] no GPU adapter on this host — ordeal could not run");
+        return;
+    };
+
+    // Same smooth blob as ORDEAL 1 (jitter averages out → isolates transport).
+    let blob = SphereFalloff {
+        center: avec3(0.0, 0.0, -6.0),
+        radius: 2.5,
+        peak: 1.0,
+    };
+    let dims = [48usize, 48, 48];
+    let vsize = 0.15;
+    let origin = avec3(-3.6, -3.6, -9.6);
+    let grid = DensityGrid::rasterize(dims, vsize, origin, &blob);
+    let optics = HomogeneousMedium::new(0.25, 0.75, 0.6);
+
+    // A point emitter off to one side and above the blob — a lantern-like glow.
+    let light_pos = GVec3::new(3.0, 2.5, -4.0);
+    let light_rgb = [1.0f32, 0.62, 0.34];
+    // Radiant intensity large enough to register over the ~5 m throw.
+    let light_intensity = 40.0f32;
+
+    // The sky sun is irrelevant to the medium here but the surface pass needs a
+    // value; keep it black-contributing (no surfaces anyway).
+    let sun = SunLight {
+        direction: GVec3::new(0.0, 1.0, 0.0).to_array(),
+        color: [0.0, 0.0, 0.0],
+        intensity: 0.0,
+        ambient_intensity: 0.0,
+    };
+
+    let far = 40.0f32;
+    let march_steps = 192u32;
+    let shadow_steps = 48u32;
+    let shadow_dist = 8.0f32; // unused by the point path (true distance used)
+
+    let tris: Vec<scrying_glass::scene::LeafTriangle> = Vec::new();
+    let bvh = Bvh::build(&tris, &BvhParams::default());
+
+    let (w, h) = (48u32, 48u32);
+    let eye = [0.0f32, 0.0, 2.0];
+    let look = [0.0f32, 0.0, -6.0];
+    let fov = 60.0f32;
+    let camera = look_camera(eye, look, fov);
+
+    let frames = 32u32;
+    let params = IntegratorParams {
+        spp: 2,
+        max_bounces: 0,
+        rr_start: 8,
+        seed: 0x5eed,
+        eps: 1e-3,
+    };
+
+    let medium = medium_gpu(
+        &grid,
+        &optics,
+        far,
+        march_steps,
+        shadow_steps,
+        shadow_dist,
+        MediumLightGpu::Point {
+            position: light_pos.to_array(),
+        },
+        light_rgb,
+        light_intensity,
+        None,
+    );
+    let gpu = resolve(&trace_headless(
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &sun,
+        [0.0; 4],
+        [0.0; 4],
+        w,
+        h,
+        frames,
+        &params,
+        Some(&medium),
+    ));
+
+    // Discrimination leg: the light MOVED directly BEHIND the blob on the view
+    // axis (z=-9, past the blob from the camera at z=+2). The throw distance and
+    // the forward-scatter geometry flip grossly (back-lit vs side-lit) → the
+    // image must diverge from the correct-position CPU reference. Proof the
+    // shader reads the real world position, not a fixed direction.
+    let moved = medium_gpu(
+        &grid,
+        &optics,
+        far,
+        march_steps,
+        shadow_steps,
+        shadow_dist,
+        MediumLightGpu::Point {
+            position: [0.0, 0.0, -9.0],
+        },
+        light_rgb,
+        light_intensity,
+        None,
+    );
+    let gpu_moved = resolve(&trace_headless(
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &sun,
+        [0.0; 4],
+        [0.0; 4],
+        w,
+        h,
+        frames,
+        &params,
+        Some(&moved),
+    ));
+
+    // CPU reference: Aether single_scatter against the SAME Light::Point.
+    let (right, up, forward) = camera.basis();
+    let aspect = w as f32 / h as f32;
+    let half = (camera.fov_y_radians * 0.5).tan();
+    let right = right * (half * aspect);
+    let up = up * half;
+    let light = Light::Point {
+        position: avec3(light_pos.x as f64, light_pos.y as f64, light_pos.z as f64),
+        intensity: light_intensity as f64,
+    };
+    let eps = params.eps as f64;
+    let mut cpu = vec![GVec3::ZERO; (w * h) as usize];
+    for y in 0..h {
+        for x in 0..w {
+            let sx = (2.0 * (x as f32 + 0.5) / w as f32) - 1.0;
+            let sy = 1.0 - (2.0 * (y as f32 + 0.5) / h as f32);
+            let dir = (forward + right * sx + up * sy).normalize();
+            let o = avec3(eye[0] as f64, eye[1] as f64, eye[2] as f64);
+            let d = avec3(dir.x as f64, dir.y as f64, dir.z as f64);
+            let scatter = single_scatter(
+                &optics,
+                &grid,
+                o,
+                d,
+                eps,
+                far as f64,
+                march_steps as usize,
+                &light,
+                shadow_dist as f64,
+                shadow_steps as usize,
+            );
+            cpu[(y * w + x) as usize] = GVec3::new(
+                (light_rgb[0] as f64 * scatter) as f32,
+                (light_rgb[1] as f64 * scatter) as f32,
+                (light_rgb[2] as f64 * scatter) as f32,
+            );
+        }
+    }
+
+    let mad = |img: &[GVec3]| -> f64 {
+        let mut sum = 0.0f64;
+        for i in 0..(w * h) as usize {
+            let g = img[i];
+            let c = cpu[i];
+            sum += (g.x - c.x).abs() as f64 + (g.y - c.y).abs() as f64 + (g.z - c.z).abs() as f64;
+        }
+        sum / (w * h * 3) as f64
+    };
+    let mad_ok = mad(&gpu);
+    let mad_moved = mad(&gpu_moved);
+
+    // Derived tolerance: identical structure to ORDEAL 1 — f32-vs-f64
+    // accumulation over the primary + nested shadow march, plus the extra f32
+    // rounding of the per-sample 1/dist² and normalize. MEASURED floor over this
+    // scene is ~1.5e-5 (printed). Gate at 1.5e-4 — an order (~10×) above the
+    // measured floor, well BELOW the moved-light break: discriminates without
+    // being plucked.
+    let tol = 1.5e-4;
+    println!(
+        "[POINT PARITY] {} spp  gpu-vs-cpu mad={mad_ok:.6} (tol {tol})  moved-light mad={mad_moved:.6}",
+        frames * params.spp
+    );
+    assert!(
+        mad_ok < tol,
+        "GPU point-light parity: mad {mad_ok} exceeds derived tol {tol}"
+    );
+    assert!(
+        mad_moved > tol * 3.0,
+        "moved-light medium scored {mad_moved}, too close to gate {tol} — gate does not discriminate"
     );
 }

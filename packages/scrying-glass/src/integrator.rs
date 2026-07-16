@@ -44,9 +44,13 @@ pub struct IntegratorUniform {
     pub med_march: [f32; 4],
     /// grid dims xyz, w unused.
     pub med_dims: [u32; 4],
-    /// xyz unit direction TOWARD the medium's light, w = intensity.
+    /// The medium's bound scene light: for a directional light xyz = unit
+    /// direction TOWARD it; for a point light xyz = world POSITION. w = the
+    /// scalar intensity (radiance scale, or radiant intensity fed through
+    /// 1/dist²).
     pub med_light: [f32; 4],
-    /// rgb colour of the medium's own light (the steam's warm source).
+    /// rgb = the light's colour tint (multiplied outside the scalar scatter);
+    /// w = light KIND (0 = directional sun/moon, 1 = point emitter glow).
     pub med_light_color: [f32; 4],
 }
 
@@ -75,17 +79,41 @@ pub struct MediumGpu {
     pub march_steps: u32,
     /// Shadow-ray march step count (self-shadowing toward the sun).
     pub shadow_steps: u32,
-    /// Bound on the occlusion march toward the (directional) light.
+    /// Bound on the occlusion march toward a DIRECTIONAL light (a point light
+    /// uses its true source distance instead).
     pub shadow_dist: f32,
-    /// Unit direction TOWARD the medium's own light (the steam's warm source,
-    /// decoupled from the sky sun so steam can be under/back-lit).
-    pub light_dir: [f32; 3],
-    /// Light colour (linear rgb).
+    /// The bound scene light (A2): a real realm entity, never invented.
+    pub light: MediumLightGpu,
+    /// Light colour tint (linear rgb), multiplied outside the scalar scatter.
     pub light_color: [f32; 3],
-    /// Light radiance scale.
+    /// Scalar intensity: incident radiance (directional) or radiant intensity
+    /// fed through 1/dist² (point).
     pub light_intensity: f32,
     /// Density values (x-fastest, then y, z), length = dims.x*dims.y*dims.z.
     pub density: Vec<f32>,
+}
+
+/// The medium's bound scene light on the GPU — the SAME split the CPU
+/// `pleroma::MediumLight` carries (A2 true binding). The vector field means a
+/// unit direction (directional) or a world position (point); the `kind` byte
+/// selects which in the shader.
+#[derive(Clone, Copy, Debug)]
+pub enum MediumLightGpu {
+    /// Sun / moon: `to_light` is a unit direction TOWARD the light.
+    Directional { to_light: [f32; 3] },
+    /// An emissive entity's glow: `position` is its world-space position,
+    /// radiance falls off as intensity/dist².
+    Point { position: [f32; 3] },
+}
+
+impl MediumLightGpu {
+    /// (xyz vector, kind flag): 0 = directional, 1 = point.
+    fn pack(&self) -> ([f32; 3], f32) {
+        match *self {
+            MediumLightGpu::Directional { to_light } => (to_light, 0.0),
+            MediumLightGpu::Point { position } => (position, 1.0),
+        }
+    }
 }
 
 /// Integrator dials (never hardcode — env-parameterised at the call site).
@@ -181,16 +209,17 @@ impl IntegratorUniform {
                 None => [0; 4],
             },
             med_light: match medium {
-                Some(m) => [
-                    m.light_dir[0],
-                    m.light_dir[1],
-                    m.light_dir[2],
-                    m.light_intensity,
-                ],
+                Some(m) => {
+                    let (v, _kind) = m.light.pack();
+                    [v[0], v[1], v[2], m.light_intensity]
+                }
                 None => [0.0; 4],
             },
             med_light_color: match medium {
-                Some(m) => [m.light_color[0], m.light_color[1], m.light_color[2], 0.0],
+                Some(m) => {
+                    let (_v, kind) = m.light.pack();
+                    [m.light_color[0], m.light_color[1], m.light_color[2], kind]
+                }
                 None => [0.0; 4],
             },
         }
