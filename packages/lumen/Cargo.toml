@@ -1,0 +1,13 @@
+[package]
+name = "lumen"
+version = "0.1.0"
+edition = "2021"
+description = "Lumen Naturae — the CPU reference path integrator (L0 ground truth)"
+license = "MIT"
+
+[dependencies]
+png = "0.17.16"
+
+[[example]]
+name = "cornell"
+path = "examples/cornell.rs"

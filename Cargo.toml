@@ -1,3 +1,3 @@
 [workspace]
-members = ["crates/crystal", "packages/oracle", "packages/scrying-glass", "packages/transmute"]
+members = ["crates/crystal", "packages/elements", "packages/lumen", "packages/oracle", "packages/scrying-glass", "packages/transmute"]
 resolver = "2"
