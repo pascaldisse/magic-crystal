@@ -2,6 +2,7 @@ use crystal::{Core, GaiaPackage, PackageManifest};
 
 pub mod bvh;
 pub mod denoiser;
+pub mod denoiser_dataset;
 pub mod error_metric;
 pub mod input;
 pub mod integrator;

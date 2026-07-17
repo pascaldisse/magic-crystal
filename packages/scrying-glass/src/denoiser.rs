@@ -3,11 +3,19 @@
 //! frame's auxiliary buffers (albedo/normal/depth). See
 //! docs/proposals/RITE-VIII-THE-DREAM-DENOISER.md §VIII-1.
 //!
-//! THE BAN, architecturally: every public function in this module takes
-//! CURRENT-FRAME buffers only — no frame index, no previous-frame parameter,
-//! no cross-frame accumulation state anywhere in this module's
-//! public API. This is checked by a grep-gate ordeal
-//! (`tests/viii1_ordeals.rs`), not merely promised here.
+//! THE BAN: every public function in this module is INTENDED to take
+//! CURRENT-FRAME buffers only — no cross-frame parameter or state of any
+//! kind anywhere in this module's public API. What is actually machine-
+//! checked (`tests/viii1_ordeals.rs`), stated precisely rather than
+//! overclaimed: (1) a grep-gate scans this file's text for a fixed list of
+//! cross-frame-vocabulary substrings (spelled out in that ordeal file, not
+//! repeated here — repeating them here would trip the very gate they
+//! define), and (2) a signature scan greps every `pub fn` here for a fixed
+//! list of forbidden parameter-name substrings (also spelled out there).
+//! This is a real, repeatable check against today's vocabulary/parameter-
+//! naming conventions — it is NOT a proof that no cross-frame state could
+//! ever be smuggled in under an unlisted name; it is only as strong as the
+//! lists it checks.
 //!
 //! Architecture (Breda/NRC-class per-pixel fused MLP): input features per
 //! pixel = albedo-demodulated, log-transformed noisy radiance (3) + albedo
@@ -364,8 +372,8 @@ fn demod_divisor(albedo: Vec3) -> Vec3 {
 }
 
 /// Build the 10-scalar feature vector for one pixel from CURRENT-FRAME
-/// buffers only (see module docs — this is the architecture guarantee the
-/// ban ordeal checks).
+/// buffers only (see module docs — this is one of the `pub fn`s the ban
+/// ordeal's signature scan checks).
 pub fn pixel_features(
     noisy_radiance: Vec3,
     albedo: Vec3,
@@ -408,9 +416,9 @@ fn target_transform(reference_radiance: Vec3, albedo: Vec3) -> [f32; OUTPUT_CHAN
 /// Denoise a whole image: one MLP forward pass per pixel, FIXED index order
 /// (`for i in 0..n`), no threading in the reference path — byte-
 /// deterministic by construction. Inputs are ALL current-frame buffers
-/// (noisy radiance, albedo, normal, depth) — no cross-frame state, no frame index.
-/// This is the architecture guarantee THE BAN ordeal checks against this
-/// function's public signature.
+/// (noisy radiance, albedo, normal, depth) — no cross-frame state, no frame
+/// index. This is one of the `pub fn`s the ban ordeal's signature scan
+/// checks (every `pub fn` in this module, not only this one).
 pub fn denoise_image(
     mlp: &Mlp,
     noisy_radiance: &[Vec3],

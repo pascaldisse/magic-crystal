@@ -10,26 +10,10 @@
 //!     (dataset hash, config, train/val RMSE table, the DERIVED pinned
 //!     bound = worst validation frame's RMSE, sha256 of the weights)
 //!
-//! DATASET SCOPE (proposal OPEN 10 — documented honestly, not hidden): five
-//! poses of the merged naruko realm, all static geometry (no ticking — the
-//! realm's leaf triangles as authored, matching `viii0_truth`'s scaffolding
-//! choice to keep the dataset trivially reproducible from (seed, coords)):
-//!   - "front" — the law front pose (`naruko_params` camera, the SAME pose
-//!     `perf_audit`/`viii0_truth` use).
-//!   - "wide"  — the composed-coexist three-quarter sea-side shot.
-//!   - "orbit_+20"/"orbit_-20"/"orbit_+40" — three DERIVED orbit views: the
-//!     front eye rotated by the given yaw (degrees) around the front pose's
-//!     look-at point, same radius, added for viewpoint diversity beyond the
-//!     two authored poses (a per-pixel MLP needs varied surfaces/angles/
-//!     lighting incidence to generalize, not just varied camera FRAMING of
-//!     the same two shots).
-//!
-//! TRAIN = {front, wide, orbit_+20}. VALIDATION = {orbit_-20, orbit_+40}
-//! (whole, held-out poses — never seen during training). This is a small,
-//! honestly-scoped set (one realm, five static views) — a prime-Guardian
-//! ruling on broader validation-set composition is OPEN 10 in the proposal;
-//! this atom ships the smallest honest set that lets the derived-bound
-//! machinery run for real.
+//! Pose/scene definitions (dataset scope, proposal OPEN 10) live in
+//! `scrying_glass::denoiser_dataset` — the ONE shared source this file and
+//! `tests/viii1_ordeals.rs` both consume, so the two can never silently
+//! drift apart (adversary finding A5, night-2 review).
 //!
 //! Run:  cargo run -p scrying-glass --release --example viii1_train
 //!       GAIA_VIII1_EPOCHS=200 cargo run -p scrying-glass --release --example viii1_train
@@ -42,65 +26,20 @@ use scrying_glass::bvh::{Bvh, BvhParams};
 use scrying_glass::denoiser::{
     Adam, Mlp, MlpConfig, TrainingPixel, denoise_image, serialize_weights, sha256_hex, train_epoch,
 };
+use scrying_glass::denoiser_dataset::{
+    DATASET_HEIGHT, DATASET_REF_FRAMES, DATASET_WIDTH, TRAIN_POSE_NAMES, VALIDATION_POSE_NAMES,
+    law_poses, naruko_params,
+};
 use scrying_glass::error_metric::rmse;
 use scrying_glass::integrator::{
     IntegratorParams, headless_device, resolve, split_aov, trace_headless, trace_headless_aov,
 };
-use scrying_glass::scene::{Camera, RenderScene, SceneParameters, SunDefaults};
+use scrying_glass::scene::{Camera, RenderScene};
 
 /// Forge-time weight-init PRNG seed (deterministic starting point — see
 /// `Mlp::new_random` docs; training itself is NOT promised bit-reproducible,
 /// proposal OPEN 4). A plain constant, not a magic number hidden inline.
 const INIT_SEED: u64 = 0x0005_eed1;
-
-/// Naruko authoring dials — the SAME front pose `perf_audit.rs`/
-/// `viii0_truth.rs` render from (reused verbatim, not reinvented).
-fn naruko_params() -> SceneParameters {
-    SceneParameters {
-        fov_y_degrees: 60.0,
-        near: 0.1,
-        far: 4_000.0,
-        sky_top: "#20152f".into(),
-        sky_horizon: "#9a627d".into(),
-        mesh_color: "#9aa0a6".into(),
-        radial_segments: 24,
-        camera_position: [0.0, 2.0, 22.0],
-        camera_yaw: 0.0,
-        camera_pitch: 0.0,
-        cluster_error_threshold: 1.0,
-        tick_dt: 1.0 / 60.0,
-        sun: SunDefaults {
-            sun_color: "#ffe2b0".into(),
-            sun_intensity: 1.1,
-            sun_position: [60.0, 90.0, 30.0],
-            ambient_intensity: 0.32,
-        },
-        emission_intensity: 2.5,
-    }
-}
-
-fn camera_at(eye: [f32; 3], look_at: [f32; 3], fov_deg: f32) -> Camera {
-    let f = (GVec3::from_array(look_at) - GVec3::from_array(eye)).normalize();
-    Camera {
-        eye: GVec3::from_array(eye),
-        yaw: (-f.x).atan2(-f.z),
-        pitch: f.y.asin(),
-        fov_y_radians: fov_deg.to_radians(),
-        near: 0.1,
-        far: 4_000.0,
-    }
-}
-
-/// A derived orbit view: rotate `eye` by `yaw_deg` around Y about `pivot`,
-/// keeping the same radius and height, looking back at `pivot`.
-fn orbit_camera(eye: [f32; 3], pivot: [f32; 3], yaw_deg: f32, fov_deg: f32) -> Camera {
-    let rel = GVec3::from_array(eye) - GVec3::from_array(pivot);
-    let angle = yaw_deg.to_radians();
-    let (s, c) = angle.sin_cos();
-    let rotated = GVec3::new(rel.x * c + rel.z * s, rel.y, -rel.x * s + rel.z * c);
-    let new_eye = GVec3::from_array(pivot) + rotated;
-    camera_at(new_eye.to_array(), pivot, fov_deg)
-}
 
 fn env_u32(name: &str, default: u32) -> u32 {
     std::env::var(name)
@@ -125,25 +64,6 @@ struct PoseFrame {
     depth: Vec<f32>,
     noisy: Vec<GVec3>,
     reference: Vec<GVec3>,
-}
-
-/// Reference frame count for TRAINING pairs — smaller than `viii0_truth`'s
-/// proof-quality 512 (argued there against noise floor honestly); this
-/// dataset only needs a good-enough-to-teach-the-shape target within a
-/// forge-time budget a builder actually runs. DERIVED the same way (1/sqrt
-/// falloff): 128 frames × spp 2 = 256 samples/pixel, deep enough that
-/// (per `viii0_truth`'s own printed convergence evidence at the SAME scene)
-/// residual noise is well below the noisy-vs-reference gap the denoiser is
-/// asked to close.
-fn default_ref_frames() -> u32 {
-    128
-}
-
-/// Dataset resolution — small enough that CPU per-pixel MLP training (no
-/// GPU involved once radiance/AOV buffers are read back) finishes in a
-/// reasonable forge-time budget across 5 poses × ~256 spp reference frames.
-fn default_dataset_wh() -> (u32, u32) {
-    (96, 64)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -237,6 +157,27 @@ fn to_training_pixels(pose: &PoseFrame) -> Vec<TrainingPixel> {
         .collect()
 }
 
+/// Content digest of the generated training PAIRS (not the weights) —
+/// hashes every train-split pixel's five f32x3-or-f32 fields in fixed
+/// (pose, pixel-index, field) order, so retraining from an unchanged
+/// dataset reproduces the SAME digest (adversary finding A7).
+fn hash_training_pairs(pixels: &[TrainingPixel]) -> String {
+    let mut bytes = Vec::with_capacity(pixels.len() * (3 + 3 + 3 + 1 + 3) * 4);
+    for px in pixels {
+        for v in [px.noisy_radiance, px.albedo, px.normal] {
+            bytes.extend_from_slice(&v.x.to_le_bytes());
+            bytes.extend_from_slice(&v.y.to_le_bytes());
+            bytes.extend_from_slice(&v.z.to_le_bytes());
+        }
+        bytes.extend_from_slice(&px.depth.to_le_bytes());
+        let r = px.reference_radiance;
+        bytes.extend_from_slice(&r.x.to_le_bytes());
+        bytes.extend_from_slice(&r.y.to_le_bytes());
+        bytes.extend_from_slice(&r.z.to_le_bytes());
+    }
+    sha256_hex(&bytes)
+}
+
 fn main() {
     let Some((device, queue)) = headless_device() else {
         panic!("[viii1-train] no GPU adapter on this host — cannot forge the training set");
@@ -253,54 +194,13 @@ fn main() {
         scene.leaf_triangles().len()
     );
 
-    let (w, h) = default_dataset_wh();
-    let ref_frames = env_u32("GAIA_VIII1_REF_FRAMES", default_ref_frames());
+    let (w, h) = (DATASET_WIDTH, DATASET_HEIGHT);
+    let ref_frames = env_u32("GAIA_VIII1_REF_FRAMES", DATASET_REF_FRAMES);
 
-    let front_camera = Camera {
-        eye: GVec3::from_array(params.camera_position),
-        yaw: params.camera_yaw,
-        pitch: params.camera_pitch,
-        fov_y_radians: params.fov_y_degrees.to_radians(),
-        near: params.near,
-        far: params.far,
-    };
-    let front_pivot = [0.0, 2.0, 0.0];
-    let wide_camera = camera_at([-4.5, 8.5, 33.0], [-5.5, 2.0, 15.5], 60.0);
-
-    // Fixed dataset scope — see module docs.
-    let poses: Vec<(&'static str, Camera)> = vec![
-        ("front", front_camera),
-        ("wide", wide_camera),
-        (
-            "orbit_+20",
-            orbit_camera(
-                params.camera_position,
-                front_pivot,
-                20.0,
-                params.fov_y_degrees,
-            ),
-        ),
-        (
-            "orbit_-20",
-            orbit_camera(
-                params.camera_position,
-                front_pivot,
-                -20.0,
-                params.fov_y_degrees,
-            ),
-        ),
-        (
-            "orbit_+40",
-            orbit_camera(
-                params.camera_position,
-                front_pivot,
-                40.0,
-                params.fov_y_degrees,
-            ),
-        ),
-    ];
-    let train_names = ["front", "wide", "orbit_+20"];
-    let val_names = ["orbit_-20", "orbit_+40"];
+    // Fixed dataset scope — see `scrying_glass::denoiser_dataset` module docs.
+    let poses = law_poses(&params);
+    let train_names = TRAIN_POSE_NAMES;
+    let val_names = VALIDATION_POSE_NAMES;
 
     let frames: Vec<PoseFrame> = poses
         .iter()
@@ -312,10 +212,12 @@ fn main() {
         .filter(|f| train_names.contains(&f.name))
         .flat_map(to_training_pixels)
         .collect();
+    let dataset_pairs_sha256 = hash_training_pairs(&train_pixels);
     eprintln!(
-        "[viii1-train] train split: {:?} ({} pixels)",
+        "[viii1-train] train split: {:?} ({} pixels, pairs sha256={})",
         train_names,
-        train_pixels.len()
+        train_pixels.len(),
+        dataset_pairs_sha256
     );
 
     // ── train ────────────────────────────────────────────────────────────
@@ -417,6 +319,12 @@ fn main() {
             "poses_train": train_names,
             "poses_validation": val_names,
             "pixels_train": train_pixels.len(),
+            // (A7) sha256 of the generated train-split pixel PAIRS (noisy,
+            // albedo, normal, depth, reference — fixed pose/pixel/field
+            // order), NOT the weights. Recorded starting this run; if an
+            // older provenance file lacks this field, it was "not recorded
+            // for v1" — an honest gap, not a silent retro-claim.
+            "training_pairs_sha256": dataset_pairs_sha256,
         },
         "metrics": {
             "train_per_frame_rmse": train_rows.iter().map(|(n, noisy, den)| serde_json::json!({

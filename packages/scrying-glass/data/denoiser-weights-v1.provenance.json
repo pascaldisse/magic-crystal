@@ -31,7 +31,8 @@
       96,
       64
     ],
-    "seed": 24301
+    "seed": 24301,
+    "training_pairs_sha256": "37adf55914f19bcbc075a7da4887be9f18cee79aafc1d593891b14749e3c3051"
   },
   "metrics": {
     "train_per_frame_rmse": [
