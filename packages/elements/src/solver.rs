@@ -6,12 +6,65 @@
 //! the substep count, the iteration count, the gravity vector and the
 //! fracture threshold are all parameters carrying documented defaults.
 
+use crate::broadphase::TriangleGrid;
 use crate::collision::{Collider, Contact, ContactMaterial};
 use crate::constraint::{DistanceConstraint, FractureEvent};
 use crate::mat3::PolarConfig;
 use crate::math::Vec3;
 use crate::particles::Particles;
 use crate::rigid::RigidBody;
+use std::time::{Duration, Instant};
+
+/// P-SCALE — per-phase CPU cost of ONE tick, filled by [`Solver::step_profiled`].
+/// Pure measurement: the fields carry wall-clock `Duration`s (single core) for
+/// each phase of the tick, plus the structural counts that drive the cost
+/// curves vs N (particle count, live bond count, clustered-particle count, and
+/// the ACTUAL number of body-vs-body pair CHECKS the O(k²) pass iterated this
+/// tick — same pair set the pass walks, so the count never drifts from the
+/// cost). The phase breakdown matches the physics-recon lane's ask:
+/// constraint solve, fragment flood-fill, body-vs-body O(k²), static
+/// collision. `step_profiled` reproduces `step` BIT-FOR-BIT (guarded by
+/// `ordeal_step_profiled_matches_step` in `tests/pscale_ordeals.rs`) — the
+/// timers wrap the SAME private phase methods `step` calls, in the same
+/// order; nothing here changes solver semantics.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PhaseProfile {
+    /// Symplectic-Euler prediction under gravity (`integrate`), summed over substeps.
+    pub integrate: Duration,
+    /// The XPBD compliant distance-bond solve (`solve_distance`) — "constraint solve".
+    pub solve_distance: Duration,
+    /// Rigid shape-matching (`solve_shape_matching`) — ~0 for a pure bonded building.
+    pub shape_matching: Duration,
+    /// Particle-vs-static-world-triangle collision (`solve_collision_normal`)
+    /// — the "collision broad/narrow" pass against the ground/anchors.
+    pub collision_static: Duration,
+    /// Body-vs-body / fragment-vs-fragment collision (`solve_body_collisions`)
+    /// — the O(k²) pass over clustered particles. The phase the lane expects
+    /// to explode with N.
+    pub collision_body: Duration,
+    /// The per-tick flood-fill (`particle_cluster_lookup` → `fragment_components`)
+    /// — "fragment flood-fill", O(particles + bonds) over each bonded group.
+    pub cluster_floodfill: Duration,
+    /// The remaining velocity-level passes (read-back, friction, restitution,
+    /// strife tally) — grouped, not a lane-named phase but recorded so the
+    /// phase sum equals the whole tick.
+    pub velocity_passes: Duration,
+    /// Tearing bonds whose strife overcame love (`fracture_pass`).
+    pub fracture_pass: Duration,
+    /// The whole tick, wall to wall (≥ the sum of the phases — the small
+    /// remainder is bookkeeping between phases).
+    pub total: Duration,
+    /// Live particle count this tick.
+    pub particles: usize,
+    /// Live distance-bond count this tick (falls as bonds fracture).
+    pub bonds: usize,
+    /// Particles owned by SOME cluster (rigid or bonded) this tick — the
+    /// population the O(k²) body pass scans.
+    pub clustered_particles: usize,
+    /// The number of body-vs-body pair CHECKS the O(k²) pass performed this
+    /// tick: `(k choose 2) × iterations × substeps` — the honest cost driver.
+    pub body_pair_checks: u64,
+}
 
 /// The world's dials. Defaults are declared here, once — every field is a
 /// parameter (never-hardcode law).
@@ -80,6 +133,24 @@ pub struct Solver {
     /// chain/rope/cloth built by hand (not through `spawn_bonded_box`) is
     /// unaffected and keeps costing exactly zero in that pass, as before.
     pub bonded_groups: Vec<Vec<usize>>,
+    /// P-SCALE — the conservative static broadphase over `collider`'s triangle
+    /// soup. Cached and rebuilt only when the collider changes (detected by
+    /// [`TriangleGrid::fingerprint`]); `None` until first built or when no
+    /// collider is installed. Purely an acceleration structure — it changes
+    /// WHICH triangles `solve_collision_normal` visits, never the physics.
+    collision_grid: Option<TriangleGrid>,
+    /// P-SCALE — whether `solve_collision_normal` uses the broadphase (`true`,
+    /// production) or the brute-force particle-vs-EVERY-triangle sweep
+    /// (`false`). The brute path is retained ONLY as the byte-identical
+    /// reference the exactness ordeals check against; flip it with
+    /// [`Solver::set_collision_broadphase`].
+    broadphase_enabled: bool,
+    /// P-SCALE — test-only guard: when `true` (debug builds), every particle's
+    /// query also narrow-phases the PRUNED triangles at its pre-resolution
+    /// position and asserts each yields zero contact — proving the broadphase
+    /// never drops a real contact. Off in production (adds an O(tris) audit).
+    /// Flip with [`Solver::set_broadphase_audit`].
+    broadphase_audit: bool,
 }
 
 /// A collision cluster: particles in the SAME cluster never collide with
@@ -109,6 +180,78 @@ impl Solver {
             tick: 0,
             fractures: Vec::new(),
             bonded_groups: Vec::new(),
+            collision_grid: None,
+            broadphase_enabled: true,
+            broadphase_audit: false,
+        }
+    }
+
+    /// P-SCALE — enable (default) or disable the collision broadphase. Disabled
+    /// = the brute-force particle-vs-every-triangle reference sweep; used by
+    /// the exactness ordeals to prove the two paths are byte-identical.
+    pub fn set_collision_broadphase(&mut self, on: bool) {
+        self.broadphase_enabled = on;
+    }
+
+    /// P-SCALE — enable the debug-only pruned-pair zero-contact audit (see
+    /// [`Solver::broadphase_audit`]). No effect in release builds.
+    pub fn set_broadphase_audit(&mut self, on: bool) {
+        self.broadphase_audit = on;
+    }
+
+    /// P-SCALE — the live collision-grid stats for evidence/derivation:
+    /// `(triangle_count, (nx, ny, nz), cell_size_m)`, or `None` when no grid
+    /// is built (broadphase off or no collider). `ensure_collision_grid` must
+    /// have run (it runs at each `step`).
+    pub fn collision_grid_stats(&self) -> Option<(usize, (usize, usize, usize), f64)> {
+        self.collision_grid
+            .as_ref()
+            .map(|g| (g.triangle_count, g.resolution(), g.cell_size()))
+    }
+
+    /// P-SCALE — force the collision grid to be (re)built now for the current
+    /// collider (test/measurement helper; `step` does this itself).
+    pub fn build_collision_grid(&mut self) {
+        self.ensure_collision_grid();
+    }
+
+    /// P-SCALE — the max STATIC contact reach: the largest particle collision
+    /// radius plus the collider's contact margin. The per-substep travel slack
+    /// is added at query time, not here. Used to derive the grid cell size.
+    fn max_contact_reach(&self) -> f64 {
+        let margin = self
+            .collider
+            .as_ref()
+            .map(|c| c.material.contact_margin)
+            .unwrap_or_else(|| ContactMaterial::default().contact_margin);
+        let mut r: f64 = 0.0;
+        for &rad in &self.particles.radius {
+            r = r.max(rad);
+        }
+        r + margin
+    }
+
+    /// P-SCALE — ensure `collision_grid` matches the current collider. Rebuilt
+    /// only when the triangle soup's fingerprint changes (colliders are static
+    /// per scene); called once per tick before the substep loop.
+    fn ensure_collision_grid(&mut self) {
+        if !self.broadphase_enabled {
+            return;
+        }
+        match &self.collider {
+            None => self.collision_grid = None,
+            Some(c) => {
+                let fp = TriangleGrid::fingerprint(&c.triangles);
+                let stale = match &self.collision_grid {
+                    Some(g) => g.fingerprint != fp || g.triangle_count != c.triangles.len(),
+                    None => true,
+                };
+                if stale {
+                    let reach = self.max_contact_reach();
+                    let cell = TriangleGrid::derive_cell_size(&c.triangles, reach);
+                    self.collision_grid = Some(TriangleGrid::build(&c.triangles, cell, fp));
+                }
+            }
         }
     }
 
@@ -399,6 +542,12 @@ impl Solver {
             c.bond.strife = 0.0;
         }
 
+        // P-SCALE: refresh the static collision broadphase if the collider
+        // changed (cached; a no-op fingerprint check otherwise). Once per
+        // tick, before the substep loop — the grid is invariant across
+        // substeps (the collider is static during a step).
+        self.ensure_collision_grid();
+
         // Which collision cluster (if any) owns each particle — cluster
         // membership never changes mid-tick (fracture only tears bonds, and
         // only at the very end of `step`, in `fracture_pass` below; a
@@ -439,6 +588,85 @@ impl Solver {
         self.tick += 1;
     }
 
+    /// P-SCALE — advance ONE tick exactly as [`Solver::step`], but wrap each
+    /// phase in a wall-clock timer and return the per-phase [`PhaseProfile`].
+    /// This mirrors `step`'s body line-for-line (same private phase methods,
+    /// same order, same arithmetic) so the resulting world state is
+    /// BIT-IDENTICAL to `step` — locked by `ordeal_step_profiled_matches_step`.
+    /// The only additions are `Instant` reads between phases; no solver
+    /// semantics change. Measurement-only: production uses `step` (zero timing
+    /// overhead).
+    pub fn step_profiled(&mut self) -> PhaseProfile {
+        let mut prof = PhaseProfile::default();
+        let tick_start = Instant::now();
+        let cfg = self.config;
+        let n = cfg.substeps.max(1);
+        let dt_sub = cfg.dt / n as f64;
+        let inv_dt2 = if dt_sub > 0.0 {
+            1.0 / (dt_sub * dt_sub)
+        } else {
+            0.0
+        };
+
+        for c in &mut self.constraints {
+            c.bond.strife = 0.0;
+        }
+
+        // P-SCALE: refresh the static broadphase (inside `total` — the
+        // per-tick fingerprint check is a real, if tiny, tick cost).
+        self.ensure_collision_grid();
+
+        let t = Instant::now();
+        let particle_cluster = self.particle_cluster_lookup();
+        prof.cluster_floodfill += t.elapsed();
+
+        let clustered = particle_cluster.iter().filter(|c| c.is_some()).count();
+        prof.clustered_particles = clustered;
+        let pairs_per_solve = (clustered as u64) * (clustered.saturating_sub(1) as u64) / 2;
+
+        for _sub in 0..n {
+            let vel_pre = self.particles.vel.clone();
+            let t = Instant::now();
+            self.integrate(dt_sub);
+            prof.integrate += t.elapsed();
+            self.reset_lambda();
+            let mut contacts: Vec<Contact> = Vec::new();
+            for _it in 0..cfg.iterations.max(1) {
+                let t = Instant::now();
+                self.solve_distance(dt_sub);
+                prof.solve_distance += t.elapsed();
+                let t = Instant::now();
+                self.solve_shape_matching();
+                prof.shape_matching += t.elapsed();
+                let t = Instant::now();
+                contacts = self.solve_collision_normal();
+                prof.collision_static += t.elapsed();
+                let t = Instant::now();
+                contacts.extend(self.solve_body_collisions(&particle_cluster));
+                prof.collision_body += t.elapsed();
+                prof.body_pair_checks += pairs_per_solve;
+            }
+            let t = Instant::now();
+            self.read_back_velocity(dt_sub);
+            self.apply_friction(&contacts, dt_sub);
+            self.apply_restitution(&contacts, &vel_pre);
+            for c in &mut self.constraints {
+                c.bond.strife += c.lambda.abs() * inv_dt2;
+            }
+            prof.velocity_passes += t.elapsed();
+        }
+
+        let t = Instant::now();
+        self.fracture_pass();
+        prof.fracture_pass += t.elapsed();
+        self.tick += 1;
+
+        prof.particles = self.particles.pos.len();
+        prof.bonds = self.constraints.len();
+        prof.total = tick_start.elapsed();
+        prof
+    }
+
     /// Symplectic-Euler prediction under gravity (anchors stand still).
     fn integrate(&mut self, dt_sub: f64) {
         let g = self.config.gravity;
@@ -476,31 +704,176 @@ impl Solver {
     /// `collider` read, `particles` written.
     fn solve_collision_normal(&mut self) -> Vec<Contact> {
         let mut contacts: Vec<Contact> = Vec::new();
+        // Disjoint field borrows: `collider` (read), `collision_grid` (read),
+        // `particles` (write). Bound separately so the borrow checker sees
+        // three distinct fields, not three borrows of `self`.
         let collider = match &self.collider {
             Some(c) => c,
             None => return contacts,
         };
+        let grid = if self.broadphase_enabled {
+            self.collision_grid.as_ref()
+        } else {
+            None
+        };
+        let audit = self.broadphase_audit;
+        let _ = &audit; // read in all builds; only asserted under debug
         let mat = collider.material;
         let p = &mut self.particles;
-        for i in 0..p.pos.len() {
-            if p.inv_mass[i] == 0.0 {
-                continue;
+
+        // Apply one contact between particle `i` and triangle `ti`, recording
+        // the touch. The SAME body the brute sweep runs — shared so the two
+        // paths cannot drift.
+        #[inline]
+        fn resolve(
+            p: &mut Particles,
+            contacts: &mut Vec<Contact>,
+            tri: &crate::collision::Triangle,
+            i: usize,
+            radius: f64,
+            restitution: f64,
+        ) {
+            let depth = match tri.contact_depth(p.pos[i], radius) {
+                Some(d) => d,
+                None => return,
+            };
+            let n = tri.normal;
+            p.pos[i] = p.pos[i] + n.scale(depth);
+            match contacts.iter_mut().find(|c| c.particle == i) {
+                Some(c) => c.normal = n,
+                None => contacts.push(Contact {
+                    particle: i,
+                    normal: n,
+                    restitution,
+                }),
             }
-            let radius = p.radius[i] + mat.contact_margin;
-            for tri in &collider.triangles {
-                let depth = match tri.contact_depth(p.pos[i], radius) {
-                    Some(d) => d,
-                    None => continue,
-                };
-                let n = tri.normal;
-                p.pos[i] = p.pos[i] + n.scale(depth);
-                match contacts.iter_mut().find(|c| c.particle == i) {
-                    Some(c) => c.normal = n,
-                    None => contacts.push(Contact {
-                        particle: i,
-                        normal: n,
-                        restitution: mat.restitution,
-                    }),
+        }
+
+        match grid {
+            // BROADPHASE PATH — visit only the candidate triangles the grid
+            // returns for each particle's fat query AABB, in ASCENDING index
+            // order (a subsequence of the brute 0..N order; pruned triangles
+            // never contact, so the sequence of position updates is
+            // byte-identical to the brute sweep).
+            Some(grid) => {
+                let mut cand: Vec<u32> = Vec::new();
+                for i in 0..p.pos.len() {
+                    if p.inv_mass[i] == 0.0 {
+                        continue;
+                    }
+                    let radius = p.radius[i] + mat.contact_margin;
+                    let p0 = p.pos[i]; // pre-resolution position, sweep origin
+                    // FIRST-GUESS query reach: the contact radius, plus this
+                    // substep's actual travel (|pos - prev|), plus one push-
+                    // chain hop (a second `radius`). This is a PERF HINT only
+                    // — enough to cover the common one-hop case in a single
+                    // query. The fixpoint below GROWS it until it provably
+                    // covers the particle's whole in-sweep displacement, so
+                    // correctness never rests on this initial slack.
+                    let travel = (p.pos[i] - p.prev[i]).length();
+                    let mut reach = radius + travel + radius;
+                    // FIXPOINT RE-QUERY. `Triangle::contact_depth` is a two-
+                    // sided shell: one push is up to `2r` (particle behind the
+                    // plane, `signed < 0`), and pushes CHAIN, so no fixed reach
+                    // can bound the displacement in advance. Instead: query,
+                    // run the forward sweep FROM p0 (byte-identical to the
+                    // brute sweep restricted to the candidate set), then grow
+                    // the reach until it covers the displacement the sweep
+                    // actually produced, re-querying and re-sweeping from p0
+                    // each time.
+                    //
+                    // SAFETY INVARIANT (the pruning proof): a query of L∞ half-
+                    // extent `reach` centred at p0 returns EVERY triangle that
+                    // can contact the particle anywhere its sweep path reaches,
+                    // provided `reach >= dmax + radius`, where `dmax` is the max
+                    // L∞ displacement from p0 over the sweep. Proof: a contact
+                    // at path position `p` (‖p − p0‖∞ ≤ dmax) puts a triangle
+                    // point within `radius` (L2 ≥ L∞) of `p`, hence within
+                    // `dmax + radius ≤ reach` (L∞) of p0 — inside the query box,
+                    // so the grid returns it (grid_query completeness ordeal).
+                    // The loop exits ONLY when this holds, so the swept set is
+                    // a complete superset and every pruned triangle is a proven
+                    // no-op — the sweep equals brute bit-for-bit.
+                    let mut last_normal: Option<Vec3>;
+                    loop {
+                        let r = Vec3::new(reach, reach, reach);
+                        grid.query(p0 - r, p0 + r, &mut cand);
+
+                        // Forward sweep from p0 over the candidates (ascending
+                        // index = a subsequence of the brute 0..N order). Reset
+                        // to p0 so a re-query re-sweeps from the same origin.
+                        p.pos[i] = p0;
+                        last_normal = None;
+                        let mut dmax = 0.0_f64;
+                        for &ti in &cand {
+                            let tri = &collider.triangles[ti as usize];
+                            if let Some(depth) = tri.contact_depth(p.pos[i], radius) {
+                                p.pos[i] = p.pos[i] + tri.normal.scale(depth);
+                                last_normal = Some(tri.normal);
+                                let d = p.pos[i] - p0;
+                                let dl = d.x.abs().max(d.y.abs()).max(d.z.abs());
+                                if dl > dmax {
+                                    dmax = dl;
+                                }
+                            }
+                        }
+
+                        // Complete iff reach covers the realised displacement
+                        // plus one contact radius (the invariant above). If so,
+                        // stop; else grow to exactly the needed reach and redo.
+                        if reach >= dmax + radius {
+                            break;
+                        }
+                        reach = dmax + radius;
+                    }
+
+                    // TEST-ONLY AUDIT (strengthened per the adversary): every
+                    // PRUNED triangle, narrow-phased at the POST-resolution
+                    // position (not just the pre-resolution start — that was
+                    // blind to contacts a push creates), must yield zero
+                    // contact. With the fixpoint's invariant this can never
+                    // trip; the audit is the belt to its braces.
+                    #[cfg(debug_assertions)]
+                    if audit {
+                        let end = p.pos[i];
+                        for (ti, tri) in collider.triangles.iter().enumerate() {
+                            if cand.binary_search(&(ti as u32)).is_ok() {
+                                continue;
+                            }
+                            debug_assert!(
+                                tri.contact_depth(p0, radius).is_none()
+                                    && tri.contact_depth(end, radius).is_none(),
+                                "broadphase pruned triangle {ti} that DOES contact particle {i} \
+                                 (reach {reach}) — the query margin is too tight"
+                            );
+                        }
+                    }
+
+                    // Record the contact (last resolved normal), matching the
+                    // brute path's per-particle single Contact.
+                    if let Some(n) = last_normal {
+                        match contacts.iter_mut().find(|c| c.particle == i) {
+                            Some(c) => c.normal = n,
+                            None => contacts.push(Contact {
+                                particle: i,
+                                normal: n,
+                                restitution: mat.restitution,
+                            }),
+                        }
+                    }
+                }
+            }
+            // BRUTE PATH — the byte-identical reference: every particle vs
+            // every triangle, in index order.
+            None => {
+                for i in 0..p.pos.len() {
+                    if p.inv_mass[i] == 0.0 {
+                        continue;
+                    }
+                    let radius = p.radius[i] + mat.contact_margin;
+                    for tri in &collider.triangles {
+                        resolve(p, &mut contacts, tri, i, radius, mat.restitution);
+                    }
                 }
             }
         }
