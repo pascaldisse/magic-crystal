@@ -158,6 +158,82 @@ fn ordeal_fracture_threshold_reads_bond_love_not_a_hardcoded_break() {
     );
 }
 
+/// A4 (adversary advisory) — proves the DEFAULT essence-derived love
+/// (`default_bond_love`, no authored override) breaks under the FULL
+/// proof-scenario recipe: spin + lateral drift + a hard surface — the same
+/// three physics ingredients `worlds/naruko-vi2/scenes/main.json`'s
+/// `naruko_break_crate` uses for the rendered proof (see
+/// `packages/scrying-glass/examples/vi2_break.rs`'s header), reproduced
+/// here at the solver level with `elements::Solver`'s own APIs
+/// (`apply_spin_to_particles`, `apply_impulse_to_particles`) rather than
+/// going through the ECS/scene layer this crate doesn't depend on.
+///
+/// WHY this matters: every OTHER ordeal in this file already exercises the
+/// DEFAULT love path (`drop_scenario` never overrides it) — but only under
+/// a PLAIN vertical drop. The rendered PROOF world instead authors an
+/// explicit `love: 0.02` override, BELOW the default's own floor
+/// (`default_bond_love(200.0)` ≈ `0.0741 > 0.02`), chosen for a dramatic
+/// multi-fragment scatter. Without this ordeal, nothing actually proved the
+/// DEFAULT (non-overridden) love still breaks under THAT dramatic recipe —
+/// only that it breaks under a plain drop, which is a weaker claim than the
+/// proof picture implies. This closes that gap.
+#[test]
+fn ordeal_default_essence_love_breaks_under_full_scenario() {
+    let cfg = SolverConfig {
+        dt: 1.0 / 120.0,
+        substeps: 12,
+        fracture_threshold: 4.0e3,
+        ..SolverConfig::default()
+    };
+    let mut s = Solver::new(cfg);
+    s.collider = Some(Collider::ground_plane(0.0, 5.0, ContactMaterial::default()));
+
+    let density = 200.0; // the SAME light essence drop_scenario/the proof world use
+    let love = default_bond_love(density); // THE DEFAULT — no authored override
+    assert!(
+        love > 0.02,
+        "setup check: the default love ({love:.4}) must be ABOVE the proof world's authored \
+         0.02 override, or this ordeal would not actually be testing a harder case"
+    );
+    let dims = Vec3::new(1.0, 1.0, 1.0);
+    let counts = (3usize, 3, 3);
+    let center = Vec3::new(0.0, DROP_HEIGHT, 0.0);
+    let whole = s.spawn_bonded_box(center, dims, counts, density, love, 1.0e-7, 0.03);
+
+    // SPIN + DRIFT — the same derivation SHAPE as the proof world's
+    // `body.spin`/`body.initial_velocity` (see `vi2_break.rs`'s header),
+    // re-derived here for THIS scenario's own geometry rather than copying
+    // literals: a quarter turn over the analytic free-fall time, and one
+    // crate-width of sideways drift over that same time.
+    let g = s.config.gravity;
+    let fall_time = (2.0 * DROP_HEIGHT / g.length().max(f64::EPSILON)).sqrt();
+    let spin = Vec3::new(0.0, 0.0, std::f64::consts::FRAC_PI_2 / fall_time);
+    let drift = Vec3::new(dims.x / fall_time, 0.0, 0.0);
+    s.apply_spin_to_particles(&whole, center, spin);
+    s.apply_impulse_to_particles(&whole, drift);
+
+    let (broke_at, _) = run_until_break_or(&mut s, RUN_TICKS);
+    assert!(
+        broke_at.is_some(),
+        "the DEFAULT (non-overridden) essence love ({love:.4}) must still break under the full \
+         spin+drift+hard-surface scenario — if this ever fails, the rendered proof's authored \
+         0.02 override is load-bearing for MORE than drama, and that must be said plainly \
+         instead of silently relying on a hand-tuned sub-floor love"
+    );
+    let fragments = s.fragment_components(&whole);
+    assert!(
+        fragments.len() >= 2,
+        "must yield at least two fragments, not just a single torn bond"
+    );
+    println!(
+        "ORDEAL default-essence-love-breaks-under-full-scenario: love {love:.4} (default, no \
+         override — the proof world's authored 0.02 is a DIFFERENT, more fragile choice) broke \
+         at tick {:?} into {} fragments under spin {spin:?} rad/s + drift {drift:?} m/s",
+        broke_at,
+        fragments.len(),
+    );
+}
+
 /// (a) EQUIVALENT EXCHANGE. TWO separate, honestly-labeled claims, per the
 /// adversary's A2 finding (the original version compared the SAME
 /// ascending-sorted index `Vec` on both sides, which cannot help but be

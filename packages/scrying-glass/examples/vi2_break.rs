@@ -79,8 +79,39 @@
 //! `ordeal_replay_determinism_drop_break_settle_including_fragments` for the
 //! byte-determinism proof over the equivalent solver-level scenario). Run:
 //!   cargo run -p scrying-glass --release --example vi2_break
+//!
+//! `body.love: 0.02` (adversary A4): an AUTHORED FRAGILE OVERRIDE, chosen
+//! for this proof BELOW `elements::default_bond_love(200.0)`'s own proxy
+//! floor (≈`0.0741` — see that function's doc for what "proxy" means here).
+//! `0.02` is a scene author's lawful choice (any `body` MAY override the
+//! essence-derived default — see `Body.love`'s doc in `physics.rs`), picked
+//! specifically for a dramatic multi-fragment split in ONE screenshot, not
+//! because the DEFAULT (non-overridden) love fails to break here — it does
+//! not: `packages/elements/tests/vi2_break_ordeals.rs`'s
+//! `ordeal_default_essence_love_breaks_under_full_scenario` proves the
+//! SAME spin+drift+hard-surface recipe still fractures a crate at the
+//! DEFAULT `0.0741` love (into 9 fragments, at last measurement) — so this
+//! authored override changes the PICTURE's drama, not the underlying claim
+//! that the default proxy path actually breaks under load.
+//!
+//! ISOLATED WORLD (adversary A5): `worlds/naruko-vi2` is a PROOF DIORAMA
+//! beside canon, not a growth of the canon Naruko realm — `naruko_terra`
+//! and `naruko_seawall` here are VERBATIM copies of their canon
+//! declarations (byte-identical geometry, hand-kept in sync, not shared by
+//! reference — a real maintenance debt, named plainly: a future edit to the
+//! canon seawall will NOT propagate here automatically). This diorama
+//! exists solely so `naruko_break_crate`'s extra vessel never perturbs
+//! `packages/oracle/tests/canon.rs`'s vessel-count/order assertions over
+//! the canon realm (see this file's own history — that regression was hit
+//! and fixed by isolating the world, not by editing `canon.rs`). Whether
+//! VI-2's fracture mechanism eventually folds INTO the canon realm (a real
+//! growth of `worlds/naruko`, replacing this diorama and its duplicated
+//! geometry) is a realm-growth call this file does not make — that awaits
+//! the Architect's ruling, same footing as `RITE-VI-STRIFE.md`'s other OPEN
+//! items.
 
 use std::path::Path;
+use std::time::Instant;
 
 use glam::Vec3 as GVec3;
 use scrying_glass::bvh::{Bvh, BvhParams};
@@ -401,6 +432,35 @@ fn main() {
         "[vi2] settled: {settled_count} fragments, {settled_spread:.4} m max pairwise \
          centroid spread",
     );
+
+    // ─── THE P-GATE (adversary A6) — mean CPU ms/tick of Physics::step
+    // ITSELF (wall clock, single core), same measurement VI-1's proof
+    // example takes (`packages/scrying-glass/examples/vi1_stack.rs`'s own
+    // P-GATE block) — a fresh throwaway scene, physics only, run PAST the
+    // break so the mean reflects VI-2's actual new per-tick costs, not just
+    // the pre-break single-body phase.
+    {
+        let mut bench = build_scene();
+        let n = SETTLE_TICKS;
+        let mut total = std::time::Duration::ZERO;
+        for _ in 0..n {
+            let physics = bench.physics_mut().expect("bodies are declared");
+            let start = Instant::now();
+            physics.step();
+            total += start.elapsed();
+        }
+        let mean_ms = total.as_secs_f64() * 1000.0 / n as f64;
+        eprintln!(
+            "[vi2] P-GATE: solver mean CPU time = {mean_ms:.4} ms/tick over {n} ticks \
+             (wall-clock, single core; budget for 60 FPS is 16.667 ms/tick). VI-2's NEW \
+             per-tick costs on top of VI-1's baseline: an O(k²) body-vs-body/fragment-vs- \
+             fragment collision pass (`Solver::solve_body_collisions`, generalized by \
+             `ClusterId`) run once per iteration, ×8 substeps/tick by default; and a \
+             per-tick flood-fill (`Solver::fragment_components`, O(particles + bonds)) \
+             wherever a bonded body is still whole (`Physics::poll_bonded`) — both bounded \
+             by this scene's small particle count (27), not yet exercised at scale."
+        );
+    }
 
     eprintln!("[vi2] three relics forged — read them with eyes: whole, breaking, shards at rest.");
 }
