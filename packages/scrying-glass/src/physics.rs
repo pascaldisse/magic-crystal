@@ -193,4 +193,17 @@ impl Physics {
     pub fn tick(&self) -> u64 {
         self.solver.tick
     }
+
+    /// Apply an instantaneous velocity change to the body bound to
+    /// `gaia_id` — resolves the vessel's id to its solver rigid index (the
+    /// "the op is the hand" seam: crystal's `Op::Impulse` names an entity,
+    /// scrying-glass resolves it, the solver just adds the delta). A no-op
+    /// if no binding matches (unknown or non-physical vessel — silent, like
+    /// every other op applied to a body that isn't there).
+    pub fn apply_impulse(&mut self, gaia_id: &str, delta_velocity: [f64; 3]) {
+        if let Some(binding) = self.bindings.iter().find(|b| b.gaia_id == gaia_id) {
+            let dv = Vec3::new(delta_velocity[0], delta_velocity[1], delta_velocity[2]);
+            self.solver.apply_impulse(binding.rigid, dv);
+        }
+    }
 }

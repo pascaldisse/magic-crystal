@@ -1,5 +1,6 @@
 //! CANON ORDEALS — hand-derived against the LIVE canon realm `worlds/naruko`
-//! (the 18-vessel realm the CLI gazes at by default), NOT the pinned 7-vessel
+//! (the 26-entity/24-in-frustum-meshed-vessel realm the CLI gazes at by
+//! default — see CANON #1's derivation), NOT the pinned 7-vessel
 //! fixture under `tests/fixtures/naruko`. The fixture ordeals (in `src/lib.rs`)
 //! stay the frozen geometric gate; THESE ordeals derive the same pure-geometry
 //! truth against the canon scene and the canon spawn eye `[0,7,44]` yaw 0.
@@ -44,6 +45,13 @@
 //!                         it at runtime; the senses read the STATIC scene, so its
 //!                         canon bounds are the authored drop pose) center
 //!                         [-11.15, 4.5, 13]
+//!   naruko_stack_crate_0  x[-14.05,-13.25] y[1.075,1.875]  z[12.6,13.4] (0.8 box,
+//!   naruko_stack_crate_1  x[-14.05,-13.25] y[1.925,2.725]  z[12.6,13.4]  body,
+//!   naruko_stack_crate_2  x[-14.05,-13.25] y[2.775,3.575]  z[12.6,13.4]  RITE VI
+//!                         · VI-1 — a stack of three crates authored resting on
+//!                         the pier planks (chained rest-height derivation, same
+//!                         convention as `naruko_crate`), the 22nd-24th vessels.
+//!                         centers [-13.65, 1.475/2.325/3.175, 13]
 //!   naruko_cat            x[-5.0808,-4.9192] y[0.0000,0.4555] z[22.9420,23.4789]
 //!     — RITE V·V2, the 15th vessel. NOT authored primitives: the SKINNED
 //!     pink_cat vessel (QUADRUPED morphology) at sama's idle pose
@@ -87,7 +95,7 @@ use oracle::{look, EyePose, Glance, Layers, LookParams, World};
 use std::path::PathBuf;
 
 /// The LIVE canon realm the CLI defaults to (`packages/oracle/../../worlds/naruko`).
-/// NOT the pinned fixture — these ordeals derive against the growing 18-vessel
+/// NOT the pinned fixture — these ordeals derive against the growing
 /// canon. Never mutated (read-only gaze).
 fn canon_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -148,7 +156,13 @@ fn range_of(g: &Glance, id: &str) -> f32 {
 /// [-9,2.9,18], |x_off|=9 < 15.01) and naruko_kami_orb (bind center
 /// [-1,2.2,18.1], z_view 25.9, |x_off|=1 < tan30·25.9 = 14.95) — the 19th–21st
 /// meshed vessels, all dead ahead of the spawn eye ⇒ in-frustum. So
-/// entity_count = 21.
+/// entity_count = 21. RITE VI · VI-1 (THE STACK TOPPLES) then adds THREE more:
+/// `naruko_stack_crate_0/1/2`, a stack of `body` crates authored resting on
+/// the pier planks (center [-13.65, y, 13], y = 1.475/2.325/3.175). Each sits
+/// z_view = 44−13 = 31 ahead (same as `naruko_crate`), |x_off| = 13.65 <
+/// tan30·31 = 17.898 ⇒ inside both side planes; y_off ∈
+/// [1.475−7, 3.175−7] = [−5.525,−3.825], well inside the same half-width
+/// vertically (aspect 1, same cone) ⇒ in-frustum. entity_count = 24.
 #[test]
 fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
     let world = canon();
@@ -193,8 +207,8 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
     // (naruko_kami_orb, bind center [-1,2.2,18.1], |x_off|=1 < tan30·25.9 =
     // 14.95) — the 19th–21st meshed vessels, dead ahead.
     assert_eq!(
-        g.entity_count, 21,
-        "exactly the twenty-one meshed vessels are in-frustum (Rite V: + nari, + cat; P3: + crate; rings: + a/b/c; Mirror Proof: + mirror, + minor, + orb)"
+        g.entity_count, 24,
+        "exactly the twenty-four meshed vessels are in-frustum (Rite V: + nari, + cat; P3: + crate; rings: + a/b/c; Mirror Proof: + mirror, + minor, + orb; VI-1: + stack_crate_0/1/2)"
     );
     let caps = caption_ids(&g);
     for id in [
@@ -219,6 +233,9 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
         "naruko_mirror",
         "naruko_mirror_minor",
         "naruko_kami_orb",
+        "naruko_stack_crate_0",
+        "naruko_stack_crate_1",
+        "naruko_stack_crate_2",
     ] {
         assert!(caps.contains(&id.to_string()), "{id} must be in-frustum");
     }
@@ -329,6 +346,13 @@ fn canon_nearest_ordering_and_ranges_are_derived() {
         ("signal_ring_c", 168.4377),
         ("naruko_terra", 9.4108),
         ("naruko_sea", 604.0593),
+        // VI-1 — the stack, center [-13.65, y, 13]:
+        //   crate_0 [-13.65,1.475,13] → √(186.3225+30.525625+961)  = 34.3198
+        //   crate_1 [-13.65,2.325,13] → √(186.3225+21.855625+961)  = 34.1932
+        //   crate_2 [-13.65,3.175,13] → √(186.3225+14.630625+961)  = 34.0874
+        ("naruko_stack_crate_0", 34.3198),
+        ("naruko_stack_crate_1", 34.1932),
+        ("naruko_stack_crate_2", 34.0874),
     ] {
         let r = range_of(&wide, id);
         assert!(
@@ -583,6 +607,18 @@ fn canon_depth_band_column_16_is_front_face_path_length() {
 /// Pier range: center [-12,-0.8375,-2] − eye [-13,2.7,15] = [1,-3.5375,-17] →
 ///   √(1 + 12.51 + 289) = 17.3929 m. Lighthouse still ahead: rock 135.75 m,
 ///   tower 140.93 m, both bearing ≈ +5.5° (well inside the 30° half-FOV).
+///
+/// RITE VI · VI-1 grows this glance too: the stack (center [-13.65, y, 13],
+/// y = 1.475/2.325/3.175) sits almost UNDER the pier eye — offset from
+/// [-13,2.7,15] is [-0.65, y−2.7, −2] for every crate (only y differs), well
+/// inside the z_view=2 cone (half-width tan30·2 = 1.1547 ≥ |x_off| = 0.65)
+/// ⇒ all three in-frustum, nearer than the chrome orb:
+///   stack_crate_0 [-0.65,-1.225,-2] → √(0.4225+1.500625+4) = 2.4337
+///   stack_crate_1 [-0.65,-0.375,-2] → √(0.4225+0.140625+4) = 2.1361
+///   stack_crate_2 [-0.65, 0.475,-2] → √(0.4225+0.225625+4) = 2.1560
+/// entity_count = 13; the caption order leads with the two nearer crates
+/// (crate_1 then crate_2 — their y-offsets from the eye are near-symmetric,
+/// crate_1 sits slightly closer), then crate_0, then the chrome orb.
 #[test]
 fn canon_moved_eye_pier_glance() {
     let world = canon();
@@ -603,9 +639,10 @@ fn canon_moved_eye_pier_glance() {
     .unwrap();
     // + lighthouse_beacon (range 145.9056) since the Living World merge,
     // + naruko_chrome_orb (range 3.2150, right beside the pier eye) since
-    // PLEROMA L2, and + the three SIGNAL RINGS (144.0571/143.5956/143.1343,
-    // derived above) — ten meshed vessels in this frustum.
-    assert_eq!(g.entity_count, 10, "moved-eye in-frustum count");
+    // PLEROMA L2, + the three SIGNAL RINGS (144.0571/143.5956/143.1343,
+    // derived above) — ten meshed vessels — and VI-1 adds the three stack
+    // crates (2.1361/2.1560/2.4337, derived above) — thirteen.
+    assert_eq!(g.entity_count, 13, "moved-eye in-frustum count");
 
     // Non-support caption set (default demotes terra & sea).
     let plain = look(
@@ -620,6 +657,9 @@ fn canon_moved_eye_pier_glance() {
     assert_eq!(
         caption_ids(&plain),
         vec![
+            "naruko_stack_crate_1",
+            "naruko_stack_crate_2",
+            "naruko_stack_crate_0",
             "naruko_chrome_orb",
             "naruko_pier",
             "lighthouse_rock",
@@ -630,7 +670,7 @@ fn canon_moved_eye_pier_glance() {
             "lighthouse_beacon",
             "naruko_sea",
         ],
-        "moved-eye non-support caption set/order (chrome orb 3.2150 leads; rings 143.13/143.60/144.06 between tower 140.93 and beacon 145.9056)"
+        "moved-eye non-support caption set/order (VI-1: the stack 2.1361/2.1560/2.4337 leads, nearer than the chrome orb 3.2150; rings 143.13/143.60/144.06 between tower 140.93 and beacon 145.9056)"
     );
 
     // Lighthouse pair still in-frustum.
@@ -650,6 +690,18 @@ fn canon_moved_eye_pier_glance() {
         (ro - 3.2150).abs() < RANGE_TOL,
         "chrome orb range live {ro} != derived 3.2150"
     );
+    // VI-1 — the stack leads the WHOLE order (nearer than even the chrome orb).
+    for (id, expect) in [
+        ("naruko_stack_crate_0", 2.4337_f32),
+        ("naruko_stack_crate_1", 2.1361),
+        ("naruko_stack_crate_2", 2.1560),
+    ] {
+        let r = range_of(&plain, id);
+        assert!(
+            (r - expect).abs() < RANGE_TOL,
+            "range({id}) live {r} != derived {expect} (tol {RANGE_TOL})"
+        );
+    }
 }
 
 /// CANON #7 — DETERMINISM. The canon glance is a pure function of world DATA:

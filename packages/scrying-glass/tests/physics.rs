@@ -13,7 +13,7 @@
 //!      wholly absent (`physics() == None`) and the realm is byte-unchanged
 //!      across ticks (the crate, now a plain mesh, never moves).
 
-use crystal::{EcsWorld, QuerySpec, load_world_dir};
+use crystal::{EcsWorld, ImpulseOp, Op, QuerySpec, load_world_dir};
 use scrying_glass::scene::{RenderScene, SceneParameters, SunDefaults, top_flat_surface_y};
 use std::path::{Path, PathBuf};
 
@@ -207,4 +207,175 @@ fn leaf_bytes(scene: &RenderScene) -> Vec<u8> {
         }
     }
     bytes
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// VI-1 ORDEALS — THE STACK TOPPLES. `worlds/naruko` also declares a stack of
+// three crates (`naruko_stack_crate_0/1/2`) authored resting directly atop
+// each other on the pier planks. These ordeals prove, on the REAL realm
+// through the REAL world tick:
+//
+//   4. STACK REST — the authored stack settles at the DERIVED heights (same
+//      derivation as the single crate, chained: each box's rest height is
+//      the one below's top + half-height + contact radius).
+//   5. TOPPLE REPLAY — `Op::Impulse` applied through `Dynamics::tick_with_ops`
+//      pushes the top crate; two identical topples fold to byte-identical
+//      solver state hashes at every tick.
+//   6. NOTHING FELL THROUGH THE FLOOR — after the topple, every stack body's
+//      centroid stays above the pier deck (the derived deck-top Y bound), no
+//      matter how it landed.
+// ═════════════════════════════════════════════════════════════════════════
+
+const STACK_IDS: [&str; 3] = [
+    "naruko_stack_crate_0",
+    "naruko_stack_crate_1",
+    "naruko_stack_crate_2",
+];
+
+/// ORDEAL 4 — the authored stack settles at the derived chained rest heights.
+#[test]
+fn stack_settles_at_derived_chained_heights() {
+    let mut world = EcsWorld::default();
+    load_world_dir(naruko_world(), &mut world).expect("load the Naruko realm");
+    let pier_top = top_flat_surface_y(&world, "naruko_pier")
+        .expect("pier surface query")
+        .expect("the pier has a flat top surface") as f64;
+    let mut scene = RenderScene::from_ecs(world, &params()).expect("build the render scene");
+
+    let (half_height, contact_radius) = {
+        let physics = scene.physics().expect("bodies are declared");
+        let binding = physics
+            .bindings()
+            .iter()
+            .find(|b| b.gaia_id == STACK_IDS[0])
+            .expect("stack crate 0 binding");
+        (binding.half_height, binding.contact_radius)
+    };
+    // Chained derivation — mirrors how the realm authored each position.
+    //
+    // Crate 0 rests on the STATIC pier (particle-vs-triangle pass), whose
+    // true rest gap is `contact_radius + contact_margin` — this expected
+    // value omits the `contact_margin` term (a pre-existing ~1mm
+    // approximation, well under REST_TOL, untouched by F2/F3 below).
+    //
+    // Crates 1 and 2 rest on the crate BELOW them — a body-vs-body contact.
+    // F2/F3 derived that pass's rest gap as `mean(r_i, r_j) + contact_margin`
+    // (reducing to `r + contact_margin` for the equal radii used here),
+    // matching the static pass' `radius + contact_margin` convention instead
+    // of the bare-radius gap the pre-fix solver used. Each successive crate
+    // therefore sits `contact_margin` (~1mm) higher than the pre-F2/F3 chain;
+    // over 2 body-body contacts that's ~2mm total, still within REST_TOL
+    // (5mm) — no JSON position change needed.
+    let contact_margin = elements::ContactMaterial::default().contact_margin;
+    let mut expected = Vec::with_capacity(3);
+    let mut y = pier_top + half_height + contact_radius;
+    for _ in 0..3 {
+        expected.push(y);
+        y += 2.0 * half_height + contact_radius + contact_margin;
+    }
+
+    // The stack was authored already AT its rest positions — a short march
+    // lets any residual contact settle, it should barely move.
+    for _ in 0..120u64 {
+        scene.tick();
+    }
+
+    const REST_TOL: f64 = 0.005; // same tolerance the single-crate rest ordeal derives
+    for (id, exp) in STACK_IDS.iter().zip(expected.iter()) {
+        let pos = scene.body_position(id).unwrap();
+        eprintln!(
+            "[ordeal] stack rest: {id} y={:.4} expected={exp:.4}",
+            pos[1]
+        );
+        assert!(
+            (pos[1] - exp).abs() < REST_TOL,
+            "{id} rest y {} != derived chained height {exp} (tol {REST_TOL})",
+            pos[1]
+        );
+    }
+}
+
+/// ORDEAL 5 — an `Op::Impulse` topples the stack; two identical topples fold
+/// to byte-identical state hashes at every tick of the full episode.
+#[test]
+fn stack_topple_via_impulse_replays_byte_identical() {
+    let run = || {
+        let mut world = EcsWorld::default();
+        load_world_dir(naruko_world(), &mut world).expect("load the Naruko realm");
+        let mut scene = RenderScene::from_ecs(world, &params()).expect("build the render scene");
+        // Let the authored-at-rest stack finish any residual settle first.
+        for _ in 0..120u64 {
+            scene.tick();
+        }
+        let impulse = Op::Impulse(ImpulseOp {
+            id: STACK_IDS[2].to_string(),
+            delta_velocity: [3.0, 0.0, 0.0],
+            ..Default::default()
+        });
+        scene.tick_with_ops(&[impulse]);
+        let mut hashes = Vec::with_capacity(600);
+        for _ in 0..600u64 {
+            scene.tick();
+            hashes.push(scene.physics().unwrap().state_hash());
+        }
+        hashes
+    };
+    let a = run();
+    let b = run();
+    assert_eq!(a.len(), 600, "ticked the full topple");
+    assert_eq!(
+        a, b,
+        "two identical topples (same impulse, same seed) must fold to identical state hashes"
+    );
+    eprintln!(
+        "[ordeal] stack topple replay: 600 ticks x 2 runs, byte-identical, final hash {:#018x}",
+        a.last().unwrap()
+    );
+}
+
+/// ORDEAL 6 — after the topple, nothing fell through the pier deck. The
+/// bound is DERIVED from the realm's own geometry: the pier plank top,
+/// minus one contact radius (the solver's own contact thickness — the most
+/// a body can numerically penetrate before it counts as "through the floor").
+#[test]
+fn stack_topple_never_falls_through_the_pier_deck() {
+    let mut world = EcsWorld::default();
+    load_world_dir(naruko_world(), &mut world).expect("load the Naruko realm");
+    let pier_top = top_flat_surface_y(&world, "naruko_pier")
+        .expect("pier surface query")
+        .expect("the pier has a flat top surface") as f64;
+    let mut scene = RenderScene::from_ecs(world, &params()).expect("build the render scene");
+
+    let contact_radius = {
+        let physics = scene.physics().expect("bodies are declared");
+        physics.bindings()[0].contact_radius
+    };
+    let deck_floor_bound = pier_top - contact_radius;
+
+    for _ in 0..120u64 {
+        scene.tick();
+    }
+    let impulse = Op::Impulse(ImpulseOp {
+        id: STACK_IDS[2].to_string(),
+        delta_velocity: [3.0, 0.0, 0.0],
+        ..Default::default()
+    });
+    scene.tick_with_ops(&[impulse]);
+    let mut min_y_over_run = f64::INFINITY;
+    for _ in 0..600u64 {
+        scene.tick();
+        for id in STACK_IDS {
+            let y = scene.body_position(id).unwrap()[1];
+            min_y_over_run = min_y_over_run.min(y);
+        }
+    }
+    eprintln!(
+        "[ordeal] stack never falls through: pier_top={pier_top:.4} deck_floor_bound={deck_floor_bound:.4} \
+         min y over the topple={min_y_over_run:.4}"
+    );
+    assert!(
+        min_y_over_run > deck_floor_bound,
+        "a stack body sank through the pier deck: min y {min_y_over_run} <= bound {deck_floor_bound} \
+         (pier top {pier_top} - contact radius {contact_radius})"
+    );
 }

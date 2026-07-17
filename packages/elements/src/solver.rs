@@ -214,6 +214,11 @@ impl Solver {
             c.bond.strife = 0.0;
         }
 
+        // Which rigid (if any) owns each particle — rigid membership never
+        // changes mid-tick (fracture tears distance bonds, never a rigid's
+        // particle set), so this is built once, not per substep.
+        let particle_rigid = self.particle_rigid_lookup();
+
         for _sub in 0..n {
             // The velocity entering this substep — the incoming normal speed
             // the restitution pass reflects (captured before gravity/solve).
@@ -225,6 +230,7 @@ impl Solver {
                 self.solve_distance(dt_sub);
                 self.solve_shape_matching();
                 contacts = self.solve_collision_normal();
+                contacts.extend(self.solve_body_collisions(&particle_rigid));
             }
             self.read_back_velocity(dt_sub);
             // Coulomb friction on VELOCITY, after the normal solve: rigid
@@ -309,6 +315,107 @@ impl Solver {
                         restitution: mat.restitution,
                     }),
                 }
+            }
+        }
+        contacts
+    }
+
+    /// Which rigid body (if any) owns each particle, indexed by particle
+    /// index. `None` = a free (non-rigid) particle.
+    fn particle_rigid_lookup(&self) -> Vec<Option<usize>> {
+        let mut lookup = vec![None; self.particles.pos.len()];
+        for (body_idx, body) in self.rigids.iter().enumerate() {
+            for &i in &body.indices {
+                lookup[i] = Some(body_idx);
+            }
+        }
+        lookup
+    }
+
+    /// The BODY-vs-BODY half of collision: two RIGID bodies' particles cannot
+    /// occupy the same space (a stacked crate must rest on the one below it,
+    /// not fall through it). Brute-force over every particle pair not owned
+    /// by the same rigid — adequate at this atom's particle/body counts (a
+    /// handful of low-resolution lattices); a spatial broad-phase is future
+    /// work once a scene needs many more bodies than a small stack.
+    ///
+    /// The resting gap is DERIVED from the static (particle-vs-triangle) pass'
+    /// convention, not asserted independently. The static pass rests a
+    /// particle at `radius + contact_margin` from a face (`solve_collision_
+    /// normal`, above): a SINGLE radius, because a triangle has none of its
+    /// own. Body-vs-body has TWO radii (`r_i`, `r_j`), possibly unequal, and
+    /// the generalization must reduce EXACTLY to the static gap when
+    /// `r_i == r_j == r` (a same-radius body resting on a same-radius body
+    /// should feel the same skin as that body resting on the static world).
+    /// The SUM `r_i + r_j` fails that reduction (`r + r = 2r ≠ r`); the MEAN
+    /// `(r_i + r_j) / 2` reduces correctly (`(r + r) / 2 = r`). So:
+    /// `gap = mean(r_i, r_j) + contact_margin`. `contact_margin` is read from
+    /// the SAME `ContactMaterial` field the static pass reads (falling back
+    /// to the crate's documented default when no static collider is
+    /// installed at all, e.g. two bodies colliding in free space) — never a
+    /// second hardcoded margin.
+    fn solve_body_collisions(&mut self, particle_rigid: &[Option<usize>]) -> Vec<Contact> {
+        let mut contacts = Vec::new();
+        // Fewer than two rigids ⇒ no body-vs-body pair can exist; free
+        // (non-rigid) particles never collide with each other here (that was
+        // never this pass's job, and skipping it keeps a chain/cloth scene's
+        // O(n²) cost at exactly zero instead of scanning every free pair).
+        if self.rigids.len() < 2 {
+            return contacts;
+        }
+        // Only particles OWNED BY A RIGID are candidates — restricts the
+        // brute-force scan to (Σ per-body particle counts), never the whole
+        // free-particle population.
+        let rigid_particles: Vec<usize> = (0..particle_rigid.len())
+            .filter(|&i| particle_rigid[i].is_some())
+            .collect();
+        let restitution = match &self.collider {
+            Some(c) => c.material.restitution,
+            None => 0.0,
+        };
+        // F2/F3: the SAME contact_margin the static pass reads (see the
+        // doc-comment above) — falls back to the crate's documented default
+        // ContactMaterial when no static collider exists at all (two bodies
+        // colliding in free space still get the same surface skin a
+        // resting contact needs, not zero).
+        let contact_margin = match &self.collider {
+            Some(c) => c.material.contact_margin,
+            None => ContactMaterial::default().contact_margin,
+        };
+        let p = &mut self.particles;
+        for (a, &i) in rigid_particles.iter().enumerate() {
+            let wi = p.inv_mass[i];
+            for &j in &rigid_particles[(a + 1)..] {
+                if particle_rigid[i] == particle_rigid[j] {
+                    continue; // same body — held by shape matching, not collision
+                }
+                let wj = p.inv_mass[j];
+                let w = wi + wj;
+                if w == 0.0 {
+                    continue; // two anchors — nothing to push apart
+                }
+                let delta = p.pos[i] - p.pos[j];
+                let dist = delta.length();
+                // mean(r_i, r_j) + contact_margin — see the doc-comment above
+                // for the derivation from the static single-radius convention.
+                let min_dist = (p.radius[i] + p.radius[j]) * 0.5 + contact_margin;
+                if dist >= min_dist || dist <= 0.0 {
+                    continue;
+                }
+                let normal = delta.scale(1.0 / dist);
+                let depth = min_dist - dist;
+                p.pos[i] = p.pos[i] + normal.scale(depth * (wi / w));
+                p.pos[j] = p.pos[j] - normal.scale(depth * (wj / w));
+                contacts.push(Contact {
+                    particle: i,
+                    normal,
+                    restitution,
+                });
+                contacts.push(Contact {
+                    particle: j,
+                    normal: normal.scale(-1.0),
+                    restitution,
+                });
             }
         }
         contacts
@@ -510,5 +617,22 @@ impl Solver {
     /// The observable state's fingerprint at the current tick.
     pub fn state_hash(&self) -> u64 {
         self.particles.state_hash()
+    }
+
+    /// Apply an instantaneous velocity change to every particle of the rigid
+    /// body at `rigid_index` — "the op is the hand": the caller (incantation
+    /// layer) chooses `delta_velocity`, the solver never invents a magnitude.
+    /// Anchors (`inv_mass == 0`) are left untouched, matching every other
+    /// velocity pass in this file. A no-op if `rigid_index` is out of range
+    /// (the caller's binding may have been fractured away).
+    pub fn apply_impulse(&mut self, rigid_index: usize, delta_velocity: Vec3) {
+        let Some(body) = self.rigids.get(rigid_index) else {
+            return;
+        };
+        for &i in &body.indices {
+            if self.particles.inv_mass[i] != 0.0 {
+                self.particles.vel[i] = self.particles.vel[i] + delta_velocity;
+            }
+        }
     }
 }

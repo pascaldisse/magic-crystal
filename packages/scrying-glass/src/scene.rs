@@ -805,6 +805,13 @@ impl RenderScene {
         self.dynamics.tick();
     }
 
+    /// [`RenderScene::tick`], plus a batch of incantation ops folded into the
+    /// physics block before the solver steps this tick (see
+    /// [`Dynamics::tick_with_ops`] — currently only [`Op::Impulse`] acts).
+    pub fn tick_with_ops(&mut self, ops: &[Op]) {
+        self.dynamics.tick_with_ops(ops);
+    }
+
     /// RITE V · V1 — drive every embodied body one fixed tick against the
     /// walker's `commanded_speed` (the embodiment velocity magnitude). Each body
     /// steps its SAMA state machine, takes the emitted pose, and re-skins its
@@ -871,6 +878,15 @@ impl RenderScene {
     /// hash for verification.
     pub fn physics(&self) -> Option<&Physics> {
         self.dynamics.physics.as_ref()
+    }
+
+    /// Mutable access to the physics seam — for direct solver-only timing
+    /// (measuring `Solver::step` wall-clock without the kami/BVH overhead
+    /// `tick`/`tick_with_ops` also pay). Not part of the normal Flow of Data;
+    /// callers that step the solver directly here are responsible for also
+    /// writing the pose back if they need the render/ECS to see it move.
+    pub fn physics_mut(&mut self) -> Option<&mut Physics> {
+        self.dynamics.physics.as_mut()
     }
 
     /// The current world position of a declared body (its solver centroid),
@@ -1634,6 +1650,16 @@ impl Dynamics {
     /// they apply to the ECS → each entity's model is re-derived from its now-
     /// animated transform. Increments the clock. Deterministic in the count.
     pub fn tick(&mut self) {
+        self.tick_with_ops(&[]);
+    }
+
+    /// [`Dynamics::tick`], plus a batch of incantation ops folded into the
+    /// physics block BEFORE `physics.step()` this tick — currently only
+    /// [`Op::Impulse`] does anything here ("the op is the hand": the caller
+    /// names an entity + a velocity delta, scrying-glass resolves it to the
+    /// body's solver rigid index). Every other op variant is ignored (this is
+    /// a physics-only seam, not the general op router).
+    pub fn tick_with_ops(&mut self, incoming: &[Op]) {
         let Some(reg) = self.reg else {
             return;
         };
@@ -1656,13 +1682,19 @@ impl Dynamics {
                     .set_component(entity, reg.transform, set.value.clone());
             }
         }
-        // PHYSICS (the Elements bound into the realm): advance every declared
-        // body one tick, then write its pose (centroid + fitted rotation) back
-        // to the ECS transform — the same Flow of Data KAMI uses, so the body's
+        // PHYSICS (the Elements bound into the realm): fold any incoming
+        // impulses in first, advance every declared body one tick, then
+        // write its pose (centroid + fitted rotation) back to the ECS
+        // transform — the same Flow of Data KAMI uses, so the body's
         // triangles ride the dynamic BVH splice and the traced light sees it
         // move. Read all poses first (shared borrow), then write (world borrow).
         let body_poses: Vec<(String, [f64; 3], [f32; 3])> = match self.physics.as_mut() {
             Some(physics) => {
+                for op in incoming {
+                    if let Op::Impulse(impulse) = op {
+                        physics.apply_impulse(&impulse.id, impulse.delta_velocity);
+                    }
+                }
                 physics.step();
                 physics
                     .bindings()
@@ -2414,14 +2446,15 @@ mod tests {
     /// as the dynamic partition, with NO triangle lost or duplicated. Naruko
     /// carries the lantern (bob) + beacon (pulse) + the three SIGNAL RINGS
     /// (pulse — the lighthouse broadcasts) + the Mirror Proof's kami orb
-    /// (orbit).
+    /// (orbit) + RITE VI · VI-1's four `body` vessels (naruko_crate + the
+    /// three stack crates).
     #[test]
     fn dynamic_split_leaf_parity_holds() {
         let scene = naruko_scene();
         assert_eq!(
             scene.dynamics.entities().len(),
-            7,
-            "the realm breath: lantern + beacon + ring_a/b/c + kami orb (behaviors) + crate (body) are dynamic"
+            10,
+            "the realm breath: lantern + beacon + ring_a/b/c + kami orb (behaviors) + crate + stack_crate_0/1/2 (bodies) are dynamic"
         );
 
         // STATIC BVH triangles (built once) and the DYNAMIC partition triangles.

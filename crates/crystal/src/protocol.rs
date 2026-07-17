@@ -604,6 +604,7 @@ pub enum Op {
     Material(MaterialOp),
     Reset(ResetOp),
     Use(UseOp),
+    Impulse(ImpulseOp),
     Other { op: String, fields: JsonMap },
 }
 
@@ -647,6 +648,17 @@ pub struct UseOp {
     #[serde(flatten)]
     pub extra: JsonMap,
 }
+/// "The op is the hand" — an instantaneous velocity change applied to a
+/// physical vessel's rigid body, BEFORE the physics step that tick. Crystal
+/// stays generic: this just names an entity + a velocity delta; the
+/// scrying-glass physics seam resolves `id` to a solver rigid index.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ImpulseOp {
+    pub id: String,
+    pub delta_velocity: [f64; 3],
+    #[serde(flatten)]
+    pub extra: JsonMap,
+}
 
 impl<'de> Deserialize<'de> for Op {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -672,6 +684,9 @@ impl<'de> Deserialize<'de> for Op {
             "use" => serde_json::from_value::<UseOp>(value)
                 .map(Op::Use)
                 .map_err(serde::de::Error::custom),
+            "impulse" => serde_json::from_value::<ImpulseOp>(value)
+                .map(Op::Impulse)
+                .map_err(serde::de::Error::custom),
             _ => Ok(Op::Other { op, fields: object }),
         }
     }
@@ -685,6 +700,7 @@ impl Serialize for Op {
             Op::Material(v) => ("material", serde_json::to_value(v)),
             Op::Reset(v) => ("reset", serde_json::to_value(v)),
             Op::Use(v) => ("use", serde_json::to_value(v)),
+            Op::Impulse(v) => ("impulse", serde_json::to_value(v)),
             Op::Other { op, fields } => (op.as_str(), Ok(Value::Object(fields.clone()))),
         };
         let mut object = value
