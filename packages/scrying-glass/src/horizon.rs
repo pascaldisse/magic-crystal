@@ -476,13 +476,15 @@ mod tests {
     fn tiny_budget_is_rejected_not_panicked() {
         let p = params();
         let tb = tile_byte_cost(&p);
-        let err = HorizonRing::new(7, p, None, tb * 4).unwrap_err();
-        assert_eq!(
-            err,
-            HorizonError::BudgetTooSmall {
-                tile_bytes: tb,
-                budget_bytes: tb * 4
-            }
-        );
+        match HorizonRing::new(7, p, None, tb * 4) {
+            Err(err) => assert_eq!(
+                err,
+                HorizonError::BudgetTooSmall {
+                    tile_bytes: tb,
+                    budget_bytes: tb * 4
+                }
+            ),
+            Ok(_) => panic!("a 4-tile budget cannot hold a 3×3 square — must be rejected"),
+        }
     }
 }
