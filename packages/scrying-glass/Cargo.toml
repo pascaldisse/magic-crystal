@@ -37,6 +37,10 @@ tokio = { version = "1", features = ["full"] }
 name = "n2_presence"
 path = "examples/n2_presence.rs"
 
+[[example]]
+name = "vi2_break"
+path = "examples/vi2_break.rs"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6.2"
 objc2-app-kit = { version = "0.3.2", features = ["NSEvent", "NSWindow", "NSCursor"] }
