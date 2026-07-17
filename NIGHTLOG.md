@@ -138,6 +138,23 @@
   argument (VIII-3, prime-Guardian ruling pending on the cost∝pixels reading)
   remain the proposal's next waves, not queue debt.
 
+### 9. backlog-f6 → main (queue item 6, ruling F6) — SENSES READ SOLVER TRUTH
+- **What**: oracle canon for the four physics vessels migrated to the
+  solver-rested world (shared tick-to-rest + transform-injection machinery;
+  oracle dev-deps scrying-glass, cycle-free). Crate range 33.0390 authored →
+  33.4042 rested, canonical; stack crates confirm authored heights to ≤0.0002.
+  REST_TICK=91 pinned as a loud checked expectation.
+- **Merge**: b15686a, PUSHED. Suite on main post-merge: 330 passed / 0 failed.
+- **Adversary**: no code MUST-FIX; three derivation-honesty findings + a scope
+  ruling. Conductor ruled the comment-relabel was NOT a migration — canon.rs's
+  physics rows now genuinely gaze the rested world. False citation fixed
+  (contact_margin included, 1.0e-3 correctly cited), headroom re-derived from
+  the worst body (5.6×), solver numbers canonical with analytic as cross-check.
+- **QUEUE ITEM 6 COMPLETE**: walkable-min-area landed (da58013), solver-truth
+  landed (b15686a), advisory sweep — no outstanding ADVISORY strings in
+  NARUKO.md or merge messages; every shadow-review advisory raised tonight was
+  discharged in its own lane before merge.
+
 ## In flight
 - **rite6-vi1** (queue item 3, wave VI-1 THE STACK TOPPLES): built @ d642551 —
   impulse plumbing (Solver::apply_impulse → Physics → Op::Impulse →
