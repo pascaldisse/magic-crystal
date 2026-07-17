@@ -135,3 +135,79 @@ mode of a shove-toppled anchored tower), not a dramatic 3-D heap.
   scenario lives at the solver level; the render bypasses ECS to draw it.
 - Worst-tick numbers carry allocation/GC noise; median is the load-bearing stat.
 - 10k particles reachable as a cost datum only (minutes/collapse), not playable.
+
+## Verification sweep — fixpoint re-query broadphase (2026-07-17, ee2e8cd @ physics-scale)
+Conductor ran the FINISH-ATOM verification pass on `c58cf54` (fixpoint re-query)
+and `ee2e8cd` (real-mesh measure). Tree clean, branch `physics-scale`.
+
+**Safety invariant (from `c58cf54`, confirmed in code at
+`packages/elements/src/solver.rs:785-828`):** a grid query of L∞ half-extent
+`reach` centred at the sweep origin `p0` returns every triangle that can
+contact the particle anywhere on its sweep, as long as `reach >= dmax +
+radius` (`dmax` = max L∞ displacement from `p0` over the sweep) — the fixpoint
+loop (exit guard line 824, growth `reach = dmax + radius` line 827) exits ONLY
+when that holds, so the pruned candidate set is a provable superset and the
+swept result equals brute bit-for-bit. Termination: reach grows strictly each
+failed pass and the candidate set is bounded by all N triangles, so the loop
+reaches brute-equivalence (and the guard holds) in at most N passes — argued
+in the commit message, mechanics visible in the exit/grow lines above; no
+separate in-code termination comment.
+
+**Sabotage (discriminance check):** disabled the re-query trigger (forced
+unconditional `break` after the first pass, dead-coded the `reach = dmax +
+radius` growth) in the worktree → `cargo test -p elements --release --test
+adv_margin` went RED: `adv_two_sided_overshoot` panicked at
+`tests/adv_margin.rs:68:5`, `"BROADPHASE != BRUTE: state_hash diverged at tick
+1 — query reach does not cover the two-sided contact shell's 2r push"`
+(`adv_grid_boundary_superset` stayed green — it doesn't touch this path).
+`git checkout -- packages/elements/src/solver.rs` → diff empty → re-ran →
+`adv_margin` 2/2 green again. The fixpoint re-query is load-bearing, not
+decorative.
+
+**Ordeal counts (all green, this run):**
+| suite | count |
+|---|---|
+| `adv_margin` | 2/2 |
+| `pscale_broadphase` (grid-query completeness, pruned-pairs, deterministic, replay byte-identical ×3 scenarios: drop_box/topple/sphere_stack) | 4/4 |
+| `pscale_ordeals` (building) | 5/5 |
+
+Pruned-pair audit confirmed strengthened per `c58cf54`: narrow-phases every
+pruned triangle at BOTH `p0` (pre-resolution) and the post-resolution `end`
+position (`solver.rs` audit block below the fixpoint loop), not pre-only.
+
+**Measured — synthetic (`elements::examples::pscale_broadphase_measure`,
+108-particle crate, 11858 tris, 8 substeps):**
+| phase | brute | broadphase | speedup |
+|---|---|---|---|
+| collision_static | 47.830 ms | 0.076 ms | 631.8× |
+| **TOTAL tick** | **48.071 ms** | **1.800 ms** | **26.7×** |
+
+Projected serial frame (12.749 + tick): 14.549 ms (68.7 fps) vs 60.820 ms
+(16.4 fps) brute.
+
+**Measured — real naruko mesh (`scrying-glass::examples::naruko_broadphase_measure`,
+actual `worlds/naruko` static soup, 12320 tris, 156×6×105 grid @ 12.891 m,
+108 particles):**
+| phase | brute | broadphase | speedup |
+|---|---|---|---|
+| collision_static | 18.708 ms | 2.235 ms | 8.4× |
+| **TOTAL tick** | **18.864 ms** | **3.953 ms** | **4.8×** |
+
+BYTE-IDENTICAL 240 ticks ON==OFF confirmed on the real mesh. Projected serial
+frame (12.749 + tick): 16.702 ms (59.9 fps) vs 31.613 ms (31.6 fps) brute. The
+real-mesh tick (3.953 ms) is higher than synthetic (1.800 ms) because naruko's
+large terrain triangles bin into a coarser 12.9 m grid cell — an honest gap,
+independent of the fixpoint fix; the fixpoint did NOT eat the broadphase win
+at either scale (byte-identity held, speedup stayed 4.8×–26.7× on TOTAL tick).
+
+**Full workspace suite:** `cargo test --workspace --release` → **391 passed, 0
+failed** (up from the last-known 389 — the 2 adopted `adv_margin` tests). Zero
+`FAILED` occurrences across every crate's unit/doc/integration runs.
+
+**Honest gaps at verification time:**
+- No separate in-code "Termination:" comment near the fixpoint loop — the
+  termination argument lives in the commit message prose only, not restated
+  in `solver.rs`.
+- The real-mesh speedup (4.8× total tick) is materially lower than the
+  synthetic one (26.7×) due to coarse grid cells from large terrain
+  triangles — not a regression, but the honest ceiling for this content.
