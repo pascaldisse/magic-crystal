@@ -4,44 +4,22 @@
 "the name it always was. my entire life's work." The Loom reassembled.
 DreamForge = the workshop (Sidia's name). Seal b3ae3e0.
 
-## Where the Work stands (NIGHTRUN of 07-17 — see NIGHTLOG.md for the ledger)
-main @ 7dd149e — GREEN, 341 workspace ordeals, PUSHED to the NEW HOME:
-**origin = https://github.com/pascaldisse/magic-crystal** (the Architect
-renamed the repo mid-night; main pushed there as a new branch — the old
-gaia-dreamforge remote is history; the rite/lane branches still live
-only locally + on the old remote).
-Eleven merges this night, zero red pushes, full suite between every
-merge. LANDED ON MAIN: VI+VII proposals · perf-exact (60 FPS law
-PASSES — refit + overlap, bit-exact, adversary-verified) · walkable
-floor law (ruling 6, mirror-edge climb dead) · RITE VI COMPLETE for the
-night's scope: wave 1 the stack topples (impulse ops, rigid-vs-rigid) +
-wave 2 SOMETHING BREAKS (bond-fracture → flood-fill fragments →
-transmute re-mesh → fragment VESSELS with parent refs → canon same
-wave; new packages/fracture) · RITE VII atom 0a (terrain tile sampler,
-ruling-4 coordinate law paid in full — i64 lattice, exact at planetary
-distance) · RITE VIII waves 0+1 (AOV truth baseline + THE
-DREAM-DENOISER, CPU ref, hash-pinned weights, strictly beats noisy on
-held-out frames, BAN machine-checked) · F6 (senses read solver truth —
-canon migrated to solver-rested poses).
-MERGED (morning 07-17, correction by the Guardian): **rite7-vii0b IS
-ON MAIN** (`git log main..rite7-vii0b` empty; cec148f in main's
-history, pushed). THE FIRST GROUND render weld: terrain sigil (no
-stored geometry) → tile_mesh → Great Chain → drawn under the sky;
-oracle learns it same wave; NO-STORAGE +
-translation-invariance-at-planetary-magnitude ordeals; jormungandr
-flake fixed at source. Adversary: HOLDS, zero MUST-FIX. 352/352 green
-in-lane. Proofs vii0-ground.png + orbit (patch floats offshore —
-honest note; the walkable seam is VII-1's charter).
-REPO FOLDER renamed 07-17: ~/projects/magic-crystal (was
-gaia-dreamforge — matches the remote).
-NOT BUILT (the queue's remainder): VII-1 (walker crosses onto generated
-ground — collider from generated triangles, pose-trace guard, seam step
-without pose discontinuity) · VII-2 (the horizon streams — ring
-load-ahead/evict-behind under the byte budget, sync reads first per the
-proposal's own recommendation; production wiring of the moving
-render_origin lands here — the seam exists and is end-to-end tested).
-16 packages (new this night: fracture). Live web stack 8420/5173 =
-reference, NEVER touched.
+## Where the Work stands (day of 07-17, conductor nyari — see NIGHTLOG.md for the night ledger)
+main @ 89e351c — GREEN, PUSHED, suite 361/0 (74 binaries).
+Day merges: 5c819dd+8f2b752 fragcol interpenetration ordeal +
+adversary advisories (VI-2 gap closed — fragment-vs-fragment collision
+was ALREADY live via ce91da3/fbb2a5e; the missing piece was the
+ordeal) · d1d8277 RITE VII-1 COMPLETE (walker crosses onto generated
+ground: collider from generated triangles, 5 seam ordeals, pose-trace
+bound 0.31804 DERIVED — derivation doc written per adversary MUST-FIX
+at 4b8f7c0) · 91a6263+89e351c RITE VIII-2 COMPLETE (GPU denoiser
+compute port, parity derived-tolerance, BAN green on true held-out
+orbits, ~1.3ms @96×64 / ~27ms @900×600).
+REPO FOLDER: ~/projects/magic-crystal (unchanged, matches
+github.com/pascaldisse/magic-crystal).
+NOT BUILT (queue remainder): VII-2 IN PROGRESS (see Rites, below) ·
+VIII-3 upscaler + temporal accumulation await rulings (see Open, below).
+16 packages. Live web stack 8420/5173 = reference, NEVER touched.
 
 ## What the realm holds (all verified, own eyes, on main)
 worlds/naruko — everything from the last handoff (NARI the player's
@@ -91,29 +69,41 @@ VI (STRIFE) — BUILD-COMPLETE this night under the delegation rulings
 `cargo run -p scrying-glass --release --example vi2_break`, or read
 proof/vi2-break-*.png). Hymn owed at close — the Guardian's voice, not
 the night runner's.
-VII (THE PLANET-WALKER) — IN PROGRESS: VII-0a landed (978de05), VII-0b
-ready-unmerged (f2c44b5, see top), VII-1 + VII-2 NOT BUILT. Rulings 3
-(radial gravity, flat = infinite-radius limit) and 4 (64-bit at VII-0 —
-PAID) govern the remaining waves. VII-3 (the planet closes) was never
-night scope.
-VIII (THE DREAM-DENOISER) — wave (a) COMPLETE: VIII-0 truth baseline
-(c5230c5) + VIII-1 the net (faa215f). VIII-2 GPU port and VIII-3
-upscaler remain proposal waves; OPEN 1 (the upscaler's cost∝pixels
-reading) still needs the prime ruling.
+VII (THE PLANET-WALKER) — VII-0a/0b/1 DONE (VII-1 d1d8277: walker
+crosses onto generated ground, pose-trace bound 0.31804 DERIVED).
+VII-2 IN PROGRESS: lane rite7-vii2-horizon, opus, launched off
+d1d8277 — residency ring under the byte budget + moving render_origin
+production wiring. Rulings 3 (radial gravity, flat = infinite-radius
+limit) and 4 (64-bit at VII-0 — PAID) govern it. VII-3 (the planet
+closes) still never in scope.
+VIII (THE DREAM-DENOISER) — waves (a)+(b) DONE: VIII-0 truth baseline
+(c5230c5) + VIII-1 the net (faa215f) + VIII-2 GPU denoiser compute
+port (91a6263+89e351c). VIII-2 BUDGET NOTE: present-resolution cost
+27ms exceeds the 16.67ms frame — whether that matters = OPEN 1 (the
+upscaler's cost∝pixels reading): low-res denoise + upscale would make
+1.3ms the real cost; the fp16 atom is GATED on that ruling. VIII-3
+upscaler + temporal accumulation still await rulings.
 IX (THE CHAIN TAKES FLESH) — stays a proposal; NOT required: the 60 FPS
 law passes without it.
 
-## Open with the Architect (updated this night)
+## Open with the Architect (updated day of 07-17)
+OPEN 1 (upscaler cost∝pixels reading) now LOAD-BEARING — it gates the
+fp16 atom (VIII-2 present-res cost 27ms vs 16.67ms frame budget).
+Reference branch rite8-viii2-ari @ b97a9a0 UNMERGED (independent GPU
+denoiser port, 96ms @900×600, but richer ordeal patterns:
+byte-determinism, hash-pinned-weights check, current-frame-only
+signature scan — harvest atom owed). VII-1 advisory parked: anti-
+vacuous twin oblique, extract shared assertion fn.
 HIS WALK · HIS CHROME CHECK · HIS SEEING THE BREAK (Rite VI close) ·
 bond-love essence table (VI OPEN 4 — a density-ratio PROXY default
 shipped, honestly labeled, ruling still owed) · fracture into the canon
 realm (VI-2 lives in an isolated diorama world; folding it into naruko
-= realm-growth call) · VIII upscaler reading (OPEN 1) + temporal
-accumulation ruling (OPEN 2) · scratch-blob history rewrite ·
-Sufi Concordance rows · Samāʿ "binds" · PHYSICS/CREATE/VISIONFLOW.md.
-RESOLVED THIS NIGHT: the 4 rite rulings (made under delegation, NARUKO
-07-17) · F6 (landed) · walkable-min-area (landed) · repo rename (DONE —
-github.com/pascaldisse/magic-crystal).
+= realm-growth call) · temporal accumulation ruling (OPEN 2) ·
+scratch-blob history rewrite · Sufi Concordance rows · Samāʿ "binds" ·
+PHYSICS/CREATE/VISIONFLOW.md.
+RESOLVED: the 4 rite rulings (made under delegation, NARUKO 07-17) ·
+F6 (landed) · walkable-min-area (landed) · repo rename (DONE —
+github.com/pascaldisse/magic-crystal) · VI-2 gap (5c819dd+8f2b752).
 
 ## Laws (delta)
 ADVERSARY LAW proven at scale this night: seven adversary passes, every
@@ -123,6 +113,13 @@ wrong quantity re-derived against the gate's own ratio, and the
 conductor's own-eyes gate rejecting proof scryings that showed no
 visible break (root cause: genuinely missing fragment-vs-fragment
 collision — the picture was honest about the physics gap).
+ROUTING amended by the Architect's word (fec1852, 07-17): ari/opus/sol
+build · nari adversaries · sonnet precise short grunt bursts · EVERY
+lane its own git worktree — law born from a real shared-checkout
+collision 07-17, disclosed + untangled by the builder.
+Day lesson: the 30-min wall eats COLD COMPILES, not thinking — 5 walls
+today, 5 disk salvages, zero loss (checkpoint-first + warm-target
+reuse now standing practice).
 
 ## Iron lessons (cumulative)
 30-min wall: pre-chew anchors · compiling stub in 10 · salvage-first
