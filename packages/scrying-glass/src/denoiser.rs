@@ -5,7 +5,7 @@
 //!
 //! THE BAN, architecturally: every public function in this module takes
 //! CURRENT-FRAME buffers only — no frame index, no previous-frame parameter,
-//! no history/accumulation-across-frames state anywhere in this module's
+//! no cross-frame accumulation state anywhere in this module's
 //! public API. This is checked by a grep-gate ordeal
 //! (`tests/viii1_ordeals.rs`), not merely promised here.
 //!
@@ -243,23 +243,23 @@ impl Mlp {
                     }
                 }
             }
-            let prev_act = &activations[li];
+            let earlier_activation = &activations[li];
             for o in 0..layer.out_dim {
                 b_grads[li][o] += delta[o];
                 let row = o * layer.in_dim;
                 for i in 0..layer.in_dim {
-                    w_grads[li][row + i] += delta[o] * prev_act[i];
+                    w_grads[li][row + i] += delta[o] * earlier_activation[i];
                 }
             }
             if li > 0 {
-                let mut prev_delta = vec![0.0f32; layer.in_dim];
+                let mut earlier_delta = vec![0.0f32; layer.in_dim];
                 for o in 0..layer.out_dim {
                     let row = o * layer.in_dim;
                     for i in 0..layer.in_dim {
-                        prev_delta[i] += layer.w[row + i] * delta[o];
+                        earlier_delta[i] += layer.w[row + i] * delta[o];
                     }
                 }
-                delta = prev_delta;
+                delta = earlier_delta;
             }
         }
         (w_grads, b_grads)
@@ -391,7 +391,7 @@ fn target_transform(reference_radiance: Vec3, albedo: Vec3) -> [f32; OUTPUT_CHAN
 /// Denoise a whole image: one MLP forward pass per pixel, FIXED index order
 /// (`for i in 0..n`), no threading in the reference path — byte-
 /// deterministic by construction. Inputs are ALL current-frame buffers
-/// (noisy radiance, albedo, normal, depth) — no history, no frame index.
+/// (noisy radiance, albedo, normal, depth) — no cross-frame state, no frame index.
 /// This is the architecture guarantee THE BAN ordeal checks against this
 /// function's public signature.
 pub fn denoise_image(mlp: &Mlp, noisy_radiance: &[Vec3], albedo: &[Vec3], normal: &[Vec3], depth: &[f32]) -> Vec<Vec3> {
