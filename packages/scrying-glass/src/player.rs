@@ -22,6 +22,80 @@
 use glam::Vec3;
 use std::collections::HashSet;
 
+/// Cosine cutoff between floor and wall in [`Ground::from_positions`]: a
+/// triangle whose face-normal y-component magnitude is at or below this is
+/// steeper than `acos(0.3) ≈ 72.54°` from horizontal and is dropped as a
+/// wall, never floor. Named (not a bare `0.3` in two call sites) so the
+/// GUARDIAN RULING 6 contact-patch tolerance derivation below can cite the
+/// EXACT cutoff the floor set was already built with.
+const WALL_NORMAL_Y_COS_CUTOFF: f32 = 0.3;
+
+/// Deterministic compass-point probe count for the GUARDIAN RULING 6
+/// contact-patch test: eight points (N/NE/E/SE/S/SW/W/NW) give an even
+/// angular spread around the candidate without any randomness. This cost is
+/// paid EVERY tick on the winning candidate (never skipped), plus again on
+/// every fallthrough rejection — see [`Ground::height_at_gated`]'s doc
+/// comment for the honest per-tick accounting (it is NOT a per-triangle
+/// cost, but it is not a rare one either).
+const CONTACT_PROBE_COUNT: usize = 8;
+
+/// Acceptance epsilon [`Ground::raw_height_at`] uses to decide whether a
+/// candidate height `y` still qualifies under a given `ceiling`: `y <=
+/// ceiling + COLUMN_EPSILON`. Named so [`Ground::height_at_gated`]'s retry
+/// step can be DERIVED from it (see [`GATED_EXCLUSION_STEP`]) instead of
+/// living as a second, independently-chosen literal that could silently
+/// drift smaller than this one.
+const COLUMN_EPSILON: f32 = 1e-3;
+
+/// Retry-exclusion step [`Ground::height_at_gated`] subtracts from a
+/// rejected candidate's height before re-scanning. MUST strictly exceed
+/// [`COLUMN_EPSILON`]: the next scan accepts any `y' <= new_ceiling +
+/// COLUMN_EPSILON`, i.e. any `y' <= y - GATED_EXCLUSION_STEP +
+/// COLUMN_EPSILON`. If the step were `<= COLUMN_EPSILON`, that bound would
+/// be `>= y`, so the just-rejected candidate `y' == y` would re-qualify on
+/// the very next iteration and the fallthrough loop would never terminate
+/// (this was the exact bug: a 1e-4 step against a 1e-3 acceptance epsilon).
+/// Doubling the epsilon keeps the derivation in one place, expressed in
+/// code, while staying well inside float noise for any realistic scene
+/// scale.
+const GATED_EXCLUSION_STEP: f32 = 2.0 * COLUMN_EPSILON;
+
+/// GUARDIAN RULING 6 contact-patch radius default, m
+/// (`GAIA_PLAYER_CONTACT_RADIUS`). MEASURED, not invented: nari (the "nari"
+/// vessel preset, `vessel::Preset::nari()`) is composed and posed at SAMA's
+/// idle tick, and the xz half-extent of the idle-mesh vertices whose
+/// STRONGEST skin weight binds to a single foot bone (`"L.foot"` /
+/// `"R.foot"`) is measured directly — this is her real footprint, not a
+/// stance width (which would span both feet). See the ordeal
+/// `contact_radius_matches_measured_foot_half_extent` in
+/// `tests/patch_gate.rs`, which prints the live measurement every run:
+/// `L.foot half_x=0.0762 half_z=0.0762`, `R.foot half_x=0.0807 half_z=0.0768`
+/// (captured on the current preset geometry). The default is the largest of
+/// those four half-extents (0.0807 m). ROUNDING RULE (so the constant is
+/// reproducible, not aesthetic): round the measured max UP to the next whole
+/// centimetre — `(0.0807 → 0.09)`, i.e. `(measured_max * 100).ceil() / 100`.
+/// This rounding is SAFE but not FREE, and both halves matter: rounding up
+/// means the gate never ADMITS a surface smaller than her actual foot (the
+/// bug Ruling 6 exists to close), but it also means the gate will
+/// false-REJECT any legitimate ledge whose half-width falls in
+/// `[0.0807, 0.09)` — a real, if narrow, correctness cost paid for the
+/// safety margin.
+pub const DEFAULT_CONTACT_RADIUS: f32 = 0.09;
+
+/// Derive the GUARDIAN RULING 6 contact-patch height tolerance from a patch
+/// `radius`, using the SAME wall cutoff [`Ground::from_positions`] already
+/// uses to decide floor vs wall. DERIVATION: `from_positions` keeps any
+/// triangle with `|normal.y| > WALL_NORMAL_Y_COS_CUTOFF`, i.e. it already
+/// calls anything up to `acos(WALL_NORMAL_Y_COS_CUTOFF)` from horizontal a
+/// walkable slope. Walking `radius` metres straight up that steepest
+/// walkable slope changes height by `radius * tan(acos(WALL_NORMAL_Y_COS_CUTOFF))`
+/// — that is the largest height step a probe can legitimately see while
+/// still standing on floor the code already calls walkable, so it is exactly
+/// the tolerance band: any bigger jump means the probe left real floor.
+pub fn contact_tolerance(radius: f32) -> f32 {
+    radius * WALL_NORMAL_Y_COS_CUTOFF.acos().tan()
+}
+
 /// A held control. The window's keyboard and the `/walk` organ both speak in
 /// these intents, never raw key codes, so the controller stays input-agnostic.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -95,6 +169,11 @@ pub struct PlayerParams {
     pub void_y: f32,
     /// Max pitch magnitude in radians (`GAIA_PLAYER_PITCH_LIMIT`).
     pub pitch_limit: f32,
+    /// GUARDIAN RULING 6 contact-patch radius, m — how big a footprint the
+    /// floor under the body's column must actually hold before it counts as
+    /// standable (`GAIA_PLAYER_CONTACT_RADIUS`). See [`DEFAULT_CONTACT_RADIUS`]
+    /// for the measured derivation.
+    pub contact_radius: f32,
 }
 
 impl PlayerParams {
@@ -133,15 +212,18 @@ impl PlayerParams {
             ground_snap: number("GAIA_PLAYER_GROUND_SNAP", 0.35)?,
             void_y: number("GAIA_PLAYER_VOID_Y", -120.0)?,
             pitch_limit: number("GAIA_PLAYER_PITCH_LIMIT", 1.45)?,
+            contact_radius: number("GAIA_PLAYER_CONTACT_RADIUS", DEFAULT_CONTACT_RADIUS)?,
         };
         if params.gravity <= 0.0
             || params.terminal <= 0.0
             || params.walk_speed <= 0.0
             || params.eye_stand <= 0.0
             || params.eye_crouch <= 0.0
+            || params.contact_radius <= 0.0
         {
             return Err(
-                "player gravity, terminal, walk speed and eye heights must be positive".into(),
+                "player gravity, terminal, walk speed, eye heights and contact radius must be positive"
+                    .into(),
             );
         }
         Ok(params)
@@ -200,7 +282,7 @@ impl Ground {
             let b = Vec3::from_array(chunk[1]);
             let c = Vec3::from_array(chunk[2]);
             let normal = (b - a).cross(c - a).normalize_or_zero();
-            if normal.y.abs() <= 0.3 {
+            if normal.y.abs() <= WALL_NORMAL_Y_COS_CUTOFF {
                 continue; // near-vertical: a wall, never a floor
             }
             triangles.push(Triangle {
@@ -218,21 +300,155 @@ impl Ground {
         self.triangles.len()
     }
 
-    /// Highest floor height in column `(x, z)` that sits at or below `ceiling`,
-    /// or `None` when nothing walkable lies under the column there.
-    pub fn height_at(&self, x: f32, z: f32, ceiling: f32) -> Option<f32> {
+    /// RAW column scan (pre-Ruling-6): the highest up-facing triangle whose
+    /// interpolated height sits at or below `ceiling`, with no regard for how
+    /// big that triangle's surface actually is. Kept private — every public
+    /// query above this runs the GUARDIAN RULING 6 contact-patch gate on top
+    /// of it, so a mirror-panel edge (or any other sliver) never counts as
+    /// floor on its own.
+    fn raw_height_at(&self, x: f32, z: f32, ceiling: f32) -> Option<f32> {
         let mut best: Option<f32> = None;
         for triangle in &self.triangles {
-            if triangle.normal_y.abs() <= 0.3 {
+            if triangle.normal_y.abs() <= WALL_NORMAL_Y_COS_CUTOFF {
                 continue;
             }
             if let Some(y) = triangle.height_at(x, z)
-                && y <= ceiling + 1e-3
+                && y <= ceiling + COLUMN_EPSILON
             {
                 best = Some(best.map_or(y, |current| current.max(y)));
             }
         }
         best
+    }
+
+    /// GUARDIAN RULING 6: whether the FLOOR SET (not necessarily one
+    /// connected surface) has SOME raw floor within `tol` of `y` under EVERY
+    /// one of [`CONTACT_PROBE_COUNT`] deterministic compass points on the
+    /// circle of `radius` around `(x, z)`. This is exactly what it tests and
+    /// no more: it is a ring-of-points existence check on the floor set, NOT
+    /// a proof that a single contiguous surface spans the whole disc. A
+    /// surface smaller than the patch (the mirror-panel top edge) has probes
+    /// that either miss the surface entirely (raw floor far below, at
+    /// whatever real ground sits under the mirror) or land on no floor at
+    /// all — either way the probe fails and the whole candidate is rejected,
+    /// which is what closes the mirror-edge seam. But the same looseness
+    /// means the gate can be fooled two ways it does not claim to guard
+    /// against: (1) a sliver low enough above the surrounding real floor
+    /// that ALL 8 probes still land on that lower floor within `tol` gets
+    /// ADMITTED even though it is itself no wider than the sliver (see the
+    /// `sliver_low_enough_above_floor_is_admitted_by_design` documentation
+    /// ordeal in `tests/patch_gate.rs` for the concrete boundary); (2)
+    /// disjoint patches of floor scattered around the ring, none of them
+    /// spanning the centre, could in principle each individually satisfy one
+    /// probe and add up to a false ADMIT. Neither case is exercised by
+    /// naruko's authored geometry tonight, so this is documented risk, not a
+    /// bug — closing it would need per-probe surface identity, not just a
+    /// height check, and is left to a future ruling.
+    fn patch_supported(&self, x: f32, z: f32, y: f32, radius: f32, tol: f32) -> bool {
+        if radius <= 0.0 {
+            return true; // patch test disabled — degrade to the raw query
+        }
+        for i in 0..CONTACT_PROBE_COUNT {
+            let angle = i as f32 * std::f32::consts::TAU / CONTACT_PROBE_COUNT as f32;
+            let probe_x = x + radius * angle.cos();
+            let probe_z = z + radius * angle.sin();
+            // Search a column generously above and below `y` (not bounded by
+            // the caller's original ceiling — the patch test cares only
+            // whether floor exists NEAR y, not whether it's the tallest
+            // thing under the original ceiling).
+            match self.raw_height_at(probe_x, probe_z, y + tol) {
+                Some(probe_y) if (probe_y - y).abs() <= tol => {}
+                _ => return false,
+            }
+        }
+        true
+    }
+
+    /// Highest floor height in column `(x, z)` at or below `ceiling` that
+    /// ALSO passes the GUARDIAN RULING 6 contact-patch gate for the given
+    /// `radius`/`tol` (see [`contact_tolerance`] for deriving `tol` from
+    /// `radius`). Falls through to the next-highest raw candidate when the
+    /// top one is too small a surface to hold a foot (a mirror-panel edge, a
+    /// rail cap, …), all the way down to `None` if nothing under the column
+    /// can hold the patch.
+    ///
+    /// PERFORMANCE: this is called every tick, and `patch_supported` runs on
+    /// the SUCCESS path before every `Some` return — so it is paid EVERY
+    /// tick, always, not conditionally: `CONTACT_PROBE_COUNT` (8) full column
+    /// scans just to confirm the winning candidate, plus another 8 for each
+    /// fallthrough rejection (a mirror edge costs 16 total: 8 to reject the
+    /// sliver, 8 to confirm the seawall beneath it). That is roughly 9× the
+    /// cost of the pre-gate single scan per fallthrough step — never every
+    /// triangle in the scene individually re-probed, but still a real,
+    /// always-paid multiplier. Measured harmless at naruko scale (~63k
+    /// tri-tests/tick for one walker on the current floor set); revisit this
+    /// budget if the floor set or walker count grows by an order of
+    /// magnitude.
+    pub fn height_at_gated(
+        &self,
+        x: f32,
+        z: f32,
+        ceiling: f32,
+        radius: f32,
+        tol: f32,
+    ) -> Option<f32> {
+        let mut ceiling = ceiling;
+        // Belt-and-braces bound, PROVEN unreachable, not just hoped safe:
+        // each retry lowers the ceiling by GATED_EXCLUSION_STEP (2 *
+        // COLUMN_EPSILON), which strictly exceeds COLUMN_EPSILON — the only
+        // epsilon `raw_height_at` uses to accept a candidate. So every
+        // accepted `y` this loop sees is strictly less than every `y` it saw
+        // before (`y_next <= ceiling_next + COLUMN_EPSILON == y_prev -
+        // GATED_EXCLUSION_STEP + COLUMN_EPSILON < y_prev`), i.e. candidates
+        // form a strictly decreasing sequence. `raw_height_at` only ever
+        // returns heights that come from this floor's own triangle set, so
+        // there are at most `self.triangles.len()` distinct candidate
+        // heights to strictly decrease through before the column runs out of
+        // floor and `raw_height_at` returns `None` (caught by the `?` above,
+        // outside this loop). Therefore this loop CANNOT run more than
+        // `triangles.len()` iterations while the exclusion-step invariant
+        // holds — if it ever does, the invariant itself broke (someone
+        // changed GATED_EXCLUSION_STEP or COLUMN_EPSILON without keeping the
+        // former strictly larger, or `raw_height_at`'s acceptance rule
+        // changed underneath it). That is a logic bug in code the proof
+        // above says can never legitimately execute, so it gets a loud crash
+        // in EVERY profile — not a quiet `None` that would silently drop the
+        // player through the floor in the field — so it is caught in CI
+        // instead of hidden behind a "safe" fallback.
+        let max_iterations = self.triangles.len();
+        for _ in 0..=max_iterations {
+            let y = self.raw_height_at(x, z, ceiling)?;
+            if self.patch_supported(x, z, y, radius, tol) {
+                return Some(y);
+            }
+            // Exclude this candidate (and anything within float noise of it)
+            // and retry with the next-highest raw floor below it.
+            ceiling = y - GATED_EXCLUSION_STEP;
+        }
+        panic!(
+            "height_at_gated exceeded {max_iterations} fallthrough iterations (bounded by the \
+             triangle count) — the GATED_EXCLUSION_STEP > COLUMN_EPSILON exclusion invariant \
+             this bound is proven from (see this loop's doc comment) must have broken; this is \
+             unreachable-by-proof code firing, a logic bug that deserves a crash in every \
+             profile, not a quiet fall-through-world"
+        );
+    }
+
+    /// Highest floor height in column `(x, z)` that sits at or below
+    /// `ceiling`, or `None` when nothing walkable lies under the column
+    /// there. Patch-gated (GUARDIAN RULING 6) with [`DEFAULT_CONTACT_RADIUS`]
+    /// so every existing caller inherits the mirror-edge fix without
+    /// threading a radius through; the live [`Player`] instead calls
+    /// [`Ground::height_at_gated`] directly with its own [`PlayerParams`]
+    /// (so `GAIA_PLAYER_CONTACT_RADIUS` actually takes effect at runtime).
+    pub fn height_at(&self, x: f32, z: f32, ceiling: f32) -> Option<f32> {
+        self.height_at_gated(
+            x,
+            z,
+            ceiling,
+            DEFAULT_CONTACT_RADIUS,
+            contact_tolerance(DEFAULT_CONTACT_RADIUS),
+        )
     }
 }
 
@@ -401,7 +617,13 @@ impl Player {
         let x = self.position.x;
         let z = self.position.z;
         let feet = self.position.y - self.eye_height;
-        let ground_y = ground.height_at(x, z, self.position.y + 1e-3);
+        let ground_y = ground.height_at_gated(
+            x,
+            z,
+            self.position.y + 1e-3,
+            self.params.contact_radius,
+            contact_tolerance(self.params.contact_radius),
+        );
 
         match ground_y {
             Some(g) if feet <= g + self.params.ground_snap && self.vy <= 0.0 => {
@@ -472,6 +694,7 @@ mod tests {
             ground_snap: 0.35,
             void_y: -120.0,
             pitch_limit: 1.45,
+            contact_radius: DEFAULT_CONTACT_RADIUS,
         }
     }
 
