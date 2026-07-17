@@ -264,3 +264,18 @@ the break (VI) · neural-frame cutover call · physics-quality items
 LESSONS: checkpoint-first (7 lane deaths today, zero loss) · warm-target
 reuse · silent lane ≠ dead lane, verify the room · one worker per dir ·
 the adversary law drew real blood (2r overshoot) and must never soften.
+
+## EVENING DELTA — fall-through RESOLVED (merge-conductor burst #10)
+main @ 5856fda (merges 79e9953 floor-fallthrough + 5856fda realm-
+rimguard). VERDICT: no interior fall-through — naruko terra plate
+watertight, 3511 walks (42 bounded suspect+grid + 3393 coverage + 50
+walk-sweep + 15 rim), 0 genuine tunnels; harness classifier honest
+(gated-not-raw + settle-confirm). The Architect's episodic drop was a
+MAP EDGE, not a floor bug: south/east/west rims were naked (sub-eye-
+height walls auto-climb like stairs — no horizontal collision in this
+controller) → now guarded wall+catch-shelf, 15/15 rim walks caught
+(StepDown), 0 OffWorld breaches. 2 permanent CI ordeals added
+(floor_fallthrough.rs). O(n) Ground query flagged as future exact-perf
+atom (not blocking). Suite: 396 passed, 0 failed, workspace --release.
+ARCHITECT'S FALL-THROUGH COMPLAINT (evening OPEN BUG, above) — CLOSED
+pending his own walk of the guarded rims.
