@@ -330,7 +330,8 @@
       "density": 200,
       "resolution": [3, 3, 3],
       "contact_radius": 0.05,
-      "bonded": true
+      "bonded": true,
+      "love": 0.02
     }
   }
 }

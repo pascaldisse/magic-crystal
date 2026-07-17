@@ -172,10 +172,18 @@ fn main() {
     let static_bvh = Bvh::build(&scene.leaf_triangles(), &bvh_params);
 
     let spawn = break_crate_authored_position();
+    // Pulled back further than a single-crate shot (VI-1's stack framing) —
+    // fragments scatter several metres from the impact point, so the frame
+    // must cover that spread, not just the authored spawn point. Aimed at
+    // the MIDPOINT of the fall (spawn height down to the seawall top the
+    // crate rests on) rather than the spawn point alone, so the whole
+    // airborne arc stays inside frame, not just its highest point.
+    let seawall_top_y = 1.4_f32; // derived above: naruko_seawall part y (0.7) + half its 1.4 height
+    let look_at = [spawn[0], (spawn[1] + seawall_top_y) * 0.5, spawn[2]];
     let camera = camera_at(
-        [spawn[0] + 5.0, spawn[1] + 1.5, spawn[2] + 7.0],
-        spawn,
-        50.0,
+        [spawn[0] + 7.0, spawn[1] + 2.0, spawn[2] + 10.0],
+        look_at,
+        55.0,
     );
 
     let (w, h) = (900u32, 600u32);
