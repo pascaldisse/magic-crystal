@@ -54,6 +54,10 @@ struct ScryingGlassConfig {
     /// Interim upscale mode uploaded to the blit: 0 = bilinear (default),
     /// 1 = nearest. The clean seam for the neural upscaler (VIII-3).
     upscale_mode: u32,
+    /// FPS COUNTER BURST — HUD toggle (GAIA_NATIVE_HUD, default ON) and its
+    /// rolling-median sample window (GAIA_NATIVE_HUD_WINDOW, default 30).
+    hud_enabled: bool,
+    hud_window: usize,
 }
 
 impl ScryingGlassConfig {
@@ -85,6 +89,12 @@ impl ScryingGlassConfig {
                 .parse::<bool>()
                 .map_err(|_| format!("SPIKE_AUTOTEST_IPC must be true or false, got {value:?}"))?,
             Err(_) => false,
+        };
+        let hud_enabled = match std::env::var("GAIA_NATIVE_HUD") {
+            Ok(value) => value
+                .parse::<bool>()
+                .map_err(|_| format!("GAIA_NATIVE_HUD must be true or false, got {value:?}"))?,
+            Err(_) => true,
         };
         let world_path = std::env::var_os("GAIA_WORLD")
             .map(PathBuf::from)
@@ -169,6 +179,8 @@ impl ScryingGlassConfig {
                 },
                 Err(_) => 0,
             },
+            hud_enabled,
+            hud_window: integer("GAIA_NATIVE_HUD_WINDOW", 30)? as usize,
         };
         if config.render_width == 0 || config.render_height == 0 {
             return Err("GAIA_NATIVE_RENDER_W and GAIA_NATIVE_RENDER_H must be positive".into());
@@ -1618,6 +1630,9 @@ fn main() {
                 });
                 let render_player = player.clone();
                 let render_ground = ground.clone();
+                let hud_overlay = overlay.clone();
+                let hud_enabled = config.hud_enabled;
+                let hud_window = config.hud_window;
                 thread::Builder::new()
                     .name("gaia-render".into())
                     .spawn(move || {
@@ -1631,6 +1646,9 @@ fn main() {
                             render_interval,
                             &scry_rx,
                             &running,
+                            &hud_overlay,
+                            hud_enabled,
+                            hud_window,
                         );
                     })
                     .map_err(std::io::Error::other)?;
@@ -1661,8 +1679,20 @@ fn run_render_loop(
     render_interval: Duration,
     scry_rx: &mpsc::Receiver<ScryRequest>,
     running: &Arc<AtomicBool>,
+    hud_overlay: &tauri::webview::Webview<tauri::Wry>,
+    hud_enabled: bool,
+    hud_window: usize,
 ) {
     let mut deadline = Instant::now();
+    // FPS COUNTER BURST — the REAL frame clock: the same std::time::Instant
+    // style measure_trace_ms uses at startup, applied per delivered frame
+    // (measured after present, i.e. across the Fifo vsync wait too — this is
+    // the cadence the Architect's eyes actually see). Never a second timer:
+    // the overlay DOM only renders numbers Rust pushes it, no JS rAF loop.
+    let mut last_tick = Instant::now();
+    let mut frame_times: std::collections::VecDeque<f64> =
+        std::collections::VecDeque::with_capacity(hud_window.max(1));
+    let mut hud_logged = 0u32;
     while running.load(Ordering::Acquire) {
         // Service moving-eye requests off the frame loop's hot path.
         while let Ok(request) = scry_rx.try_recv() {
@@ -1693,6 +1723,27 @@ fn run_render_loop(
             thread::sleep(deadline - now);
         } else {
             deadline = now;
+        }
+
+        if hud_enabled {
+            let tick_now = Instant::now();
+            let frame_ms = tick_now.duration_since(last_tick).as_secs_f64() * 1e3;
+            last_tick = tick_now;
+            frame_times.push_back(frame_ms);
+            if frame_times.len() > hud_window.max(1) {
+                frame_times.pop_front();
+            }
+            let mut sorted: Vec<f64> = frame_times.iter().copied().collect();
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let median_ms = sorted[sorted.len() / 2];
+            let fps = if median_ms > 0.0 { 1000.0 / median_ms } else { 0.0 };
+            let payload =
+                format!("window.__gaiaHud && window.__gaiaHud({fps:.1},{median_ms:.2})");
+            let _ = hud_overlay.eval(payload.clone());
+            if hud_logged < 5 {
+                eprintln!("[hud] {payload}");
+                hud_logged += 1;
+            }
         }
     }
 }
