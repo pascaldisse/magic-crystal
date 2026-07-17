@@ -2913,16 +2913,25 @@ mod tests {
     /// to be the identical small vector `(1.5, 0.0, -2.25)` (an arbitrary
     /// small "camera not quite at the tile origin" offset). If the far
     /// regime's f64 subtraction lost precision, the resulting f32 offset
-    /// would drift from the near regime's; VII-0a already proved
-    /// `seed::tile_mesh`'s LOCAL vertex positions are exact at any tile
-    /// magnitude, so composing that exact local mesh with an exactly
-    /// identical placement offset must produce BIT-IDENTICAL world-space
-    /// leaf triangles between the two regimes — the translation-invariance
-    /// ordeal this atom owes.
+    /// would drift from the near regime's.
+    ///
+    /// SCOPE (post-adversary-review correction): this is the OFFSET
+    /// ARITHMETIC in isolation — it does not, by itself, prove the
+    /// PRODUCTION `from_ecs_at` weld actually threads `render_origin`
+    /// through correctly, nor does composing one shared local mesh with two
+    /// offsets prove anything about DIFFERENT tiles' generated content (two
+    /// genuinely different tiles, e.g. `(0,0)` vs `(10_000_000,-10_000_000)`,
+    /// legitimately generate DIFFERENT height content — different global
+    /// grid indices sample different noise, VII-0a's per-tile independence
+    /// by design — so "bit-identical leaf triangles between near and far
+    /// tiles" is not even a true claim to make). The real end-to-end proof,
+    /// through `from_ecs_at` -> `append_terrain` on an actual loaded realm,
+    /// with the content-vs-placement distinction kept honest, lives in
+    /// `packages/scrying-glass/tests/vii0b_terrain.rs`'s
+    /// `render_origin_at_planetary_tile_magnitude_reproduces_the_local_mesh_through_the_real_weld`.
     #[test]
     fn terrain_placement_offset_is_translation_invariant_at_planetary_tile_magnitude() {
         let params = seed::TerrainParams::default();
-        let world_seed = seed::Seed(0x5eed);
 
         // NEAR regime: tile (0,0), tile_origin = (0,0). Render origin offset
         // by the small residual so tile_origin - render_origin = -residual.
@@ -2958,38 +2967,6 @@ mod tests {
             Vec3::new(residual[0] as f32, residual[1] as f32, residual[2] as f32),
             "the offset must equal the residual exactly (both magnitudes cancel \
              in f64 before the f32 cast)"
-        );
-
-        // Composing an ACTUAL generated mesh with each regime's offset (via
-        // `append_terrain`, the real production path) must then also be
-        // bit-identical — not just the scalar offset in isolation.
-        let mesh = seed::tile_mesh(world_seed, near_tile, &params);
-        let mut collider_a = Vec::new();
-        let mut collider_b = Vec::new();
-        let mut buckets_a = BTreeMap::<MatKey, MatBucket>::new();
-        let mut buckets_b = BTreeMap::<MatKey, MatBucket>::new();
-        append_terrain(
-            &mut buckets_a,
-            &mesh,
-            near_offset,
-            [1.0, 1.0, 1.0],
-            &mut collider_a,
-        );
-        append_terrain(
-            &mut buckets_b,
-            &mesh,
-            far_offset,
-            [1.0, 1.0, 1.0],
-            &mut collider_b,
-        );
-        let key = buckets_a.keys().next().copied().expect("one bucket");
-        let verts_a = &buckets_a[&key].vertices;
-        let verts_b = &buckets_b[&key].vertices;
-        assert_eq!(verts_a.len(), verts_b.len());
-        assert_eq!(
-            verts_a, verts_b,
-            "placed leaf-vertex world positions must be bit-identical across the \
-             near/far tile-magnitude regimes"
         );
     }
 }
