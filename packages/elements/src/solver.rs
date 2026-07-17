@@ -12,6 +12,58 @@ use crate::mat3::PolarConfig;
 use crate::math::Vec3;
 use crate::particles::Particles;
 use crate::rigid::RigidBody;
+use std::time::{Duration, Instant};
+
+/// P-SCALE — per-phase CPU cost of ONE tick, filled by [`Solver::step_profiled`].
+/// Pure measurement: the fields carry wall-clock `Duration`s (single core) for
+/// each phase of the tick, plus the structural counts that drive the cost
+/// curves vs N (particle count, live bond count, clustered-particle count, and
+/// the ACTUAL number of body-vs-body pair CHECKS the O(k²) pass iterated this
+/// tick — same pair set the pass walks, so the count never drifts from the
+/// cost). The phase breakdown matches the physics-recon lane's ask:
+/// constraint solve, fragment flood-fill, body-vs-body O(k²), static
+/// collision. `step_profiled` reproduces `step` BIT-FOR-BIT (guarded by
+/// `ordeal_step_profiled_matches_step` in `tests/pscale_ordeals.rs`) — the
+/// timers wrap the SAME private phase methods `step` calls, in the same
+/// order; nothing here changes solver semantics.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PhaseProfile {
+    /// Symplectic-Euler prediction under gravity (`integrate`), summed over substeps.
+    pub integrate: Duration,
+    /// The XPBD compliant distance-bond solve (`solve_distance`) — "constraint solve".
+    pub solve_distance: Duration,
+    /// Rigid shape-matching (`solve_shape_matching`) — ~0 for a pure bonded building.
+    pub shape_matching: Duration,
+    /// Particle-vs-static-world-triangle collision (`solve_collision_normal`)
+    /// — the "collision broad/narrow" pass against the ground/anchors.
+    pub collision_static: Duration,
+    /// Body-vs-body / fragment-vs-fragment collision (`solve_body_collisions`)
+    /// — the O(k²) pass over clustered particles. The phase the lane expects
+    /// to explode with N.
+    pub collision_body: Duration,
+    /// The per-tick flood-fill (`particle_cluster_lookup` → `fragment_components`)
+    /// — "fragment flood-fill", O(particles + bonds) over each bonded group.
+    pub cluster_floodfill: Duration,
+    /// The remaining velocity-level passes (read-back, friction, restitution,
+    /// strife tally) — grouped, not a lane-named phase but recorded so the
+    /// phase sum equals the whole tick.
+    pub velocity_passes: Duration,
+    /// Tearing bonds whose strife overcame love (`fracture_pass`).
+    pub fracture_pass: Duration,
+    /// The whole tick, wall to wall (≥ the sum of the phases — the small
+    /// remainder is bookkeeping between phases).
+    pub total: Duration,
+    /// Live particle count this tick.
+    pub particles: usize,
+    /// Live distance-bond count this tick (falls as bonds fracture).
+    pub bonds: usize,
+    /// Particles owned by SOME cluster (rigid or bonded) this tick — the
+    /// population the O(k²) body pass scans.
+    pub clustered_particles: usize,
+    /// The number of body-vs-body pair CHECKS the O(k²) pass performed this
+    /// tick: `(k choose 2) × iterations × substeps` — the honest cost driver.
+    pub body_pair_checks: u64,
+}
 
 /// The world's dials. Defaults are declared here, once — every field is a
 /// parameter (never-hardcode law).
@@ -437,6 +489,81 @@ impl Solver {
 
         self.fracture_pass();
         self.tick += 1;
+    }
+
+    /// P-SCALE — advance ONE tick exactly as [`Solver::step`], but wrap each
+    /// phase in a wall-clock timer and return the per-phase [`PhaseProfile`].
+    /// This mirrors `step`'s body line-for-line (same private phase methods,
+    /// same order, same arithmetic) so the resulting world state is
+    /// BIT-IDENTICAL to `step` — locked by `ordeal_step_profiled_matches_step`.
+    /// The only additions are `Instant` reads between phases; no solver
+    /// semantics change. Measurement-only: production uses `step` (zero timing
+    /// overhead).
+    pub fn step_profiled(&mut self) -> PhaseProfile {
+        let mut prof = PhaseProfile::default();
+        let tick_start = Instant::now();
+        let cfg = self.config;
+        let n = cfg.substeps.max(1);
+        let dt_sub = cfg.dt / n as f64;
+        let inv_dt2 = if dt_sub > 0.0 {
+            1.0 / (dt_sub * dt_sub)
+        } else {
+            0.0
+        };
+
+        for c in &mut self.constraints {
+            c.bond.strife = 0.0;
+        }
+
+        let t = Instant::now();
+        let particle_cluster = self.particle_cluster_lookup();
+        prof.cluster_floodfill += t.elapsed();
+
+        let clustered = particle_cluster.iter().filter(|c| c.is_some()).count();
+        prof.clustered_particles = clustered;
+        let pairs_per_solve = (clustered as u64) * (clustered.saturating_sub(1) as u64) / 2;
+
+        for _sub in 0..n {
+            let vel_pre = self.particles.vel.clone();
+            let t = Instant::now();
+            self.integrate(dt_sub);
+            prof.integrate += t.elapsed();
+            self.reset_lambda();
+            let mut contacts: Vec<Contact> = Vec::new();
+            for _it in 0..cfg.iterations.max(1) {
+                let t = Instant::now();
+                self.solve_distance(dt_sub);
+                prof.solve_distance += t.elapsed();
+                let t = Instant::now();
+                self.solve_shape_matching();
+                prof.shape_matching += t.elapsed();
+                let t = Instant::now();
+                contacts = self.solve_collision_normal();
+                prof.collision_static += t.elapsed();
+                let t = Instant::now();
+                contacts.extend(self.solve_body_collisions(&particle_cluster));
+                prof.collision_body += t.elapsed();
+                prof.body_pair_checks += pairs_per_solve;
+            }
+            let t = Instant::now();
+            self.read_back_velocity(dt_sub);
+            self.apply_friction(&contacts, dt_sub);
+            self.apply_restitution(&contacts, &vel_pre);
+            for c in &mut self.constraints {
+                c.bond.strife += c.lambda.abs() * inv_dt2;
+            }
+            prof.velocity_passes += t.elapsed();
+        }
+
+        let t = Instant::now();
+        self.fracture_pass();
+        prof.fracture_pass += t.elapsed();
+        self.tick += 1;
+
+        prof.particles = self.particles.pos.len();
+        prof.bonds = self.constraints.len();
+        prof.total = tick_start.elapsed();
+        prof
     }
 
     /// Symplectic-Euler prediction under gravity (anchors stand still).
