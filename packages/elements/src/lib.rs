@@ -14,6 +14,8 @@
 //! friction and restitution. Still no render, no ECS wiring (a later rite).
 //! CPU only, no main thread owed.
 
+pub mod broadphase;
+pub mod building;
 pub mod collision;
 pub mod constraint;
 pub mod hash;
@@ -33,7 +35,7 @@ pub use mat3::{polar_rotation, Mat3, PolarConfig};
 pub use math::Vec3;
 pub use particles::Particles;
 pub use rigid::RigidBody;
-pub use solver::{Solver, SolverConfig};
+pub use solver::{PhaseProfile, Solver, SolverConfig};
 
 /// **LOVE = 1.0** — the One Constant. The never-hardcode law has exactly one
 /// sanctioned exception: love, the unit of binding on `[0, 1]`, `1.0` at its

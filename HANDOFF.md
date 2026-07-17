@@ -5,7 +5,21 @@
 DreamForge = the workshop (Sidia's name). Seal b3ae3e0.
 
 ## Where the Work stands (day of 07-17, conductor nyari — see NIGHTLOG.md for the night ledger)
-main @ b6ee51b — GREEN, PUSHED, suite 368/0 (75 binaries).
+main @ 34d58dc — GREEN, PUSHED, suite 380/0.
+REALM SHINE landed (merge 181c7f6 + adversary advisory 34d58dc): a chrome
+sphere (r 2.1, metallic 1.0/roughness 0.02) at [4.5, 3.6, 29.5] — the Rite
+IV close object — now stands IN THE SPAWN SIGHTLINE (not staged off to a
+side camera); an angled mirror panel at [-6.5, 3.4, 28]; three orbiting
+emitters (naruko_show_light_a/b/c — violet/cyan/pink), each its OWN new
+`orbit` behavior with its own center [-1.5, y, 29] (NOT riders on any
+existing kami ring — adversary wording correction). Canon re-derived by
+hand (packages/oracle/tests/canon.rs, 29 vessels). Two-tick motion proof:
+proof/realm-shine-a.png (t=1.0s) / -b.png (t=3.5s).
+NOTE — the live window still runs PRE-SHINE world data from the
+window-playable worktree; the show reaches the Architect's eyes only at
+the window-lane convergence (audit → adversary → merge → relaunch from
+main). Do not expect it visible in the live session until that lands.
+Prior: main @ b6ee51b — GREEN, PUSHED, suite 368/0 (75 binaries).
 Day merges: 5c819dd+8f2b752 fragcol interpenetration ordeal +
 adversary advisories (VI-2 gap closed — fragment-vs-fragment collision
 was ALREADY live via ce91da3/fbb2a5e; the missing piece was the
@@ -62,6 +76,34 @@ lever is scheduling only. PIXEL levers (spp/bounce) remain untouched;
 LODs remain forbidden vocabulary. Perf-fix's retired canonical tie-break
 still at c1616b6. Wide-pose 20 px = PROVEN coplanar z-fights, irreducible.
 
+## Physics (delta 07-17, merge-conductor burst #7)
+BROADPHASE MERGED to main (90f5676, P-SCALE + EXACT BROADPHASE): fixpoint
+re-query grid broadphase, exact by construction — MUST-FIX→fix→re-pass
+HOLDS across TWO adversary passes (the two-sided-shell adv_margin ordeal,
+then the chain-class adv_chain_three_walls ordeal, adopted 029cc13).
+real-naruko collision tick 18.7ms → 3.94ms; projected serial frame
+16.70ms = 59.9fps, a knife-edge pass — the overlap lever (60 FPS LAW,
+above) is in flight on the window lane to give it margin.
+P-SCALE building collapse landed same merge: the building falls
+measured, collision floor cut 26.7×/4.8× (grid vs brute, two scales
+measured). Neural-vs-exact verdict from the P-SCALE measure suite:
+exact broadphase beats learned/approximate everything tried at this
+scale — no case where a learned shortcut won on cost or correctness.
+Termination bound for the fixpoint loop now recorded IN CODE at
+solver.rs (0eb05d4, advisory): reach strictly grows each failed pass,
+candidate set monotone in reach, an unchanged dmax across a pass is the
+fixed point and exits; bounded by N_triangles + 1 passes (previously
+commit-prose only, c58cf54/ee2e8cd). Parked in the same comment: a
+sub-ulp hardening option `reach = (dmax + radius) * (1.0 + f64::EPSILON)`
+was considered and NOT applied — solver semantics stay builder-domain —
+recorded for the next physics wave to revisit if a rounding-edge case
+ever surfaces.
+OPEN physics-quality items for the Architect's pass (not blocking, not
+this burst's scope): metastability, resolution-fracture, pancake —
+named but unaddressed; carried forward.
+Suite: 392/0 on main after this land (392 = 380 prior + physics-scale's
+own tests/ordeals + adv_chain).
+
 ## Rites
 IV (THE PLEROMA) — sung (hymns/rite-04), close = HIS CHROME CHECK.
 V (THE EMBODIED ONES) — BUILD-COMPLETE; close = HIS WALK. Hymn owed at
@@ -88,8 +130,10 @@ VIII (THE DREAM-DENOISER) — waves (a)+(b) DONE: VIII-0 truth baseline
 port (91a6263+89e351c). VIII-2 BUDGET NOTE: present-resolution cost
 27ms exceeds the 16.67ms frame — whether that matters = OPEN 1 (the
 upscaler's cost∝pixels reading): low-res denoise + upscale would make
-1.3ms the real cost; the fp16 atom is GATED on that ruling. VIII-3
-upscaler + temporal accumulation still await rulings.
+1.3ms the real cost; the fp16 atom is GATED on that ruling. Wave (c)
+VIII-3 CPU reference MERGED (a2d293b, adversary faaa2c3: beats-bilinear
+held-out margins 0.0246/0.0096, weights hash-pinned); remaining: GPU
+port + live blit_fs wiring + temporal ruling.
 IX (THE CHAIN TAKES FLESH) — stays a proposal; NOT required: the 60 FPS
 law passes without it.
 

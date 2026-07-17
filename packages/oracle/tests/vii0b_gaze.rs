@@ -9,6 +9,8 @@
 //! the assertion is about THIS entity, not incidentally true because of
 //! unrelated canon churn.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use oracle::{look, EyePose, Glance, Layers, LookParams, World};
 
 /// A world containing ONLY the canon terrain sigil
@@ -16,8 +18,23 @@ use oracle::{look, EyePose, Glance, Layers, LookParams, World};
 /// `naruko_first_ground`) — tile_origin (0,128), tile_size_m=64,
 /// height_amplitude=9.6 (see `canon.rs`'s header derivation for these
 /// numbers), so world AABB x[0,64] y[-9.6,9.6] z[128,192], center [32,0,160].
+///
+/// Suite-reliability fix (house pattern, `f2c44b5` — jormungandr's
+/// `generate_artifact`): this file's two tests both call
+/// `terrain_only_world()`, which previously named its tempdir with ONLY
+/// `std::process::id()`. Both tests run in the same test-binary process, so
+/// under `cargo test`'s default parallel threads they raced on the SAME
+/// directory name — create/write/load/remove all interleaving on one path.
+/// Fixed the same way: a monotonic in-process counter appended to the pid
+/// makes every call's directory unique, no call-site changes needed.
+static GAZE_WORLD_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
 fn terrain_only_world() -> World {
-    let dir = std::env::temp_dir().join(format!("gaia_vii0b_gaze_{}", std::process::id()));
+    let unique = GAZE_WORLD_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!(
+        "gaia_vii0b_gaze_{}_{unique}",
+        std::process::id()
+    ));
     let scenes = dir.join("scenes");
     std::fs::create_dir_all(&scenes).expect("create temp scenes dir");
     std::fs::write(
