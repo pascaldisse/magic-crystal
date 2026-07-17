@@ -519,6 +519,20 @@ impl Player {
         }
     }
 
+    /// Shift the body's frame of reference by `delta` (RITE VII-2 render_origin
+    /// rebase): the eye position, the last-safe pose, and the spawn pose all
+    /// move together, so the body's WORLD pose is unchanged — only the
+    /// camera-relative coordinates it is expressed in shift, keeping them small
+    /// near a moving observer at planetary distance. Velocity is a difference
+    /// of positions and is frame-invariant, so it is deliberately untouched.
+    pub fn rebase(&mut self, delta: Vec3) {
+        self.position += delta;
+        if let Some(safe) = self.last_safe.as_mut() {
+            *safe += delta;
+        }
+        self.spawn.0 += delta;
+    }
+
     /// Reset motion state back to the spawn eye pose.
     pub fn respawn(&mut self) {
         self.position = self.spawn.0;

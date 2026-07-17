@@ -82,6 +82,17 @@ pub fn tile_byte_cost(params: &TerrainParams) -> u64 {
         + indices * std::mem::size_of::<u32>() as u64
 }
 
+/// The ACTUAL byte size of a materialized tile mesh — the resident memory the
+/// budget caps. Equal to [`tile_byte_cost`] for the tile's params (uniform
+/// grid), but measured from the held mesh so residency accounting is the real
+/// allocation, never a promised one. (Planning — budget/radius derivation —
+/// uses the analytic [`tile_byte_cost`], like `jormungandr` sizes loads from
+/// its index before reading.)
+fn mesh_bytes(mesh: &Mesh) -> u64 {
+    mesh.vertices.len() as u64 * std::mem::size_of::<transmutation::Vertex>() as u64
+        + mesh.indices.len() as u64 * std::mem::size_of::<u32>() as u64
+}
+
 /// The largest Chebyshev radius `R` whose required square `(2R+1)²` tiles fit
 /// the budget: `max R with (2R+1)²·tile_bytes ≤ budget`. DERIVED, not chosen —
 /// the budget is the law, the reach is whatever it affords. Returns `0` when
@@ -126,11 +137,13 @@ impl std::fmt::Display for HorizonError {
 
 impl std::error::Error for HorizonError {}
 
-/// A resident tile: its materialized mesh (the memory the budget caps) and
-/// its world-space centre (the eviction-distance metric, in `f64` so it stays
-/// exact at planetary tile magnitude).
+/// A resident tile record: its materialized byte cost (the memory the budget
+/// caps) and its world-space centre (the eviction-distance metric, in `f64` so
+/// it stays exact at planetary tile magnitude). Mirrors `jormungandr::
+/// ResidentPage`, which likewise holds `{bytes, aabb}` and DISCARDS the decoded
+/// geometry after measuring it — the geometry is (re)materialized on demand by
+/// the consumer (here, [`HorizonRing::scene_at`]'s weld), never double-stored.
 struct ResidentTile {
-    mesh: Mesh,
     bytes: u64,
     center_world: [f64; 2],
 }
@@ -323,18 +336,18 @@ impl HorizonRing {
             evicted.push(TerrainTile::new(victim.0, victim.1));
         }
 
-        // Materialize the new required tiles (space already reserved).
+        // Materialize the new required tiles (space already reserved). The tile
+        // is generated to MEASURE its real byte cost, then — like `jormungandr`
+        // after computing a page's aabb — the geometry is discarded; the record
+        // keeps only {bytes, centre}. `scene_at` regenerates identical meshes
+        // (VII-0a determinism) when the resident set must be drawn/collided.
         for &tile in &to_load {
             let mesh = tile_mesh(seed::Seed(self.seed), tile, &self.params);
             let center_world = self.tile_center(tile);
-            let bytes = self.tile_bytes;
+            let bytes = mesh_bytes(&mesh);
             self.resident.insert(
                 (tile.tile_x, tile.tile_y),
-                ResidentTile {
-                    mesh,
-                    bytes,
-                    center_world,
-                },
+                ResidentTile { bytes, center_world },
             );
             self.resident_bytes += bytes;
             self.stats.loads += 1;
