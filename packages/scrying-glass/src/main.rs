@@ -19,7 +19,9 @@ use glam::Vec3;
 use scrying_glass::ScryingGlassPackage;
 use scrying_glass::bvh::{Bvh, BvhParams};
 use scrying_glass::integrator::{Integrator, IntegratorParams, IntegratorUniform};
-use scrying_glass::scene::{Camera, RenderScene, SceneParameters, SunDefaults, SunLight};
+use scrying_glass::scene::{
+    Camera, RenderScene, SceneParameters, SunDefaults, SunLight, WalkerPose,
+};
 use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewUrl};
 
 const DEFAULT_NATIVE_PORT: u16 = 8430;
@@ -883,7 +885,7 @@ impl Renderer {
     /// unchanged; the instant one changes (a bobbing lantern, every tick) the
     /// BVH re-splices and accumulation resets — so a continuously moving world
     /// renders live at `spp` samples/frame (no ghosting), and pauses converge.
-    fn advance_world(&mut self, body_speed: f32) {
+    fn advance_world(&mut self, body_speed: f32, walker: Option<WalkerPose>) {
         let has_bodies = !self.scene.bodies.is_empty();
         if self.scene.dynamics.entities().is_empty() && !has_bodies {
             return; // a still realm never pays the living-layer cost
@@ -892,7 +894,10 @@ impl Renderer {
         // commanded speed feeds each body's SAMA state machine, its pose re-skins
         // the body per tick. A walking body changes the dynamic partition every
         // tick even when the living models are still, so it forces a re-splice.
-        let bodies_animating = self.scene.command_bodies(body_speed);
+        // RITE V FINAL WELD — `walker` (its world pose) drives walker-ATTACHED
+        // bodies (`follows: "walker"`): they TRACK the walker, gait derived from
+        // displacement, instead of gaiting in place off the broadcast.
+        let bodies_animating = self.scene.command_bodies_walked(body_speed, walker);
         self.scene.tick();
         let models = self.scene.dynamics.model_matrices();
         if models == self.last_models && !bodies_animating {
@@ -1460,17 +1465,24 @@ fn main() {
                         // Step the body one fixed tick and aim the window camera
                         // at its eye.
                         let mut body_speed = 0.0f32;
+                        let mut walker_pose = None;
                         if let Ok(mut body) = render_player.lock() {
                             body.step(tick_dt, &render_ground);
                             let pose = body.pose();
                             // The walker's horizontal velocity drives sama.
                             body_speed = body.velocity.length();
+                            // RITE V FINAL WELD — the walker's world pose drives
+                            // walker-ATTACHED bodies (they track the player).
+                            walker_pose = Some(WalkerPose {
+                                position: pose.position,
+                                yaw: pose.yaw,
+                            });
                             drop(body);
                             renderer.set_view_pose(pose.position, pose.yaw, pose.pitch);
                         }
                         // Tick the world clock, drive the embodied bodies from
-                        // the walker velocity, and re-splice the living layer.
-                        renderer.advance_world(body_speed);
+                        // the walker velocity + pose, and re-splice the living layer.
+                        renderer.advance_world(body_speed, walker_pose);
                         if let Ok(size) = window.inner_size() {
                             renderer.render(size);
                         }

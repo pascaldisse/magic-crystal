@@ -256,7 +256,7 @@
   },
   "nari": {
     "transform": { "position": [0, 2.505, 18] },
-    "body": { "preset": "nari" }
+    "body": { "preset": "nari", "follows": "walker" }
   },
   "naruko_cat": {
     "transform": { "position": [-5, 0.359289, 23] },

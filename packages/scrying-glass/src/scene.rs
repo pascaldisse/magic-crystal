@@ -270,6 +270,23 @@ pub struct RenderScene {
     /// the traced BVH every tick (`dynamic_leaf_triangles`) — the seam V1 drives
     /// with a per-tick sama pose. GENERIC: any creature that names a preset.
     pub bodies: Vec<BodyInstance>,
+    /// RITE V FINAL WELD — the realm floor (the SAME post-transmute leaf ground
+    /// the walker stands on, F1), kept so a walker-ATTACHED body re-grounds under
+    /// the walker's roaming xz every tick (`command_bodies_walked`).
+    floor: Ground,
+}
+
+/// The walker's world pose fed to walker-ATTACHED bodies each tick (RITE V FINAL
+/// WELD). `position` is the EYE pose (the body re-grounds under its xz, like
+/// spawn); `yaw` is the facing. A body carrying `follows: "walker"` re-places
+/// onto this pose and derives its gait speed from the per-tick displacement.
+#[derive(Clone, Copy, Debug)]
+pub struct WalkerPose {
+    /// The walker's eye position this tick (xz drives placement; y is ignored —
+    /// the body's y is re-derived from the floor).
+    pub position: Vec3,
+    /// The walker's facing yaw (radians about +Y).
+    pub yaw: f32,
 }
 
 /// One embodied vessel: a realm entity's `body` skinned to world-space leaf
@@ -316,6 +333,13 @@ pub struct BodyInstance {
     /// The authored scale — kept to rebuild the model each animated tick (the
     /// mind drives position + yaw; scale is authored).
     base_scale: Vec3,
+    /// RITE V FINAL WELD — the ATTACHMENT sigil (`body.follows`), a plain-English
+    /// parameter naming what this body tracks. `Some("walker")` binds the body to
+    /// THE WALKER: its position/yaw track the walker each tick and its gait speed
+    /// is DERIVED from actual horizontal displacement (not the global broadcast).
+    /// The engine never special-cases a creature — any body may declare it.
+    /// `None` = unattached (walker-broadcast, or minded).
+    follows: Option<String>,
 }
 
 impl BodyInstance {
@@ -386,6 +410,36 @@ impl BodyInstance {
         self.mind.is_some()
     }
 
+    /// RITE V FINAL WELD — whether this body is ATTACHED to the walker
+    /// (`follows: "walker"`): its pose tracks the walker and its gait derives
+    /// from displacement, not the broadcast.
+    pub fn follows_walker(&self) -> bool {
+        self.follows.as_deref() == Some("walker")
+    }
+
+    /// RITE V FINAL WELD — track THE WALKER one tick: re-place onto the walker's
+    /// world pose (re-grounded on `floor`), derive the gait speed from the
+    /// horizontal displacement between where the body stood (its current model
+    /// origin) and the walker's new xz over `dt`, step SAMA against it, re-skin.
+    /// The N2 [`BodyInstance::drive`] exemplar with a WALKER-DISPLACEMENT velocity
+    /// source — attachment is the only difference from a wired presence.
+    pub fn follow_walker(&mut self, walker: WalkerPose, dt: f32, floor: Option<&Ground>) {
+        let prev = self.model.w_axis.truncate();
+        let speed = if dt <= 0.0 {
+            0.0
+        } else {
+            let dx = walker.position.x - prev.x;
+            let dz = walker.position.z - prev.z;
+            (dx * dx + dz * dz).sqrt() / dt
+        };
+        let position = [
+            walker.position.x as f64,
+            walker.position.y as f64,
+            walker.position.z as f64,
+        ];
+        self.drive(position, walker.yaw as f64, speed, floor);
+    }
+
     /// The body's current world-space origin (the model's translation column) —
     /// where the grounded body stands this tick. A minded body's xz rides its
     /// idle-loop circuit; y is the derived grounded height.
@@ -438,6 +492,8 @@ impl BodyInstance {
             ground_y: model.w_axis.y,
             // No authored scale on a wire-composed body.
             base_scale: Vec3::ONE,
+            // A wire-composed presence body is not walker-attached (N2 drives it).
+            follows: None,
         })
     }
 
@@ -734,6 +790,9 @@ impl RenderScene {
             emission_intensity: parameters.emission_intensity,
             dynamics,
             bodies,
+            // RITE V FINAL WELD — keep this SAME floor so a walker-attached body
+            // re-grounds under the walker's roaming xz every tick (one floor, F1).
+            floor,
         })
     }
 
@@ -753,17 +812,41 @@ impl RenderScene {
     /// partition. Returns whether any body is animating (so the caller knows the
     /// dynamic BVH must re-splice even when the living models are still).
     pub fn command_bodies(&mut self, commanded_speed: f32) -> bool {
-        // RITE V · V2 — a MINDED body (the cat) drives itself from the world
-        // clock's idle loop, ignoring the walker's velocity; a mindless body
-        // (nari) is driven by the walker. The clock is the living layer's tick
-        // count × dt (read BEFORE `tick()` increments it, so frame N uses tick N).
+        self.command_bodies_walked(commanded_speed, None)
+    }
+
+    /// RITE V FINAL WELD — drive every embodied body one fixed tick WITH the
+    /// walker's pose, so walker-ATTACHED bodies (`follows: "walker"`) track it.
+    /// Per-body velocity SOURCES, complete:
+    /// - walker-ATTACHED + `Some(walker)` → [`BodyInstance::follow_walker`]: the
+    ///   body re-places onto the walker's pose (re-grounded on the realm floor)
+    ///   and its gait speed is DERIVED from the per-tick displacement — NOT the
+    ///   `commanded_speed` broadcast (killed for attached bodies).
+    /// - MINDED (the cat) → its own clock idle loop (V2, unchanged).
+    /// - unattached MINDLESS (or an attached body with no walker pose, e.g. a
+    ///   headless test) → the `commanded_speed` broadcast (legacy path).
+    ///
+    /// (A wired PRESENCE body is driven by [`BodyInstance::drive`] from the wire,
+    /// N2 — that path never enters here.) Returns whether any body is animating.
+    pub fn command_bodies_walked(
+        &mut self,
+        commanded_speed: f32,
+        walker: Option<WalkerPose>,
+    ) -> bool {
+        // The clock is the living layer's tick count × dt (read BEFORE `tick()`
+        // increments it, so frame N uses tick N).
         let t = self.dynamics.clock as f64 * self.dynamics.dt;
+        let dt = self.dynamics.dt as f32;
+        let floor = &self.floor;
         let mut animating = false;
         for body in &mut self.bodies {
-            if body.is_minded() {
-                body.animate(t);
-            } else {
-                body.command(commanded_speed);
+            match (
+                body.follows_walker().then_some(walker).flatten(),
+                body.is_minded(),
+            ) {
+                (Some(walker_pose), _) => body.follow_walker(walker_pose, dt, Some(floor)),
+                (None, true) => body.animate(t),
+                (None, false) => body.command(commanded_speed),
             }
             animating |= body.is_animating();
         }
@@ -1005,6 +1088,14 @@ fn body_instances(world: &EcsWorld, floor: &Ground) -> Result<Vec<BodyInstance>,
             .filter(|raw| raw.get("kind").and_then(|k| k.as_str()) == Some("cat"))
             .and_then(|raw| serde_json::from_value::<CatMind>(raw).ok());
 
+        // RITE V FINAL WELD — the ATTACHMENT sigil `body.follows` (plain English).
+        // `"walker"` binds this body to THE WALKER; the engine reads the parameter
+        // and never special-cases a name. Absent = unattached (walker-broadcast).
+        let follows = body_value
+            .get("follows")
+            .and_then(|value| value.as_str())
+            .map(str::to_string);
+
         out.push(BodyInstance {
             gaia_id: id,
             preset: preset_name,
@@ -1018,6 +1109,7 @@ fn body_instances(world: &EcsWorld, floor: &Ground) -> Result<Vec<BodyInstance>,
             mind,
             ground_y: grounded_y,
             base_scale: body_scale,
+            follows,
         });
     }
     Ok(out)
