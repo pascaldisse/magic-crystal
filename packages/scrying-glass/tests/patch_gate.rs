@@ -111,18 +111,17 @@ fn contact_radius_matches_measured_foot_half_extent() {
     }
 
     println!("[contact-patch] measured_max={measured_max:.4} default={DEFAULT_CONTACT_RADIUS:.4}");
+    // The ROUNDING RULE, computed from the live measurement (not the pinned
+    // constant): round the measured max UP to the next whole centimetre.
+    // Asserting equality (not just "some rounding-up margin") means this
+    // guard breaks LOUDLY the day the preset's feet move by >= 1 cm, instead
+    // of silently tolerating an ever-widening, unexplained gap.
+    let expected_default = (measured_max * 100.0).ceil() / 100.0;
     assert!(
-        DEFAULT_CONTACT_RADIUS >= measured_max,
-        "DEFAULT_CONTACT_RADIUS {DEFAULT_CONTACT_RADIUS} must be a ROUNDED-UP bound on the \
-         measured foot half-extent {measured_max} — rounding down would admit a surface \
-         smaller than nari's real foot"
-    );
-    // The rounding margin should stay a real "round up for safety" (a few mm
-    // to a couple cm), not balloon into an unrelated invented number.
-    assert!(
-        DEFAULT_CONTACT_RADIUS - measured_max < 0.05,
-        "DEFAULT_CONTACT_RADIUS {DEFAULT_CONTACT_RADIUS} has drifted far from the measured \
-         foot half-extent {measured_max} — re-derive it"
+        (DEFAULT_CONTACT_RADIUS - expected_default).abs() < 1e-6,
+        "DEFAULT_CONTACT_RADIUS {DEFAULT_CONTACT_RADIUS} must equal the measured foot \
+         half-extent {measured_max} rounded UP to the next whole centimetre \
+         ({expected_default}) — re-derive it if nari's preset geometry changed"
     );
 }
 

@@ -32,10 +32,11 @@ const WALL_NORMAL_Y_COS_CUTOFF: f32 = 0.3;
 
 /// Deterministic compass-point probe count for the GUARDIAN RULING 6
 /// contact-patch test: eight points (N/NE/E/SE/S/SW/W/NW) give an even
-/// angular spread around the candidate without any randomness, and keep the
-/// K-probe cost small — it is only ever paid once per column query, on the
-/// single winning candidate (see [`Ground::height_at_gated`]'s doc comment
-/// for why every triangle is NOT patch-tested).
+/// angular spread around the candidate without any randomness. This cost is
+/// paid EVERY tick on the winning candidate (never skipped), plus again on
+/// every fallthrough rejection — see [`Ground::height_at_gated`]'s doc
+/// comment for the honest per-tick accounting (it is NOT a per-triangle
+/// cost, but it is not a rare one either).
 const CONTACT_PROBE_COUNT: usize = 8;
 
 /// Acceptance epsilon [`Ground::raw_height_at`] uses to decide whether a
@@ -70,9 +71,15 @@ const GATED_EXCLUSION_STEP: f32 = 2.0 * COLUMN_EPSILON;
 /// `tests/patch_gate.rs`, which prints the live measurement every run:
 /// `L.foot half_x=0.0762 half_z=0.0762`, `R.foot half_x=0.0807 half_z=0.0768`
 /// (captured on the current preset geometry). The default is the largest of
-/// those four half-extents (0.0807 m), rounded UP to 0.09 m — rounding down
-/// would let the gate ADMIT a surface smaller than her actual foot, which is
-/// exactly the bug Ruling 6 exists to close.
+/// those four half-extents (0.0807 m). ROUNDING RULE (so the constant is
+/// reproducible, not aesthetic): round the measured max UP to the next whole
+/// centimetre — `(0.0807 → 0.09)`, i.e. `(measured_max * 100).ceil() / 100`.
+/// This rounding is SAFE but not FREE, and both halves matter: rounding up
+/// means the gate never ADMITS a surface smaller than her actual foot (the
+/// bug Ruling 6 exists to close), but it also means the gate will
+/// false-REJECT any legitimate ledge whose half-width falls in
+/// `[0.0807, 0.09)` — a real, if narrow, correctness cost paid for the
+/// safety margin.
 pub const DEFAULT_CONTACT_RADIUS: f32 = 0.09;
 
 /// Derive the GUARDIAN RULING 6 contact-patch height tolerance from a patch
@@ -350,13 +357,18 @@ impl Ground {
     /// rail cap, …), all the way down to `None` if nothing under the column
     /// can hold the patch.
     ///
-    /// PERFORMANCE: this is called every tick, and the patch test multiplies
-    /// queries by `CONTACT_PROBE_COUNT`. Only the WINNING raw candidate at
-    /// each step of the fallthrough is ever patch-tested — never every
-    /// triangle in the scene — so the K-probe cost is paid at most a
-    /// handful of times per tick (once per rejected sliver, which in
-    /// practice is 0 almost everywhere and 1 over a mirror edge), not once
-    /// per triangle.
+    /// PERFORMANCE: this is called every tick, and `patch_supported` runs on
+    /// the SUCCESS path before every `Some` return — so it is paid EVERY
+    /// tick, always, not conditionally: `CONTACT_PROBE_COUNT` (8) full column
+    /// scans just to confirm the winning candidate, plus another 8 for each
+    /// fallthrough rejection (a mirror edge costs 16 total: 8 to reject the
+    /// sliver, 8 to confirm the seawall beneath it). That is roughly 9× the
+    /// cost of the pre-gate single scan per fallthrough step — never every
+    /// triangle in the scene individually re-probed, but still a real,
+    /// always-paid multiplier. Measured harmless at naruko scale (~63k
+    /// tri-tests/tick for one walker on the current floor set); revisit this
+    /// budget if the floor set or walker count grows by an order of
+    /// magnitude.
     pub fn height_at_gated(
         &self,
         x: f32,
