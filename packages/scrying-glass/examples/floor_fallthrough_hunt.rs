@@ -431,6 +431,101 @@ fn walk_sweep(ground: &Ground, pp: &PlayerParams) {
     );
 }
 
+/// RIM-GUARD WALK — targeted check for the south/east/west terra-rim guard
+/// (the Architect's fall-off-the-world report). Walks straight toward each
+/// naked boundary from several columns at RUN speed for long enough to
+/// actually cross it (terra runs x in [-200,200], z in [8,68]; a full
+/// boundary crossing needs real distance, not a token few metres). This
+/// engine's `Player` (see player.rs module doc: "No terrain oracle, no
+/// collider components") has NO horizontal wall collision — a box mesh wall
+/// only changes floor HEIGHT at a column, and since the terra floor still
+/// exists under/behind it, a player is never blocked sideways by it; a wall
+/// short enough to auto-climb (top height under the ~eye-height ceiling gate,
+/// here 1.4 m < 1.7 m default eye_stand) is stepped onto like a stair, not
+/// stopped. So "success" here is NOT literal collision (impossible with a
+/// mesh box in this controller) — it's the SAME bar the harness already uses
+/// everywhere else: a below-plaza drop must classify StepDown (settles
+/// grounded on real floor — the rim-catch shelf under the naked edges,
+/// mirroring the ALREADY-DESIGNED north sea-shelf pattern), never OffWorld
+/// (falls to `void_y` and teleport-recovers). South: full x span past z=68.
+/// East/West: only the naked band z in (40,68] — z<=40 there is the designed
+/// sea-shelf step-down already, not a boundary this test touches.
+fn rim_guard_walk(ground: &Ground, pp: &PlayerParams) -> (usize, usize) {
+    println!("\n== RIM-GUARD WALK (south/east/west boundary, expect StepDown catch not OffWorld) ==");
+    let mut caught = 0usize;
+    let mut breaches = 0usize;
+    const TICKS: u32 = 2400; // 40s at run speed 14 m/s = ~560m, far past any rim
+
+    let xs = [-190.0f32, -140.0, -90.0, -40.0, 0.0, 40.0, 90.0, 140.0, 190.0];
+    for &x in &xs {
+        let eye = Vec3::new(x, PLAZA_Y + pp.eye_stand + 0.3, 50.0);
+        let mut player = Player::new(*pp, eye, 0.0);
+        for _ in 0..120 { player.step(DT, ground); }
+        player.keys.insert(Key::Back); // +z = south, toward the z=68 rim
+        player.keys.insert(Key::Run);
+        let mut result: Option<Fall> = None;
+        for _ in 0..TICKS {
+            player.step(DT, ground);
+            let feet = player.position.y - player.eye_height;
+            if feet < PLAZA_Y - FALL_EPS {
+                result = Some(classify_fall(ground, pp, &mut player));
+                break;
+            }
+        }
+        match result {
+            Some(Fall::OffWorld) => {
+                breaches += 1;
+                println!("  BREACH south x={x:.0} -> OffWorld at z={:.2}", player.position.z);
+            }
+            Some(other) => {
+                caught += 1;
+                println!("  caught south x={x:.0} -> {other:?} at z={:.2}", player.position.z);
+            }
+            None => {
+                caught += 1;
+                println!("  no-drop south x={x:.0} settled at z={:.2} (never crossed FALL_EPS)", player.position.z);
+            }
+        }
+    }
+
+    let zs = [45.0f32, 54.0, 63.0];
+    for &z in &zs {
+        for (name, key) in [("east", Key::Right), ("west", Key::Left)] {
+            let eye = Vec3::new(0.0, PLAZA_Y + pp.eye_stand + 0.3, z);
+            let mut player = Player::new(*pp, eye, 0.0);
+            for _ in 0..120 { player.step(DT, ground); }
+            player.keys.insert(key);
+            player.keys.insert(Key::Run);
+            let mut result: Option<Fall> = None;
+            for _ in 0..TICKS {
+                player.step(DT, ground);
+                let feet = player.position.y - player.eye_height;
+                if feet < PLAZA_Y - FALL_EPS {
+                    result = Some(classify_fall(ground, pp, &mut player));
+                    break;
+                }
+            }
+            match result {
+                Some(Fall::OffWorld) => {
+                    breaches += 1;
+                    println!("  BREACH {name} z={z:.0} -> OffWorld at x={:.2}", player.position.x);
+                }
+                Some(other) => {
+                    caught += 1;
+                    println!("  caught {name} z={z:.0} -> {other:?} at x={:.2}", player.position.x);
+                }
+                None => {
+                    caught += 1;
+                    println!("  no-drop {name} z={z:.0} settled at x={:.2} (never crossed FALL_EPS)", player.position.x);
+                }
+            }
+        }
+    }
+
+    println!("RIM-GUARD RESULT: {caught} caught (StepDown/no-drop), {breaches} OffWorld breaches (expect breaches=0)");
+    (caught, breaches)
+}
+
 fn main() {
     let t0 = Instant::now();
     let (ground, pp) = build();
@@ -446,5 +541,12 @@ fn main() {
     let t = Instant::now(); static_map(&ground, &pp);   println!("[static_map {:.1}s]", t.elapsed().as_secs_f64());
     let t = Instant::now(); coverage_sweep(&ground, &pp); println!("[coverage_sweep {:.1}s]", t.elapsed().as_secs_f64());
     let t = Instant::now(); walk_sweep(&ground, &pp);   println!("[walk_sweep {:.1}s]", t.elapsed().as_secs_f64());
+    let t = Instant::now();
+    let (rg_blocked, rg_breaches) = rim_guard_walk(&ground, &pp);
+    println!("[rim_guard_walk {:.1}s]", t.elapsed().as_secs_f64());
+    if rg_breaches > 0 {
+        eprintln!("RIM-GUARD FAIL: {rg_breaches} breach(es), {rg_blocked} blocked");
+        std::process::exit(1);
+    }
     println!("[TOTAL {:.1}s]", t0.elapsed().as_secs_f64());
 }
