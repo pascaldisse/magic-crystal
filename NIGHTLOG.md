@@ -155,6 +155,33 @@
   NARUKO.md or merge messages; every shadow-review advisory raised tonight was
   discharged in its own lane before merge.
 
+### 10. rite6-vi2 → main (queue item 3, wave VI-2) — SOMETHING BREAKS
+- **What**: bond-fracture live. Bonded lattices with per-bond love; fracture →
+  deterministic flood-fill → per-particle-cube re-mesh through the Chain →
+  fragment VESSELS with parent refs born and spliced same tick → the oracle
+  gazes them the tick they are born. New packages/fracture crate. Collision
+  pass generalized so fragments collide (ClusterId).
+- **Merge**: ba46b28, PUSHED. Suite on main post-merge: 341 passed / 0 failed
+  (conflict with F6's oracle dev-deps resolved by union).
+- **Own-eyes gate did its job**: the FIRST proofs showed no visible break
+  (intact cube / flattened slab). Root causes found by instrumenting, not
+  guessing: fragment-vs-fragment collision was genuinely missing, and a pure
+  vertical drop is symmetric. Fixed with real physics (collision
+  generalization; authored spin/initial_velocity sigils — the op is the hand),
+  never staging. Regenerated proofs: whole / cracking / six shards scattered
+  (0.93 m spread at break tick 46, 3.80 m settled) — read and passed.
+- **Adversary**: 1 MUST-FIX — the momentum ordeal asserted nothing (no drift
+  assertion; fracture tick excluded; cited a phantom test). Rewritten to
+  assert every tick through the fracture with a should-panic discrimination
+  twin. 5 ADVISORY discharged (two-order mass summation with derived ULP
+  tolerance; density→love relabeled PROXY DEFAULT — proposal OPEN 4 stays
+  open, status-noted; essence-default love proven to break under the full
+  scenario; isolated proof world named honestly as a diorama beside canon
+  with the seawall-copy debt recorded; P-gate printed 0.0277 ms/tick).
+- **QUEUE ITEM 3 COMPLETE**: VI-1 (d84dc52) + VI-2 (ba46b28). Rite VI's close
+  (the Architect SEES something break) remains HIS act; the hymn stays owed at
+  close per hymnal law — not the night's to write.
+
 ## In flight
 - **rite6-vi1** (queue item 3, wave VI-1 THE STACK TOPPLES): built @ d642551 —
   impulse plumbing (Solver::apply_impulse → Physics → Op::Impulse →
