@@ -1759,6 +1759,20 @@ impl Dynamics {
     pub fn entities(&self) -> &[DynamicEntity] {
         &self.entities
     }
+
+    /// Consume this `Dynamics` and hand back the live, TICKED `EcsWorld` — the
+    /// solver-rested realm, with every physics body's post-tick pose already
+    /// written into its `transform` (see [`Dynamics::tick_with_ops`]'s
+    /// pose-write-back). Exists for GUARDIAN RULING F6 ("senses read SOLVER
+    /// TRUTH — the world as it is, not as authored"): external senses (the
+    /// oracle) need the rested ECS to gaze at where the solver actually put a
+    /// body, not just the `body_position` scalar or the authored load-pose.
+    /// `EcsWorld` is not `Clone`, so this consumes rather than borrows — call it
+    /// after the last tick. The smallest surface that lets a sibling crate wrap
+    /// the ticked world into its own `oracle::World`.
+    pub fn into_world(self) -> EcsWorld {
+        self.world
+    }
 }
 
 fn append_part(

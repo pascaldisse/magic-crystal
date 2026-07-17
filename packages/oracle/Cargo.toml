@@ -19,3 +19,11 @@ serde = { version = "1", features = ["derive"] }
 vessel = { path = "../vessel" }
 glam = "0.30.9"
 serde_json = "1"
+
+[dev-dependencies]
+# GUARDIAN RULING F6 — senses read SOLVER TRUTH. `rest_pose_canon.rs` ticks the
+# realm's physics to rest through scrying-glass, then gazes at the RESTED ECS
+# with the oracle's own eyes. oracle and scrying-glass are SIBLINGS (both depend
+# only on `crystal`, which depends back on neither) — scrying-glass never depends
+# on oracle, so this dev-dep carries ZERO cycle risk. Tests-only surface.
+scrying-glass = { path = "../scrying-glass" }
