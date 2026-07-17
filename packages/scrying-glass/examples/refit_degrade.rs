@@ -163,23 +163,6 @@ fn steam_medium(bound: &BoundLight, counter_top_y: f32) -> MediumGpu {
     }
 }
 
-/// Half the surface area of an AABB — mirrors `bvh.rs`'s private `half_area`
-/// (same formula; duplicated here since the example only has public access).
-fn half_area(mn: [f32; 3], mx: [f32; 3]) -> f32 {
-    let dx = (mx[0] - mn[0]).max(0.0);
-    let dy = (mx[1] - mn[1]).max(0.0);
-    let dz = (mx[2] - mn[2]).max(0.0);
-    dx * dy + dy * dz + dz * dx
-}
-
-/// The dynamic partition's root half-area inside a `Bvh::merge` result. `merge`
-/// places the dynamic root at node index 2 whenever both sides are nonempty
-/// (`[root, static_root, dynamic_root, ...]` — see `bvh.rs`), which the merged
-/// Naruko realm always is (static stall geometry + dynamic nari/kami/crate).
-fn dynamic_root_half_area(merged: &Bvh) -> f32 {
-    let node = merged.nodes[2];
-    half_area(node.min, node.max)
-}
 
 /// One trace frame (uniform + dispatch + GPU wait) — perf_audit's trace_frame,
 /// verbatim structure. Player-path reset semantics: moving geometry resets
@@ -365,7 +348,7 @@ fn main() {
         if tick % stride == 0 {
             let fresh_dyn = Bvh::build(&dyn_tris, &bvh_params.dynamic());
             let area_ratio =
-                dynamic_root_half_area(&splice.merged) / fresh_dyn.root_half_area().max(1e-9);
+                splice.dyn_total_half_area() / fresh_dyn.total_node_half_area().max(1e-9);
             let rebuild_merged = Bvh::merge(&static_bvh, &fresh_dyn);
 
             let (refit_mean, refit_std) = measure_trace_ms(

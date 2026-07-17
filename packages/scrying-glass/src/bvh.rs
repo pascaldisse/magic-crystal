@@ -204,11 +204,31 @@ impl Bvh {
         (Bvh { nodes, tris }, src)
     }
 
-    /// Half the surface area of the root AABB — the degradation metric the
-    /// refit lever watches (loose bounds after many refits grow it; a rebuild
-    /// resets it). `0.0` for the empty tree.
+    /// Half the surface area of the root AABB. NOT a valid refit-degradation
+    /// signal: `Bvh::refit` recomputes every node's bounds from the ACTUAL
+    /// current triangle corners (not inherited/stale bounds), so a refit
+    /// tree's root ends up exactly as tight as a fresh build's root over the
+    /// same positions, by construction — proven pinned at ratio 1.0000 across
+    /// a 300-tick sweep in `docs/perf/2026-07-17-refit-degrade-derivation.md`.
+    /// Kept for callers that want the outer bound (e.g. the example's
+    /// same-tick sanity check); `DynamicSplice` uses `total_node_half_area`
+    /// instead, which sees interior decay the root alone cannot.
     pub fn root_half_area(&self) -> f32 {
         self.nodes.first().map_or(0.0, |n| half_area(n.min, n.max))
+    }
+
+    /// Sum of half-area over EVERY node (root + every internal + every leaf).
+    /// Unlike `root_half_area`, this sees interior topology decay: as a refit
+    /// tree accumulates many refits without a rebuild, sibling bounds loosen
+    /// and start overlapping even though the root (the union of everything)
+    /// stays tight — this sum grows as that happens (more overlap ⇒ more
+    /// total boxed volume ⇒ more wasted GPU traversal, the SAH cost proxy).
+    /// `0.0` for the empty tree.
+    pub fn total_node_half_area(&self) -> f32 {
+        self.nodes
+            .iter()
+            .map(|n| half_area(n.min, n.max))
+            .sum()
     }
 
     /// REFIT: keep this tree's topology and triangle→slot assignment, but pull
@@ -223,12 +243,16 @@ impl Bvh {
     ///
     /// Bottom-up is a plain reverse scan: `subdivide` always appends children
     /// AFTER their parent, so every child index exceeds its parent's and a
-    /// descending pass sees children already refitted.
-    pub fn refit(&mut self, triangles: &[LeafTriangle], src: &[u32]) {
+    /// descending pass sees children already refitted. Returns the sum of every
+    /// node's half-area (the `total_node_half_area` value) computed in this
+    /// SAME pass, so callers that need it (the degradation watchdog) don't pay
+    /// a redundant second full scan over the nodes.
+    pub fn refit(&mut self, triangles: &[LeafTriangle], src: &[u32]) -> f32 {
         debug_assert_eq!(self.tris.len(), src.len());
         for (slot, &s) in src.iter().enumerate() {
             self.tris[slot] = gpu_tri(&triangles[s as usize]);
         }
+        let mut total_half_area = 0.0f32;
         for idx in (0..self.nodes.len()).rev() {
             let node = self.nodes[idx];
             let (mn, mx) = if node.count > 0 {
@@ -257,7 +281,9 @@ impl Bvh {
             };
             self.nodes[idx].min = mn;
             self.nodes[idx].max = mx;
+            total_half_area += half_area(mn, mx);
         }
+        total_half_area
     }
 
     /// Splice a cached STATIC BVH and a freshly-built DYNAMIC BVH into one flat
@@ -394,16 +420,21 @@ pub enum SpliceKind {
 /// Refit-not-rebuild control (LEVER 1). Every knob a dial (IRON LAW).
 #[derive(Clone, Copy, Debug)]
 pub struct RefitParams {
-    /// Rebuild once the refitted dynamic-root half-area grows past this multiple
-    /// of the half-area at the last rebuild. Refit loosens bounds as the body
-    /// deforms; past this the traversal quality (and trace ms) drifts enough to
-    /// pay the rebuild back. Default derived by the 300-tick trace-drift sweep
+    /// Rebuild once the refit tree's TOTAL node half-area (sum over every
+    /// node, `Bvh::total_node_half_area`) grows past this multiple of the sum
+    /// at the last rebuild. Refit keeps the tree's topology and only re-fits
+    /// bounds; as the body deforms across many refits without a rebuild,
+    /// sibling bounds loosen and overlap even though the root stays tight (a
+    /// BVH's root is always the exact union of its leaves — the root alone
+    /// can't see interior decay). The node-sum tracks that interior looseness
+    /// and correlates with the extra GPU traversal cost a decayed tree pays.
+    /// Default derived by the 300-tick trace-drift sweep
     /// (`examples/refit_degrade.rs`) — see
     /// `docs/perf/2026-07-17-refit-degrade-derivation.md`. That sweep's own
-    /// gate (10x the rebuild-trace noise floor) never bit across 300 ticks of a
-    /// real walk cycle, so the derived default is the sweep's own "never bit"
-    /// fallback: observed max benign area-ratio x the 10x tolerance-law
-    /// headroom.
+    /// gate (10x the rebuild-trace noise floor) never bit across 300 ticks of
+    /// a real walk cycle, so the derived default is the sweep's own "never
+    /// bit" fallback: observed max benign node-sum ratio x the 10x
+    /// tolerance-law headroom.
     pub degrade_ratio: f32,
     /// Hard cap on consecutive refits between rebuilds (belt-and-braces against
     /// a slow area creep that never trips the ratio). `0` = unlimited.
@@ -413,11 +444,19 @@ pub struct RefitParams {
 impl Default for RefitParams {
     fn default() -> Self {
         Self {
-            degrade_ratio: 10.0,
+            degrade_ratio: DEFAULT_DEGRADE_RATIO,
             max_refits: 0,
         }
     }
 }
+
+/// `RefitParams::degrade_ratio` default — derived by the 300-tick trace-drift
+/// sweep (`examples/refit_degrade.rs`, total-node-half-area signal); see
+/// `docs/perf/2026-07-17-refit-degrade-derivation.md` for the run and the
+/// derivation. The sweep's own gate never bit across 300 ticks of a real walk
+/// cycle, so this is the sweep's "never bit" fallback: observed max benign
+/// node-half-area-sum ratio x the 10x tolerance-law headroom.
+const DEFAULT_DEGRADE_RATIO: f32 = 33.4433;
 
 /// The persistent two-level splice (LEVER 1: refit-not-rebuild). Holds the
 /// cached STATIC tree, a PERSISTENT dynamic tree, its build permutation, and the
@@ -432,7 +471,8 @@ pub struct DynamicSplice {
     dyn_bvh: Bvh,
     dyn_src: Vec<u32>,
     dyn_tri_count: usize,
-    /// Dynamic-root half-area captured at the last full rebuild (degradation ref).
+    /// Dynamic-tree total node half-area (`Bvh::total_node_half_area`) captured
+    /// at the last full rebuild — the degradation reference.
     rebuild_area: f32,
     refits_since_rebuild: u32,
     dyn_params: BvhParams,
@@ -444,6 +484,15 @@ pub struct DynamicSplice {
 }
 
 impl DynamicSplice {
+    /// The current dynamic sub-tree's total node half-area
+    /// (`Bvh::total_node_half_area`) — the degradation signal this splice
+    /// gates on. Exposed for measurement (the `refit_degrade` sweep compares
+    /// this against a fresh build's, tick over tick); production code never
+    /// needs it directly since `update` applies the gate internally.
+    pub fn dyn_total_half_area(&self) -> f32 {
+        self.dyn_bvh.total_node_half_area()
+    }
+
     /// First build: full dynamic build + merge, capturing the permutation and the
     /// degradation reference.
     pub fn build(
@@ -455,7 +504,7 @@ impl DynamicSplice {
         let (dyn_bvh, dyn_src) = Bvh::build_indexed(dyn_tris, dyn_params);
         let merged = Bvh::merge(static_bvh, &dyn_bvh);
         Self {
-            rebuild_area: dyn_bvh.root_half_area(),
+            rebuild_area: dyn_bvh.total_node_half_area(),
             dyn_tri_count: dyn_tris.len(),
             refits_since_rebuild: 0,
             dyn_params: *dyn_params,
@@ -477,8 +526,9 @@ impl DynamicSplice {
         if set_unchanged && cap_ok {
             // Trial refit (cheap); accept it unless the bounds have degraded past
             // the ratio, in which case fall through to a rebuild this tick.
-            self.dyn_bvh.refit(dyn_tris, &self.dyn_src);
-            let area = self.dyn_bvh.root_half_area();
+            // `refit` already walks every node bottom-up, so it returns the
+            // total-node-half-area sum from that same pass — no redundant scan.
+            let area = self.dyn_bvh.refit(dyn_tris, &self.dyn_src);
             let degraded =
                 self.rebuild_area > 0.0 && area > self.rebuild_area * self.refit.degrade_ratio;
             if !degraded {
@@ -491,7 +541,7 @@ impl DynamicSplice {
         // Rebuild: set changed, first-frame mismatch, cap hit, or degraded.
         let (dyn_bvh, dyn_src) = Bvh::build_indexed(dyn_tris, &self.dyn_params);
         self.merged = Bvh::merge(static_bvh, &dyn_bvh);
-        self.rebuild_area = dyn_bvh.root_half_area();
+        self.rebuild_area = dyn_bvh.total_node_half_area();
         self.dyn_tri_count = dyn_tris.len();
         self.refits_since_rebuild = 0;
         self.dyn_bvh = dyn_bvh;
