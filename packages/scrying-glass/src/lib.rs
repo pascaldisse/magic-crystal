@@ -5,6 +5,7 @@ pub mod denoiser;
 pub mod denoiser_dataset;
 pub mod denoiser_gpu;
 pub mod error_metric;
+pub mod horizon;
 pub mod input;
 pub mod integrator;
 pub mod physics;
