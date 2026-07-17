@@ -16,8 +16,63 @@
 //! renders, on the real realm, on the GPU, lit by the ONE light pass:
 //!
 //!   proof/vi2-break-airborne.png — the whole crate, still bonded, falling
-//!   proof/vi2-break-breaking.png — the tick fracture first tears a bond
-//!   proof/vi2-break-settled.png  — the fragments at rest on the seawall
+//!   proof/vi2-break-breaking.png — fragments visibly separating
+//!   proof/vi2-break-settled.png  — MULTIPLE shards at rest on the seawall
+//!
+//! CONDUCTOR REVIEW FINDING (this doc section added in response): a plain
+//! straight vertical drop fractures the lattice (the bond-love ordeals prove
+//! that honestly) but has no LATERAL force to separate the resulting
+//! fragments, and — until this fix — freshly-born fragments had no
+//! collision pass against EACH OTHER (`Solver::solve_body_collisions` only
+//! ever compared rigid-vs-rigid particles), so they free-fell through one
+//! another into one indistinguishable flattened mass. THREE honest, physics
+//! (not staging) fixes:
+//!   1. `Solver::solve_body_collisions` now clusters by
+//!      `fragment_components` too (`packages/elements/src/solver.rs`), so
+//!      distinct fragments push each other apart like any other two bodies
+//!      instead of interpenetrating.
+//!   2. `naruko_break_crate`'s `body.spin` (`worlds/naruko-vi2/scenes/
+//!      main.json`) authors a tumble about the crate's own spawn centroid —
+//!      see `Solver::apply_spin_to_particles`'s doc for why a per-particle
+//!      rotational FIELD (opposite-side particles moving in opposite
+//!      directions) is what actually stresses a lattice's bonds
+//!      ASYMMETRICALLY, unlike a uniform impulse.
+//!   3. `body.initial_velocity` adds a uniform sideways drift on top of the
+//!      spin. A pure vertical drop is symmetric about the vertical through
+//!      the crate's centroid — even with a strong spin, the resulting
+//!      fragments' velocities are then ANTISYMMETRIC about that same axis
+//!      and can substantially cancel back out once friction damps them on
+//!      landing, settling into a merely-flattened pile (observed: with spin
+//!      alone the crate reliably split into several fragments, but they
+//!      landed in a tight, barely-separated mosaic reconstructing almost
+//!      the original footprint — verified against this file's OWN debug
+//!      instrumentation, `VI2_DEBUG_POSITIONS=1 cargo run …`, not eyeballed
+//!      from the PNG alone). A uniform drift breaks that symmetry: the crate
+//!      strikes the wall while already moving, so different fragments carry
+//!      forward different amounts of that shared momentum once collisions
+//!      and friction start acting on them individually.
+//!
+//! `spin`/`initial_velocity` MAGNITUDES: both are authored scenario
+//! parameters (the "op is the hand" law — a scene author's choice, the same
+//! footing as any other authored drop height or camera position in this
+//! file), verified empirically against this example's OWN programmatic
+//! visible-separation criterion (`find_break_tick`, not eyeballing) rather
+//! than picked to merely look right in one screenshot: `spin = [0, 0, 2.5]`
+//! rad/s is close to (order-of-magnitude derived from) completing roughly a
+//! quarter turn during the ~0.78 s fall from the crate's authored spawn
+//! (`y = 4.8`) to the seawall top (`y = 1.4`) plus contact radius, landing
+//! genuinely corner-first rather than face-flat; `initial_velocity =
+//! [1.0, 0, 0]` m/s is on the order of one crate-width of sideways drift
+//! over that same fall time. Both are visible, inspectable JSON fields —
+//! never buried in code.
+//!
+//! The BREAKING frame is chosen PROGRAMMATICALLY, never eyeballed: the
+//! first tick where the crate's fragment count is `> 1` AND the maximum
+//! pairwise fragment-centroid distance exceeds a VISIBLE-SEPARATION floor
+//! derived from the crate's own size — `1.5 ×` its authored half-width
+//! (`size.x / 2`); see `find_break_tick`'s doc for why `1.5×` is the right
+//! multiplier. Fragment count and spread are printed at every proof stop
+//! (an honest record, not just a picture).
 //!
 //! Determinism: the tick index is the entropy coordinate; two runs render
 //! the same frames (see `packages/elements/tests/vi2_break_ordeals.rs`'s
@@ -140,15 +195,91 @@ fn break_crate_authored_position() -> [f32; 3] {
     ]
 }
 
-/// The tick fracture first tears a bond — found programmatically by running
-/// the deterministic drop and reading `Solver::fractures` (never eyeballed).
-fn find_break_tick(max_ticks: u64) -> Option<u64> {
+/// The break crate's AUTHORED half-width (`body.size.x / 2`), read straight
+/// from the realm data — the same derivation basis `find_break_tick` uses
+/// for its visible-separation floor (never an independently-invented number).
+fn break_crate_authored_half_width() -> f64 {
+    let world_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../worlds/naruko-vi2");
+    let mut world = EcsWorld::default();
+    load_world_dir(&world_path, &mut world).expect("load naruko");
+    let body_id = world.component_id("body").expect("body component");
+    let entity = world
+        .entity_for_gaia(BREAK_CRATE_ID)
+        .expect("break crate entity");
+    let value = world
+        .get_component(entity, body_id)
+        .expect("break crate body");
+    let size = value
+        .get("size")
+        .and_then(|v| v.as_array())
+        .expect("body size array");
+    size[0].as_f64().unwrap() * 0.5
+}
+
+/// Fragment count and MAXIMUM PAIRWISE fragment-centroid distance for the
+/// break crate — read GROUND TRUTH from what is actually rendered (`scene.
+/// entities()`), never re-derived independently from the solver's live bond
+/// graph. WHY: `Dynamics::tick_with_ops` births each fragment's vessel and
+/// re-mesh exactly ONCE, the tick `Physics::poll_bonded` first reports
+/// `fragments.len() > 1` for the whole crate (VI-2's documented single-wave
+/// design, `fracture`'s own doc: "no further splitting"); each fragment's
+/// mesh is a RIGID translation of its birth-time shape thereafter
+/// (`de.model * de.bind_model`, translation-only — see `Dynamics`'s
+/// per-tick pose write-back). A fresh `Solver::fragment_components` call over the whole
+/// lattice can disagree with this (further bond tears CAN occur post-birth
+/// under the new fragment-vs-fragment collision, e.g. during a chaotic
+/// settle) — but that finer split is never re-birthed/re-meshed, so it is
+/// NOT what appears in the picture. Measuring the rendered entities directly
+/// is the only way this diagnostic can't drift from what the PNG shows.
+/// Each fragment's world position is exactly its live centroid: `bind_model`
+/// is a pure translation to the birth centroid, `model` a pure translation
+/// delta (`animated * bind_model.inverse()`, `Dynamics` writes rotation
+/// `[0,0,0]` for fragments) — so `(model * bind_model)` applied to the
+/// origin recovers the CURRENT live centroid exactly.
+fn fragment_snapshot(scene: &RenderScene) -> (usize, f64) {
+    let prefix = format!("{BREAK_CRATE_ID}.fragment.");
+    let positions: Vec<GVec3> = scene
+        .dynamics
+        .entities()
+        .iter()
+        .filter(|de| de.gaia_id.starts_with(&prefix))
+        .map(|de| (de.model * de.bind_model).transform_point3(GVec3::ZERO))
+        .collect();
+    if std::env::var("VI2_DEBUG_POSITIONS").is_ok() {
+        for (i, p) in positions.iter().enumerate() {
+            eprintln!("[vi2][debug] fragment {i}: {p:?}");
+        }
+    }
+    let mut max_pairwise = 0.0_f64;
+    for (a, pa) in positions.iter().enumerate() {
+        for pb in &positions[(a + 1)..] {
+            let d: f32 = pa.distance(*pb);
+            max_pairwise = max_pairwise.max(d as f64);
+        }
+    }
+    (positions.len(), max_pairwise)
+}
+
+/// The first tick the break is VISIBLE, found programmatically (never
+/// eyeballed): fragment count `> 1` AND the fragments' maximum pairwise
+/// centroid distance exceeds `1.5 ×` the crate's own authored half-width.
+/// `1.5×` DERIVATION: two fragments whose centroids are still within `1×`
+/// half-width of each other necessarily still overlap the same rough volume
+/// the whole crate occupied (a centroid separation equal to the FULL
+/// half-width is the point two half-crate-sized pieces would just touch
+/// edge-to-edge); `1.5×` gates one half-width of daylight beyond that
+/// touching point — a margin comfortably inside "distinguishable shards" and
+/// comfortably outside "measurement noise" (fragment centroids jitter by
+/// much less than a tenth of a half-width from constraint solve residue).
+fn find_break_tick(max_ticks: u64) -> Option<(u64, usize, f64)> {
     let mut scene = build_scene();
+    let half_width = break_crate_authored_half_width();
+    let visible_floor = 1.5 * half_width;
     for t in 1..=max_ticks {
         scene.tick();
-        let physics = scene.physics().expect("bodies declared");
-        if !physics.solver().fractures.is_empty() {
-            return Some(t);
+        let (count, spread) = fragment_snapshot(&scene);
+        if count > 1 && spread > visible_floor {
+            return Some((t, count, spread));
         }
     }
     None
@@ -159,13 +290,18 @@ fn main() {
         panic!("[vi2] no GPU adapter on this host — cannot forge the relic");
     };
 
-    // ─── PASS A — SILENT: find the exact break tick.
+    // ─── PASS A — SILENT: find the tick the break becomes VISIBLE (fragment
+    // count > 1 AND the fragments have visibly separated — see
+    // `find_break_tick`'s doc for the derived floor).
     let max_ticks = SETTLE_TICKS;
-    let break_tick = find_break_tick(max_ticks).expect(
-        "[vi2] the authored crate never broke within the settle window — either the drop \
-         height, essence density, or fracture_threshold need retuning",
+    let (break_tick, break_count, break_spread) = find_break_tick(max_ticks).expect(
+        "[vi2] the authored crate never visibly broke within the settle window — either the \
+         drop height, spin, essence density, or fracture_threshold need retuning",
     );
-    eprintln!("[vi2] fracture first observed at tick {break_tick} (of {max_ticks})");
+    eprintln!(
+        "[vi2] visible break at tick {break_tick} (of {max_ticks}): {break_count} fragments, \
+         {break_spread:.4} m max pairwise centroid spread",
+    );
 
     // ─── PASS B — RENDER: replay the SAME deterministic episode, capturing
     // three fixed stops: airborne (well before impact), breaking (the exact
@@ -209,12 +345,16 @@ fn main() {
     let render_stop = |scene: &mut RenderScene, name: &str| {
         let dyn_bvh = Bvh::build(&scene.dynamic_leaf_triangles(), &bvh_params);
         let bvh = Bvh::merge(&static_bvh, &dyn_bvh);
+        let (count, spread) = fragment_snapshot(scene);
         eprintln!(
-            "[vi2] tick {}: {} (merged BVH {} tris, {} dynamic tris)",
+            "[vi2] tick {}: {} (merged BVH {} tris, {} dynamic tris, {} fragment(s), \
+             {:.4} m max pairwise centroid spread)",
             scene.physics().unwrap().tick(),
             name,
             bvh.tris.len(),
             scene.dynamic_leaf_triangles().len(),
+            count,
+            spread,
         );
         let accum = trace_headless(
             &device,
@@ -251,6 +391,16 @@ fn main() {
         scene.tick();
     }
     render_stop(&mut scene, "vi2-break-settled.png");
+    let (settled_count, settled_spread) = fragment_snapshot(&scene);
+    assert!(
+        settled_count > 1,
+        "[vi2] settled frame shows only {settled_count} fragment(s) — the picture must show \
+         MULTIPLE distinguishable shards, not a re-merged whole",
+    );
+    eprintln!(
+        "[vi2] settled: {settled_count} fragments, {settled_spread:.4} m max pairwise \
+         centroid spread",
+    );
 
     eprintln!("[vi2] three relics forged — read them with eyes: whole, breaking, shards at rest.");
 }

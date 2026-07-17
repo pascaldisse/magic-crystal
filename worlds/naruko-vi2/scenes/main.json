@@ -32,7 +32,9 @@
       "resolution": [3, 3, 3],
       "contact_radius": 0.05,
       "bonded": true,
-      "love": 0.02
+      "love": 0.02,
+      "spin": [0, 0, 2.5],
+      "initial_velocity": [1.0, 0, 0]
     }
   }
 }

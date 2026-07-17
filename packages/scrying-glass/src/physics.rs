@@ -102,6 +102,22 @@ pub struct Body {
     /// is false.
     #[serde(default)]
     pub spin: [f64; 3],
+    /// VI-2 — a bonded body's AUTHORED initial linear velocity (m/s),
+    /// applied once at spawn via [`elements::Solver::apply_impulse_to_
+    /// particles`] — the uniform counterpart to `spin` (same "op is the
+    /// hand" law: an authored magnitude, never solver-invented). A drop
+    /// with sideways motion strikes its target OFF-AXIS: the leading
+    /// particles decelerate against the surface while trailing ones still
+    /// carry momentum, a shear a purely vertical drop can never produce
+    /// (gravity alone is symmetric about the vertical through the crate's
+    /// centroid, so a vertical-only drop's fragments retain only
+    /// `spin`-induced velocity, which is itself antisymmetric about that
+    /// same centroid and can largely cancel back into a flat, merely-
+    /// crushed-looking settle instead of a genuine scatter). Default
+    /// `[0, 0, 0]` (no drift — every EXISTING bonded declaration keeps
+    /// falling exactly as before). Ignored when `bonded` is false.
+    #[serde(default)]
+    pub initial_velocity: [f64; 3],
 }
 
 fn default_shape() -> String {
@@ -238,6 +254,18 @@ impl Physics {
                         Vec3::new(center[0], center[1], center[2]),
                         spin,
                     );
+                }
+                if body.initial_velocity != [0.0, 0.0, 0.0] {
+                    // Applied ONCE, at spawn — see `initial_velocity`'s doc
+                    // for why a uniform drift plus `spin` together (not
+                    // either alone) is what breaks a symmetric drop's
+                    // tendency to fragment into a merely-flattened pile.
+                    let dv = Vec3::new(
+                        body.initial_velocity[0],
+                        body.initial_velocity[1],
+                        body.initial_velocity[2],
+                    );
+                    solver.apply_impulse_to_particles(&whole, dv);
                 }
                 bonded.push(BondedBinding {
                     gaia_id,
