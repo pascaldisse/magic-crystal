@@ -141,7 +141,8 @@ pub struct Mlp {
 }
 
 impl Mlp {
-    /// He-initialized random network (forge-time only — see [`SplitMix64`]).
+    /// He-initialized random network (forge-time only — see the SplitMix64
+    /// PRNG above).
     /// Deterministic given `seed`; training itself is NOT promised bit-
     /// reproducible (proposal OPEN 4) but a fixed starting point is cheap
     /// honesty and helps debugging.
