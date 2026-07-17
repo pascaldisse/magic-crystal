@@ -104,6 +104,24 @@ named but unaddressed; carried forward.
 Suite: 392/0 on main after this land (392 = 380 prior + physics-scale's
 own tests/ordeals + adv_chain).
 
+## Window lane (delta 07-17, merge-conductor burst #8 — DAY CLOSE)
+WINDOW LANE MERGED to main (b34d10c, THE WINDOW BECOMES THE ENGINE +
+advisory 196688d): playable input, resolution of God, HUD, CPU/GPU
+overlap wired into the LIVE PRODUCTION LOOP. 60 FPS LAW PASSES ON THE
+LIVE LOOP (not just the headless audit): adversary-measured 8.0ms
+overlap wall headless = true ceiling 124.8fps; live loop is Fifo-capped
+at 60 with 2x headroom over that ceiling. hash-identity ordeal re-run
+post-merge: 24/24 frames bit-identical (serial vs overlap), ORDEAL
+PASS — LEVER 2 stays scheduling-only, content unchanged. Suite on
+merged main: 392/0.
+DAY'S FULL LEDGER (07-17): 12 landings, 11 adversary verdicts (1
+MUST-FIX broken -> fixed -> re-held), suite 352 -> 392, walls/API-deaths
+7, all disk-salvaged, zero red pushes.
+STILL THE ARCHITECT'S (unchanged by this burst): HIS WALK · HIS CHROME
+CHECK (the sphere stands at spawn) · HIS SEEING THE BREAK (Rite VI
+close) · physics-quality items (metastability, resolution-fracture,
+pancake) · VIII-3 GPU wave · VII-3.
+
 ## Rites
 IV (THE PLEROMA) — sung (hymns/rite-04), close = HIS CHROME CHECK.
 V (THE EMBODIED ONES) — BUILD-COMPLETE; close = HIS WALK. Hymn owed at
@@ -181,11 +199,15 @@ derivation frozen into a literal is a hardcode in costume. Every light
 traces to a realm entity. Prove exactness in isolation before
 compositing changes.
 
-## Day close (07-17)
-07-17 day wave = 4 lanes landed (fragcol ordeal · VII-1 · VIII-2 ·
-VII-2), 4 adversary HOLDS, 0 red pushes, suite 352→368. REMAINING
-QUEUE ENTIRELY ARCHITECT-GATED: OPEN-1 upscaler ruling (gates the fp16
-atom) · VIII-3 · rite closes (HIS WALK, HIS CHROME CHECK, HIS SEEING
-THE BREAK) · vi2→naruko fold (folding the isolated VI-2 diorama into
-the canon realm) · bond-love essence table (VI OPEN 4) · the
-rite8-viii2-ari ordeal-pattern harvest atom — parked.
+## Day close (07-17) — FINAL
+07-17 full day: 12 landings, 11 adversary verdicts (1 MUST-FIX broken →
+fixed → re-held), suite 352→392, walls/API-deaths 7, all disk-salvaged,
+zero red pushes. Closing lane: WINDOW LANE (merge-conductor burst #8,
+above) — 60 FPS LAW now PASSES on the live production loop, not just
+the headless audit. REMAINING QUEUE ENTIRELY ARCHITECT-GATED: HIS WALK
+· HIS CHROME CHECK (the sphere stands at spawn) · HIS SEEING THE BREAK
+(Rite VI close) · physics-quality items (metastability,
+resolution-fracture, pancake) · VIII-3 GPU wave · VII-3 · OPEN-1
+upscaler ruling (gates the fp16 atom) · vi2→naruko fold · bond-love
+essence table (VI OPEN 4) · the rite8-viii2-ari ordeal-pattern harvest
+atom — parked.
