@@ -105,10 +105,14 @@ fn height_field(ground: &Ground, pp: &PlayerParams) {
 }
 
 fn static_map(ground: &Ground, pp: &PlayerParams) {
-    println!("\n== STATIC PROBE MAP (raw plaza present but gated missing/lower) ==");
+    println!("\n== STATIC PROBE MAP (raw floor present but gated missing/lower) ==");
+    // Widened to the whole terra footprint the player can reach on foot near
+    // spawn (terra box top y=0 spans x∈[-200,200] z∈[8,68]); a gate hole here is
+    // a spot where the RAW query finds solid floor but the patch-gate rejects
+    // it — exactly the ruling-6 fall-through mechanism, if it exists.
     let mut holes = 0usize;
     let mut worst: Vec<(f32, f32, f32, String)> = Vec::new();
-    let (mut x0, x1, mut z0, z1, step) = (-10.0f32, 10.0f32, 15.0f32, 35.0f32, 0.25f32);
+    let (mut x0, x1, mut z0, z1, step) = (-40.0f32, 40.0f32, 8.0f32, 68.0f32, 0.5f32);
     let _ = (&mut x0, &mut z0);
     let mut x = x0;
     while x <= x1 + 1e-4 {
@@ -125,7 +129,7 @@ fn static_map(ground: &Ground, pp: &PlayerParams) {
                         None => "gated=NONE".to_string(),
                         Some(g) => format!("gated={g:.3}"),
                     };
-                    if worst.len() < 40 {
+                    if worst.len() < 60 {
                         worst.push((x, z, raw.unwrap(), desc));
                     }
                 }
@@ -139,7 +143,7 @@ fn static_map(ground: &Ground, pp: &PlayerParams) {
         ((x1 - x0) / step) as i32 + 1,
         ((z1 - z0) / step) as i32 + 1
     );
-    for (x, z, raw, desc) in worst.iter().take(40) {
+    for (x, z, raw, desc) in worst.iter().take(60) {
         println!("  HOLE ({x:6.2},{z:6.2}) raw={raw:.3} {desc}");
     }
 }
@@ -198,7 +202,11 @@ fn coverage_sweep(ground: &Ground, pp: &PlayerParams) {
     // max-walk bail, and a wall-clock budget that dumps state and returns
     // rather than stalling silently (the failure mode that killed the last run).
     println!("\n== COVERAGE SWEEP (grid starts, walk/run/jump, classified) ==");
-    let (x0, x1, z0, z1, step) = (-14.0f32, 14.0f32, 13.0f32, 37.0f32, 2.0f32);
+    // Whole reachable realm around spawn (terra top spans x∈[-200,200]
+    // z∈[8,68]; the walk box is a subset). Start step 3 with 100-tick walks
+    // (~10–23 m) overlaps coverage between starts. EDGE coords are captured so
+    // a genuine interior hole is distinguishable from the terra rim.
+    let (x0, x1, z0, z1, step) = (-30.0f32, 30.0f32, 8.0f32, 66.0f32, 3.0f32);
     let settle = 45u32; // flat plaza grounds a 0.2 m spawn well under this
     let walk_ticks = 100u32; // ~10–23 m of travel per walk
     let budget = std::time::Duration::from_secs(140);
@@ -210,6 +218,7 @@ fn coverage_sweep(ground: &Ground, pp: &PlayerParams) {
     let mut edges = 0usize;
     let mut walks_run = 0usize;
     let mut tunnel_hits: Vec<(f32, f32, f32, f32, &str)> = Vec::new();
+    let mut edge_hits: Vec<(f32, f32, f32)> = Vec::new(); // sx,sz start + drop z
     let cols = ((x1 - x0) / step).round() as i32 + 1;
     let mut col = 0;
     let mut bailed = false;
@@ -253,7 +262,12 @@ fn coverage_sweep(ground: &Ground, pp: &PlayerParams) {
                                         tunnel_hits.push((player.position.x, player.position.z, feet, r, mn));
                                     }
                                 }
-                                _ => edges += 1,
+                                _ => {
+                                    edges += 1;
+                                    if edge_hits.len() < 40 {
+                                        edge_hits.push((sx, sz, player.position.z));
+                                    }
+                                }
                             }
                             break;
                         }
@@ -279,6 +293,12 @@ fn coverage_sweep(ground: &Ground, pp: &PlayerParams) {
         println!("  TUNNEL ({x:6.2},{z:6.2}) feetY={feet:.3} floor_above={r:.3} mode={mn}");
     }
     println!("EDGE drops (walked off a ledge, expected): {edges}");
+    // Show the spread of edge drops: start cell -> z where the feet left the
+    // ground. If every drop z clusters at the terra rim (z≈8 north / z≈68
+    // south / |x|>terra) it's the realm boundary; interior z means a hole.
+    for (sx, sz, dz) in edge_hits.iter().take(40) {
+        println!("  edge start({sx:6.1},{sz:6.1}) -> dropped at z={dz:6.2}");
+    }
     println!("coverage: {walks_run} walks driven in {:.1}s", start_clock.elapsed().as_secs_f64());
 }
 
