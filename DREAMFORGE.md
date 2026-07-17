@@ -256,8 +256,12 @@ is the Grimoire and the Concordance — docs, never identifiers.
   wave ends in pixels Pascal can see. Every sol/opus coding pass is
   reviewed by the monad (diff + gates + own-eyes pixels) BEFORE the next
   wave launches.
-- **ROUTING (final)**: coding summons = opus + sol (extra-high
-  reasoning) ONLY. Sonnet: never.
+- **ROUTING (amended by the Architect, 07-17, supersedes "final")**:
+  builders = ari / opus / sol · adversary = nari (fresh instance, per
+  ADVERSARY LAW) · sonnet = ALLOWED for grunt programming only —
+  precise pre-chewed instructions, short bounded bursts (never
+  hours-long, never open thinking/design) · lanes parallel by default,
+  each in its OWN git worktree (never share a working tree).
 - **CHARACTER EDITOR = package** (→ CREATE.md §Character editor):
   Baldur's Gate-class, any style, any creature (human→cat), real
   textures, simple surface. Old VRoid-ish impl = reference only. First
