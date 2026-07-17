@@ -5,7 +5,7 @@
 //! pure function of `(seed, coords)` — the substrate foliage density rides on
 //! (§ GEOMETRY.md foliage-as-density).
 
-use crate::hash::{coord_key, domain, hash_seq, signed_f32};
+use crate::hash::{coord_key, coord_key_i64, domain, hash_seq, signed_f32};
 
 /// Quintic fade curve `6t^5 - 15t^4 + 10t^3` (Perlin's smootherstep).
 #[inline]
@@ -80,6 +80,34 @@ impl Noise {
     #[inline]
     fn lattice2(&self, ix: i32, iy: i32) -> f32 {
         signed_f32(hash_seq(self.seed, &[coord_key(ix), coord_key(iy)]))
+    }
+
+    /// `i64` sibling of [`Noise::lattice2`] — same lattice-value draw, but for
+    /// lattice cell coordinates that can range beyond `i32` (RITE VII
+    /// planet-scale tiles: a coarse octave's lattice cell index grows with
+    /// the tile coordinate, so it needs the full `i64` a tile key carries).
+    #[inline]
+    fn lattice2_i64(&self, ix: i64, iy: i64) -> f32 {
+        signed_f32(hash_seq(self.seed, &[coord_key_i64(ix), coord_key_i64(iy)]))
+    }
+
+    /// Value noise sampled from an ALREADY-DECOMPOSED lattice location:
+    /// `(cell_x, cell_y)` is the integer lattice cell (any `i64` magnitude)
+    /// and `(frac_x, frac_y)` is the fractional offset within that cell, each
+    /// in `[0, 1)`. Unlike [`Noise::value2`], the caller never hands this a
+    /// single large float to `floor()` — the cell/fraction split is exact
+    /// integer arithmetic done by the caller (`terrain::height_at_grid_index`
+    /// derives it via `i64::div_euclid`/`rem_euclid`), so this stays exact at
+    /// any tile-coordinate magnitude instead of losing precision the way a
+    /// large `f32`/`f64` world coordinate would.
+    #[inline]
+    pub fn value2_at_lattice(&self, cell_x: i64, cell_y: i64, frac_x: f32, frac_y: f32) -> f32 {
+        let (u, v) = (fade(frac_x), fade(frac_y));
+        let v00 = self.lattice2_i64(cell_x, cell_y);
+        let v10 = self.lattice2_i64(cell_x + 1, cell_y);
+        let v01 = self.lattice2_i64(cell_x, cell_y + 1);
+        let v11 = self.lattice2_i64(cell_x + 1, cell_y + 1);
+        lerp(lerp(v00, v10, u), lerp(v01, v11, u), v)
     }
 
     #[inline]

@@ -28,6 +28,11 @@ pub mod domain {
     pub const SCATTER: u64 = 0x04;
     /// A noise field's lattice.
     pub const FIELD: u64 = 0x05;
+    /// A terrain tile keyed by integer tile coordinates (RITE VII, VII-0
+    /// "THE FIRST GROUND") — the sub-seed root for anything derived from a
+    /// tile's identity (NOT for the height field itself, which must stay
+    /// tile-independent so shared edges agree — see `terrain::height`).
+    pub const TILE: u64 = 0x06;
 }
 
 /// SplitMix64 finalizer — a bijective avalanche mix of a single `u64`.
@@ -140,4 +145,17 @@ impl Seed {
 #[inline]
 pub fn coord_key(v: i32) -> u64 {
     v as u32 as u64
+}
+
+/// Encode a signed 64-bit coordinate as a hash key (wrap into `u64`).
+///
+/// The honest 64-bit sibling of [`coord_key`]: planet-scale tile coordinates
+/// (RITE VII, Ruling 4 — "64-bit/camera-relative coords: PAID AT VII-0") must
+/// not be silently truncated to `i32` before hashing, or two distinct tiles
+/// far from the origin could collide. `v as u64` is a lossless bit-reinterpret
+/// (two's-complement wrap), matching `coord_key`'s `i32 -> u32 -> u64` pattern
+/// at the wider width.
+#[inline]
+pub fn coord_key_i64(v: i64) -> u64 {
+    v as u64
 }
