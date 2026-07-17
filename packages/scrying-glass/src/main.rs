@@ -1529,8 +1529,37 @@ fn main() {
             // (exact geometry, view-independent — never a camera's coarse cut),
             // and the world spawn pose becomes a walking body.
             let ground = Arc::new(Ground::from_positions(&render_scene.leaf_positions()));
-            let spawn_eye = render_scene.camera.eye;
-            let spawn_yaw = render_scene.camera.yaw;
+            // The spawn eye pose defaults to the world's own spawn component; each
+            // axis + yaw may be overridden by an explicit env param so the window
+            // the Architect opens faces the realm (item 4 vantage). No frozen
+            // world edit — the override is window-local and param-driven (unset =
+            // the world spawn, unchanged). The body still FALLS to the floor from
+            // whatever eye Y is given, so a spawn point on the plaza reads naruko
+            // (lighthouse/pier/city) instead of the occluded default corner.
+            let spawn_axis = |name: &str, world: f32| -> Result<f32, String> {
+                match std::env::var(name) {
+                    Ok(value) => value
+                        .parse::<f32>()
+                        .map_err(|_| format!("{name} must be a number, got {value:?}"))
+                        .and_then(|parsed| {
+                            if parsed.is_finite() {
+                                Ok(parsed)
+                            } else {
+                                Err(format!("{name} must be finite, got {value:?}"))
+                            }
+                        }),
+                    Err(_) => Ok(world),
+                }
+            };
+            let world_eye = render_scene.camera.eye;
+            let spawn_eye = Vec3::new(
+                spawn_axis("GAIA_NATIVE_SPAWN_X", world_eye.x).map_err(std::io::Error::other)?,
+                spawn_axis("GAIA_NATIVE_SPAWN_Y", world_eye.y).map_err(std::io::Error::other)?,
+                spawn_axis("GAIA_NATIVE_SPAWN_Z", world_eye.z).map_err(std::io::Error::other)?,
+            );
+            let spawn_yaw =
+                spawn_axis("GAIA_NATIVE_SPAWN_YAW", render_scene.camera.yaw)
+                    .map_err(std::io::Error::other)?;
             let player_params = PlayerParams::from_env().map_err(std::io::Error::other)?;
             let player = Arc::new(Mutex::new(Player::new(
                 player_params,
