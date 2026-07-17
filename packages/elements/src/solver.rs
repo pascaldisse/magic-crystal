@@ -511,4 +511,21 @@ impl Solver {
     pub fn state_hash(&self) -> u64 {
         self.particles.state_hash()
     }
+
+    /// Apply an instantaneous velocity change to every particle of the rigid
+    /// body at `rigid_index` — "the op is the hand": the caller (incantation
+    /// layer) chooses `delta_velocity`, the solver never invents a magnitude.
+    /// Anchors (`inv_mass == 0`) are left untouched, matching every other
+    /// velocity pass in this file. A no-op if `rigid_index` is out of range
+    /// (the caller's binding may have been fractured away).
+    pub fn apply_impulse(&mut self, rigid_index: usize, delta_velocity: Vec3) {
+        let Some(body) = self.rigids.get(rigid_index) else {
+            return;
+        };
+        for &i in &body.indices {
+            if self.particles.inv_mass[i] != 0.0 {
+                self.particles.vel[i] = self.particles.vel[i] + delta_velocity;
+            }
+        }
+    }
 }

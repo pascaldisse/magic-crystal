@@ -805,6 +805,13 @@ impl RenderScene {
         self.dynamics.tick();
     }
 
+    /// [`RenderScene::tick`], plus a batch of incantation ops folded into the
+    /// physics block before the solver steps this tick (see
+    /// [`Dynamics::tick_with_ops`] — currently only [`Op::Impulse`] acts).
+    pub fn tick_with_ops(&mut self, ops: &[Op]) {
+        self.dynamics.tick_with_ops(ops);
+    }
+
     /// RITE V · V1 — drive every embodied body one fixed tick against the
     /// walker's `commanded_speed` (the embodiment velocity magnitude). Each body
     /// steps its SAMA state machine, takes the emitted pose, and re-skins its
@@ -1634,6 +1641,16 @@ impl Dynamics {
     /// they apply to the ECS → each entity's model is re-derived from its now-
     /// animated transform. Increments the clock. Deterministic in the count.
     pub fn tick(&mut self) {
+        self.tick_with_ops(&[]);
+    }
+
+    /// [`Dynamics::tick`], plus a batch of incantation ops folded into the
+    /// physics block BEFORE `physics.step()` this tick — currently only
+    /// [`Op::Impulse`] does anything here ("the op is the hand": the caller
+    /// names an entity + a velocity delta, scrying-glass resolves it to the
+    /// body's solver rigid index). Every other op variant is ignored (this is
+    /// a physics-only seam, not the general op router).
+    pub fn tick_with_ops(&mut self, incoming: &[Op]) {
         let Some(reg) = self.reg else {
             return;
         };
@@ -1656,13 +1673,19 @@ impl Dynamics {
                     .set_component(entity, reg.transform, set.value.clone());
             }
         }
-        // PHYSICS (the Elements bound into the realm): advance every declared
-        // body one tick, then write its pose (centroid + fitted rotation) back
-        // to the ECS transform — the same Flow of Data KAMI uses, so the body's
+        // PHYSICS (the Elements bound into the realm): fold any incoming
+        // impulses in first, advance every declared body one tick, then
+        // write its pose (centroid + fitted rotation) back to the ECS
+        // transform — the same Flow of Data KAMI uses, so the body's
         // triangles ride the dynamic BVH splice and the traced light sees it
         // move. Read all poses first (shared borrow), then write (world borrow).
         let body_poses: Vec<(String, [f64; 3], [f32; 3])> = match self.physics.as_mut() {
             Some(physics) => {
+                for op in incoming {
+                    if let Op::Impulse(impulse) = op {
+                        physics.apply_impulse(&impulse.id, impulse.delta_velocity);
+                    }
+                }
                 physics.step();
                 physics
                     .bindings()
