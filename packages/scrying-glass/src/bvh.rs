@@ -398,7 +398,12 @@ pub struct RefitParams {
     /// of the half-area at the last rebuild. Refit loosens bounds as the body
     /// deforms; past this the traversal quality (and trace ms) drifts enough to
     /// pay the rebuild back. Default derived by the 300-tick trace-drift sweep
-    /// (`refit_degrade` example) — see docs/perf.
+    /// (`examples/refit_degrade.rs`) — see
+    /// `docs/perf/2026-07-17-refit-degrade-derivation.md`. That sweep's own
+    /// gate (10x the rebuild-trace noise floor) never bit across 300 ticks of a
+    /// real walk cycle, so the derived default is the sweep's own "never bit"
+    /// fallback: observed max benign area-ratio x the 10x tolerance-law
+    /// headroom.
     pub degrade_ratio: f32,
     /// Hard cap on consecutive refits between rebuilds (belt-and-braces against
     /// a slow area creep that never trips the ratio). `0` = unlimited.
@@ -408,7 +413,7 @@ pub struct RefitParams {
 impl Default for RefitParams {
     fn default() -> Self {
         Self {
-            degrade_ratio: 1.6,
+            degrade_ratio: 10.0,
             max_refits: 0,
         }
     }
@@ -467,14 +472,15 @@ impl DynamicSplice {
     /// (unchanged) static tree so `merged` is ready to upload. Returns how it went.
     pub fn update(&mut self, static_bvh: &Bvh, dyn_tris: &[LeafTriangle]) -> SpliceKind {
         let set_unchanged = dyn_tris.len() == self.dyn_tri_count && !dyn_tris.is_empty();
-        let cap_ok = self.refit.max_refits == 0 || self.refits_since_rebuild < self.refit.max_refits;
+        let cap_ok =
+            self.refit.max_refits == 0 || self.refits_since_rebuild < self.refit.max_refits;
         if set_unchanged && cap_ok {
             // Trial refit (cheap); accept it unless the bounds have degraded past
             // the ratio, in which case fall through to a rebuild this tick.
             self.dyn_bvh.refit(dyn_tris, &self.dyn_src);
             let area = self.dyn_bvh.root_half_area();
-            let degraded = self.rebuild_area > 0.0
-                && area > self.rebuild_area * self.refit.degrade_ratio;
+            let degraded =
+                self.rebuild_area > 0.0 && area > self.rebuild_area * self.refit.degrade_ratio;
             if !degraded {
                 self.merged = Bvh::merge(static_bvh, &self.dyn_bvh);
                 self.refits_since_rebuild += 1;
@@ -978,8 +984,12 @@ mod tests {
             v.extend(quad(4.5, 1.0, [0.0; 3], [0.8, 0.8, 0.8]));
             v
         };
-        let mut splice =
-            DynamicSplice::build(&static_bvh, &dyn0, &params.dynamic(), RefitParams::default());
+        let mut splice = DynamicSplice::build(
+            &static_bvh,
+            &dyn0,
+            &params.dynamic(),
+            RefitParams::default(),
+        );
         assert_eq!(splice.last_kind, SpliceKind::Rebuilt);
 
         // Same count, moved → refit.

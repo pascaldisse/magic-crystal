@@ -195,7 +195,13 @@ fn main() {
         RenderScene::from_ecs(std::mem::take(&mut core.world), &params).expect("render scene");
 
     let plume_center = [-1.0, counter_top_y + 1.7, 25.6];
-    let bound = select_medium_light(&sources, &scene.sun, params.emission_intensity, plume_center, 1.47);
+    let bound = select_medium_light(
+        &sources,
+        &scene.sun,
+        params.emission_intensity,
+        plume_center,
+        1.47,
+    );
     let medium = steam_medium(&bound, counter_top_y);
 
     let bvh_params = BvhParams::default();
@@ -265,36 +271,67 @@ fn main() {
                 far: params.far,
             },
         ),
-        ("wide", camera_at([-4.5, 8.5, 33.0], [-5.5, 2.0, 15.5], 60.0)),
-        ("a2_steam", camera_at([3.5, 3.4, 33.0], [-1.0, 4.2, 25.6], 55.0)),
+        (
+            "wide",
+            camera_at([-4.5, 8.5, 33.0], [-5.5, 2.0, 15.5], 60.0),
+        ),
+        (
+            "a2_steam",
+            camera_at([3.5, 3.4, 33.0], [-1.0, 4.2, 25.6], 55.0),
+        ),
     ];
 
     let total_px = (w * h) as usize;
-    println!("[refit-parity] {w}x{h}, spp {}, {frames} frames, {total_px} px", int_params.spp);
+    println!(
+        "[refit-parity] {w}x{h}, spp {}, {frames} frames, {total_px} px",
+        int_params.spp
+    );
     println!("| pose | refit hash | rebuild hash | diff px | diff % | max Δ |");
     println!("|------|-----------|--------------|---------|--------|-------|");
     let mut worst_pct = 0.0f64;
     for (name, cam) in &poses {
         let refit_accum = trace_headless(
-            &device, &queue, refit_merged, cam, &scene.sun, scene.sky_top, scene.sky_horizon,
-            w, h, frames, &int_params, Some(&medium),
+            &device,
+            &queue,
+            refit_merged,
+            cam,
+            &scene.sun,
+            scene.sky_top,
+            scene.sky_horizon,
+            w,
+            h,
+            frames,
+            &int_params,
+            Some(&medium),
         );
         let rebuild_accum = trace_headless(
-            &device, &queue, &rebuild_merged, cam, &scene.sun, scene.sky_top, scene.sky_horizon,
-            w, h, frames, &int_params, Some(&medium),
+            &device,
+            &queue,
+            &rebuild_merged,
+            cam,
+            &scene.sun,
+            scene.sky_top,
+            scene.sky_horizon,
+            w,
+            h,
+            frames,
+            &int_params,
+            Some(&medium),
         );
         let rh = fnv(bytemuck::cast_slice(&refit_accum));
         let bh = fnv(bytemuck::cast_slice(&rebuild_accum));
         let (diff, max_delta) = divergence(&refit_accum, &rebuild_accum);
         let pct = 100.0 * diff as f64 / total_px as f64;
         worst_pct = worst_pct.max(pct);
-        println!(
-            "| {name:8} | {rh:016x} | {bh:016x} | {diff} | {pct:.4}% | {max_delta:.2e} |"
-        );
+        println!("| {name:8} | {rh:016x} | {bh:016x} | {diff} | {pct:.4}% | {max_delta:.2e} |");
     }
     println!(
         "[refit-parity] worst divergence {worst_pct:.4}% of pixels — {} \
          (bit-identical where 0%; any nonzero is exact-depth coplanar tie churn, same class as SAH-vs-median)",
-        if worst_pct == 0.0 { "BIT-EXACT" } else { "tie-band only" }
+        if worst_pct == 0.0 {
+            "BIT-EXACT"
+        } else {
+            "tie-band only"
+        }
     );
 }

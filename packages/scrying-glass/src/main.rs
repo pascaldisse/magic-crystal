@@ -138,7 +138,7 @@ impl ScryingGlassConfig {
                 sah_bins: integer("GAIA_NATIVE_BVH_SAH_BINS", 16)? as usize,
             },
             refit: RefitParams {
-                degrade_ratio: number("GAIA_NATIVE_BVH_REFIT_DEGRADE", 1.6)? as f32,
+                degrade_ratio: number("GAIA_NATIVE_BVH_REFIT_DEGRADE", 10.0)? as f32,
                 max_refits: integer("GAIA_NATIVE_BVH_REFIT_MAX", 0)?,
             },
             capture_frames: integer("GAIA_NATIVE_CAPTURE_FRAMES", 48)?,
@@ -918,7 +918,8 @@ impl Renderer {
         }
         self.splice
             .update(&self.static_bvh, &self.scene.dynamic_leaf_triangles());
-        self.integrator.update_bvh(&self.device, &self.splice.merged);
+        self.integrator
+            .update_bvh(&self.device, &self.splice.merged);
         // The node/tri buffers changed — rebuild the bind groups (they bind them)
         // and drop the stale samples (moved geometry invalidates the mean).
         self.reset_surface_accum();

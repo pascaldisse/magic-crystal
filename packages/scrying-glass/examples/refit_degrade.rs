@@ -252,8 +252,18 @@ fn measure_trace_ms(
     for frame in 0..(warmup + measured) {
         let t = Instant::now();
         trace_frame(
-            device, queue, &integrator, &compute_bg, camera, sun, sky_top, sky_horizon, w, h,
-            int_params, medium,
+            device,
+            queue,
+            &integrator,
+            &compute_bg,
+            camera,
+            sun,
+            sky_top,
+            sky_horizon,
+            w,
+            h,
+            int_params,
+            medium,
         );
         let ms = t.elapsed().as_secs_f64() * 1e3;
         if frame >= warmup {
@@ -286,7 +296,13 @@ fn main() {
         RenderScene::from_ecs(std::mem::take(&mut core.world), &params).expect("render scene");
 
     let plume_center = [-1.0, counter_top_y + 1.7, 25.6];
-    let bound = select_medium_light(&sources, &scene.sun, params.emission_intensity, plume_center, 1.47);
+    let bound = select_medium_light(
+        &sources,
+        &scene.sun,
+        params.emission_intensity,
+        plume_center,
+        1.47,
+    );
     let medium = steam_medium(&bound, counter_top_y);
 
     let bvh_params = BvhParams::default();
@@ -306,7 +322,9 @@ fn main() {
         scene.command_bodies(6.0);
         scene.tick();
     }
-    eprintln!("[refit-degrade] realm warmed to tick {target}; sweeping {ticks} ticks, stride {stride}");
+    eprintln!(
+        "[refit-degrade] realm warmed to tick {target}; sweeping {ticks} ticks, stride {stride}"
+    );
 
     // Refit gate that NEVER trips — the pure degradation signal, unmasked by a
     // self-correcting rebuild. `max_refits: 0` = unlimited consecutive refits.
@@ -327,8 +345,12 @@ fn main() {
     println!(
         "[refit-degrade] {w}x{h}, wide pose, {trace_warmup} warmup + {trace_measured} measured trace frames per sample"
     );
-    println!("| tick | area_ratio | refit ms (mean) | refit std | rebuild ms (mean) | rebuild std | drift ms |");
-    println!("|------|------------|------------------|-----------|--------------------|-------------|----------|");
+    println!(
+        "| tick | area_ratio | refit ms (mean) | refit std | rebuild ms (mean) | rebuild std | drift ms |"
+    );
+    println!(
+        "|------|------------|------------------|-----------|--------------------|-------------|----------|"
+    );
 
     let mut rebuild_means: Vec<f64> = Vec::new();
     let mut samples: Vec<(u64, f32, f64, f64)> = Vec::new(); // tick, ratio, drift, rebuild_mean
@@ -342,16 +364,39 @@ fn main() {
 
         if tick % stride == 0 {
             let fresh_dyn = Bvh::build(&dyn_tris, &bvh_params.dynamic());
-            let area_ratio = dynamic_root_half_area(&splice.merged) / fresh_dyn.root_half_area().max(1e-9);
+            let area_ratio =
+                dynamic_root_half_area(&splice.merged) / fresh_dyn.root_half_area().max(1e-9);
             let rebuild_merged = Bvh::merge(&static_bvh, &fresh_dyn);
 
             let (refit_mean, refit_std) = measure_trace_ms(
-                &device, &queue, &splice.merged, &wide, &scene.sun, scene.sky_top, scene.sky_horizon,
-                w, h, &int_params, Some(&medium), trace_warmup, trace_measured,
+                &device,
+                &queue,
+                &splice.merged,
+                &wide,
+                &scene.sun,
+                scene.sky_top,
+                scene.sky_horizon,
+                w,
+                h,
+                &int_params,
+                Some(&medium),
+                trace_warmup,
+                trace_measured,
             );
             let (rebuild_mean, rebuild_std) = measure_trace_ms(
-                &device, &queue, &rebuild_merged, &wide, &scene.sun, scene.sky_top, scene.sky_horizon,
-                w, h, &int_params, Some(&medium), trace_warmup, trace_measured,
+                &device,
+                &queue,
+                &rebuild_merged,
+                &wide,
+                &scene.sun,
+                scene.sky_top,
+                scene.sky_horizon,
+                w,
+                h,
+                &int_params,
+                Some(&medium),
+                trace_warmup,
+                trace_measured,
             );
             let drift = refit_mean - rebuild_mean;
             println!(
@@ -367,7 +412,10 @@ fn main() {
     // measurement noise on the ground-truth arm); gate = 10x floor.
     let (rebuild_of_rebuilds_mean, floor) = mean_std(&rebuild_means);
     let gate = 10.0 * floor;
-    println!("[derive] noise floor (std of rebuild trace means across {} samples) = {floor:.4} ms", rebuild_means.len());
+    println!(
+        "[derive] noise floor (std of rebuild trace means across {} samples) = {floor:.4} ms",
+        rebuild_means.len()
+    );
     println!("[derive] rebuild trace grand mean = {rebuild_of_rebuilds_mean:.4} ms");
     println!("[derive] gate = 10x floor = {gate:.4} ms");
 
@@ -377,7 +425,9 @@ fn main() {
             println!(
                 "[derive] drift first exceeds gate at tick {tick}: area_ratio {ratio:.4}, drift {drift:.4} ms > gate {gate:.4} ms"
             );
-            println!("[derive] observed max benign area_ratio over the sweep = {max_benign_ratio:.4}");
+            println!(
+                "[derive] observed max benign area_ratio over the sweep = {max_benign_ratio:.4}"
+            );
             println!("[derive] result: degrade_ratio = R = {ratio:.4} (drift-discriminating gate)");
             *ratio
         }
@@ -387,7 +437,9 @@ fn main() {
                 ticks,
                 samples.len()
             );
-            println!("[derive] observed max benign area_ratio over the sweep = {max_benign_ratio:.4}");
+            println!(
+                "[derive] observed max benign area_ratio over the sweep = {max_benign_ratio:.4}"
+            );
             let result = max_benign_ratio * 10.0;
             println!(
                 "[derive] result: degrade_ratio = max observed area_ratio x 10 (tolerance-law headroom) = {result:.4}"
