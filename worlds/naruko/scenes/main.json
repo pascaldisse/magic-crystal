@@ -20,6 +20,30 @@
       { "shape": "box", "size": [120, 1.4, 2], "position": [0, 0.7, 0], "color": "#3a2d4d" }
     ] }
   },
+  "naruko_seawall_south": {
+    "transform": { "position": [0, 0, 67] },
+    "mesh": { "parts": [
+      { "shape": "box", "size": [400, 1.4, 2], "position": [0, 0.7, 0], "color": "#3a2d4d" }
+    ] }
+  },
+  "naruko_seawall_east": {
+    "transform": { "position": [199, 0, 54] },
+    "mesh": { "parts": [
+      { "shape": "box", "size": [2, 1.4, 28], "position": [0, 0.7, 0], "color": "#3a2d4d" }
+    ] }
+  },
+  "naruko_seawall_west": {
+    "transform": { "position": [-199, 0, 54] },
+    "mesh": { "parts": [
+      { "shape": "box", "size": [2, 1.4, 28], "position": [0, 0.7, 0], "color": "#3a2d4d" }
+    ] }
+  },
+  "naruko_rim_catch_south": {
+    "transform": { "position": [0, -1.5, 74] },
+    "mesh": { "parts": [
+      { "shape": "box", "size": [560, 0.3, 68], "position": [0, 0, 0], "color": "#1a1440" }
+    ] }
+  },
   "naruko_sea": {
     "transform": { "position": [0, -1.5, -60] },
     "mesh": { "parts": [
