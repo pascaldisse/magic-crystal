@@ -333,3 +333,26 @@ until he rules — bilinear remains default, his window at 8420/5173 was
 not touched by this merge.
 NO SURPRISES: clean merge, suite green first try, no MUST-FIX from this
 conductor pass (adversary already HELD e9a48f2 before this burst).
+
+## EVENING DELTA — NRC spike CONCLUDED (worktree magic-crystal-nrc, not merged)
+Branch `neural-radiance` @ b43e38c, worktree /Users/pascaldisse/projects/
+magic-crystal-nrc — separate spike, no main code touched by this delta.
+VERDICT: NEEDS-BIGGER-MACHINERY. Drift ablation (nrc_drift.rs, 4
+conditions swept, proof/matrix-*.log) found the round-3 descend-then-
+UNLEARN curve was constant-α SGD's stationary noise ball (Robbins–Monro),
+not a capacity plateau — CURED by the combined cure (harmonic lr-decay +
+k=16 target-averaging + ema=.999 Polyak): 0.85→0.0377±0.0114 tail
+(descend-and-hold shape, CV 0.30, vs 0.42–0.72 CV for the three partial
+cures). Drift is dead. But even cured, the tail sits at gate 0.0178 NOT
+MET (~2.1× above) — that is the CAPACITY FLOOR of the frequency-band MLP
+itself (FREQ_BANDS=6, 4×64), not a training pathology. Next-wave scope:
+hash-grid encoding (instant-NGP style, replaces/augments the frequency-
+band input — this is where the real capacity lives), wider-net as a
+cheaper first probe, and a bound audit (the 0.0178 gate predates this
+matrix's own derived bounds — 0.02678 in nrc_drift.rs's setup, 0.01865 in
+nrc_proof.rs's — pin one canonical derivation before the next wave).
+Cost-vs-rays accounting still owed (current gate (d) is CPU-toy wall-
+clock only, real target is the GPU naruko world's BVH). Verdict doc:
+magic-crystal-nrc/docs/perf/2026-07-17-nrc-spike-verdict.md. Branch
+PARKS AS REFERENCE, UNMERGED — same precedent as rite8-viii2-ari. Next
+wave (hash-grid encoding) awaits the Architect's call.
