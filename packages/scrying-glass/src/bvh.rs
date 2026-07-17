@@ -4,10 +4,14 @@
 //! occlusion. Built once at load, uploaded as two storage buffers (nodes +
 //! triangles) the GPU compute integrator reads.
 //!
-//! Structure: a binary BVH, median-split on the widest centroid axis (Rite IV
-//! keeps it simple and correct — SAH/refit is a later performance rite; RENDER.md
-//! rules "never optimize" until the truth is right). Every threshold is a param
-//! (IRON LAW: never hardcode).
+//! Structure: a binary BVH split by the Surface-Area Heuristic (binned SAH over
+//! the centroid axes). SAH is a pure traversal-quality choice — it changes only
+//! the tree's SHAPE (which triangles land under which node), never the triangle
+//! SET nor the nearest hit a ray reports, so every rendered pixel is bit-identical
+//! to the old median split (`merge_equals_full_rebuild` proves the geometry
+//! parity). A degenerate node (coincident centroids / no paying split) falls back
+//! to the widest-axis median. Every threshold is a param (IRON LAW: never
+//! hardcode).
 //!
 //! Node layout is GPU-ready and matches the WGSL `Node` struct byte-for-byte:
 //! an internal node stores its left child index in `left_first` (right child is
@@ -51,6 +55,9 @@ pub struct BvhParams {
     pub leaf_max: usize,
     /// Hard recursion cap (safety against degenerate splits).
     pub max_depth: usize,
+    /// Binned-SAH bucket count per axis (higher = finer split search, more
+    /// build cost). 16 is the standard sweet spot.
+    pub sah_bins: usize,
 }
 
 impl Default for BvhParams {
@@ -58,6 +65,7 @@ impl Default for BvhParams {
         Self {
             leaf_max: 4,
             max_depth: 64,
+            sah_bins: 16,
         }
     }
 }
@@ -232,16 +240,43 @@ impl Bvh {
         while sp > 0 {
             sp -= 1;
             let node = &self.nodes[stack[sp] as usize];
-            if !aabb_hit(node.min, node.max, origin, inv, t_min, best_t) {
+            // Widen the cull by the tie band (mirror of the WGSL `cull`).
+            let cull = best_t + best_t * TIE_EPS + TIE_ABS;
+            if !aabb_hit(node.min, node.max, origin, inv, t_min, cull) {
                 continue;
             }
             if node.count > 0 {
                 for k in 0..node.count {
                     let ti = node.left_first + k;
                     let t = &self.tris[ti as usize];
-                    if let Some(t_hit) = tri_hit(origin, dir, t, t_min, best_t) {
-                        best_t = t_hit;
-                        best_i = Some(ti);
+                    let cull = best_t + best_t * TIE_EPS + TIE_ABS;
+                    if let Some(t_hit) = tri_hit(origin, dir, t, t_min, cull) {
+                        // Coplanar z-fights (t within the tie band) resolve to the
+                        // canonical `tri_before` winner — build-independent. Mirror
+                        // of the WGSL `trace_closest` banding.
+                        let band = best_t * TIE_EPS + TIE_ABS;
+                        match best_i {
+                            None => {
+                                best_t = t_hit;
+                                best_i = Some(ti);
+                            }
+                            _ if t_hit < best_t - band => {
+                                best_t = t_hit;
+                                best_i = Some(ti);
+                            }
+                            Some(bi) if t_hit < best_t => {
+                                best_t = t_hit;
+                                if tri_before(&self.tris[ti as usize], &self.tris[bi as usize]) {
+                                    best_i = Some(ti);
+                                }
+                            }
+                            Some(bi) if t_hit <= best_t + band => {
+                                if tri_before(&self.tris[ti as usize], &self.tris[bi as usize]) {
+                                    best_i = Some(ti);
+                                }
+                            }
+                            _ => {}
+                        }
                     }
                 }
             } else if sp + 2 <= stack.len() {
@@ -293,28 +328,51 @@ fn subdivide(
         return;
     }
 
-    // Split on the widest centroid axis at its median (stable, deterministic).
+    // Choose the split by the Surface-Area Heuristic (binned). Falls back to the
+    // widest-axis median when no axis offers a paying split.
     let extent = [cmx[0] - cmn[0], cmx[1] - cmn[1], cmx[2] - cmn[2]];
-    let axis = if extent[0] >= extent[1] && extent[0] >= extent[2] {
+    let widest = if extent[0] >= extent[1] && extent[0] >= extent[2] {
         0
     } else if extent[1] >= extent[2] {
         1
     } else {
         2
     };
-    if extent[axis] <= 0.0 {
+    if extent[widest] <= 0.0 {
         // Degenerate (all centroids coincide) → leaf.
         nodes[node_index].left_first = start as u32;
         nodes[node_index].count = count as u32;
         return;
     }
+
     let slice = &mut build[start..start + count];
-    slice.sort_by(|a, b| {
-        a.centroid[axis]
-            .partial_cmp(&b.centroid[axis])
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    let mid = count / 2;
+    let mid = match sah_split(slice, cmn, extent, params.sah_bins) {
+        Some((axis, plane, scale)) => {
+            // Stable partition: bins ≤ plane go left. Sorting by bin index keeps
+            // the build deterministic (topology is free — pixels never see it).
+            slice.sort_by(|a, b| {
+                bin_of(a.centroid[axis], cmn[axis], scale, params.sah_bins)
+                    .cmp(&bin_of(b.centroid[axis], cmn[axis], scale, params.sah_bins))
+            });
+            slice
+                .iter()
+                .take_while(|b| {
+                    bin_of(b.centroid[axis], cmn[axis], scale, params.sah_bins) <= plane
+                })
+                .count()
+        }
+        None => {
+            // No paying SAH split → widest-axis median (old behaviour).
+            slice.sort_by(|a, b| {
+                a.centroid[widest]
+                    .partial_cmp(&b.centroid[widest])
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            count / 2
+        }
+    };
+    // Guard the degenerate partition (all one side) — never emit an empty child.
+    let mid = mid.clamp(1, count - 1);
 
     let left_index = nodes.len();
     nodes.push(GpuNode::zeroed());
@@ -332,6 +390,89 @@ fn subdivide(
         depth + 1,
         params,
     );
+}
+
+/// The bin a centroid coordinate falls in (clamped to `[0, bins)`).
+fn bin_of(c: f32, cmin: f32, scale: f32, bins: usize) -> usize {
+    let bi = ((c - cmin) * scale) as usize;
+    bi.min(bins - 1)
+}
+
+/// Half the surface area of an AABB (the SAH's relative probability metric;
+/// the constant 2 cancels across candidates, so half-area suffices).
+fn half_area(mn: [f32; 3], mx: [f32; 3]) -> f32 {
+    let dx = (mx[0] - mn[0]).max(0.0);
+    let dy = (mx[1] - mn[1]).max(0.0);
+    let dz = (mx[2] - mn[2]).max(0.0);
+    dx * dy + dy * dz + dz * dx
+}
+
+/// Binned Surface-Area-Heuristic split search over all three centroid axes.
+/// Returns `(axis, plane, scale)` where every triangle whose centroid bins in
+/// `[0, plane]` goes left, or `None` when no axis yields a valid two-sided
+/// split (caller falls back to the median). Pure ordering choice — never touches
+/// the triangle geometry, so the render stays bit-exact.
+fn sah_split(
+    build: &[BuildTri],
+    cmn: [f32; 3],
+    extent: [f32; 3],
+    bins: usize,
+) -> Option<(usize, usize, f32)> {
+    debug_assert!(bins >= 2);
+    let mut best: Option<(usize, usize, f32, f32)> = None; // axis, plane, scale, cost
+    for axis in 0..3 {
+        if extent[axis] <= 0.0 {
+            continue;
+        }
+        let scale = bins as f32 / extent[axis];
+        let mut bin_count = vec![0u32; bins];
+        let mut bin_min = vec![[f32::INFINITY; 3]; bins];
+        let mut bin_max = vec![[f32::NEG_INFINITY; 3]; bins];
+        for b in build {
+            let bi = bin_of(b.centroid[axis], cmn[axis], scale, bins);
+            bin_count[bi] += 1;
+            for k in 0..3 {
+                bin_min[bi][k] = bin_min[bi][k].min(b.min[k]);
+                bin_max[bi][k] = bin_max[bi][k].max(b.max[k]);
+            }
+        }
+        // Left prefix sweep: cumulative area + count for planes after bin i.
+        let mut left_area = vec![0.0f32; bins - 1];
+        let mut left_count = vec![0u32; bins - 1];
+        let mut amn = [f32::INFINITY; 3];
+        let mut amx = [f32::NEG_INFINITY; 3];
+        let mut acc = 0u32;
+        for i in 0..bins - 1 {
+            acc += bin_count[i];
+            for k in 0..3 {
+                amn[k] = amn[k].min(bin_min[i][k]);
+                amx[k] = amx[k].max(bin_max[i][k]);
+            }
+            left_count[i] = acc;
+            left_area[i] = half_area(amn, amx);
+        }
+        // Right suffix sweep: cost at each plane = SA_l*N_l + SA_r*N_r.
+        let mut amn = [f32::INFINITY; 3];
+        let mut amx = [f32::NEG_INFINITY; 3];
+        let mut acc = 0u32;
+        for i in (1..bins).rev() {
+            acc += bin_count[i];
+            for k in 0..3 {
+                amn[k] = amn[k].min(bin_min[i][k]);
+                amx[k] = amx[k].max(bin_max[i][k]);
+            }
+            let plane = i - 1;
+            let (nl, nr) = (left_count[plane], acc);
+            if nl == 0 || nr == 0 {
+                continue;
+            }
+            let cost = left_area[plane] * nl as f32 + half_area(amn, amx) * nr as f32;
+            if best.is_none_or(|(_, _, _, c)| cost < c) {
+                best = Some((axis, plane, scale, cost));
+            }
+        }
+    }
+    best.map(|(axis, plane, scale, _)| (axis, plane, scale))
 }
 
 fn aabb_hit(
@@ -384,6 +525,37 @@ fn tri_hit(origin: [f32; 3], dir: [f32; 3], t: &GpuTri, t_min: f32, t_max: f32) 
     } else {
         None
     }
+}
+
+/// Coplanar z-fight band — the CPU mirror of the WGSL `TIE_EPS`/`TIE_ABS`. Two
+/// hits within this relative (plus absolute floor) distance are one surface as
+/// far as depth can tell; the winner is the canonical `tri_before`, not the BVH
+/// visitation order, so every tree shape agrees.
+const TIE_EPS: f32 = 1e-4;
+const TIE_ABS: f32 = 1e-3;
+
+/// Canonical, build-independent tie-break for two triangles within the tie band
+/// — lexicographic over the vertex then material lanes. Mirror of the WGSL
+/// `tri_before`. Returns true when `a` should win over the incumbent `b`.
+fn tri_before(a: &GpuTri, b: &GpuTri) -> bool {
+    // Vertices first, then the material lanes — so even coincident triangles
+    // with different looks resolve to one defined winner (mirror of WGSL).
+    let ka = [
+        a.v0[0], a.v0[1], a.v0[2], a.v1[0], a.v1[1], a.v1[2], a.v2[0], a.v2[1], a.v2[2],
+        a.albedo[0], a.albedo[1], a.albedo[2], a.albedo[3], a.emission[0], a.emission[1],
+        a.emission[2], a.emission[3],
+    ];
+    let kb = [
+        b.v0[0], b.v0[1], b.v0[2], b.v1[0], b.v1[1], b.v1[2], b.v2[0], b.v2[1], b.v2[2],
+        b.albedo[0], b.albedo[1], b.albedo[2], b.albedo[3], b.emission[0], b.emission[1],
+        b.emission[2], b.emission[3],
+    ];
+    for i in 0..ka.len() {
+        if ka[i] != kb[i] {
+            return ka[i] < kb[i];
+        }
+    }
+    false
 }
 
 fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {

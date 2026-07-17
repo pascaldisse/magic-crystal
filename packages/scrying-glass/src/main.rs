@@ -132,6 +132,7 @@ impl ScryingGlassConfig {
             bvh: BvhParams {
                 leaf_max: integer("GAIA_NATIVE_BVH_LEAF", 4)? as usize,
                 max_depth: integer("GAIA_NATIVE_BVH_DEPTH", 64)? as usize,
+                sah_bins: integer("GAIA_NATIVE_BVH_SAH_BINS", 16)? as usize,
             },
             capture_frames: integer("GAIA_NATIVE_CAPTURE_FRAMES", 48)?,
         };
