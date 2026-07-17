@@ -405,7 +405,7 @@
   "playground_break_crate": {
     "transform": { "position": [-0.8, 0.45, 34.5] },
     "mesh": { "parts": [ { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#8a3a2c", "roughness": 0.85 } ] },
-    "body": { "shape": "box", "size": [0.8, 0.8, 0.8], "density": 200, "resolution": [3, 3, 3], "contact_radius": 0.05, "bonded": true, "love": 0.008, "compliance": 1e-7, "settle": 90 }
+    "body": { "shape": "box", "size": [0.8, 0.8, 0.8], "density": 200, "resolution": [3, 3, 3], "contact_radius": 0.05, "bonded": true, "love": 0.5, "compliance": 1e-7, "settle": 90 }
   },
   "playground_pyramid_0": {
     "transform": { "position": [-2.35, 0.45, 32.0] },
