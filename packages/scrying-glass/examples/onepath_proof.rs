@@ -24,7 +24,11 @@ use scrying_glass::upscaler_gpu::GpuUpscaler;
 
 fn linear_to_srgb(c: f32) -> f32 {
     let c = c.clamp(0.0, 1.0);
-    if c <= 0.003_130_8 { c * 12.92 } else { 1.055 * c.powf(1.0 / 2.4) - 0.055 }
+    if c <= 0.003_130_8 {
+        c * 12.92
+    } else {
+        1.055 * c.powf(1.0 / 2.4) - 0.055
+    }
 }
 
 fn write_pair(a: &[Vec3], b: &[Vec3], w: u32, h: u32, exposure: f32, path: &Path) {
@@ -48,7 +52,10 @@ fn write_pair(a: &[Vec3], b: &[Vec3], w: u32, h: u32, exposure: f32, path: &Path
     let mut enc = png::Encoder::new(std::io::BufWriter::new(file), out_w, h);
     enc.set_color(png::ColorType::Rgb);
     enc.set_depth(png::BitDepth::Eight);
-    enc.write_header().unwrap().write_image_data(&bytes).unwrap();
+    enc.write_header()
+        .unwrap()
+        .write_image_data(&bytes)
+        .unwrap();
 }
 
 fn main() {
@@ -68,26 +75,95 @@ fn main() {
     let (tw, th) = (low_w * 2, low_h * 2);
     let camera = Camera {
         eye: Vec3::new(0.0, 1.6, 6.0),
-        yaw: 0.0, pitch: 0.0,
+        yaw: 0.0,
+        pitch: 0.0,
         fov_y_radians: 55f32.to_radians(),
-        near: 0.05, far: 1000.0,
+        near: 0.05,
+        far: 1000.0,
     };
 
-    let noisy_params = IntegratorParams { spp: 1, ..IntegratorParams::default() };
-    let low_noisy = resolve(&trace_headless(&device, &queue, &bvh, &camera, &scene.sun, scene.sky_top, scene.sky_horizon, low_w, low_h, 1, &noisy_params, None));
-    let low_aov = trace_headless_aov(&device, &queue, &bvh, &camera, &scene.sun, scene.sky_top, scene.sky_horizon, low_w, low_h);
+    let noisy_params = IntegratorParams {
+        spp: 1,
+        ..IntegratorParams::default()
+    };
+    let low_noisy = resolve(&trace_headless(
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &scene.sun,
+        scene.sky_top,
+        scene.sky_horizon,
+        low_w,
+        low_h,
+        1,
+        &noisy_params,
+        None,
+    ));
+    let low_aov = trace_headless_aov(
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &scene.sun,
+        scene.sky_top,
+        scene.sky_horizon,
+        low_w,
+        low_h,
+    );
     let (low_alb, low_nrm, low_dep) = split_aov(&low_aov);
-    let hi_aov = trace_headless_aov(&device, &queue, &bvh, &camera, &scene.sun, scene.sky_top, scene.sky_horizon, tw, th);
+    let hi_aov = trace_headless_aov(
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &scene.sun,
+        scene.sky_top,
+        scene.sky_horizon,
+        tw,
+        th,
+    );
     let (hi_alb, hi_nrm, hi_dep) = split_aov(&hi_aov);
 
     // BEFORE: old runtime resolve = bilinear of the noisy low trace.
     let before = bilinear_upsample(&low_noisy, low_w, low_h, tw, th);
 
     // AFTER: chartered path = GPU denoise(low) → GPU neural upscale.
-    let denoiser = GpuDenoiser::new(&device, &denoiser_weights(&std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("data/denoiser-weights-v1.bin")).unwrap()).unwrap());
-    let upscaler = GpuUpscaler::new(&device, &upscaler_weights(&std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("data/upscaler-weights-v1.bin")).unwrap()).unwrap());
-    let denoised_low = denoiser.denoise(&device, &queue, &low_noisy, &low_alb, &low_nrm, &low_dep, low_w, low_h);
-    let after = upscaler.upscale(&device, &queue, &denoised_low, low_w, low_h, &hi_alb, &hi_nrm, &hi_dep, tw, th);
+    let denoiser = GpuDenoiser::new(
+        &device,
+        &denoiser_weights(
+            &std::fs::read(
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("data/denoiser-weights-v1.bin"),
+            )
+            .unwrap(),
+        )
+        .unwrap(),
+    );
+    let upscaler = GpuUpscaler::new(
+        &device,
+        &upscaler_weights(
+            &std::fs::read(
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("data/upscaler-weights-v1.bin"),
+            )
+            .unwrap(),
+        )
+        .unwrap(),
+    );
+    let denoised_low = denoiser.denoise(
+        &device, &queue, &low_noisy, &low_alb, &low_nrm, &low_dep, low_w, low_h,
+    );
+    let after = upscaler.upscale(
+        &device,
+        &queue,
+        &denoised_low,
+        low_w,
+        low_h,
+        &hi_alb,
+        &hi_nrm,
+        &hi_dep,
+        tw,
+        th,
+    );
 
     let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../proof/onepath-before-after.png");
     write_pair(&before, &after, tw, th, 1.6, &out);

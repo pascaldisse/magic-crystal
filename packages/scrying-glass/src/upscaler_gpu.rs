@@ -118,7 +118,9 @@ impl GpuUpscaler {
             ty: wgpu::BindingType::Buffer {
                 ty: wgpu::BufferBindingType::Uniform,
                 has_dynamic_offset: false,
-                min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<UpscaleUniform>() as u64),
+                min_binding_size: wgpu::BufferSize::new(
+                    std::mem::size_of::<UpscaleUniform>() as u64
+                ),
             },
             count: None,
         };
@@ -191,9 +193,8 @@ impl GpuUpscaler {
         assert_eq!(hi_normal.len(), target_n);
         assert_eq!(hi_depth.len(), target_n);
 
-        let vec3_pack = |v: &[Vec3]| -> Vec<[f32; 4]> {
-            v.iter().map(|c| [c.x, c.y, c.z, 0.0]).collect()
-        };
+        let vec3_pack =
+            |v: &[Vec3]| -> Vec<[f32; 4]> { v.iter().map(|c| [c.x, c.y, c.z, 0.0]).collect() };
         let low_p = vec3_pack(low_radiance);
         let albedo_p = vec3_pack(hi_albedo);
         let normal_p = vec3_pack(hi_normal);
@@ -234,13 +235,34 @@ impl GpuUpscaler {
             label: Some("upscaler bind group"),
             layout: &self.layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: uniform_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: self.weights_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: low_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: albedo_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 4, resource: normal_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 5, resource: depth_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 6, resource: out_buf.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.weights_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: low_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: albedo_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: normal_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: depth_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: out_buf.as_entire_binding(),
+                },
             ],
         })
     }
@@ -272,7 +294,13 @@ impl GpuUpscaler {
         let low_n = (low_w * low_h) as usize;
         let target_n = (target_w * target_h) as usize;
         let (low_buf, albedo_buf, normal_buf, depth_buf, out_buf) = self.upload_inputs(
-            device, low_radiance, hi_albedo, hi_normal, hi_depth, low_n, target_n,
+            device,
+            low_radiance,
+            hi_albedo,
+            hi_normal,
+            hi_depth,
+            low_n,
+            target_n,
         );
         let uniform = self.make_uniform(low_w, low_h, target_w, target_h);
         let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -280,7 +308,15 @@ impl GpuUpscaler {
             contents: bytemuck::bytes_of(&uniform),
             usage: wgpu::BufferUsages::UNIFORM,
         });
-        let bg = self.bind_group(device, &uniform_buf, &low_buf, &albedo_buf, &normal_buf, &depth_buf, &out_buf);
+        let bg = self.bind_group(
+            device,
+            &uniform_buf,
+            &low_buf,
+            &albedo_buf,
+            &normal_buf,
+            &depth_buf,
+            &out_buf,
+        );
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("upscale encode"),
@@ -345,7 +381,13 @@ impl GpuUpscaler {
         let low_n = (low_w * low_h) as usize;
         let target_n = (target_w * target_h) as usize;
         let (low_buf, albedo_buf, normal_buf, depth_buf, out_buf) = self.upload_inputs(
-            device, low_radiance, hi_albedo, hi_normal, hi_depth, low_n, target_n,
+            device,
+            low_radiance,
+            hi_albedo,
+            hi_normal,
+            hi_depth,
+            low_n,
+            target_n,
         );
         let uniform = self.make_uniform(low_w, low_h, target_w, target_h);
         let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -353,7 +395,15 @@ impl GpuUpscaler {
             contents: bytemuck::bytes_of(&uniform),
             usage: wgpu::BufferUsages::UNIFORM,
         });
-        let bg = self.bind_group(device, &uniform_buf, &low_buf, &albedo_buf, &normal_buf, &depth_buf, &out_buf);
+        let bg = self.bind_group(
+            device,
+            &uniform_buf,
+            &low_buf,
+            &albedo_buf,
+            &normal_buf,
+            &depth_buf,
+            &out_buf,
+        );
 
         let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
             label: Some("upscale timestamps"),

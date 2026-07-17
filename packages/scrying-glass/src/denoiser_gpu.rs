@@ -97,7 +97,9 @@ impl GpuDenoiser {
             ty: wgpu::BindingType::Buffer {
                 ty: wgpu::BufferBindingType::Uniform,
                 has_dynamic_offset: false,
-                min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<DenoiseUniform>() as u64),
+                min_binding_size: wgpu::BufferSize::new(
+                    std::mem::size_of::<DenoiseUniform>() as u64
+                ),
             },
             count: None,
         };
@@ -154,7 +156,13 @@ impl GpuDenoiser {
         albedo: &[Vec3],
         normal: &[Vec3],
         depth: &[f32],
-    ) -> (wgpu::Buffer, wgpu::Buffer, wgpu::Buffer, wgpu::Buffer, usize) {
+    ) -> (
+        wgpu::Buffer,
+        wgpu::Buffer,
+        wgpu::Buffer,
+        wgpu::Buffer,
+        usize,
+    ) {
         let n = noisy.len();
         assert_eq!(albedo.len(), n);
         assert_eq!(normal.len(), n);
@@ -200,12 +208,30 @@ impl GpuDenoiser {
             label: Some("denoiser bind group"),
             layout: &self.layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: uniform_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: self.weights_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: noisy_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: albedo_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 4, resource: normal_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 5, resource: out_buf.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.weights_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: noisy_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: albedo_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: normal_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: out_buf.as_entire_binding(),
+                },
             ],
         })
     }
@@ -236,7 +262,14 @@ impl GpuDenoiser {
             contents: bytemuck::bytes_of(&uniform),
             usage: wgpu::BufferUsages::UNIFORM,
         });
-        let bg = self.bind_group(device, &uniform_buf, &noisy_buf, &albedo_buf, &normal_buf, &out_buf);
+        let bg = self.bind_group(
+            device,
+            &uniform_buf,
+            &noisy_buf,
+            &albedo_buf,
+            &normal_buf,
+            &out_buf,
+        );
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("denoise encode"),
@@ -306,7 +339,14 @@ impl GpuDenoiser {
             contents: bytemuck::bytes_of(&uniform),
             usage: wgpu::BufferUsages::UNIFORM,
         });
-        let bg = self.bind_group(device, &uniform_buf, &noisy_buf, &albedo_buf, &normal_buf, &out_buf);
+        let bg = self.bind_group(
+            device,
+            &uniform_buf,
+            &noisy_buf,
+            &albedo_buf,
+            &normal_buf,
+            &out_buf,
+        );
 
         let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
             label: Some("denoise timestamps"),

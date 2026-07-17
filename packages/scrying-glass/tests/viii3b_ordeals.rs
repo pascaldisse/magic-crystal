@@ -26,14 +26,14 @@ use std::path::Path;
 use glam::Vec3 as GVec3;
 
 use scrying_glass::bvh::{Bvh, BvhParams};
+use scrying_glass::denoiser::deserialize_weights as deserialize_denoiser_weights;
+use scrying_glass::denoiser_gpu::GpuDenoiser;
 use scrying_glass::error_metric::rmse;
 use scrying_glass::integrator::{
     IntegratorParams, headless_device, resolve, split_aov, trace_headless, trace_headless_aov,
 };
 use scrying_glass::scene::RenderScene;
-use scrying_glass::upscaler::{
-    Mlp, bilinear_upsample, deserialize_weights, upscale_image,
-};
+use scrying_glass::upscaler::{Mlp, bilinear_upsample, deserialize_weights, upscale_image};
 use scrying_glass::upscaler_dataset::{
     DATASET_REF_FRAMES, VALIDATION_POSE_NAMES, dataset_dims, law_poses, naruko_params,
 };
@@ -47,6 +47,105 @@ fn load_committed_weights() -> Mlp {
     let bytes = fs::read(weights_dir().join("upscaler-weights-v1.bin"))
         .expect("read committed upscaler-weights-v1.bin");
     deserialize_weights(&bytes).expect("deserialize committed upscaler weights artifact")
+}
+
+/// (g) END-TO-END DETERMINISM through the FULL chartered neural resolve:
+/// trace(low, fixed seed) → GPU denoise → GPU upscale, run TWICE on the same
+/// device. Every stage is current-frame-only and deterministic (the trace with
+/// a fixed seed, the two nets proven bit-identical in (a) and viii2 (a)), so the
+/// composed path must be byte-identical frame for frame. This is PROVE (b) of
+/// THE ONE RENDER PATH — the exact `trace → denoise → upscale → present`
+/// sequence a `GAIA_NATIVE_UPSCALE=neural` frame runs, minus the 1:1 present
+/// blit (a straight copy, no arithmetic).
+#[test]
+fn g_full_neural_path_is_deterministic_end_to_end() {
+    let Some((device, queue)) = headless_device() else {
+        eprintln!(
+            "[VIII-3b full-path determinism] no GPU adapter on this host — ordeal could not run"
+        );
+        return;
+    };
+    let (bvh, scene) = build_naruko_scene();
+    let params = naruko_params();
+    let (low_w, low_h, target_w, target_h) = dataset_dims();
+    let camera = law_poses(&params)
+        .into_iter()
+        .find(|(name, _)| VALIDATION_POSE_NAMES.contains(name))
+        .expect("a validation pose")
+        .1;
+
+    // Low-res noisy radiance (1 spp, fixed default seed) + low-res AOVs for the
+    // denoiser, and full-res AOVs for the upscaler — the geometry-only guide.
+    let noisy_params = IntegratorParams {
+        spp: 1,
+        ..IntegratorParams::default()
+    };
+    let low_noisy = resolve(&trace_headless(
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &scene.sun,
+        scene.sky_top,
+        scene.sky_horizon,
+        low_w,
+        low_h,
+        1,
+        &noisy_params,
+        None,
+    ));
+    let (low_alb, low_nrm, low_dep) = split_aov(&trace_headless_aov(
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &scene.sun,
+        scene.sky_top,
+        scene.sky_horizon,
+        low_w,
+        low_h,
+    ));
+    let (hi_alb, hi_nrm, hi_dep) = split_aov(&trace_headless_aov(
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &scene.sun,
+        scene.sky_top,
+        scene.sky_horizon,
+        target_w,
+        target_h,
+    ));
+
+    let denoiser = GpuDenoiser::new(
+        &device,
+        &deserialize_denoiser_weights(
+            &fs::read(weights_dir().join("denoiser-weights-v1.bin"))
+                .expect("read committed denoiser-weights-v1.bin"),
+        )
+        .expect("deserialize committed denoiser weights artifact"),
+    );
+    let upscaler = GpuUpscaler::new(&device, &load_committed_weights());
+
+    let run = || {
+        let denoised = denoiser.denoise(
+            &device, &queue, &low_noisy, &low_alb, &low_nrm, &low_dep, low_w, low_h,
+        );
+        upscaler.upscale(
+            &device, &queue, &denoised, low_w, low_h, &hi_alb, &hi_nrm, &hi_dep, target_w, target_h,
+        )
+    };
+    let a = run();
+    let b = run();
+    assert_eq!(
+        a.len(),
+        (target_w * target_h) as usize,
+        "full neural path output must be the full-res image"
+    );
+    assert_eq!(
+        a, b,
+        "full neural path (trace→denoise→upscale) is not byte-identical across two runs"
+    );
 }
 
 fn build_naruko_scene() -> (Bvh, RenderScene) {
@@ -85,21 +184,54 @@ fn render_validation_poses(
         .into_iter()
         .filter(|(name, _)| VALIDATION_POSE_NAMES.contains(name))
         .map(|(name, camera)| {
-            let noisy_params = IntegratorParams { spp: 1, ..IntegratorParams::default() };
+            let noisy_params = IntegratorParams {
+                spp: 1,
+                ..IntegratorParams::default()
+            };
             let low_noisy = resolve(&trace_headless(
-                device, queue, bvh, &camera, &scene.sun, scene.sky_top, scene.sky_horizon,
-                low_w, low_h, 1, &noisy_params, None,
+                device,
+                queue,
+                bvh,
+                &camera,
+                &scene.sun,
+                scene.sky_top,
+                scene.sky_horizon,
+                low_w,
+                low_h,
+                1,
+                &noisy_params,
+                None,
             ));
             let reference = resolve(&trace_headless(
-                device, queue, bvh, &camera, &scene.sun, scene.sky_top, scene.sky_horizon,
-                target_w, target_h, DATASET_REF_FRAMES, &IntegratorParams::default(), None,
+                device,
+                queue,
+                bvh,
+                &camera,
+                &scene.sun,
+                scene.sky_top,
+                scene.sky_horizon,
+                target_w,
+                target_h,
+                DATASET_REF_FRAMES,
+                &IntegratorParams::default(),
+                None,
             ));
             let raw_aov = trace_headless_aov(
-                device, queue, bvh, &camera, &scene.sun, scene.sky_top, scene.sky_horizon,
-                target_w, target_h,
+                device,
+                queue,
+                bvh,
+                &camera,
+                &scene.sun,
+                scene.sky_top,
+                scene.sky_horizon,
+                target_w,
+                target_h,
             );
             let (hi_albedo, hi_normal, hi_depth) = split_aov(&raw_aov);
-            (name, low_noisy, hi_albedo, hi_normal, hi_depth, reference, low_w, low_h, target_w, target_h)
+            (
+                name, low_noisy, hi_albedo, hi_normal, hi_depth, reference, low_w, low_h, target_w,
+                target_h,
+            )
         })
         .collect()
 }
@@ -117,7 +249,10 @@ fn a_gpu_inference_is_byte_identical_same_frame_twice() {
     let gpu = GpuUpscaler::new(&device, &load_committed_weights());
     let a = gpu.upscale(&device, &queue, low, *lw, *lh, alb, nrm, dep, *tw, *th);
     let b = gpu.upscale(&device, &queue, low, *lw, *lh, alb, nrm, dep, *tw, *th);
-    assert_eq!(a, b, "GPU upscale is not byte-identical across two runs on the same device+frame");
+    assert_eq!(
+        a, b,
+        "GPU upscale is not byte-identical across two runs on the same device+frame"
+    );
 }
 
 /// The GPU-vs-CPU parity tolerance, DERIVED (not chosen), by the SAME method
@@ -161,7 +296,11 @@ fn b_and_c_gpu_matches_cpu_within_derived_bound_and_beats_bilinear() {
 
     let (bvh, scene) = build_naruko_scene();
     let poses = render_validation_poses(&device, &queue, &bvh, &scene);
-    assert_eq!(poses.len(), 2, "expected exactly the 2 documented validation poses");
+    assert_eq!(
+        poses.len(),
+        2,
+        "expected exactly the 2 documented validation poses"
+    );
 
     for (name, low, alb, nrm, dep, reference, lw, lh, tw, th) in &poses {
         let cpu = upscale_image(&mlp, low, *lw, *lh, alb, nrm, dep, *tw, *th);
@@ -181,7 +320,9 @@ fn b_and_c_gpu_matches_cpu_within_derived_bound_and_beats_bilinear() {
         let bilinear = bilinear_upsample(low, *lw, *lh, *tw, *th);
         let bilinear_rmse = rmse(&bilinear, reference);
         let gpu_rmse = rmse(&gpu_out, reference);
-        println!("[VIII-3b quality] pose={name} bilinear_rmse={bilinear_rmse:.6} gpu_neural_rmse={gpu_rmse:.6}");
+        println!(
+            "[VIII-3b quality] pose={name} bilinear_rmse={bilinear_rmse:.6} gpu_neural_rmse={gpu_rmse:.6}"
+        );
         assert!(
             gpu_rmse < bilinear_rmse,
             "pose '{name}': GPU-neural RMSE {gpu_rmse:.6} does not beat bilinear RMSE {bilinear_rmse:.6}"
@@ -196,15 +337,26 @@ fn b_and_c_gpu_matches_cpu_within_derived_bound_and_beats_bilinear() {
 #[test]
 fn d_ban_no_temporal_vocabulary_in_the_gpu_shader() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let shader = fs::read_to_string(root.join("src/upscaler.wgsl")).expect("read src/upscaler.wgsl");
+    let shader =
+        fs::read_to_string(root.join("src/upscaler.wgsl")).expect("read src/upscaler.wgsl");
     assert!(
         shader.contains("// BAN-SCOPED"),
         "upscaler.wgsl must carry the // BAN-SCOPED marker so the ban scope picks it up"
     );
     let forbidden = [
-        "previous_frame", "history", "motion_vector", "temporal", "reproject",
-        "warp", "feedback", "recurrent", "accum_prev", "prev_", "last_frame",
-        "frame_history", "velocity",
+        "previous_frame",
+        "history",
+        "motion_vector",
+        "temporal",
+        "reproject",
+        "warp",
+        "feedback",
+        "recurrent",
+        "accum_prev",
+        "prev_",
+        "last_frame",
+        "frame_history",
+        "velocity",
     ];
     for word in forbidden {
         assert!(
@@ -212,8 +364,12 @@ fn d_ban_no_temporal_vocabulary_in_the_gpu_shader() {
             "forbidden temporal vocabulary '{word}' found in src/upscaler.wgsl"
         );
     }
-    let gpu_src = fs::read_to_string(root.join("src/upscaler_gpu.rs")).expect("read upscaler_gpu.rs");
-    assert!(gpu_src.contains("// BAN-SCOPED"), "upscaler_gpu.rs should carry the // BAN-SCOPED marker");
+    let gpu_src =
+        fs::read_to_string(root.join("src/upscaler_gpu.rs")).expect("read upscaler_gpu.rs");
+    assert!(
+        gpu_src.contains("// BAN-SCOPED"),
+        "upscaler_gpu.rs should carry the // BAN-SCOPED marker"
+    );
     for word in forbidden {
         assert!(
             !gpu_src.to_lowercase().contains(word),

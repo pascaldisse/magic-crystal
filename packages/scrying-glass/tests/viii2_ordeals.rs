@@ -61,11 +61,13 @@ fn weights_dir() -> std::path::PathBuf {
 }
 
 fn read_committed_weights_bytes() -> Vec<u8> {
-    fs::read(weights_dir().join("denoiser-weights-v1.bin")).expect("read committed denoiser-weights-v1.bin")
+    fs::read(weights_dir().join("denoiser-weights-v1.bin"))
+        .expect("read committed denoiser-weights-v1.bin")
 }
 
 fn load_committed_weights() -> Mlp {
-    deserialize_weights(&read_committed_weights_bytes()).expect("deserialize committed weights artifact")
+    deserialize_weights(&read_committed_weights_bytes())
+        .expect("deserialize committed weights artifact")
 }
 
 fn load_provenance() -> serde_json::Value {
@@ -98,7 +100,15 @@ fn fixed_pose() -> (Bvh, Camera, SunLight, [f32; 4], [f32; 4], u32, u32) {
         intensity: 2.0,
         ambient_intensity: 0.15,
     };
-    (bvh, camera, sun, [0.1, 0.12, 0.22, 1.0], [0.55, 0.42, 0.5, 1.0], 64, 48)
+    (
+        bvh,
+        camera,
+        sun,
+        [0.1, 0.12, 0.22, 1.0],
+        [0.55, 0.42, 0.5, 1.0],
+        64,
+        48,
+    )
 }
 
 fn render_frame_buffers(
@@ -112,9 +122,23 @@ fn render_frame_buffers(
     w: u32,
     h: u32,
 ) -> (Vec<GVec3>, Vec<GVec3>, Vec<GVec3>, Vec<f32>) {
-    let noisy_params = IntegratorParams { spp: 1, ..IntegratorParams::default() };
+    let noisy_params = IntegratorParams {
+        spp: 1,
+        ..IntegratorParams::default()
+    };
     let noisy = resolve(&trace_headless(
-        device, queue, bvh, camera, sun, sky_top, sky_horizon, w, h, 1, &noisy_params, None,
+        device,
+        queue,
+        bvh,
+        camera,
+        sun,
+        sky_top,
+        sky_horizon,
+        w,
+        h,
+        1,
+        &noisy_params,
+        None,
     ));
     let raw_aov = trace_headless_aov(device, queue, bvh, camera, sun, sky_top, sky_horizon, w, h);
     let (albedo, normal, depth) = split_aov(&raw_aov);
@@ -129,12 +153,24 @@ fn a_gpu_inference_is_byte_identical_same_frame_twice() {
         return;
     };
     let (bvh, camera, sun, sky_top, sky_horizon, w, h) = fixed_pose();
-    let (noisy, albedo, normal, depth) =
-        render_frame_buffers(&device, &queue, &bvh, &camera, &sun, sky_top, sky_horizon, w, h);
+    let (noisy, albedo, normal, depth) = render_frame_buffers(
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &sun,
+        sky_top,
+        sky_horizon,
+        w,
+        h,
+    );
     let gpu = GpuDenoiser::new(&device, &load_committed_weights());
     let a = gpu.denoise(&device, &queue, &noisy, &albedo, &normal, &depth, w, h);
     let b = gpu.denoise(&device, &queue, &noisy, &albedo, &normal, &depth, w, h);
-    assert_eq!(a, b, "GPU denoise is not byte-identical across two runs on the same device+frame");
+    assert_eq!(
+        a, b,
+        "GPU denoise is not byte-identical across two runs on the same device+frame"
+    );
 }
 
 /// The GPU-vs-CPU parity tolerance, DERIVED (not chosen): the per-pixel
@@ -193,14 +229,37 @@ fn b_and_c_gpu_matches_cpu_within_derived_bound_and_beats_noisy() {
         .into_iter()
         .filter(|(name, _)| VALIDATION_POSE_NAMES.contains(name))
         .collect();
-    assert_eq!(val_poses.len(), 2, "expected exactly the 2 documented validation poses");
+    assert_eq!(
+        val_poses.len(),
+        2,
+        "expected exactly the 2 documented validation poses"
+    );
 
     for (name, camera) in val_poses {
-        let (noisy, albedo, normal, depth) =
-            render_frame_buffers(&device, &queue, &bvh, &camera, &scene.sun, scene.sky_top, scene.sky_horizon, w, h);
+        let (noisy, albedo, normal, depth) = render_frame_buffers(
+            &device,
+            &queue,
+            &bvh,
+            &camera,
+            &scene.sun,
+            scene.sky_top,
+            scene.sky_horizon,
+            w,
+            h,
+        );
         let reference = resolve(&trace_headless(
-            &device, &queue, &bvh, &camera, &scene.sun, scene.sky_top, scene.sky_horizon, w, h,
-            DATASET_REF_FRAMES, &IntegratorParams::default(), None,
+            &device,
+            &queue,
+            &bvh,
+            &camera,
+            &scene.sun,
+            scene.sky_top,
+            scene.sky_horizon,
+            w,
+            h,
+            DATASET_REF_FRAMES,
+            &IntegratorParams::default(),
+            None,
         ));
 
         let cpu = denoise_image(&mlp, &noisy, &albedo, &normal, &depth);
@@ -220,7 +279,9 @@ fn b_and_c_gpu_matches_cpu_within_derived_bound_and_beats_noisy() {
         // (c) the quality gate, on GPU output: strictly beats noisy.
         let noisy_rmse = rmse(&noisy, &reference);
         let gpu_rmse = rmse(&gpu_out, &reference);
-        println!("[VIII-2 quality] pose={name} noisy_rmse={noisy_rmse:.6} gpu_denoised_rmse={gpu_rmse:.6}");
+        println!(
+            "[VIII-2 quality] pose={name} noisy_rmse={noisy_rmse:.6} gpu_denoised_rmse={gpu_rmse:.6}"
+        );
         assert!(
             gpu_rmse < noisy_rmse,
             "pose '{name}': GPU-denoised RMSE {gpu_rmse:.6} does not beat noisy RMSE {noisy_rmse:.6}"
@@ -235,15 +296,26 @@ fn b_and_c_gpu_matches_cpu_within_derived_bound_and_beats_noisy() {
 #[test]
 fn d_ban_no_temporal_vocabulary_in_the_gpu_shader() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let shader = fs::read_to_string(root.join("src/denoiser.wgsl")).expect("read src/denoiser.wgsl");
+    let shader =
+        fs::read_to_string(root.join("src/denoiser.wgsl")).expect("read src/denoiser.wgsl");
     assert!(
         shader.contains("// BAN-SCOPED"),
         "denoiser.wgsl must carry the // BAN-SCOPED marker so the ban scope picks it up"
     );
     let forbidden = [
-        "previous_frame", "history", "motion_vector", "temporal", "reproject",
-        "warp", "feedback", "recurrent", "accum_prev", "prev_", "last_frame",
-        "frame_history", "velocity",
+        "previous_frame",
+        "history",
+        "motion_vector",
+        "temporal",
+        "reproject",
+        "warp",
+        "feedback",
+        "recurrent",
+        "accum_prev",
+        "prev_",
+        "last_frame",
+        "frame_history",
+        "velocity",
     ];
     for word in forbidden {
         assert!(
@@ -254,8 +326,12 @@ fn d_ban_no_temporal_vocabulary_in_the_gpu_shader() {
 
     // The gpu driver module is caught by the VIII-0 `denoiser*.rs` glob;
     // re-witness it here so this file documents the whole GPU seam is clean.
-    let gpu_src = fs::read_to_string(root.join("src/denoiser_gpu.rs")).expect("read denoiser_gpu.rs");
-    assert!(gpu_src.contains("// BAN-SCOPED"), "denoiser_gpu.rs should carry the // BAN-SCOPED marker");
+    let gpu_src =
+        fs::read_to_string(root.join("src/denoiser_gpu.rs")).expect("read denoiser_gpu.rs");
+    assert!(
+        gpu_src.contains("// BAN-SCOPED"),
+        "denoiser_gpu.rs should carry the // BAN-SCOPED marker"
+    );
     for word in forbidden {
         assert!(
             !gpu_src.to_lowercase().contains(word),
@@ -326,9 +402,15 @@ fn public_fn_signatures(text: &str) -> Vec<(String, String)> {
     while let Some(rel) = text[search_from..].find("pub fn ") {
         let start = search_from + rel;
         let name_start = start + "pub fn ".len();
-        let name_end = text[name_start..].find('(').map(|e| name_start + e).unwrap_or(name_start);
+        let name_end = text[name_start..]
+            .find('(')
+            .map(|e| name_start + e)
+            .unwrap_or(name_start);
         let name = text[name_start..name_end].trim().to_string();
-        let body_start = text[start..].find('{').map(|e| start + e).unwrap_or(text.len());
+        let body_start = text[start..]
+            .find('{')
+            .map(|e| start + e)
+            .unwrap_or(text.len());
         sigs.push((name, text[start..body_start].to_string()));
         search_from = (body_start + 1).max(start + 1);
     }
@@ -338,7 +420,7 @@ fn public_fn_signatures(text: &str) -> Vec<(String, String)> {
 /// (f) THE BAN, signature half (ported from `rite8-viii2-ari` @ b97a9a0
 /// `e_ban_every_public_fn_signature_in_gpu_module_is_current_frame_only`,
 /// matching the convention `viii1_ordeals.rs`'s `d_ban_every_public_fn_...`
-/// and `viii3_ordeals.rs`'s `f_ban_every_public_fn_...` already use — 
+/// and `viii3_ordeals.rs`'s `f_ban_every_public_fn_...` already use —
 /// adversary finding A1: extended from the primary entry point to EVERY
 /// `pub fn`, so a second entry point (e.g. the timing helper) cannot slip
 /// past unexamined). Every public function's signature (grepped directly)
@@ -354,7 +436,14 @@ fn f_ban_every_public_fn_signature_in_denoiser_gpu_takes_current_frame_inputs_on
         "expected at least 3 `pub fn`s in src/denoiser_gpu.rs (found {}) — the textual scan may be broken",
         sigs.len()
     );
-    let forbidden_params = ["frames", "frame_index", "prev", "history", "samples_before", "last_"];
+    let forbidden_params = [
+        "frames",
+        "frame_index",
+        "prev",
+        "history",
+        "samples_before",
+        "last_",
+    ];
     for (name, signature) in &sigs {
         for forbidden in forbidden_params {
             assert!(

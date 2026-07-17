@@ -96,7 +96,14 @@ fn forward_fp16(dims: &[(u32, u32)], flat: &[f32], input: &[f32], full_fp16: boo
     [act[0], act[1], act[2]]
 }
 
-fn denoise_fp16(mlp: &Mlp, noisy: &[Vec3], albedo: &[Vec3], normal: &[Vec3], depth: &[f32], full_fp16: bool) -> Vec<Vec3> {
+fn denoise_fp16(
+    mlp: &Mlp,
+    noisy: &[Vec3],
+    albedo: &[Vec3],
+    normal: &[Vec3],
+    depth: &[f32],
+    full_fp16: bool,
+) -> Vec<Vec3> {
     let dims = mlp.layer_dims();
     let flat = mlp.flat_weights();
     (0..noisy.len())
@@ -113,12 +120,17 @@ fn main() {
         eprintln!("no GPU adapter — cannot render frames for the verdict");
         return;
     };
-    let bytes = std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("data/denoiser-weights-v1.bin"))
-        .expect("read denoiser weights");
+    let bytes =
+        std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("data/denoiser-weights-v1.bin"))
+            .expect("read denoiser weights");
     let mlp = deserialize_weights(&bytes).expect("deserialize");
 
     // ── fp16 parity bound re-derivation (documented, machine-computed) ──
-    let macs: u64 = mlp.layer_dims().iter().map(|&(i, o)| i as u64 * o as u64).sum();
+    let macs: u64 = mlp
+        .layer_dims()
+        .iter()
+        .map(|&(i, o)| i as u64 * o as u64)
+        .sum();
     let u16 = 2f64.powi(-11); // f16 unit roundoff (10-bit mantissa + implicit 1)
     let u32_ = f32::EPSILON as f64; // 2^-23
     // MODE A bound (f32 accumulate, f16 inputs): the accumulator does not
@@ -131,8 +143,12 @@ fn main() {
     // catastrophic for a 3488-MAC net.
     let bound_mode_b = (macs as f64) * u16;
     println!("[fp16 verdict] net macs = {macs}");
-    println!("[fp16 verdict] DERIVED MODE A (f16 storage, f32 acc) parity rel bound ≈ {bound_mode_a:.3e}");
-    println!("[fp16 verdict] DERIVED MODE B (full f16 acc)         parity rel bound ≈ {bound_mode_b:.3e}");
+    println!(
+        "[fp16 verdict] DERIVED MODE A (f16 storage, f32 acc) parity rel bound ≈ {bound_mode_a:.3e}"
+    );
+    println!(
+        "[fp16 verdict] DERIVED MODE B (full f16 acc)         parity rel bound ≈ {bound_mode_b:.3e}"
+    );
 
     // ── render the two TRUE held-out orbits at the pinned dataset res ──
     let params = naruko_params();
@@ -145,11 +161,53 @@ fn main() {
 
     let mut all_pass_a = true;
     let mut all_pass_b = true;
-    for (name, camera) in law_poses(&params).into_iter().filter(|(n, _)| VALIDATION_POSE_NAMES.contains(n)) {
-        let noisy_params = IntegratorParams { spp: 1, ..IntegratorParams::default() };
-        let noisy = resolve(&trace_headless(&device, &queue, &bvh, &camera, &scene.sun, scene.sky_top, scene.sky_horizon, w, h_, 1, &noisy_params, None));
-        let reference = resolve(&trace_headless(&device, &queue, &bvh, &camera, &scene.sun, scene.sky_top, scene.sky_horizon, w, h_, DATASET_REF_FRAMES, &IntegratorParams::default(), None));
-        let raw_aov = trace_headless_aov(&device, &queue, &bvh, &camera, &scene.sun, scene.sky_top, scene.sky_horizon, w, h_);
+    for (name, camera) in law_poses(&params)
+        .into_iter()
+        .filter(|(n, _)| VALIDATION_POSE_NAMES.contains(n))
+    {
+        let noisy_params = IntegratorParams {
+            spp: 1,
+            ..IntegratorParams::default()
+        };
+        let noisy = resolve(&trace_headless(
+            &device,
+            &queue,
+            &bvh,
+            &camera,
+            &scene.sun,
+            scene.sky_top,
+            scene.sky_horizon,
+            w,
+            h_,
+            1,
+            &noisy_params,
+            None,
+        ));
+        let reference = resolve(&trace_headless(
+            &device,
+            &queue,
+            &bvh,
+            &camera,
+            &scene.sun,
+            scene.sky_top,
+            scene.sky_horizon,
+            w,
+            h_,
+            DATASET_REF_FRAMES,
+            &IntegratorParams::default(),
+            None,
+        ));
+        let raw_aov = trace_headless_aov(
+            &device,
+            &queue,
+            &bvh,
+            &camera,
+            &scene.sun,
+            scene.sky_top,
+            scene.sky_horizon,
+            w,
+            h_,
+        );
         let (albedo, normal, depth) = split_aov(&raw_aov);
 
         let fp32 = denoise_image(&mlp, &noisy, &albedo, &normal, &depth);
@@ -170,9 +228,18 @@ fn main() {
         all_pass_b &= beats_b;
         println!("\n── pose {name} (96×64) ──");
         println!("  noisy_rmse         {noisy_rmse:.6}");
-        println!("  fp32 denoised      {fp32_rmse:.6}  (margin over noisy {:.6})", noisy_rmse - fp32_rmse);
-        println!("  MODE A fp16        {a_rmse:.6}  (margin over noisy {:.6}, beats={beats_a})  parity_rel {parity_a:.3e} vs bound {bound_mode_a:.3e}", noisy_rmse - a_rmse);
-        println!("  MODE B full-fp16   {b_rmse:.6}  (margin over noisy {:.6}, beats={beats_b})  parity_rel {parity_b:.3e} vs bound {bound_mode_b:.3e}", noisy_rmse - b_rmse);
+        println!(
+            "  fp32 denoised      {fp32_rmse:.6}  (margin over noisy {:.6})",
+            noisy_rmse - fp32_rmse
+        );
+        println!(
+            "  MODE A fp16        {a_rmse:.6}  (margin over noisy {:.6}, beats={beats_a})  parity_rel {parity_a:.3e} vs bound {bound_mode_a:.3e}",
+            noisy_rmse - a_rmse
+        );
+        println!(
+            "  MODE B full-fp16   {b_rmse:.6}  (margin over noisy {:.6}, beats={beats_b})  parity_rel {parity_b:.3e} vs bound {bound_mode_b:.3e}",
+            noisy_rmse - b_rmse
+        );
     }
 
     println!("\n=== fp16 VERDICT ===");

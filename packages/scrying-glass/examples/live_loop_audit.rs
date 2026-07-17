@@ -30,19 +30,23 @@ use crystal::{Core, load_world_dir};
 use glam::Vec3 as GVec3;
 use sama::GaitParams;
 use scrying_glass::bvh::{Bvh, BvhParams, DynamicSplice, RefitParams, SpliceKind};
-use scrying_glass::integrator::{
-    Integrator, IntegratorParams, IntegratorUniform, headless_device,
-};
+use scrying_glass::integrator::{Integrator, IntegratorParams, IntegratorUniform, headless_device};
 use scrying_glass::scene::{
     Camera, RenderScene, SceneParameters, SunDefaults, WalkerPose, contact_passing_ticks,
 };
 use vessel::{Body, Preset};
 
 fn env_u32(name: &str, default: u32) -> u32 {
-    std::env::var(name).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
 }
 fn env_f32(name: &str, default: f32) -> f32 {
-    std::env::var(name).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
 }
 
 /// Naruko authoring dials — mirror `perf_audit::naruko_params` verbatim; only
@@ -287,7 +291,14 @@ fn main() {
             let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("live trace"),
             });
-            integrator.dispatch(&queue, &mut enc, &uniform_for(&integrator, samples_before), &compute_bg, w, h);
+            integrator.dispatch(
+                &queue,
+                &mut enc,
+                &uniform_for(&integrator, samples_before),
+                &compute_bg,
+                w,
+                h,
+            );
             queue.submit(Some(enc.finish()));
             let _ = device.poll(wgpu::PollType::wait_indefinitely());
             let trace_ms = t.elapsed().as_secs_f64() * 1e3;
@@ -352,7 +363,14 @@ fn main() {
             let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("live overlap frame"),
             });
-            integrator.dispatch(&queue, &mut enc, &uniform_for(&integrator, 0), &compute_bg, w, h);
+            integrator.dispatch(
+                &queue,
+                &mut enc,
+                &uniform_for(&integrator, 0),
+                &compute_bg,
+                w,
+                h,
+            );
             integrator.blit(&mut enc, &off_view, &blit_bg, "offscreen present");
             integrator.blit(&mut enc, &surf_view, &blit_bg, "surface present");
             let idx = queue.submit(Some(enc.finish()));
@@ -369,15 +387,23 @@ fn main() {
 
             let next = Instant::now();
             if measured {
-                rec.push("frame (wall, pipelined)", next.duration_since(this_frame_start).as_secs_f64() * 1e3);
+                rec.push(
+                    "frame (wall, pipelined)",
+                    next.duration_since(this_frame_start).as_secs_f64() * 1e3,
+                );
             }
             frame_start = next;
         }
         if let Some(prev) = pending.take() {
-            let _ = device.poll(wgpu::PollType::Wait { submission_index: Some(prev), timeout: None });
+            let _ = device.poll(wgpu::PollType::Wait {
+                submission_index: Some(prev),
+                timeout: None,
+            });
         }
         print_table("OVERLAP (live loop)", &rec, budget_ms);
     }
 
-    println!("[live-audit] budget {budget_ms:.2} ms (60 FPS law). Serial > budget in (16.67, 33.3) ⇒ Fifo vsync halves to ~30 fps live.");
+    println!(
+        "[live-audit] budget {budget_ms:.2} ms (60 FPS law). Serial > budget in (16.67, 33.3) ⇒ Fifo vsync halves to ~30 fps live."
+    );
 }

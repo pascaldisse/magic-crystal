@@ -58,7 +58,10 @@ fn write_pair(a: &[GVec3], b: &[GVec3], w: u32, h: u32, exposure: f32, path: &Pa
     let mut enc = png::Encoder::new(writer, 2 * w, h);
     enc.set_color(png::ColorType::Rgb);
     enc.set_depth(png::BitDepth::Eight);
-    enc.write_header().unwrap().write_image_data(&bytes).unwrap();
+    enc.write_header()
+        .unwrap()
+        .write_image_data(&bytes)
+        .unwrap();
     eprintln!("[viii2-gpu] wrote {}", path.display());
 }
 
@@ -78,17 +81,49 @@ fn dream_one_pose(
     exposure: f32,
     out_path: &Path,
 ) {
-    let noisy_params = IntegratorParams { spp: 1, ..IntegratorParams::default() };
+    let noisy_params = IntegratorParams {
+        spp: 1,
+        ..IntegratorParams::default()
+    };
     let noisy = resolve(&trace_headless(
-        device, queue, bvh, camera, &scene.sun, scene.sky_top, scene.sky_horizon, w, h, 1,
-        &noisy_params, None,
+        device,
+        queue,
+        bvh,
+        camera,
+        &scene.sun,
+        scene.sky_top,
+        scene.sky_horizon,
+        w,
+        h,
+        1,
+        &noisy_params,
+        None,
     ));
     let reference = resolve(&trace_headless(
-        device, queue, bvh, camera, &scene.sun, scene.sky_top, scene.sky_horizon, w, h,
-        DATASET_REF_FRAMES, &IntegratorParams::default(), None,
+        device,
+        queue,
+        bvh,
+        camera,
+        &scene.sun,
+        scene.sky_top,
+        scene.sky_horizon,
+        w,
+        h,
+        DATASET_REF_FRAMES,
+        &IntegratorParams::default(),
+        None,
     ));
-    let raw_aov =
-        trace_headless_aov(device, queue, bvh, camera, &scene.sun, scene.sky_top, scene.sky_horizon, w, h);
+    let raw_aov = trace_headless_aov(
+        device,
+        queue,
+        bvh,
+        camera,
+        &scene.sun,
+        scene.sky_top,
+        scene.sky_horizon,
+        w,
+        h,
+    );
     let (albedo, normal, depth) = split_aov(&raw_aov);
 
     let cpu_denoised = denoise_image(cpu_mlp, &noisy, &albedo, &normal, &depth);
@@ -103,8 +138,10 @@ fn dream_one_pose(
 
     println!("[viii2-gpu] pose='{pose_name}' ({role})");
     println!("[viii2-gpu]   RMSE(noisy,    ref) = {noisy_rmse:.6}");
-    println!("[viii2-gpu]   RMSE(gpu-den,  ref) = {gpu_rmse:.6}   beats noisy: {}",
-        if gpu_rmse < noisy_rmse { "YES" } else { "NO" });
+    println!(
+        "[viii2-gpu]   RMSE(gpu-den,  ref) = {gpu_rmse:.6}   beats noisy: {}",
+        if gpu_rmse < noisy_rmse { "YES" } else { "NO" }
+    );
     println!("[viii2-gpu]   RMSE(cpu-den,  ref) = {cpu_rmse:.6}");
     println!("[viii2-gpu]   parity GPU-vs-CPU: abs={parity_abs:.3e} rel={parity_rel:.3e}");
 
@@ -114,9 +151,13 @@ fn dream_one_pose(
             ms.sort_by(|a, b| a.partial_cmp(b).unwrap());
             let median = ms[ms.len() / 2];
             let min = ms[0];
-            println!("[viii2-gpu]   GPU denoise pass: min={min:.4} ms median={median:.4} ms (32 dispatches, {w}x{h})");
+            println!(
+                "[viii2-gpu]   GPU denoise pass: min={min:.4} ms median={median:.4} ms (32 dispatches, {w}x{h})"
+            );
         }
-        None => println!("[viii2-gpu]   GPU denoise pass: TIMESTAMP_QUERY unsupported on this device — ms UNMEASURED"),
+        None => println!(
+            "[viii2-gpu]   GPU denoise pass: TIMESTAMP_QUERY unsupported on this device — ms UNMEASURED"
+        ),
     }
 
     write_pair(&noisy, &gpu_denoised, w, h, exposure, out_path);
@@ -138,7 +179,11 @@ fn main() {
 
     let poses = law_poses(&params);
     let front = &poses.iter().find(|(n, _)| *n == "front").expect("front").1;
-    let heldout = &poses.iter().find(|(n, _)| *n == "orbit_-20").expect("orbit_-20").1;
+    let heldout = &poses
+        .iter()
+        .find(|(n, _)| *n == "orbit_-20")
+        .expect("orbit_-20")
+        .1;
 
     let (w, h) = (DATASET_WIDTH, DATASET_HEIGHT);
     let exposure = 1.6;
@@ -150,13 +195,39 @@ fn main() {
     let cpu_mlp = deserialize_weights(&bytes).expect("deserialize committed weights");
     let gpu = GpuDenoiser::new(&device, &cpu_mlp);
 
-    println!("[viii2-gpu] 60fps budget headroom (measured, HANDOFF): front 11.26 ms / wide 13.23 ms");
-    dream_one_pose(&device, &queue, &bvh, front, &scene, &cpu_mlp, &gpu,
-        "TRAIN-split pose - reconstruction", "front", w, h, exposure,
-        &proof.join("viii2-gpu-front.png"));
-    dream_one_pose(&device, &queue, &bvh, heldout, &scene, &cpu_mlp, &gpu,
-        "VALIDATION-split pose, held out - generalization", "orbit_-20", w, h, exposure,
-        &proof.join("viii2-gpu-heldout.png"));
+    println!(
+        "[viii2-gpu] 60fps budget headroom (measured, HANDOFF): front 11.26 ms / wide 13.23 ms"
+    );
+    dream_one_pose(
+        &device,
+        &queue,
+        &bvh,
+        front,
+        &scene,
+        &cpu_mlp,
+        &gpu,
+        "TRAIN-split pose - reconstruction",
+        "front",
+        w,
+        h,
+        exposure,
+        &proof.join("viii2-gpu-front.png"),
+    );
+    dream_one_pose(
+        &device,
+        &queue,
+        &bvh,
+        heldout,
+        &scene,
+        &cpu_mlp,
+        &gpu,
+        "VALIDATION-split pose, held out - generalization",
+        "orbit_-20",
+        w,
+        h,
+        exposure,
+        &proof.join("viii2-gpu-heldout.png"),
+    );
 
     // Present-resolution pass cost: the perf audit's frame budget (front
     // 11.26 ms) is measured at 900x600 (perf_audit GAIA_AUDIT_W/H defaults),
@@ -165,25 +236,56 @@ fn main() {
     // the real added cost a 900x600 present frame would pay.
     {
         let (pw, ph) = (900u32, 600u32);
-        let noisy_params = IntegratorParams { spp: 1, ..IntegratorParams::default() };
+        let noisy_params = IntegratorParams {
+            spp: 1,
+            ..IntegratorParams::default()
+        };
         let noisy = resolve(&trace_headless(
-            &device, &queue, &bvh, front, &scene.sun, scene.sky_top, scene.sky_horizon, pw, ph, 1,
-            &noisy_params, None,
+            &device,
+            &queue,
+            &bvh,
+            front,
+            &scene.sun,
+            scene.sky_top,
+            scene.sky_horizon,
+            pw,
+            ph,
+            1,
+            &noisy_params,
+            None,
         ));
         let raw_aov = trace_headless_aov(
-            &device, &queue, &bvh, front, &scene.sun, scene.sky_top, scene.sky_horizon, pw, ph);
+            &device,
+            &queue,
+            &bvh,
+            front,
+            &scene.sun,
+            scene.sky_top,
+            scene.sky_horizon,
+            pw,
+            ph,
+        );
         let (albedo, normal, depth) = split_aov(&raw_aov);
-        match gpu.time_dispatches_ms(&device, &queue, &noisy, &albedo, &normal, &depth, pw, ph, 32) {
+        match gpu.time_dispatches_ms(
+            &device, &queue, &noisy, &albedo, &normal, &depth, pw, ph, 32,
+        ) {
             Some(mut ms) => {
                 ms.sort_by(|a, b| a.partial_cmp(b).unwrap());
                 let median = ms[ms.len() / 2];
                 let min = ms[0];
                 let budget = 1000.0 / 60.0;
-                println!("[viii2-gpu] PRESENT-RES denoise pass @ {pw}x{ph}: min={min:.4} ms median={median:.4} ms");
-                println!("[viii2-gpu]   vs 60fps frame budget 16.67 ms (front headroom 11.26 ms measured): pass is {:.1}% of the 16.67 ms budget, {:.1}% of the 11.26 ms front headroom",
-                    100.0 * median / budget, 100.0 * median / 11.26);
+                println!(
+                    "[viii2-gpu] PRESENT-RES denoise pass @ {pw}x{ph}: min={min:.4} ms median={median:.4} ms"
+                );
+                println!(
+                    "[viii2-gpu]   vs 60fps frame budget 16.67 ms (front headroom 11.26 ms measured): pass is {:.1}% of the 16.67 ms budget, {:.1}% of the 11.26 ms front headroom",
+                    100.0 * median / budget,
+                    100.0 * median / 11.26
+                );
             }
-            None => println!("[viii2-gpu] PRESENT-RES @ {pw}x{ph}: TIMESTAMP_QUERY unsupported — ms UNMEASURED"),
+            None => println!(
+                "[viii2-gpu] PRESENT-RES @ {pw}x{ph}: TIMESTAMP_QUERY unsupported — ms UNMEASURED"
+            ),
         }
     }
 

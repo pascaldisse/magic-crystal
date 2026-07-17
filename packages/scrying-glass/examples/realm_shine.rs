@@ -247,8 +247,18 @@ fn main() {
         let dyn_bvh = Bvh::build(&scene.dynamic_leaf_triangles(), &bvh_params);
         let bvh = Bvh::merge(&static_bvh, &dyn_bvh);
         let accum = trace_headless(
-            &device, &queue, &bvh, cam, &scene.sun, scene.sky_top, scene.sky_horizon, w, h,
-            frames, &int_params, None,
+            &device,
+            &queue,
+            &bvh,
+            cam,
+            &scene.sun,
+            scene.sky_top,
+            scene.sky_horizon,
+            w,
+            h,
+            frames,
+            &int_params,
+            None,
         );
         resolve(&accum)
     };
@@ -258,7 +268,13 @@ fn main() {
     let report = |tick: u64| {
         let a = orbit_at([-1.5, 2.0, 29.0], 3.0, 0.5, 0.0, tick);
         let b = orbit_at([-1.5, 3.6, 29.0], 2.5, -0.55, std::f64::consts::PI, tick);
-        let c = orbit_at([-1.5, 5.2, 29.0], 2.8, 0.8, std::f64::consts::FRAC_PI_2, tick);
+        let c = orbit_at(
+            [-1.5, 5.2, 29.0],
+            2.8,
+            0.8,
+            std::f64::consts::FRAC_PI_2,
+            tick,
+        );
         eprintln!(
             "[shine] tick {tick}: violet [{:.2},{:.2},{:.2}]  cyan [{:.2},{:.2},{:.2}]  pink [{:.2},{:.2},{:.2}]",
             a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]
