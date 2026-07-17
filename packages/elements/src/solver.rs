@@ -71,6 +71,31 @@ pub struct Solver {
     pub tick: u64,
     /// The journal of fractures written this run (append-only).
     pub fractures: Vec<FractureEvent>,
+    /// VI-2 — every bonded lattice's ORIGINAL (whole, pre-fracture) particle
+    /// set, one entry per `spawn_bonded_box` call, in spawn order. Used only
+    /// by `particle_cluster_lookup` to find each bonded body's LIVE fragments
+    /// (via `fragment_components`) so post-break shards collide against each
+    /// other and against rigids (`solve_body_collisions`, generalized) —
+    /// never touched by anything else, so an ordinary loose `DistanceConstraint`
+    /// chain/rope/cloth built by hand (not through `spawn_bonded_box`) is
+    /// unaffected and keeps costing exactly zero in that pass, as before.
+    pub bonded_groups: Vec<Vec<usize>>,
+}
+
+/// A collision cluster: particles in the SAME cluster never collide with
+/// each other in `Solver::solve_body_collisions` (they're held together by
+/// their OWN internal constraint — shape matching or surviving bonds);
+/// particles in DIFFERENT clusters do. `Rigid` = a shape-matched body's index
+/// in `rigids`. `Bonded` = one LIVE connected component of a
+/// `spawn_bonded_box` lattice's surviving bond graph — while whole this is
+/// exactly one cluster per body (no self-collision, as before VI-2); the
+/// tick a fracture splits it, `fragment_components` reports 2+ components
+/// and each becomes its own cluster, so shards immediately collide against
+/// each other instead of free-falling through one another.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ClusterId {
+    Rigid(usize),
+    Bonded(usize),
 }
 
 impl Solver {
@@ -83,6 +108,7 @@ impl Solver {
             collider: None,
             tick: 0,
             fractures: Vec::new(),
+            bonded_groups: Vec::new(),
         }
     }
 
@@ -292,6 +318,7 @@ impl Solver {
                 }
             }
         }
+        self.bonded_groups.push(indices.clone());
         indices
     }
 
@@ -372,10 +399,12 @@ impl Solver {
             c.bond.strife = 0.0;
         }
 
-        // Which rigid (if any) owns each particle — rigid membership never
-        // changes mid-tick (fracture tears distance bonds, never a rigid's
-        // particle set), so this is built once, not per substep.
-        let particle_rigid = self.particle_rigid_lookup();
+        // Which collision cluster (if any) owns each particle — cluster
+        // membership never changes mid-tick (fracture only tears bonds, and
+        // only at the very end of `step`, in `fracture_pass` below; a
+        // rigid's particle set never changes at all), so this is built once,
+        // not per substep.
+        let particle_cluster = self.particle_cluster_lookup();
 
         for _sub in 0..n {
             // The velocity entering this substep — the incoming normal speed
@@ -388,7 +417,7 @@ impl Solver {
                 self.solve_distance(dt_sub);
                 self.solve_shape_matching();
                 contacts = self.solve_collision_normal();
-                contacts.extend(self.solve_body_collisions(&particle_rigid));
+                contacts.extend(self.solve_body_collisions(&particle_cluster));
             }
             self.read_back_velocity(dt_sub);
             // Coulomb friction on VELOCITY, after the normal solve: rigid
@@ -478,24 +507,48 @@ impl Solver {
         contacts
     }
 
-    /// Which rigid body (if any) owns each particle, indexed by particle
-    /// index. `None` = a free (non-rigid) particle.
-    fn particle_rigid_lookup(&self) -> Vec<Option<usize>> {
+    /// Which collision cluster (if any) owns each particle, indexed by
+    /// particle index. `None` = a free particle belonging to neither a rigid
+    /// body nor a `spawn_bonded_box` lattice (an ordinary hand-built
+    /// `DistanceConstraint` chain/rope/cloth particle, say) — excluded from
+    /// `solve_body_collisions` exactly as before VI-2, so those scenes' cost
+    /// and behavior are unchanged.
+    ///
+    /// Bonded clusters are numbered by flood-filling EACH registered bonded
+    /// group's OWN surviving bonds independently (`fragment_components`,
+    /// deterministic BFS) and offsetting the running id by the groups seen so
+    /// far — collisions are checked by `ClusterId` equality, never the raw
+    /// number, so the offset only needs to keep different groups' components
+    /// from colliding under numerically-equal ids; it carries no other
+    /// meaning.
+    fn particle_cluster_lookup(&self) -> Vec<Option<ClusterId>> {
         let mut lookup = vec![None; self.particles.pos.len()];
         for (body_idx, body) in self.rigids.iter().enumerate() {
             for &i in &body.indices {
-                lookup[i] = Some(body_idx);
+                lookup[i] = Some(ClusterId::Rigid(body_idx));
+            }
+        }
+        let mut next_bonded_id = 0usize;
+        for group in &self.bonded_groups {
+            for component in self.fragment_components(group) {
+                for i in component {
+                    lookup[i] = Some(ClusterId::Bonded(next_bonded_id));
+                }
+                next_bonded_id += 1;
             }
         }
         lookup
     }
 
-    /// The BODY-vs-BODY half of collision: two RIGID bodies' particles cannot
-    /// occupy the same space (a stacked crate must rest on the one below it,
-    /// not fall through it). Brute-force over every particle pair not owned
-    /// by the same rigid — adequate at this atom's particle/body counts (a
-    /// handful of low-resolution lattices); a spatial broad-phase is future
-    /// work once a scene needs many more bodies than a small stack.
+    /// The BODY-vs-BODY half of collision: two distinct collision clusters'
+    /// particles cannot occupy the same space — two shape-matched rigids (a
+    /// stacked crate must rest on the one below it, not fall through it), a
+    /// rigid and a bonded lattice/fragment, or (VI-2) two fragments of the
+    /// SAME broken bonded body once it has split. Brute-force over every
+    /// particle pair not sharing a cluster — adequate at this atom's
+    /// particle/body counts (a handful of low-resolution lattices); a spatial
+    /// broad-phase is future work once a scene needs many more bodies than a
+    /// small stack.
     ///
     /// The resting gap is DERIVED from the static (particle-vs-triangle) pass'
     /// convention, not asserted independently. The static pass rests a
@@ -512,21 +565,25 @@ impl Solver {
     /// to the crate's documented default when no static collider is
     /// installed at all, e.g. two bodies colliding in free space) — never a
     /// second hardcoded margin.
-    fn solve_body_collisions(&mut self, particle_rigid: &[Option<usize>]) -> Vec<Contact> {
+    fn solve_body_collisions(&mut self, particle_cluster: &[Option<ClusterId>]) -> Vec<Contact> {
         let mut contacts = Vec::new();
-        // Fewer than two rigids ⇒ no body-vs-body pair can exist; free
-        // (non-rigid) particles never collide with each other here (that was
-        // never this pass's job, and skipping it keeps a chain/cloth scene's
-        // O(n²) cost at exactly zero instead of scanning every free pair).
-        if self.rigids.len() < 2 {
+        // Only particles OWNED BY A CLUSTER (a rigid, or a spawn_bonded_box
+        // lattice/fragment) are candidates — restricts the brute-force scan
+        // to (Σ per-cluster particle counts), never the whole free-particle
+        // population. An ordinary hand-built DistanceConstraint chain/rope/
+        // cloth particle (never a rigid, never spawned by spawn_bonded_box)
+        // has no cluster and is excluded here exactly as before VI-2 — that
+        // scene shape's O(n²) cost stays at exactly zero.
+        let clustered_particles: Vec<usize> = (0..particle_cluster.len())
+            .filter(|&i| particle_cluster[i].is_some())
+            .collect();
+        // Fewer than two clustered particles from DIFFERENT clusters can't
+        // happen without at least two clusters existing; cheapest short
+        // circuit is just "any candidates at all" — the inner loop's own
+        // same-cluster skip handles the rest with no separate count needed.
+        if clustered_particles.len() < 2 {
             return contacts;
         }
-        // Only particles OWNED BY A RIGID are candidates — restricts the
-        // brute-force scan to (Σ per-body particle counts), never the whole
-        // free-particle population.
-        let rigid_particles: Vec<usize> = (0..particle_rigid.len())
-            .filter(|&i| particle_rigid[i].is_some())
-            .collect();
         let restitution = match &self.collider {
             Some(c) => c.material.restitution,
             None => 0.0,
@@ -541,11 +598,11 @@ impl Solver {
             None => ContactMaterial::default().contact_margin,
         };
         let p = &mut self.particles;
-        for (a, &i) in rigid_particles.iter().enumerate() {
+        for (a, &i) in clustered_particles.iter().enumerate() {
             let wi = p.inv_mass[i];
-            for &j in &rigid_particles[(a + 1)..] {
-                if particle_rigid[i] == particle_rigid[j] {
-                    continue; // same body — held by shape matching, not collision
+            for &j in &clustered_particles[(a + 1)..] {
+                if particle_cluster[i] == particle_cluster[j] {
+                    continue; // same cluster — held by its own constraint, not collision
                 }
                 let wj = p.inv_mass[j];
                 let w = wi + wj;
