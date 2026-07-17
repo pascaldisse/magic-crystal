@@ -762,44 +762,104 @@ impl Solver {
                         continue;
                     }
                     let radius = p.radius[i] + mat.contact_margin;
-                    // CONSERVATIVE query reach: the contact radius, plus this
-                    // substep's actual travel (|pos - prev|), plus one
-                    // push-chain hop (a second `radius`) so a contact reached
-                    // by an earlier push at a corner is still in the candidate
-                    // set. Derived from measured motion, not a plucked slack.
+                    let p0 = p.pos[i]; // pre-resolution position, sweep origin
+                    // FIRST-GUESS query reach: the contact radius, plus this
+                    // substep's actual travel (|pos - prev|), plus one push-
+                    // chain hop (a second `radius`). This is a PERF HINT only
+                    // — enough to cover the common one-hop case in a single
+                    // query. The fixpoint below GROWS it until it provably
+                    // covers the particle's whole in-sweep displacement, so
+                    // correctness never rests on this initial slack.
                     let travel = (p.pos[i] - p.prev[i]).length();
-                    let reach = radius + travel + radius;
-                    let r = Vec3::new(reach, reach, reach);
-                    let center = p.pos[i];
-                    grid.query(center - r, center + r, &mut cand);
+                    let mut reach = radius + travel + radius;
+                    // FIXPOINT RE-QUERY. `Triangle::contact_depth` is a two-
+                    // sided shell: one push is up to `2r` (particle behind the
+                    // plane, `signed < 0`), and pushes CHAIN, so no fixed reach
+                    // can bound the displacement in advance. Instead: query,
+                    // run the forward sweep FROM p0 (byte-identical to the
+                    // brute sweep restricted to the candidate set), then grow
+                    // the reach until it covers the displacement the sweep
+                    // actually produced, re-querying and re-sweeping from p0
+                    // each time.
+                    //
+                    // SAFETY INVARIANT (the pruning proof): a query of L∞ half-
+                    // extent `reach` centred at p0 returns EVERY triangle that
+                    // can contact the particle anywhere its sweep path reaches,
+                    // provided `reach >= dmax + radius`, where `dmax` is the max
+                    // L∞ displacement from p0 over the sweep. Proof: a contact
+                    // at path position `p` (‖p − p0‖∞ ≤ dmax) puts a triangle
+                    // point within `radius` (L2 ≥ L∞) of `p`, hence within
+                    // `dmax + radius ≤ reach` (L∞) of p0 — inside the query box,
+                    // so the grid returns it (grid_query completeness ordeal).
+                    // The loop exits ONLY when this holds, so the swept set is
+                    // a complete superset and every pruned triangle is a proven
+                    // no-op — the sweep equals brute bit-for-bit.
+                    let mut last_normal: Option<Vec3>;
+                    loop {
+                        let r = Vec3::new(reach, reach, reach);
+                        grid.query(p0 - r, p0 + r, &mut cand);
 
-                    // TEST-ONLY AUDIT: every PRUNED triangle, narrow-phased at
-                    // the pre-resolution position, must yield zero contact —
-                    // the broadphase dropped nothing real.
+                        // Forward sweep from p0 over the candidates (ascending
+                        // index = a subsequence of the brute 0..N order). Reset
+                        // to p0 so a re-query re-sweeps from the same origin.
+                        p.pos[i] = p0;
+                        last_normal = None;
+                        let mut dmax = 0.0_f64;
+                        for &ti in &cand {
+                            let tri = &collider.triangles[ti as usize];
+                            if let Some(depth) = tri.contact_depth(p.pos[i], radius) {
+                                p.pos[i] = p.pos[i] + tri.normal.scale(depth);
+                                last_normal = Some(tri.normal);
+                                let d = p.pos[i] - p0;
+                                let dl = d.x.abs().max(d.y.abs()).max(d.z.abs());
+                                if dl > dmax {
+                                    dmax = dl;
+                                }
+                            }
+                        }
+
+                        // Complete iff reach covers the realised displacement
+                        // plus one contact radius (the invariant above). If so,
+                        // stop; else grow to exactly the needed reach and redo.
+                        if reach >= dmax + radius {
+                            break;
+                        }
+                        reach = dmax + radius;
+                    }
+
+                    // TEST-ONLY AUDIT (strengthened per the adversary): every
+                    // PRUNED triangle, narrow-phased at the POST-resolution
+                    // position (not just the pre-resolution start — that was
+                    // blind to contacts a push creates), must yield zero
+                    // contact. With the fixpoint's invariant this can never
+                    // trip; the audit is the belt to its braces.
                     #[cfg(debug_assertions)]
                     if audit {
-                        let start = center;
+                        let end = p.pos[i];
                         for (ti, tri) in collider.triangles.iter().enumerate() {
                             if cand.binary_search(&(ti as u32)).is_ok() {
                                 continue;
                             }
                             debug_assert!(
-                                tri.contact_depth(start, radius).is_none(),
+                                tri.contact_depth(p0, radius).is_none()
+                                    && tri.contact_depth(end, radius).is_none(),
                                 "broadphase pruned triangle {ti} that DOES contact particle {i} \
                                  (reach {reach}) — the query margin is too tight"
                             );
                         }
                     }
 
-                    for &ti in &cand {
-                        resolve(
-                            p,
-                            &mut contacts,
-                            &collider.triangles[ti as usize],
-                            i,
-                            radius,
-                            mat.restitution,
-                        );
+                    // Record the contact (last resolved normal), matching the
+                    // brute path's per-particle single Contact.
+                    if let Some(n) = last_normal {
+                        match contacts.iter_mut().find(|c| c.particle == i) {
+                            Some(c) => c.normal = n,
+                            None => contacts.push(Contact {
+                                particle: i,
+                                normal: n,
+                                restitution: mat.restitution,
+                            }),
+                        }
                     }
                 }
             }
