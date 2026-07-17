@@ -3043,9 +3043,11 @@ dependencies = [
  "serde_json",
  "tauri",
  "tauri-build",
+ "tokio",
  "transmutation",
  "vessel",
  "wgpu",
+ "wired",
 ]
 
 [[package]]

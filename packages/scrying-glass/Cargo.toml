@@ -29,6 +29,12 @@ wgpu = "30.0.0"
 [dev-dependencies]
 aether = { path = "../aether" }
 pleroma = { path = "../pleroma" }
+wired = { path = "../wired" }
+tokio = { version = "1", features = ["full"] }
+
+[[example]]
+name = "n2_presence"
+path = "examples/n2_presence.rs"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6.2"
