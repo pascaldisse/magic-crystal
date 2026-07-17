@@ -407,10 +407,47 @@ impl Physics {
     /// scrying-glass resolves it, the solver just adds the delta). A no-op
     /// if no binding matches (unknown or non-physical vessel — silent, like
     /// every other op applied to a body that isn't there).
+    ///
+    /// PLAYGROUND (the Architect's own hands): a BONDED body carries no
+    /// `RigidBody` (see `spawn_bonded_box`) so it is not in `bindings` — the
+    /// SAME `Op::Impulse` id resolves here to the bonded lattice's whole
+    /// particle set and rides `apply_impulse_to_particles` instead (the one
+    /// solver door, no parallel physics path). A uniform shove on a lattice
+    /// resting in floor contact shears its constrained base against its free
+    /// body — a hard enough push tears the weak bonds and it shatters on the
+    /// same route that merely topples a rigid stack.
     pub fn apply_impulse(&mut self, gaia_id: &str, delta_velocity: [f64; 3]) {
+        let dv = Vec3::new(delta_velocity[0], delta_velocity[1], delta_velocity[2]);
         if let Some(binding) = self.bindings.iter().find(|b| b.gaia_id == gaia_id) {
-            let dv = Vec3::new(delta_velocity[0], delta_velocity[1], delta_velocity[2]);
             self.solver.apply_impulse(binding.rigid, dv);
+            return;
         }
+        if let Some(binding) = self
+            .bonded
+            .iter()
+            .find(|b| b.gaia_id == gaia_id && !b.broken)
+        {
+            let whole = binding.whole.clone();
+            self.solver.apply_impulse_to_particles(&whole, dv);
+        }
+    }
+
+    /// PLAYGROUND — every pushable body's `(gaia_id, world_centroid)` this
+    /// tick: rigid bodies (fitted centroid) and still-whole bonded bodies
+    /// (live mass-weighted centroid). The window's push ray picks the nearest
+    /// of these it is aimed at, then names it in an `Op::Impulse` — so the
+    /// key and an agent op select a target through the exact same body set.
+    pub fn push_targets(&self) -> Vec<(String, [f64; 3])> {
+        let mut targets = Vec::with_capacity(self.bindings.len() + self.bonded.len());
+        for binding in &self.bindings {
+            targets.push((binding.gaia_id.clone(), self.pose(binding).position));
+        }
+        for binding in &self.bonded {
+            if binding.broken {
+                continue;
+            }
+            targets.push((binding.gaia_id.clone(), self.group_centroid(&binding.whole)));
+        }
+        targets
     }
 }
