@@ -1,0 +1,82 @@
+{
+  "architecture": {
+    "hidden_layers": 4,
+    "hidden_width": 32,
+    "input_features": 10,
+    "output_channels": 3
+  },
+  "artifact": "denoiser-weights-v1.bin",
+  "dataset": {
+    "pixels_train": 18432,
+    "poses_all": [
+      "front",
+      "wide",
+      "orbit_+20",
+      "orbit_-20",
+      "orbit_+40"
+    ],
+    "poses_train": [
+      "front",
+      "wide",
+      "orbit_+20"
+    ],
+    "poses_validation": [
+      "orbit_-20",
+      "orbit_+40"
+    ],
+    "realm": "naruko",
+    "reference_frames": 128,
+    "reference_spp": 2,
+    "resolution": [
+      96,
+      64
+    ],
+    "seed": 24301,
+    "training_pairs_sha256": "37adf55914f19bcbc075a7da4887be9f18cee79aafc1d593891b14749e3c3051"
+  },
+  "metrics": {
+    "train_per_frame_rmse": [
+      {
+        "denoised_rmse": 0.04350615304549395,
+        "noisy_rmse": 0.07453055979826398,
+        "pose": "front"
+      },
+      {
+        "denoised_rmse": 0.04921747438298847,
+        "noisy_rmse": 0.10942142285002202,
+        "pose": "wide"
+      },
+      {
+        "denoised_rmse": 0.0472059941570523,
+        "noisy_rmse": 0.08647733539341172,
+        "pose": "orbit_+20"
+      }
+    ],
+    "validation_per_frame_rmse": [
+      {
+        "denoised_beats_noisy": true,
+        "denoised_rmse": 0.042998874737175785,
+        "noisy_rmse": 0.0520734849122937,
+        "pose": "orbit_-20"
+      },
+      {
+        "denoised_beats_noisy": true,
+        "denoised_rmse": 0.04999681994318659,
+        "noisy_rmse": 0.09566181336898771,
+        "pose": "orbit_+40"
+      }
+    ]
+  },
+  "pinned_bound": {
+    "description": "worst validation-frame RMSE (denoised vs reference), derived at train time, never chosen in the ordeal",
+    "value": 0.04999681994318659
+  },
+  "training": {
+    "batch_size": 64,
+    "epochs": 120,
+    "init_seed": 388817,
+    "learning_rate": 0.0010000000474974513,
+    "optimizer": "adam"
+  },
+  "weights_sha256": "22003e9785adebc1e0f3409cc71b0550f238e1efce158af6956086c762e903ce"
+}
