@@ -41,6 +41,21 @@
   what the window actually runs. **NO WALL REMAINS — RITE IX not required
   tonight** (stays on the shelf as proposal).
 
+### 4. backlog-walkable → main (queue item 6, ruling 6) — THE MIRROR-EDGE CLIMB DIES
+- **What**: contact-patch floor gate. r = 0.09 m measured from nari's foot-bone
+  vertex half-extents (0.0807 max, rounded up by stated centimetre rule, guard
+  ordeal recomputes the rule live); tolerance derived from the wall cutoff.
+  First builder died on a REAL infinite loop (exclusion step < acceptance
+  epsilon — the rejected candidate re-qualified forever, 46 CPU-min); salvaged,
+  fixed structurally, loop bound proven unreachable and made a loud panic.
+- **Merge**: da58013, PUSHED. Suite on main post-merge: 290 passed / 0 failed.
+- **Adversary**: ZERO MUST-FIX, seven ADVISORY — all discharged, including the
+  honest EXPECTED-ADMIT boundary ordeal (a low sliver within slope tolerance of
+  surrounding floor is admitted BY DESIGN tonight; the seam is machine-recorded
+  as a test, one flip away from a gate the day it matters).
+- **Proofs read**: numbers lane (ordeal output verbatim); pose-trace canon
+  byte-unchanged.
+
 ## In flight
 - **rite6-vi1** (queue item 3, wave VI-1 THE STACK TOPPLES): built @ d642551 —
   impulse plumbing (Solver::apply_impulse → Physics → Op::Impulse →
