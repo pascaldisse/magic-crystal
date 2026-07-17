@@ -483,7 +483,7 @@ impl Integrator {
     }
 
     // ── VIII-0 AOV EXPORT BEGIN ────────────────────────────────────────────
-    /// Allocate a fresh AOV buffer for a `width×height` frame: 2 vec4<f32>
+    /// Allocate a fresh AOV buffer for a `width×height` frame: 2 `vec4<f32>`
     /// cells per pixel (see integrator.wgsl "VIII-0 AOV EXPORT" for the
     /// packing). Zeroed, like `make_accum` — but note the AOV shader writes
     /// EVERY pixel unconditionally (hit or miss), so the zero fill is never
@@ -516,6 +516,7 @@ impl Integrator {
     /// integrate_aov in integrator.wgsl) — there is no `frames` loop here
     /// because there is nothing to accumulate; one dispatch is the complete,
     /// deterministic answer for this camera pose.
+    #[allow(clippy::too_many_arguments)]
     pub fn dispatch_aov(
         &self,
         queue: &wgpu::Queue,
@@ -766,7 +767,15 @@ pub fn trace_headless_aov(
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("headless aov"),
     });
-    integrator.dispatch_aov(queue, &mut encoder, &uniform, &compute_bg, &aov_bg, width, height);
+    integrator.dispatch_aov(
+        queue,
+        &mut encoder,
+        &uniform,
+        &compute_bg,
+        &aov_bg,
+        width,
+        height,
+    );
     queue.submit(Some(encoder.finish()));
     let _ = device.poll(wgpu::PollType::wait_indefinitely());
 
@@ -796,8 +805,8 @@ pub fn trace_headless_aov(
 }
 
 /// Split a raw AOV readback (2 cells/pixel, see `trace_headless_aov`) into
-/// three per-pixel images: albedo (rgb), world normal (xyz, RAW [-1,1]
-/// range — callers remap to [0,1] for display, see `viii0_truth.rs`), and
+/// three per-pixel images: albedo (rgb), world normal (xyz, RAW `[-1,1]`
+/// range — callers remap to `[0,1]` for display, see `viii0_truth.rs`), and
 /// hit distance ("depth", 0.0 on a primary miss).
 pub fn split_aov(raw: &[[f32; 4]]) -> (Vec<Vec3>, Vec<Vec3>, Vec<f32>) {
     let n = raw.len() / 2;

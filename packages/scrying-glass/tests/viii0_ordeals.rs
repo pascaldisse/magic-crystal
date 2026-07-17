@@ -36,11 +36,7 @@ use scrying_glass::scene::{Camera, LeafTriangle, SunLight};
 /// an ordeal) — ordeals stay fast so the suite stays fast.
 fn fixed_pose() -> (Bvh, Camera, SunLight, [f32; 4], [f32; 4], u32, u32) {
     let tri = LeafTriangle {
-        positions: [
-            [-4.0, -2.0, -8.0],
-            [4.0, -2.0, -8.0],
-            [0.0, 4.0, -8.0],
-        ],
+        positions: [[-4.0, -2.0, -8.0], [4.0, -2.0, -8.0], [0.0, 4.0, -8.0]],
         albedo: [0.7, 0.4, 0.2],
         emission: [0.0, 0.0, 0.0],
         metallic: 0.0,
@@ -74,8 +70,28 @@ fn aov_export_is_deterministic_cold_run() {
     };
     let (bvh, camera, sun, sky_top, sky_horizon, w, h) = fixed_pose();
 
-    let a = trace_headless_aov(&device, &queue, &bvh, &camera, &sun, sky_top, sky_horizon, w, h);
-    let b = trace_headless_aov(&device, &queue, &bvh, &camera, &sun, sky_top, sky_horizon, w, h);
+    let a = trace_headless_aov(
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &sun,
+        sky_top,
+        sky_horizon,
+        w,
+        h,
+    );
+    let b = trace_headless_aov(
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &sun,
+        sky_top,
+        sky_horizon,
+        w,
+        h,
+    );
 
     assert_eq!(a.len(), b.len());
     assert_eq!(
@@ -85,13 +101,18 @@ fn aov_export_is_deterministic_cold_run() {
     // Discriminating: the triangle fills a good part of the frame, so this is
     // not a vacuously-all-miss (all-zero) buffer.
     let any_hit = a.iter().step_by(2).any(|c| c[3] > 0.0);
-    assert!(any_hit, "fixed pose has no primary hits — ordeal is vacuous");
+    assert!(
+        any_hit,
+        "fixed pose has no primary hits — ordeal is vacuous"
+    );
 }
 
 #[test]
 fn reference_accumulation_is_reproducible() {
     let Some((device, queue)) = headless_device() else {
-        eprintln!("[VIII-0 reference reproducibility] no GPU adapter on this host — ordeal could not run");
+        eprintln!(
+            "[VIII-0 reference reproducibility] no GPU adapter on this host — ordeal could not run"
+        );
         return;
     };
     let (bvh, camera, sun, sky_top, sky_horizon, w, h) = fixed_pose();
@@ -102,10 +123,32 @@ fn reference_accumulation_is_reproducible() {
     let n = 16u32;
 
     let a = trace_headless(
-        &device, &queue, &bvh, &camera, &sun, sky_top, sky_horizon, w, h, n, &params, None,
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &sun,
+        sky_top,
+        sky_horizon,
+        w,
+        h,
+        n,
+        &params,
+        None,
     );
     let b = trace_headless(
-        &device, &queue, &bvh, &camera, &sun, sky_top, sky_horizon, w, h, n, &params, None,
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &sun,
+        sky_top,
+        sky_horizon,
+        w,
+        h,
+        n,
+        &params,
+        None,
     );
     assert_eq!(
         a, b,
@@ -124,7 +167,9 @@ fn reference_accumulation_is_reproducible() {
 #[test]
 fn error_metric_discriminates_a_real_gpu_difference() {
     let Some((device, queue)) = headless_device() else {
-        eprintln!("[VIII-0 error metric discrimination] no GPU adapter on this host — ordeal could not run");
+        eprintln!(
+            "[VIII-0 error metric discrimination] no GPU adapter on this host — ordeal could not run"
+        );
         return;
     };
     let (bvh, camera, sun, sky_top, sky_horizon, w, h) = fixed_pose();
@@ -138,10 +183,32 @@ fn error_metric_discriminates_a_real_gpu_difference() {
         ..IntegratorParams::default()
     };
     let noisy = resolve(&trace_headless(
-        &device, &queue, &bvh, &camera, &sun, sky_top, sky_horizon, w, h, 1, &noisy_params, None,
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &sun,
+        sky_top,
+        sky_horizon,
+        w,
+        h,
+        1,
+        &noisy_params,
+        None,
     ));
     let reference = resolve(&trace_headless(
-        &device, &queue, &bvh, &camera, &sun, sky_top, sky_horizon, w, h, 64, &ref_params, None,
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &sun,
+        sky_top,
+        sky_horizon,
+        w,
+        h,
+        64,
+        &ref_params,
+        None,
     ));
     let e = rmse(&noisy, &reference);
     assert!(
@@ -171,7 +238,9 @@ fn error_metric_discriminates_a_real_gpu_difference() {
 #[test]
 fn aov_off_matches_pre_atom_golden_hash() {
     let Some((device, queue)) = headless_device() else {
-        eprintln!("[VIII-0 AOV-off golden hash] no GPU adapter on this host — ordeal could not run");
+        eprintln!(
+            "[VIII-0 AOV-off golden hash] no GPU adapter on this host — ordeal could not run"
+        );
         return;
     };
     let tris: Vec<LeafTriangle> = Vec::new();
@@ -277,7 +346,10 @@ fn ban_no_temporal_vocabulary_in_the_new_aov_error_module() {
             }
             search_from = e_abs + end.len();
         }
-        assert!(found_any_block, "{rel} has no VIII-0 AOV EXPORT marked block to scan — scope check itself is broken");
+        assert!(
+            found_any_block,
+            "{rel} has no VIII-0 AOV EXPORT marked block to scan — scope check itself is broken"
+        );
     }
 }
 

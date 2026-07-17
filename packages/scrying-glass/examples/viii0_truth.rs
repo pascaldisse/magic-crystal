@@ -108,7 +108,10 @@ fn write_radiance_png(img: &[GVec3], w: u32, h: u32, exposure: f32, path: &Path)
     let mut enc = png::Encoder::new(writer, w, h);
     enc.set_color(png::ColorType::Rgb);
     enc.set_depth(png::BitDepth::Eight);
-    enc.write_header().unwrap().write_image_data(&bytes).unwrap();
+    enc.write_header()
+        .unwrap()
+        .write_image_data(&bytes)
+        .unwrap();
     eprintln!("[viii0] wrote {}", path.display());
 }
 
@@ -129,20 +132,16 @@ fn write_data_png(img: &[GVec3], w: u32, h: u32, path: &Path) {
     let mut enc = png::Encoder::new(writer, w, h);
     enc.set_color(png::ColorType::Rgb);
     enc.set_depth(png::BitDepth::Eight);
-    enc.write_header().unwrap().write_image_data(&bytes).unwrap();
+    enc.write_header()
+        .unwrap()
+        .write_image_data(&bytes)
+        .unwrap();
     eprintln!("[viii0] wrote {}", path.display());
 }
 
 /// Stitch two equal-sized radiance images side by side (left | right) and
 /// write the result (display-encoded).
-fn write_side_by_side(
-    left: &[GVec3],
-    right: &[GVec3],
-    w: u32,
-    h: u32,
-    exposure: f32,
-    path: &Path,
-) {
+fn write_side_by_side(left: &[GVec3], right: &[GVec3], w: u32, h: u32, exposure: f32, path: &Path) {
     let mut stitched = vec![GVec3::ZERO; (2 * w * h) as usize];
     for y in 0..h {
         for x in 0..w {
@@ -250,14 +249,19 @@ fn main() {
     let convergence_rmse = rmse(&reference, &half);
     let noisy_vs_ref_rmse = rmse(&noisy, &reference);
 
-    println!(
-        "[viii0] RMSE(noisy 1spp, reference {ref_frames}frames) = {noisy_vs_ref_rmse:.6}"
-    );
+    println!("[viii0] RMSE(noisy 1spp, reference {ref_frames}frames) = {noisy_vs_ref_rmse:.6}");
     println!(
         "[viii0] RMSE(reference {ref_frames}frames, reference {half_frames}frames) = {convergence_rmse:.6}  (convergence evidence)"
     );
 
-    write_side_by_side(&noisy, &reference, w, h, exposure, &proof.join("viii0-truth.png"));
+    write_side_by_side(
+        &noisy,
+        &reference,
+        w,
+        h,
+        exposure,
+        &proof.join("viii0-truth.png"),
+    );
 
     // ── AOV export + dumps ──────────────────────────────────────────────
     let raw_aov = trace_headless_aov(
