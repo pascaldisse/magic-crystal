@@ -1067,8 +1067,18 @@ impl Renderer {
         )
     }
 
-    fn render(&mut self, size: PhysicalSize<u32>) {
-        let _ = self.device.poll(wgpu::PollType::Poll);
+    /// Submit ONE traced frame (dispatch → offscreen/surface blit → capture
+    /// copy → present) WITHOUT waiting on the GPU, returning the submission's
+    /// `SubmissionIndex`. The pipelined `run_render_loop` completes the PREVIOUS
+    /// frame's submission (explicit `Wait`) only AFTER the NEXT frame's CPU
+    /// stages (`advance_world`) have run — so frame N+1's skin/tick/splice/
+    /// upload overlap frame N's GPU trace (LEVER 2, the shape `perf_audit`'s
+    /// ATOM B / `live_loop_audit` proved bit-identical to serial). Scheduling
+    /// only: `update_bvh` allocates FRESH node/tri buffers each frame, so frame
+    /// N's in-flight trace keeps reading its own (wgpu tracks GPU-side lifetime
+    /// by the in-flight command buffer), and dispatch+blit ride ONE submission
+    /// so each frame's blit reads exactly its own trace — content is unchanged.
+    fn render(&mut self, size: PhysicalSize<u32>) -> Option<wgpu::SubmissionIndex> {
         self.resize(size);
 
         // Reset accumulation the instant the eye moves (progressive while still).
@@ -1205,11 +1215,12 @@ impl Renderer {
                 }
             });
         }
-        self.queue.submit(Some(encoder.finish()));
+        let submission = self.queue.submit(Some(encoder.finish()));
         self.samples_before += self.int_params.spp;
         if let Some(frame) = surface_frame {
             self.queue.present(frame);
         }
+        Some(submission)
     }
 
     /// The moving eye: integrate `capture_frames` accumulation frames from an
@@ -1693,7 +1704,25 @@ fn run_render_loop(
     let mut frame_times: std::collections::VecDeque<f64> =
         std::collections::VecDeque::with_capacity(hud_window.max(1));
     let mut hud_logged = 0u32;
+    // Steady-state HUD sampling to stderr: default logs only the first 5 frames
+    // (warm-up), but GAIA_NATIVE_HUD_LOG=<N> also logs every N-th delivered
+    // frame — the honest way to read the LIVE frame clock at a settled vista
+    // (LEVER 2 before/after) without a webview readback API.
+    let hud_log_every: u32 = std::env::var("GAIA_NATIVE_HUD_LOG")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let mut hud_frame = 0u32;
+    // LEVER 2 — CPU/GPU overlap: the PREVIOUS frame's GPU submission, completed
+    // only after THIS frame's CPU stages (body.step + advance_world) have run,
+    // so frame N+1's skin/tick/splice/upload overlap frame N's trace. Proven
+    // bit-identical to serial by `live_loop_hash_identity` (mirrors perf_audit's
+    // ATOM B FNV hash-identity). Carried across iterations; drained on exit.
+    let mut pending: Option<wgpu::SubmissionIndex> = None;
     while running.load(Ordering::Acquire) {
+        // Service the map callbacks of the frame completed last iteration
+        // (non-blocking) — keeps the /scry capture ring draining.
+        let _ = renderer.device.poll(wgpu::PollType::Poll);
         // Service moving-eye requests off the frame loop's hot path.
         while let Ok(request) = scry_rx.try_recv() {
             let frame = renderer.capture_pose(&request.params);
@@ -1714,8 +1743,21 @@ fn run_render_loop(
             renderer.set_view_pose(pose.position, pose.yaw, pose.pitch);
         }
         renderer.advance_world(body_speed, walker_pose);
+        // Submit THIS frame's GPU work WITHOUT waiting. Its trace now runs on
+        // the GPU while the NEXT iteration's CPU stages execute above.
         if let Ok(size) = window.inner_size() {
-            renderer.render(size);
+            let idx = renderer.render(size);
+            // Complete the PREVIOUS frame — its GPU work has been overlapping
+            // THIS frame's CPU stages since last iteration's submit. Explicit
+            // per-submission Wait (not wait_indefinitely, which would also block
+            // on the frame just submitted and collapse the overlap).
+            if let Some(prev) = pending.take() {
+                let _ = renderer.device.poll(wgpu::PollType::Wait {
+                    submission_index: Some(prev),
+                    timeout: None,
+                });
+            }
+            pending = idx;
         }
         deadline += render_interval;
         let now = Instant::now();
@@ -1740,10 +1782,20 @@ fn run_render_loop(
             let payload =
                 format!("window.__gaiaHud && window.__gaiaHud({fps:.1},{median_ms:.2})");
             let _ = hud_overlay.eval(payload.clone());
+            hud_frame += 1;
             if hud_logged < 5 {
                 eprintln!("[hud] {payload}");
                 hud_logged += 1;
+            } else if hud_log_every > 0 && hud_frame % hud_log_every == 0 {
+                eprintln!("[hud] frame {hud_frame} {payload}");
             }
         }
+    }
+    // Drain the last in-flight frame before the render thread returns.
+    if let Some(prev) = pending.take() {
+        let _ = renderer.device.poll(wgpu::PollType::Wait {
+            submission_index: Some(prev),
+            timeout: None,
+        });
     }
 }
