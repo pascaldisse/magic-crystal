@@ -154,9 +154,12 @@ mod tests {
         let derived = TerrainParams::derive(32.0);
         assert_eq!(params.grid_resolution, derived.grid_resolution);
         assert_eq!(params.height_amplitude, derived.height_amplitude);
+        // Proves the re-derivation actually happened against the OVERRIDDEN
+        // size, not silently inherited from `Default`'s fixed 64 m baseline
+        // (whose height_amplitude, 9.6, differs from the 32 m tile's 4.8).
         assert_ne!(
-            params.grid_resolution,
-            TerrainParams::default().grid_resolution.max(0) + 999
+            params.height_amplitude,
+            TerrainParams::default().height_amplitude
         );
     }
 

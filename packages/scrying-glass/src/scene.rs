@@ -797,15 +797,15 @@ impl RenderScene {
             terrain_entities.sort_by(|a, b| world.gaia_id_for(*a).cmp(&world.gaia_id_for(*b)));
             for entity in terrain_entities {
                 let id = world.gaia_id_for(entity).unwrap_or("<unbound>").to_string();
-                if let Some(mesh_id) = mesh_id {
-                    if world.get_component(entity, mesh_id).is_ok() {
-                        return Err(format!(
-                            "entity {id:?} carries both `terrain` and `mesh` — a \
-                             terrain patch is authored ONLY as a sigil (seed + \
-                             tile coords + params); no stored geometry is \
-                             permitted alongside it"
-                        ));
-                    }
+                if let Some(mesh_id) = mesh_id
+                    && world.get_component(entity, mesh_id).is_ok()
+                {
+                    return Err(format!(
+                        "entity {id:?} carries both `terrain` and `mesh` — a \
+                         terrain patch is authored ONLY as a sigil (seed + \
+                         tile coords + params); no stored geometry is \
+                         permitted alongside it"
+                    ));
                 }
                 let raw = world.get_component(entity, terrain_id)?;
                 let sigil: seed::TerrainSigil = serde_json::from_value(raw)
@@ -819,30 +819,29 @@ impl RenderScene {
                 // transform must agree with the derivation, never restate it
                 // independently (silent divergence would desync the render
                 // placement from the physics/oracle placement).
-                if let Some(transform_id) = transform_id {
-                    if let Ok(raw_transform) = world.get_component(entity, transform_id) {
-                        let transform: Transform = serde_json::from_value(raw_transform)
-                            .map_err(|error| format!("entity {id:?} transform: {error}"))?;
-                        if let Some(position) = vec3(transform.position.as_ref()) {
-                            let expected =
-                                Vec3::new(tile_origin.0 as f32, 0.0, tile_origin.1 as f32);
-                            // Derived tolerance: f32 ULP error on the largest
-                            // magnitude coordinate involved, generously
-                            // margined (8x) for the f64->f32 cast plus the
-                            // subtraction below — never a plucked epsilon.
-                            let scale = expected.abs().max_element().max(1.0);
-                            let tolerance = scale * f32::EPSILON * 8.0;
-                            if (position - expected).length() > tolerance {
-                                return Err(format!(
-                                    "entity {id:?} terrain: authored transform.position \
-                                     {:?} does not match the tile-derived origin {:?} \
-                                     (tolerance {tolerance}) — the position is DERIVED \
-                                     from tile_x/tile_y × tile_size_m, never restated \
-                                     (drop the transform or fix the mismatch)",
-                                    position.to_array(),
-                                    expected.to_array()
-                                ));
-                            }
+                if let Some(transform_id) = transform_id
+                    && let Ok(raw_transform) = world.get_component(entity, transform_id)
+                {
+                    let transform: Transform = serde_json::from_value(raw_transform)
+                        .map_err(|error| format!("entity {id:?} transform: {error}"))?;
+                    if let Some(position) = vec3(transform.position.as_ref()) {
+                        let expected = Vec3::new(tile_origin.0 as f32, 0.0, tile_origin.1 as f32);
+                        // Derived tolerance: f32 ULP error on the largest
+                        // magnitude coordinate involved, generously
+                        // margined (8x) for the f64->f32 cast plus the
+                        // subtraction below — never a plucked epsilon.
+                        let scale = expected.abs().max_element().max(1.0);
+                        let tolerance = scale * f32::EPSILON * 8.0;
+                        if (position - expected).length() > tolerance {
+                            return Err(format!(
+                                "entity {id:?} terrain: authored transform.position \
+                                 {:?} does not match the tile-derived origin {:?} \
+                                 (tolerance {tolerance}) — the position is DERIVED \
+                                 from tile_x/tile_y × tile_size_m, never restated \
+                                 (drop the transform or fix the mismatch)",
+                                position.to_array(),
+                                expected.to_array()
+                            ));
                         }
                     }
                 }
