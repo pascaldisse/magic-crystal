@@ -145,6 +145,25 @@
       { "shape": "sphere", "radius": 0.4, "position": [0, 2.82, 0], "color": "#dfe6ee", "metallic": 1.0, "roughness": 0.05 }
     ] }
   },
+  "naruko_mirror": {
+    "transform": { "position": [3, 0, 18] },
+    "mesh": { "parts": [
+      { "shape": "box", "size": [0.08, 3.0, 2.0], "position": [0, 2.9, 0], "color": "#e8ecf2", "metallic": 1.0, "roughness": 0.03 }
+    ] }
+  },
+  "naruko_mirror_minor": {
+    "transform": { "position": [-9, 0, 18] },
+    "mesh": { "parts": [
+      { "shape": "box", "size": [0.08, 3.0, 2.0], "position": [0, 2.9, 0], "color": "#e8ecf2", "metallic": 1.0, "roughness": 0.03 }
+    ] }
+  },
+  "naruko_kami_orb": {
+    "transform": { "position": [-1.0, 2.2, 18.1] },
+    "behavior": { "type": "orbit", "center": [-2.6, 2.2, 18.1], "radius": 1.6, "speed": 0.9 },
+    "mesh": { "parts": [
+      { "shape": "sphere", "radius": 0.35, "position": [0, 0, 0], "color": "#37e0ff", "emissive": "#37e0ff" }
+    ] }
+  },
   "nari": {
     "transform": { "position": [0, 2.505, 18] },
     "body": { "preset": "nari" }
