@@ -713,7 +713,7 @@ impl Solver {
                 };
                 acc = acc + spiky_grad(r_vec, h).scale(mj * (li + lj + s_corr));
             }
-            dp[a] = acc.scale(inv_rho0);
+            dp[a] = acc.scale(inv_rho0 * cfg.relax);
         }
         // Apply. Anchored fluid particles (none by default) stay put.
         for (a, &i) in fp.iter().enumerate() {

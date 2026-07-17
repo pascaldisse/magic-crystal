@@ -3,7 +3,9 @@
 //!
 //! The XPBD-native fluid: incompressibility is ONE constraint per particle,
 //!
+//! ```text
 //!     C_i(p) = ρ_i / ρ₀ − 1 ,   ρ_i = Σ_j m_j W(‖p_i − p_j‖, h) ,
+//! ```
 //!
 //! solved by the SAME positional-projection machinery as every distance bond
 //! (a new constraint TYPE beside bonds/contacts — not a parallel system). The
@@ -64,6 +66,20 @@ pub struct FluidConfig {
     /// `[0.1h, 0.3h]`). Default `0.2` → `Δq = 0.2h`. The reference kernel value
     /// `W(Δq)` the corrector normalises against.
     pub tensile_dq_frac: f64,
+    /// JACOBI SOR under-relaxation on the per-particle position correction Δp
+    /// (Macklin §4, "Algorithm 1" applies the density correction with a
+    /// relaxation because ALL particles project simultaneously — the pairwise
+    /// Newton step is applied from BOTH ends at once, so the full step
+    /// over-corrects and, with a stiff many-neighbour kernel, diverges). Δp is
+    /// scaled by `relax` before being applied; `1.0` = the raw (unstable)
+    /// Jacobi step, `→0` = frozen. Default `0.1` — measured stability edge for
+    /// the default pool (`h = 3×spacing`, `≈63` neighbours): `relax ≤ 0.15`
+    /// stays bounded, `≥ 0.25` diverges in one step, so `0.1` sits safely inside
+    /// the contractive regime. With the Small-Steps loop (`iterations = 1`, `4`
+    /// substeps) the constraint still converges to a hydrostatic column with
+    /// ≤6% peak compression. Not a physical constant — a numerical relaxation,
+    /// hence a dial.
+    pub relax: f64,
 }
 
 impl Default for FluidConfig {
@@ -76,6 +92,7 @@ impl Default for FluidConfig {
             tensile_k: 0.1,
             tensile_n: 4.0,
             tensile_dq_frac: 0.2,
+            relax: 0.1,
         }
     }
 }
