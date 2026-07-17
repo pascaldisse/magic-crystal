@@ -316,4 +316,53 @@ mod tests {
             assert_eq!(dag.leaf_tri_sum(), mesh.tri_count());
         }
     }
+
+    /// (c) fragment chains byte-deterministic — run the SAME fracture
+    /// scenario twice (a fresh `broken_lattice()` build each time — the
+    /// "double build" the spec asks for, not just a re-run of one Solver),
+    /// assert the fragment partition is identical AND the re-meshed chain
+    /// bytes are identical (`transmutation::serialize`, hashed via a plain
+    /// byte-equality — the strongest possible check, stronger than a hash).
+    #[test]
+    fn ordeal_fragment_chains_byte_deterministic() {
+        let cube = 0.2;
+        let params = TransmuteParams::default();
+
+        let build_serialized_chains = || -> (Vec<Vec<usize>>, Vec<Vec<u8>>) {
+            let (s, whole) = broken_lattice();
+            let fragments = compute_fragments(&s, &whole);
+            let partitions: Vec<Vec<usize>> = fragments.iter().map(|f| f.particles.clone()).collect();
+            let bytes: Vec<Vec<u8>> = fragments
+                .iter()
+                .map(|f| {
+                    let mesh = fragment_mesh(&s, f, cube);
+                    let dag = fragment_dag(&mesh, &params).expect("transmute a fragment");
+                    transmutation::serialize(&dag).expect("serialize a fragment's chain")
+                })
+                .collect();
+            (partitions, bytes)
+        };
+
+        let (partitions_a, bytes_a) = build_serialized_chains();
+        let (partitions_b, bytes_b) = build_serialized_chains();
+
+        assert_eq!(
+            partitions_a, partitions_b,
+            "the fragment partition diverged between two independent builds of the identical \
+             fracture scenario"
+        );
+        assert_eq!(bytes_a.len(), bytes_b.len(), "fragment count diverged");
+        for (i, (a, b)) in bytes_a.iter().zip(bytes_b.iter()).enumerate() {
+            assert_eq!(
+                a, b,
+                "fragment {i}'s serialized chain bytes diverged between two independent builds"
+            );
+        }
+        println!(
+            "ORDEAL fragment-chains-byte-deterministic: {} fragments, {} total serialized bytes, \
+             byte-identical across two independent builds",
+            bytes_a.len(),
+            bytes_a.iter().map(|b| b.len()).sum::<usize>()
+        );
+    }
 }
