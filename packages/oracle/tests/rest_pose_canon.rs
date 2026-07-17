@@ -231,7 +231,11 @@ fn senses_read_solver_rested_pose() {
 
     // March to rest (same criterion as ORDEAL A); confirm the pinned tick.
     let first_floor = march_to_floor(&mut scene, REST_MARCH);
-    assert_eq!(first_floor, Some(REST_TICK), "gaze run reached rest at REST_TICK");
+    assert_eq!(
+        first_floor,
+        Some(REST_TICK),
+        "gaze run reached rest at REST_TICK"
+    );
 
     // Lift the solver-rested ECS out through the F6 accessor.
     let ticked: EcsWorld = scene.dynamics.into_world();
@@ -242,8 +246,15 @@ fn senses_read_solver_rested_pose() {
     // Load the realm the ORACLE way (correct envelopes + registry). Capture the
     // AUTHORED gaze first, then inject the rested transforms and gaze again.
     let mut oracle_world = World::load(canon_dir()).expect("load canon naruko");
-    let eye = oracle_world.spawn_pose().expect("canon spawn pose").position;
-    assert_eq!(eye, [0.0, 7.0, 44.0], "canon spawn eye (read, not hardcoded)");
+    let eye = oracle_world
+        .spawn_pose()
+        .expect("canon spawn pose")
+        .position;
+    assert_eq!(
+        eye,
+        [0.0, 7.0, 44.0],
+        "canon spawn eye (read, not hardcoded)"
+    );
 
     let authored_center: Vec<[f32; 3]> = IDS
         .iter()
@@ -258,7 +269,11 @@ fn senses_read_solver_rested_pose() {
     for id in IDS {
         let src = ticked.entity_for_gaia(id).expect("ticked body");
         let rested = ticked.get_component(src, ticked_transform).unwrap();
-        let dst = oracle_world.core.world.entity_for_gaia(id).expect("oracle body");
+        let dst = oracle_world
+            .core
+            .world
+            .entity_for_gaia(id)
+            .expect("oracle body");
         oracle_world
             .core
             .world

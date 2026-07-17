@@ -1,3 +1,17 @@
+//! F6 NOTE (senses read SOLVER TRUTH — NARUKO.md · GUARDIAN RULINGS · item 5):
+//! these ordeals gaze at the FRESHLY-LOADED realm — the AUTHORED load-pose,
+//! physics never ticked. That is legitimate STATIC-scene truth: for the
+//! non-physics vessels it is the only truth, and for the physics `body` vessels
+//! it is a true snapshot of the LOAD state (no solver ran in this file). It is
+//! NOT the runtime senses-truth for a physics body — ruling F6 makes the solver
+//! REST pose the canonical senses-truth for `naruko_crate` and
+//! `naruko_stack_crate_0/1/2`. That rest-pose ordeal lives in
+//! `packages/oracle/tests/rest_pose_canon.rs` (which ticks the realm to rest
+//! through scrying-glass, then gazes with this same `World::geometry`). Every
+//! crate-related number below is therefore labelled AUTHORED (load-pose) and
+//! cross-referenced to `rest_pose_canon.rs`; the numbers are unchanged (they are
+//! correct for the static load this file tests), only relabelled.
+//!
 //! CANON ORDEALS — hand-derived against the LIVE canon realm `worlds/naruko`
 //! (the 26-entity/24-in-frustum-meshed-vessel realm the CLI gazes at by
 //! default — see CANON #1's derivation), NOT the pinned 7-vessel
@@ -40,17 +54,25 @@
 //!     SAME body the renderer does — one truth. If the vessel geometry changes,
 //!     these bounds change and the ordeal flags it (the body IS realm data).
 //!   naruko_crate          x[-11.55,-10.75] y[4.1,4.9] z[12.6,13.4] (0.8 box, body
-//!                         hung above the pier near the stall; authored/rest pose
-//!                         — ELEMENTS P3, the 14th vessel. The physics only moves
-//!                         it at runtime; the senses read the STATIC scene, so its
-//!                         canon bounds are the authored drop pose) center
-//!                         [-11.15, 4.5, 13]
+//!                         hung above the pier near the stall — ELEMENTS P3, the
+//!                         14th vessel. AUTHORED (load-pose) — see
+//!                         rest_pose_canon.rs for solver-truth: the crate is
+//!                         authored HUNG at y=4.5 and the solver drops it 3.025 m
+//!                         to rest at y≈1.4750 (rested center [-11.15,1.4750,13],
+//!                         rested range 33.4043 vs this authored 33.0390). This
+//!                         file never ticks physics, so these bounds are the true
+//!                         LOAD snapshot only.) center [-11.15, 4.5, 13]
 //!   naruko_stack_crate_0  x[-14.05,-13.25] y[1.075,1.875]  z[12.6,13.4] (0.8 box,
 //!   naruko_stack_crate_1  x[-14.05,-13.25] y[1.925,2.725]  z[12.6,13.4]  body,
 //!   naruko_stack_crate_2  x[-14.05,-13.25] y[2.775,3.575]  z[12.6,13.4]  RITE VI
 //!                         · VI-1 — a stack of three crates authored resting on
 //!                         the pier planks (chained rest-height derivation, same
 //!                         convention as `naruko_crate`), the 22nd-24th vessels.
+//!                         AUTHORED (load-pose) — see rest_pose_canon.rs for
+//!                         solver-truth. The stack was authored ALREADY at its
+//!                         solver-rest, so its rest pose matches this load pose to
+//!                         < REST_TOL (rested centers [-13.65,1.4754/2.3259/3.1767,
+//!                         13]); F6 confirms rather than moves it.
 //!                         centers [-13.65, 1.475/2.325/3.175, 13]
 //!   naruko_cat            x[-5.0808,-4.9192] y[0.0000,0.4555] z[22.9420,23.4789]
 //!     — RITE V·V2, the 15th vessel. NOT authored primitives: the SKINNED
@@ -335,6 +357,10 @@ fn canon_nearest_ordering_and_ranges_are_derived() {
         ("naruko_kami_orb", 26.3600),
         ("naruko_mirror", 26.4917),
         ("naruko_mirror_minor", 27.8175),
+        // AUTHORED/load-pose only — NOT solver truth. This test never ticks
+        // physics, so the crate is at its authored hung drop (y=4.5); the F6
+        // rest-pose ordeal (rest_pose_canon.rs) reads it rested at y≈1.4750,
+        // range 33.4043.
         ("naruko_crate", 33.0390),
         ("naruko_chrome_orb", 34.5227),
         ("naruko_pier", 48.1812),
@@ -350,6 +376,9 @@ fn canon_nearest_ordering_and_ranges_are_derived() {
         //   crate_0 [-13.65,1.475,13] → √(186.3225+30.525625+961)  = 34.3198
         //   crate_1 [-13.65,2.325,13] → √(186.3225+21.855625+961)  = 34.1932
         //   crate_2 [-13.65,3.175,13] → √(186.3225+14.630625+961)  = 34.0874
+        // AUTHORED/load-pose only — NOT solver truth (this test never ticks
+        // physics). The stack was authored at its solver-rest, so the F6 rest
+        // ordeal (rest_pose_canon.rs) reads these same ranges to < REST_TOL.
         ("naruko_stack_crate_0", 34.3198),
         ("naruko_stack_crate_1", 34.1932),
         ("naruko_stack_crate_2", 34.0874),
@@ -691,6 +720,10 @@ fn canon_moved_eye_pier_glance() {
         "chrome orb range live {ro} != derived 3.2150"
     );
     // VI-1 — the stack leads the WHOLE order (nearer than even the chrome orb).
+    // AUTHORED/load-pose ranges only — NOT solver truth (this test never ticks
+    // physics; the stack sits at its authored pose). The stack was authored at
+    // its solver-rest, so the F6 rest-pose ordeal (rest_pose_canon.rs) confirms
+    // these to < REST_TOL; that file covers each of these vessels' rest gaze.
     for (id, expect) in [
         ("naruko_stack_crate_0", 2.4337_f32),
         ("naruko_stack_crate_1", 2.1361),
