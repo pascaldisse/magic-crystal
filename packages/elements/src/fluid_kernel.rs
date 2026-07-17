@@ -58,7 +58,42 @@ pub struct FluidConfig {
     /// Artificial-pressure strength `k` (Macklin eq. 13) — the tensile-
     /// instability corrector that keeps particles from clumping into clusters
     /// under negative pressure and yields a slight surface cohesion (reads as
-    /// water, not soup). Default `0.1` (the paper's value). `0.0` disables it.
+    /// water, not soup). The paper's value is `0.1`, but ROUND-6 (the
+    /// isolation probe, `fluid_unit_probe` case F / `fluid_clamp_probe`)
+    /// found it EXPLODES under sustained hydrostatic compression even
+    /// correctly per-pair gated (`li!=0 || lj!=0`, [`crate::solver`]'s
+    /// `solve_fluid`): a compressed hydrostatic column keeps most of its
+    /// particles gate-live tick after tick (unlike a splash's brief,
+    /// isolated compressed pairs), so s_corr's anti-clustering repulsion
+    /// compounds instead of firing once and settling. ROUND-7's small-scale
+    /// isolation probe (`fluid_unit_probe`, no gravity/walls) confirmed
+    /// `tensile_k=0.0` + the same per-pair gate is immediately stable there —
+    /// but round-7's POOL-SCALE follow-up (`fluid_volume_probe`, WITH
+    /// gravity, at both the render pool and a small ordeal-scale fixture)
+    /// found `tensile_k=0.0` does NOT give clean water either: the SPH
+    /// density estimate (a smoothed, kernel-averaged quantity) reads as
+    /// near-ρ₀/flat while the TRUE geometry collapses — mean nearest-
+    /// neighbour distance measured 70-90% BELOW the spawn spacing at rest,
+    /// with pairs landing exactly coincident (min NN distance `0.0`).
+    /// s_corr's whole purpose is resisting exactly this (Macklin/Müller §4:
+    /// the density estimate alone permits particle clustering because poly6
+    /// is smooth and forgiving at small r; s_corr adds a purely pairwise
+    /// repulsion the aggregate density check cannot see). DISABLING it
+    /// removes that resistance with nothing durable put in its place
+    /// (compression_only only bounds the AGGREGATE SPH estimate, not true
+    /// pairwise separation) — so `tensile_k=0.0` trades round-6's visible
+    /// detonation for an invisible-to-the-density-metric collapse, not a fix.
+    /// ROUND-7 SHIPPED THIS DEFAULT (`0.0`) ANYWAY per the round's mandate
+    /// (see fluid_ordeals.rs's module doc for the full account) but the
+    /// finding STOPS the round short of declaring the kernel finished: this
+    /// is escalated to the Architect, unmerged. Re-enabling `>0.0` un-gated
+    /// only trades one failure for the other (round-6); a real fix needs a
+    /// pairwise MINIMUM-SEPARATION mechanism decoupled from the SPH density
+    /// feedback loop that destabilises s_corr under sustained compression —
+    /// candidates: a genuine collision-style contact radius between fluid
+    /// particles (independent of the density constraint entirely), or
+    /// gating s_corr on compression DURATION/magnitude rather than the
+    /// current instantaneous per-pair gate. Neither is implemented here.
     pub tensile_k: f64,
     /// Artificial-pressure exponent `n` (Macklin eq. 13). Default `4` (paper).
     pub tensile_n: f64,
@@ -137,7 +172,7 @@ impl Default for FluidConfig {
             rest_density: 0.0, // set by calibrate_fluid_rest_density
             cfm_relax: 1.0e-4,
             cfm_epsilon: 0.0, // set by calibrate_fluid_rest_density
-            tensile_k: 0.1,
+            tensile_k: 0.0,
             tensile_n: 4.0,
             tensile_dq_frac: 0.2,
             relax: 0.1,
