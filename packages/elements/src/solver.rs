@@ -794,6 +794,34 @@ impl Solver {
                     // The loop exits ONLY when this holds, so the swept set is
                     // a complete superset and every pruned triangle is a proven
                     // no-op — the sweep equals brute bit-for-bit.
+                    // TERMINATION. Each failed iteration strictly grows reach
+                    // (`reach = dmax + radius` is only assigned when
+                    // `dmax + radius > reach`, i.e. the `break` didn't fire),
+                    // and the candidate set returned by `grid.query` is
+                    // monotone non-decreasing in reach (a larger query box is
+                    // a superset). So once an iteration's `cand` — and hence
+                    // its resolved `dmax` — repeats the previous iteration's
+                    // `dmax` unchanged, growth stops and `reach >= dmax +
+                    // radius` holds, exiting the loop. The grid has a finite
+                    // triangle count, so the candidate set (and thus the
+                    // reachable dmax values) has finitely many distinct
+                    // states; each failed pass either changes `cand` (adding
+                    // at least one new triangle — bounded by the triangle
+                    // count) or reproduces the same `dmax`, which is exactly
+                    // the fixed point and exits. Loop passes are therefore
+                    // bounded by N_triangles + 1 (this was previously commit-
+                    // prose only — see c58cf54, ee2e8cd — now recorded here).
+                    //
+                    // PARKED HARDENING (not applied): a sub-ulp margin
+                    // `reach = (dmax + radius) * (1.0 + f64::EPSILON)` was
+                    // considered to guard the `>=` comparison against a
+                    // float rounding edge where the true fixed point sits
+                    // exactly on the reach boundary and rounds the wrong way.
+                    // Not applied here — solver semantics stay in the
+                    // builder's domain (this loop's contract is geometric
+                    // completeness, not float-ulp defense) — parked for the
+                    // next physics wave to pick up if such an edge is ever
+                    // observed in practice.
                     let mut last_normal: Option<Vec3>;
                     loop {
                         let r = Vec3::new(reach, reach, reach);
