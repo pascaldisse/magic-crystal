@@ -3065,6 +3065,7 @@ dependencies = [
  "pollster",
  "raw-window-handle",
  "sama",
+ "seed",
  "serde",
  "serde_json",
  "tauri",

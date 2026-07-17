@@ -590,7 +590,27 @@ impl RenderScene {
     /// `behavior` and write the animated `transform`s back (senses/pose then read
     /// the moving world). Static geometry seals into the shared chains exactly as
     /// before; behavior-carriers split off into their own bind-baked chains.
-    pub fn from_ecs(mut world: EcsWorld, parameters: &SceneParameters) -> Result<Self, String> {
+    pub fn from_ecs(world: EcsWorld, parameters: &SceneParameters) -> Result<Self, String> {
+        Self::from_ecs_at(world, parameters, [0.0, 0.0, 0.0])
+    }
+
+    /// As [`RenderScene::from_ecs`], but any `terrain` sigil's generated patch
+    /// is placed relative to `render_origin` (world-space meters) rather than
+    /// the world origin — VII-0b's COORDINATE SEAM. The code path is always
+    /// `i64` tile coords -> `f64` tile origin ([`seed::tile_origin_m`]) ->
+    /// subtract `render_origin` (still `f64`, exact regardless of either
+    /// operand's magnitude — IEEE754 subtraction of two equal-magnitude
+    /// values is exact) -> cast to `f32` ONLY once the residual offset is
+    /// small (see `terrain_placement_offset`'s doc). A realm with no
+    /// `terrain` sigil never reads `render_origin` at all. `from_ecs` is
+    /// `render_origin = [0,0,0]` (the realm origin — every existing caller's
+    /// unchanged behavior, and VII-0b's own "the realm sits near origin"
+    /// case).
+    pub fn from_ecs_at(
+        mut world: EcsWorld,
+        parameters: &SceneParameters,
+        render_origin: [f64; 3],
+    ) -> Result<Self, String> {
         let world = &mut world;
         if !(parameters.fov_y_degrees > 0.0 && parameters.fov_y_degrees < 180.0) {
             return Err("GAIA_NATIVE_FOV must be between 0 and 180 degrees".into());
@@ -755,6 +775,85 @@ impl RenderScene {
                     )
                     .map_err(|error| format!("entity {id:?} mesh part {index}: {error}"))?;
                 }
+            }
+        }
+
+        // VII-0b — THE FIRST GROUND, the render weld. A `terrain` sigil is
+        // authored ONLY as (seed, tile_x, tile_y, optional dial overrides) —
+        // NO stored geometry (the NO-STORAGE ordeal) — generated here, at
+        // load, through VII-0a's `seed::tile_mesh`, and fed into the SAME
+        // seal path every other static part rides (its own material chain;
+        // sealed through the Great Chain like all matter). A terrain entity
+        // carries no `mesh` component (asserted below); its world placement
+        // is DERIVED from `tile_x`/`tile_y` × `tile_size_m`, never restated
+        // by an authored `transform` (asserted-consistent if one exists).
+        if let Some(terrain_id) = world.component_id("terrain") {
+            let mesh_id = world.component_id("mesh");
+            let transform_id = world.component_id("transform");
+            let mut terrain_entities = world.query(&QuerySpec {
+                all: vec![terrain_id],
+                ..Default::default()
+            });
+            terrain_entities.sort_by(|a, b| world.gaia_id_for(*a).cmp(&world.gaia_id_for(*b)));
+            for entity in terrain_entities {
+                let id = world.gaia_id_for(entity).unwrap_or("<unbound>").to_string();
+                if let Some(mesh_id) = mesh_id {
+                    if world.get_component(entity, mesh_id).is_ok() {
+                        return Err(format!(
+                            "entity {id:?} carries both `terrain` and `mesh` — a \
+                             terrain patch is authored ONLY as a sigil (seed + \
+                             tile coords + params); no stored geometry is \
+                             permitted alongside it"
+                        ));
+                    }
+                }
+                let raw = world.get_component(entity, terrain_id)?;
+                let sigil: seed::TerrainSigil = serde_json::from_value(raw)
+                    .map_err(|error| format!("entity {id:?} terrain: {error}"))?;
+                let tile = sigil.tile();
+                let params = sigil.params();
+                let world_seed = sigil.world_seed();
+                let tile_origin = seed::tile_origin_m(tile, &params);
+
+                // Position is DERIVED from tile coords — an authored
+                // transform must agree with the derivation, never restate it
+                // independently (silent divergence would desync the render
+                // placement from the physics/oracle placement).
+                if let Some(transform_id) = transform_id {
+                    if let Ok(raw_transform) = world.get_component(entity, transform_id) {
+                        let transform: Transform = serde_json::from_value(raw_transform)
+                            .map_err(|error| format!("entity {id:?} transform: {error}"))?;
+                        if let Some(position) = vec3(transform.position.as_ref()) {
+                            let expected =
+                                Vec3::new(tile_origin.0 as f32, 0.0, tile_origin.1 as f32);
+                            // Derived tolerance: f32 ULP error on the largest
+                            // magnitude coordinate involved, generously
+                            // margined (8x) for the f64->f32 cast plus the
+                            // subtraction below — never a plucked epsilon.
+                            let scale = expected.abs().max_element().max(1.0);
+                            let tolerance = scale * f32::EPSILON * 8.0;
+                            if (position - expected).length() > tolerance {
+                                return Err(format!(
+                                    "entity {id:?} terrain: authored transform.position \
+                                     {:?} does not match the tile-derived origin {:?} \
+                                     (tolerance {tolerance}) — the position is DERIVED \
+                                     from tile_x/tile_y × tile_size_m, never restated \
+                                     (drop the transform or fix the mismatch)",
+                                    position.to_array(),
+                                    expected.to_array()
+                                ));
+                            }
+                        }
+                    }
+                }
+
+                let mesh = seed::tile_mesh(world_seed, tile, &params);
+                let offset = terrain_placement_offset(tile_origin, render_origin);
+                let color = match sigil.color.as_deref() {
+                    Some(hex) => linear_rgb(hex)?,
+                    None => default_color,
+                };
+                append_terrain(&mut static_buckets, &mesh, offset, color, &mut collider_triangles);
             }
         }
 
@@ -1954,6 +2053,81 @@ fn append_part(
 /// Convert a glam world-space vector to the Elements' `f64` vector.
 fn glam_to_elements(v: Vec3) -> elements::Vec3 {
     elements::Vec3::new(v.x as f64, v.y as f64, v.z as f64)
+}
+
+/// VII-0b's coordinate seam: a terrain tile's world-space offset RELATIVE TO
+/// `render_origin`, computed `i64 -> f64 -> subtract -> f32` — never
+/// `i64 -> f32` directly (which loses precision past `2^24` meters, VII-0a's
+/// module doc). `tile_origin_xz` ([`seed::tile_origin_m`]) and
+/// `render_origin` are both `f64`; the subtraction is exact IEEE754
+/// arithmetic regardless of either operand's magnitude, so it's only the
+/// RESULT — expected small whenever `render_origin` tracks near the tile,
+/// the camera-relative-rendering guarantee — that gets cast down to `f32`.
+/// A tile's own local mesh vertices ([`seed::tile_mesh`]) are already
+/// tile-local `f32`; adding this offset places them without ever routing a
+/// planet-scale magnitude through `f32`.
+fn terrain_placement_offset(tile_origin_xz: (f64, f64), render_origin: [f64; 3]) -> Vec3 {
+    Vec3::new(
+        (tile_origin_xz.0 - render_origin[0]) as f32,
+        (0.0 - render_origin[1]) as f32,
+        (tile_origin_xz.1 - render_origin[2]) as f32,
+    )
+}
+
+/// Feed one generated terrain tile's mesh ([`seed::tile_mesh`], tile-local
+/// `f32` vertices) into a material bucket, placed at `offset`
+/// ([`terrain_placement_offset`]) — the same seal path every other static
+/// part rides ([`append_part`]), and the same collider-soup convention (a
+/// clean per-face outward normal, the mean of the triangle's vertex
+/// normals — never the transmuted/welded render geometry's corner-welded
+/// normals, so a resting body isn't mis-pushed).
+fn append_terrain(
+    buckets: &mut BTreeMap<MatKey, MatBucket>,
+    mesh: &ChainMesh,
+    offset: Vec3,
+    color: [f32; 3],
+    collider: &mut Vec<Triangle>,
+) {
+    // Lambertian defaults (no metallic/roughness dial on the sigil yet — a
+    // future wave's authoring surface, not VII-0b's scope).
+    let emissive = 0.0f32;
+    let metallic = 0.0f32;
+    let roughness = 1.0f32;
+    let key: MatKey = (
+        [color[0].to_bits(), color[1].to_bits(), color[2].to_bits()],
+        emissive.to_bits(),
+        metallic.to_bits(),
+        roughness.to_bits(),
+    );
+    let bucket = buckets.entry(key).or_insert_with(|| MatBucket {
+        vertices: Vec::new(),
+        color,
+        emissive,
+        metallic,
+        roughness,
+    });
+    for triangle in mesh.indices.chunks_exact(3) {
+        let mut positions = [Vec3::ZERO; 3];
+        let mut normal_sum = Vec3::ZERO;
+        for (k, &index) in triangle.iter().enumerate() {
+            let vertex = &mesh.vertices[index as usize];
+            let world_position = Vec3::from_array(vertex.position) + offset;
+            let normal = Vec3::from_array(vertex.normal);
+            positions[k] = world_position;
+            normal_sum += normal;
+            bucket.vertices.push(ChainVertex::new(
+                world_position.to_array(),
+                vertex.normal,
+                vertex.uv,
+            ));
+        }
+        collider.push(Triangle::with_normal(
+            glam_to_elements(positions[0]),
+            glam_to_elements(positions[1]),
+            glam_to_elements(positions[2]),
+            glam_to_elements(normal_sum),
+        ));
+    }
 }
 
 fn box_triangles(size: Vec3) -> Vec<[PrimitiveVertex; 3]> {
