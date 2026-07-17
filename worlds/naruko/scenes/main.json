@@ -318,20 +318,5 @@
       "contact_radius": 0.05,
       "rigidity": 1.0
     }
-  },
-  "naruko_break_crate": {
-    "transform": { "position": [0, 4.8, 18] },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#6a4a2c", "roughness": 0.85 }
-    ] },
-    "body": {
-      "shape": "box",
-      "size": [0.8, 0.8, 0.8],
-      "density": 200,
-      "resolution": [3, 3, 3],
-      "contact_radius": 0.05,
-      "bonded": true,
-      "love": 0.02
-    }
   }
 }

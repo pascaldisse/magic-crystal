@@ -1,7 +1,12 @@
 //! RITE VI · VI-2 relic forge — SOMETHING BREAKS. A soft bonded crate
-//! (realm `body`, `bonded: true`) is authored above the Naruko seawall (the
-//! hard stone-like massing — `naruko_seawall`, colour `#3a2d4d`, the
-//! Guardian-named drop target), falls under the world tick, and its bonds'
+//! (realm `body`, `bonded: true`) is authored above a stone seawall (the
+//! hard massing — `naruko_seawall`, colour `#3a2d4d`, byte-identical to the
+//! Guardian-named drop target in the canon Naruko realm) in a DEDICATED
+//! `worlds/naruko-vi2` world — kept separate from `worlds/naruko` so this
+//! proof scenario's extra vessel never perturbs `packages/oracle/tests/
+//! canon.rs`'s vessel-count/order assertions over the canon realm (a real
+//! regression this example's author hit and fixed by isolating the world,
+//! not by editing `canon.rs`). Falls under the world tick, and its bonds'
 //! strife exceeds their love on impact: `Solver::fracture_pass` tears one or
 //! more bonds, `Solver::fragment_components` flood-fills what remains,
 //! `fracture::fragment_mesh` → `transmute_default` re-meshes each piece
@@ -15,8 +20,9 @@
 //!   proof/vi2-break-settled.png  — the fragments at rest on the seawall
 //!
 //! Determinism: the tick index is the entropy coordinate; two runs render
-//! the same frames (see `packages/scrying-glass/tests/vi2_break.rs` for the
-//! byte-determinism proof over this exact scenario). Run:
+//! the same frames (see `packages/elements/tests/vi2_break_ordeals.rs`'s
+//! `ordeal_replay_determinism_drop_break_settle_including_fragments` for the
+//! byte-determinism proof over the equivalent solver-level scenario). Run:
 //!   cargo run -p scrying-glass --release --example vi2_break
 
 use std::path::Path;
@@ -100,7 +106,7 @@ fn write_png(img: &[GVec3], w: u32, h: u32, exposure: f32, path: &Path) {
 }
 
 fn build_scene() -> RenderScene {
-    let world_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../worlds/naruko");
+    let world_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../worlds/naruko-vi2");
     let mut world = EcsWorld::default();
     load_world_dir(&world_path, &mut world).expect("load naruko");
     RenderScene::from_ecs(world, &naruko_params()).expect("render scene")
@@ -108,10 +114,10 @@ fn build_scene() -> RenderScene {
 
 /// The break crate's AUTHORED spawn position, read straight from the realm
 /// data (never a camera target invented independent of the scene) — the
-/// same `transform.position` `worlds/naruko/scenes/main.json` declares for
+/// same `transform.position` `worlds/naruko-vi2/scenes/main.json` declares for
 /// `naruko_break_crate`.
 fn break_crate_authored_position() -> [f32; 3] {
-    let world_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../worlds/naruko");
+    let world_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../worlds/naruko-vi2");
     let mut world = EcsWorld::default();
     load_world_dir(&world_path, &mut world).expect("load naruko");
     let transform_id = world
