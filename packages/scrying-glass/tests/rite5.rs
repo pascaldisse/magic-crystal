@@ -202,10 +202,19 @@ fn tris_bytes(tris: &[LeafTriangle]) -> Vec<u8> {
 /// accelerate into a walk, hold, then stop. Long enough to cross the state
 /// machine's thresholds and a full blend.
 fn command_stream() -> Vec<f32> {
+    let walk = walk_speed();
     let mut s = vec![0.0; 6];
-    s.extend(std::iter::repeat_n(6.0, 60)); // walk speed (default GAIA_PLAYER_WALK)
+    s.extend(std::iter::repeat_n(walk, 60)); // walk speed (GAIA_PLAYER_WALK)
     s.extend(std::iter::repeat_n(0.0, 20)); // stop → blend back to idle
     s
+}
+
+/// The walker's walk speed (m·s⁻¹) — the SAME env-driven parameter the
+/// embodiment uses (`GAIA_PLAYER_WALK`, default 6), never a bare literal (F10).
+fn walk_speed() -> f32 {
+    scrying_glass::player::PlayerParams::from_env()
+        .expect("player params")
+        .walk_speed
 }
 
 /// ORDEAL — sama's pose IS the skinning input, every tick (0e0 exact). An
@@ -307,6 +316,54 @@ fn v1_derived_foot_ground_contact_no_hover() {
     );
 }
 
+/// ORDEAL (F1 — ONE FLOOR) — the bodies ground on the SAME post-transmute leaf
+/// floor the WALKER walks on. `RenderScene::leaf_positions()` is the exact `Vec`
+/// `main.rs` feeds `Ground::from_positions` for the walker; a floor built from
+/// it, queried under nari, holds her feet to the SAME 1.19e-7-class contact the
+/// weld derived — NOT a second, forkable floor. If a future weld tolerance ever
+/// forks the two floor sources, `walker_y` drifts from her feet past the cell
+/// and this ordeal goes RED (the silent-fork the adversary named is now loud).
+#[test]
+fn v1_body_grounds_on_the_walker_floor_f1() {
+    use scrying_glass::player::Ground;
+
+    let scene = RenderScene::from_ecs(load_naruko().world, &naruko_params()).expect("scene");
+    // The WALKER's floor: EXACTLY the positions `main.rs` grounds the walker on.
+    let walker_floor = Ground::from_positions(&scene.leaf_positions());
+
+    // nari's feet (lowest world vertex) and her body column (centroid x/z).
+    let mut world_min = f32::INFINITY;
+    let (mut cx, mut cz, mut n) = (0.0f64, 0.0f64, 0.0f64);
+    for t in &scene.bodies[0].world_tris {
+        for p in &t.positions {
+            world_min = world_min.min(p[1]);
+            cx += p[0] as f64;
+            cz += p[2] as f64;
+            n += 1.0;
+        }
+    }
+    let (cx, cz) = ((cx / n) as f32, (cz / n) as f32);
+    let walker_y = walker_floor
+        .height_at(cx, cz, f32::INFINITY)
+        .expect("the walker floor exists under nari");
+
+    // Same discretization tolerance as the sibling contact ordeal (one cell).
+    let preset = Preset::nari();
+    let body = Body::from_preset(&preset);
+    let (lo, hi) = body.idle_local_bounds().expect("idle bounds");
+    let cell = (hi - lo).max_element() / preset.vessel.resolution as f32;
+
+    let residual = (world_min - walker_y).abs();
+    println!(
+        "[v1-f1] walker_floor_y={walker_y:.6} nari_feet={world_min:.6} \
+         residual={residual:.2e} tol(cell={cell:.4}) — ONE floor source",
+    );
+    assert!(
+        residual <= cell,
+        "nari must stand on the WALKER's floor (one source): residual {residual:.2e} > cell {cell:.4}",
+    );
+}
+
 /// ORDEAL — two fixed cycle ticks read as CONTACT vs PASSING (visibly distinct
 /// limb configuration). The two ticks are DERIVED from the walk gait (swing
 /// foot lowest vs highest), and the leg pose between them differs beyond a
@@ -363,7 +420,7 @@ fn v1_body_casts_a_traced_shadow_on_the_seawall() {
     let mut scene = RenderScene::from_ecs(load_naruko().world, &naruko_params()).expect("scene");
     // She is walking (past the blend) when the light traces her.
     for _ in 0..30 {
-        scene.command_bodies(6.0);
+        scene.command_bodies(walk_speed());
     }
     let sun = scene.sun;
 
@@ -372,7 +429,13 @@ fn v1_body_casts_a_traced_shadow_on_the_seawall() {
     tris.extend(scene.dynamic_leaf_triangles());
     let bvh = Bvh::build(&tris, &BvhParams::default());
 
-    let seawall_top = 1.4_f32;
+    // Seawall top DERIVED from the realm geometry — the SAME source the sibling
+    // contact ordeal grounds on (`top_flat_surface_y`), never a bare literal
+    // (F10). The shadow probe and the drop projection both read this.
+    let seawall_top =
+        scrying_glass::scene::top_flat_surface_y(&load_naruko().world, "naruko_seawall")
+            .expect("seawall query")
+            .expect("seawall is a flat slab");
     let eps = 5e-3_f32;
     // Direct-sun luminance on a flat (normal +Y) ground point: sun colour ×
     // intensity × max(0, N·L) × visibility toward the sun (the traced shadow).

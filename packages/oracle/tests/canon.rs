@@ -26,7 +26,7 @@
 //!   naruko_pier           x[-15.3,-8.7] y[-2.7,1.025] z[-20,16]
 //!   naruko_chain_posts    x[-34.14,30.14] y[1.4,2.5]  z[17.86,18.14]
 //!   naruko_city_massing   x[30,78]     y[-2,56]      z[-59,-16]
-//!   naruko_lantern        x[-7.58,-6.95] y[0,4.05]   z[19.45,20.55]
+//!   naruko_lantern        x[-8.05,-6.95] y[0,4.05]   z[19.45,20.55]
 //!   naruko_stall_massing  x[-3.8,1.8]  y[0,2.9]      z[23,27.45]
 //!   naruko_chrome_orb     x[-12.4,-11.6] y[1.02,3.22] z[11.6,12.4] (post+orb union)
 //!   nari                  x[-0.2597,0.2598] y[1.4000,3.5467] z[17.918,18.082]
@@ -208,7 +208,7 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
 /// DERIVATION — range = |center − eye|, center = AABB midpoint, eye = [0,7,44]:
 ///   stall_massing  center [-1, 1.45, 25.225]  → √(1+30.80+352.50)   = 19.6037
 ///   cat            center [-5, 0.2278, 23.210] → √(25+45.863+432.206) = 22.4292
-///   lantern        center [-7.265, 2.025, 20] → √(52.78+24.75+576)  = 25.6320
+///   lantern        center [-7.5, 2.025, 20]   → √(56.25+24.75+576)  = 25.6320
 ///   chain_posts    center [-2, 1.95, 18]      → √(4+25.50+676)      = 26.5613
 ///   seawall        center [0, 0.7, 18]        → √(0+39.69+676)      = 26.7524
 ///   crate          center [-11.15, 4.5, 13]   → √(124.32+6.25+961)  = 33.0390

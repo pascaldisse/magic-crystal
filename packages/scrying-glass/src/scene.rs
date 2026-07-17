@@ -630,9 +630,32 @@ impl RenderScene {
                 .unwrap_or(false);
             let body = body_id.and_then(|id| world.get_component(entity, id).ok());
             if let Some(raw) = &body {
-                let parsed: Body = serde_json::from_value(raw.clone())
-                    .map_err(|error| format!("entity {id:?} body: {error}"))?;
-                body_declarations.push((id.clone(), parsed, bind_position.as_dvec3().to_array()));
+                let has_preset = raw.get("preset").is_some();
+                let has_shape = raw.get("shape").is_some();
+                // F2 — a body is EITHER a skinned vessel (`preset`, driven by the
+                // RITE V weld) OR a rigid solver body (`shape`), NEVER both.
+                // `{preset, shape}` is a LOUD authoring error: name the entity,
+                // refuse the realm (no silent double-driver).
+                if has_preset && has_shape {
+                    return Err(format!(
+                        "entity {id:?} body declares BOTH `preset` (a skinned vessel) and \
+                         `shape` (a rigid solver body) — a body is one or the other; \
+                         refusing the realm"
+                    ));
+                }
+                // preset ⇒ the rigid solver SKIPS it, ALWAYS. Only a non-preset
+                // body enters `body_declarations`, so a meshed preset entity can
+                // never become a double-driver (a default rigid AND a skinned
+                // vessel) — the latent fork the adversary named is closed.
+                if !has_preset {
+                    let parsed: Body = serde_json::from_value(raw.clone())
+                        .map_err(|error| format!("entity {id:?} body: {error}"))?;
+                    body_declarations.push((
+                        id.clone(),
+                        parsed,
+                        bind_position.as_dvec3().to_array(),
+                    ));
+                }
             }
             let is_dynamic = has_behavior || body.is_some();
 
@@ -679,20 +702,23 @@ impl RenderScene {
             }
         }
 
-        // RITE V weld: read the embodied ones (`body` sigil) into world-space
-        // skinned triangles BEFORE the dynamics consume the ECS. The bodies
-        // GROUND onto the SAME static floor the walker walks on (the realm's
-        // static leaf triangles) — the y is derived, never eye-nudged.
-        let ground_positions: Vec<[f32; 3]> = static_buckets
-            .values()
-            .flat_map(|bucket| bucket.vertices.iter().map(|vertex| vertex.position))
-            .collect();
-        let floor = Ground::from_positions(&ground_positions);
+        // Seal the shared static buckets into the transmuted Great Chains — THE
+        // one geometry path — before anything grounds on the realm.
+        let chains = seal_buckets(static_buckets)?;
+
+        // RITE V weld (F1 — ONE FLOOR): read the embodied ones (`body` sigil)
+        // into world-space skinned triangles BEFORE the dynamics consume the
+        // ECS. The bodies GROUND onto the SAME POST-TRANSMUTE leaf floor the
+        // walker walks on — `leaf_positions_of(&chains)` is byte-for-byte the
+        // `Vec` `RenderScene::leaf_positions` hands the walker in `main.rs`
+        // (same function, same sealed chains), so there is a SINGLE floor
+        // source: no pre/post-transmute fork, no silent divergence under a
+        // future weld tolerance. The y is derived, never eye-nudged.
+        let floor = Ground::from_positions(&leaf_positions_of(&chains));
         let bodies = body_instances(world, &floor)?;
 
-        // Seal the shared static buckets; the dynamics take ownership of the ECS
-        // (its live tick reads and writes the animated transforms).
-        let chains = seal_buckets(static_buckets)?;
+        // The dynamics take ownership of the ECS (its live tick reads and writes
+        // the animated transforms).
         dynamics.install_world(std::mem::take(world), parameters);
         // Wire the Elements' rigid solver for every declared body (inert — stays
         // `None` — when no `body` is declared; a zero-physics realm is unchanged).
@@ -797,18 +823,7 @@ impl RenderScene {
     /// the EXACT geometry (error 0, the world itself). The Embodiment's floor:
     /// a body stands on the world, never on a camera's coarse cut.
     pub fn leaf_positions(&self) -> Vec<[f32; 3]> {
-        let mut out = Vec::new();
-        for chain in &self.chains {
-            if let Some(leaf_ids) = chain.dag.levels.first() {
-                for &id in leaf_ids {
-                    let cluster = chain.dag.cluster(id);
-                    for &index in &cluster.indices {
-                        out.push(cluster.vertices[index as usize].position);
-                    }
-                }
-            }
-        }
-        out
+        leaf_positions_of(&self.chains)
     }
 
     /// Every STATIC leaf triangle carrying its material, world-space — the EXACT
@@ -1258,6 +1273,28 @@ fn emit_cluster(cluster: &Cluster, color: [f32; 3], emissive: f32, out: &mut Vec
             emissive,
         });
     }
+}
+
+/// Every leaf triangle's corner positions, world-space, from a set of sealed
+/// Great Chains — the POST-transmute EXACT geometry (error 0, the world itself).
+/// The SINGLE floor source (F1): both the walker's ground
+/// ([`RenderScene::leaf_positions`] → `main.rs`) and the RITE V bodies' ground
+/// (`from_ecs` weld) construct their [`Ground`] from THIS function over the SAME
+/// chains, so the two floors are byte-identical by construction — never a
+/// pre/post-transmute fork.
+fn leaf_positions_of(chains: &[MaterialChain]) -> Vec<[f32; 3]> {
+    let mut out = Vec::new();
+    for chain in chains {
+        if let Some(leaf_ids) = chain.dag.levels.first() {
+            for &id in leaf_ids {
+                let cluster = chain.dag.cluster(id);
+                for &index in &cluster.indices {
+                    out.push(cluster.vertices[index as usize].position);
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Seal material buckets into transmuted Great Chains. `transmute` is
