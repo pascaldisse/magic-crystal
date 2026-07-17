@@ -20,6 +20,14 @@
 //!       forward-proof scope mechanism (confirmed) + EVERY `pub fn`
 //!       signature is scanned for forbidden parameter-name substrings.
 //!
+//! RESOLUTION SCOPE (disclosed, not hidden): these gates run the dataset
+//! resolution only (96×64 target, `DATASET_LOW_WIDTH`×`DATASET_LOW_HEIGHT`
+//! low). `examples/viii3_upscale.rs`'s proof render measures 480×320
+//! (240×160 low) — MEASURED and disclosed, but NOT machine-gated here.
+//! Production (`PRODUCTION_LOW_WIDTH`×`PRODUCTION_LOW_HEIGHT` = 640×480 low
+//! → the `window` family at `UPSCALE_SCALE`) remains UNGATED until the GPU
+//! wave — open item carried forward, not silently assumed.
+//!
 //! All GPU ordeals print + return early (never a false green) on a host
 //! without an adapter, matching the VIII-0/VIII-1 convention.
 
@@ -377,13 +385,13 @@ fn b_and_c_neural_beats_bilinear_and_meets_pinned_bound_on_every_validation_fram
         "expected exactly the 2 documented validation poses"
     );
 
-    let margin = measure_render_nondeterminism_margin(
-        &device,
-        &queue,
-        &bvh,
-        &law_poses(&naruko_params())[3].1,
-        &scene,
-    );
+    let margin_pose_name = "orbit_-20";
+    let margin_pose = &law_poses(&naruko_params())
+        .into_iter()
+        .find(|(name, _)| *name == margin_pose_name)
+        .expect("margin_pose_name must name a law pose")
+        .1;
+    let margin = measure_render_nondeterminism_margin(&device, &queue, &bvh, margin_pose, &scene);
     let bound_with_margin = pinned_bound * (1.0 + margin);
     println!(
         "[VIII-3 validation replay] pinned_bound={pinned_bound:.6} margin={margin:.3e} bound_with_margin={bound_with_margin:.6}"

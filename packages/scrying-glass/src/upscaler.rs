@@ -507,6 +507,12 @@ pub fn pixel_features(
 /// TARGET pixel, FIXED index order, no threading — byte-deterministic.
 /// Inputs are ALL current-frame buffers (low radiance + high-res albedo/
 /// normal/depth); no cross-frame state, no frame index. Current-frame only.
+///
+/// ADVISORY (parked, not blocking wave (a)): this `#[allow(too_many_arguments)]`
+/// signature is a candidate for a params-struct refactor (bundle the
+/// low/target dims + AOV triple); deferred to the GPU port (VIII-3 wave b),
+/// where the WGSL binding layout will force the same grouping anyway —
+/// refactor once, not twice.
 #[allow(clippy::too_many_arguments)]
 pub fn upscale_image(
     mlp: &Mlp,
