@@ -5,7 +5,7 @@
 DreamForge = the workshop (Sidia's name). Seal b3ae3e0.
 
 ## Where the Work stands (day of 07-17, conductor nyari — see NIGHTLOG.md for the night ledger)
-main @ 89e351c — GREEN, PUSHED, suite 361/0 (74 binaries).
+main @ b6ee51b — GREEN, PUSHED, suite 368/0 (75 binaries).
 Day merges: 5c819dd+8f2b752 fragcol interpenetration ordeal +
 adversary advisories (VI-2 gap closed — fragment-vs-fragment collision
 was ALREADY live via ce91da3/fbb2a5e; the missing piece was the
@@ -14,11 +14,15 @@ ground: collider from generated triangles, 5 seam ordeals, pose-trace
 bound 0.31804 DERIVED — derivation doc written per adversary MUST-FIX
 at 4b8f7c0) · 91a6263+89e351c RITE VIII-2 COMPLETE (GPU denoiser
 compute port, parity derived-tolerance, BAN green on true held-out
-orbits, ~1.3ms @96×64 / ~27ms @900×600).
+orbits, ~1.3ms @96×64 / ~27ms @900×600) · 33cae2b RITE VII-2 COMPLETE
+(the horizon streams: residency ring under a derived byte budget,
+moving render_origin production-wired; adversary advisory b6ee51b
+expands the eviction-reserve comment — analytic tile_bytes vs measured
+mesh_bytes proven equal only for today's uniform grid).
 REPO FOLDER: ~/projects/magic-crystal (unchanged, matches
 github.com/pascaldisse/magic-crystal).
-NOT BUILT (queue remainder): VII-2 IN PROGRESS (see Rites, below) ·
-VIII-3 upscaler + temporal accumulation await rulings (see Open, below).
+NOT BUILT (queue remainder): VIII-3 upscaler + temporal accumulation
+await rulings (see Open, below).
 16 packages. Live web stack 8420/5173 = reference, NEVER touched.
 
 ## What the realm holds (all verified, own eyes, on main)
@@ -69,13 +73,16 @@ VI (STRIFE) — BUILD-COMPLETE this night under the delegation rulings
 `cargo run -p scrying-glass --release --example vi2_break`, or read
 proof/vi2-break-*.png). Hymn owed at close — the Guardian's voice, not
 the night runner's.
-VII (THE PLANET-WALKER) — VII-0a/0b/1 DONE (VII-1 d1d8277: walker
-crosses onto generated ground, pose-trace bound 0.31804 DERIVED).
-VII-2 IN PROGRESS: lane rite7-vii2-horizon, opus, launched off
-d1d8277 — residency ring under the byte budget + moving render_origin
-production wiring. Rulings 3 (radial gravity, flat = infinite-radius
-limit) and 4 (64-bit at VII-0 — PAID) govern it. VII-3 (the planet
-closes) still never in scope.
+VII (THE PLANET-WALKER) — VII-0a/0b/1/2 ALL COMPLETE (VII-1 d1d8277:
+walker crosses onto generated ground, pose-trace bound 0.31804 DERIVED;
+VII-2 33cae2b: residency ring under a derived byte budget, moving
+render_origin production-wired). Rulings 3 (radial gravity, flat =
+infinite-radius limit) and 4 (64-bit at VII-0 — PAID) govern it.
+Honest gaps carried forward: sync tile reads (proposal §OPEN 6,
+async/cached materialization = future seam) · the ring is
+library+ordeals only, live player-loop wiring is not yet VII-2 scope.
+VII-3 (the-planet-closes) was never night scope — remains the rite's
+last wave.
 VIII (THE DREAM-DENOISER) — waves (a)+(b) DONE: VIII-0 truth baseline
 (c5230c5) + VIII-1 the net (faa215f) + VIII-2 GPU denoiser compute
 port (91a6263+89e351c). VIII-2 BUDGET NOTE: present-resolution cost
@@ -129,3 +136,12 @@ sibling-lane derivations: re-derive at merge, canon from scratch. A
 derivation frozen into a literal is a hardcode in costume. Every light
 traces to a realm entity. Prove exactness in isolation before
 compositing changes.
+
+## Day close (07-17)
+07-17 day wave = 4 lanes landed (fragcol ordeal · VII-1 · VIII-2 ·
+VII-2), 4 adversary HOLDS, 0 red pushes, suite 352→368. REMAINING
+QUEUE ENTIRELY ARCHITECT-GATED: OPEN-1 upscaler ruling (gates the fp16
+atom) · VIII-3 · rite closes (HIS WALK, HIS CHROME CHECK, HIS SEEING
+THE BREAK) · vi2→naruko fold (folding the isolated VI-2 diorama into
+the canon realm) · bond-love essence table (VI OPEN 4) · the
+rite8-viii2-ari ordeal-pattern harvest atom — parked.
