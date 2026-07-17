@@ -717,7 +717,17 @@ impl Solver {
                     let r_vec = pi - self.particles.pos[j];
                     let lj = slot(j).map(|s| lambda[s]).unwrap_or(0.0);
                     // Artificial pressure (tensile instability corrector).
-                    let s_corr = if cfg.tensile_k != 0.0 {
+                    // MUST be gated by the compression-only clamp: s_corr < 0
+                    // ALWAYS (pure pair repulsion), so applying it where the
+                    // density constraint is inactive (λ=0 on every underdense/
+                    // rest particle, the overwhelming majority under a
+                    // calibrated ρ₀=MAX) is an unbalanced repulsion with nothing
+                    // to counter it — the pool detonates on tick 1 (measured).
+                    // The tensile instability it corrects only EXISTS under the
+                    // bilateral (cohesive, λ>0) constraint; compression-only has
+                    // no negative-pressure clustering, so s_corr is both
+                    // unnecessary and destabilising there — disable it.
+                    let s_corr = if cfg.tensile_k != 0.0 && !cfg.compression_only {
                         let ratio = poly6(r_vec.length(), h) / w_dq;
                         -cfg.tensile_k * ratio.powf(cfg.tensile_n)
                     } else {
@@ -735,6 +745,64 @@ impl Solver {
             }
         }
         fp.len()
+    }
+
+    /// FLUID — XSPH VISCOSITY (Macklin §5 / Algorithm 1 step 5). The velocity
+    /// post-filter the positional density solve LACKS: nudge each fluid
+    /// particle's velocity toward its poly6-weighted neighbourhood mean by the
+    /// blend fraction `cfg.viscosity_c`. This is the momentum-diffusion term
+    /// that removes the decompression coasting kick a UNILATERAL constraint
+    /// leaves behind (see [`crate::fluid_kernel::FluidConfig::viscosity_c`]) so
+    /// the pool damps to a flat hydrostatic rest instead of churning. Runs
+    /// ONCE per substep, AFTER [`Solver::read_back_velocity`] (it filters the
+    /// read-back velocity). Jacobi: neighbour velocities read from a single
+    /// pre-filter snapshot, results written after, index-ordered — byte-
+    /// deterministic. Uses the SAME neighbour radius `h` and grid as the
+    /// density pass. Costs zero when no fluid or `viscosity_c == 0`.
+    fn apply_fluid_viscosity(&mut self) {
+        let Some(cfg) = self.fluid else { return };
+        if self.fluid_particles.is_empty() || cfg.viscosity_c <= 0.0 {
+            return;
+        }
+        let h = cfg.h;
+        let c = cfg.viscosity_c;
+        let cell = PointGrid::cell_size(h);
+        let grid = PointGrid::build(&self.particles.pos, &self.fluid_particles, cell);
+        let fp = &self.fluid_particles;
+        let vel_snapshot = self.particles.vel.clone();
+        let mut cand: Vec<u32> = Vec::new();
+        let mut new_vel = vec![Vec3::ZERO; fp.len()];
+        for (a, &i) in fp.iter().enumerate() {
+            // Anchored fluid (none by default) keeps its velocity.
+            if self.particles.inv_mass[i] == 0.0 {
+                new_vel[a] = vel_snapshot[i];
+                continue;
+            }
+            let pi = self.particles.pos[i];
+            grid.query_ball(pi, h, &mut cand);
+            let mut w_sum = 0.0_f64;
+            let mut v_acc = Vec3::ZERO;
+            for &jc in &cand {
+                let j = jc as usize;
+                if j == i {
+                    continue;
+                }
+                let w = poly6((pi - self.particles.pos[j]).length(), h);
+                if w > 0.0 {
+                    w_sum += w;
+                    v_acc = v_acc + vel_snapshot[j].scale(w);
+                }
+            }
+            new_vel[a] = if w_sum > 0.0 {
+                let mean = v_acc.scale(1.0 / w_sum);
+                vel_snapshot[i] + (mean - vel_snapshot[i]).scale(c)
+            } else {
+                vel_snapshot[i]
+            };
+        }
+        for (a, &i) in fp.iter().enumerate() {
+            self.particles.vel[i] = new_vel[a];
+        }
     }
 
     /// Flood-fill connected components of `particles` over the SURVIVING bond
@@ -842,6 +910,9 @@ impl Solver {
                 contacts.extend(self.solve_body_collisions(&particle_cluster));
             }
             self.read_back_velocity(dt_sub);
+            // FLUID: XSPH viscosity filters the read-back velocity (the term
+            // that lets a compression-only pool settle instead of coasting).
+            self.apply_fluid_viscosity();
             // Coulomb friction on VELOCITY, after the normal solve: rigid
             // bodies are held at the BODY granularity (one contact supports the
             // whole body's weight — a shape-matched rigid cannot build stacked
@@ -924,6 +995,7 @@ impl Solver {
             }
             let t = Instant::now();
             self.read_back_velocity(dt_sub);
+            self.apply_fluid_viscosity();
             self.apply_friction(&contacts, dt_sub);
             self.apply_restitution(&contacts, &vel_pre);
             for c in &mut self.constraints {

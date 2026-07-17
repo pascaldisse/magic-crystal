@@ -106,6 +106,28 @@ pub struct FluidConfig {
     /// tension, needs the artificial-pressure term to avoid clustering). Not a
     /// magnitude — a constraint-sidedness law, hence a bool dial.
     pub compression_only: bool,
+    /// XSPH VISCOSITY blend fraction `c` (Macklin §5 / Algorithm 1 step 5 —
+    /// the velocity post-filter the density projection alone LACKS). After the
+    /// positional density solve each fluid particle's velocity is nudged toward
+    /// its poly6-weighted neighbourhood mean:
+    /// `v_i ← v_i + c·(⟨v⟩_i − v_i)`, `⟨v⟩_i = Σ_j W_poly6(r_ij) v_j / Σ_j W`.
+    /// WITHOUT this, a UNILATERAL (compression-only) constraint cannot settle:
+    /// a decompression push becomes outward velocity via the PBD position→
+    /// velocity read-back, and once the region reaches `C ≤ 0` the one-sided
+    /// constraint switches off with NOTHING to absorb that velocity — the fluid
+    /// coasts apart forever (measured: a compressed cube in free space expands
+    /// at a fixed 1.1 m/s indefinitely) or churns against the floor. XSPH is
+    /// the momentum-diffusion term that removes exactly this coasting kick, so
+    /// the pool damps to a FLAT hydrostatic rest. `c` is a dimensionless blend
+    /// fraction in `[0,1]` (`0` = the raw undamped scheme, `1` = replace each
+    /// velocity by the neighbour mean each substep). Default `0.10` — measured
+    /// as the smallest blend that damps the default pool's compression-only
+    /// churn to a settled surface within ~1 s while leaving a dropped crate's
+    /// splash visibly dynamic (not molasses). A physical fluid's viscosity is
+    /// this term's continuum limit, but here it is a numerical damping dial,
+    /// hence a documented default. Applied to fluid particles only, Jacobi
+    /// (old velocities in, new out), index-ordered → determinism preserved.
+    pub viscosity_c: f64,
 }
 
 impl Default for FluidConfig {
@@ -121,6 +143,7 @@ impl Default for FluidConfig {
             relax: 0.1,
             solver_iterations: 4,
             compression_only: true,
+            viscosity_c: 0.10,
         }
     }
 }
