@@ -141,7 +141,14 @@ fn senses_read_solver_rested_pose() {
     let authored_world = World::load(rest_pose::canon_dir()).expect("load canon naruko");
     let authored_center: Vec<[f32; 3]> = IDS
         .iter()
-        .map(|id| authored_world.geometry(id).unwrap().bounds.unwrap().center())
+        .map(|id| {
+            authored_world
+                .geometry(id)
+                .unwrap()
+                .bounds
+                .unwrap()
+                .center()
+        })
         .collect();
 
     let y0 = dials.pier_contact_y();
