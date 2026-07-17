@@ -16,6 +16,19 @@
 //! Determinism: the tick index is the entropy coordinate; two runs render the
 //! same frames (proven in `packages/scrying-glass/tests/physics.rs`). Run:
 //!   cargo run -p scrying-glass --release --example vi1_stack
+//!
+//! F4 — a cost note, not a gate here: this example's release-build solver
+//! measures ~5.52 ms/tick (see the P-GATE readout below), dominated by
+//! `solve_collision_normal` brute-forcing every particle against the FULL
+//! static triangle soup, every substep (108 particles × the whole soup × 8
+//! substeps/tick). That cost scales with world geometry size, not with this
+//! scene's body count — a bigger static mesh makes every tick slower even if
+//! nothing physical changes. The structural fix, if/when this needs it, is a
+//! spatial broadphase (prune candidate triangles before the per-particle
+//! test) rather than a tighter loop; VI-2's fragments will multiply the
+//! rigid-body (and so particle) count and will likely force the issue. The
+//! composed 60 FPS budget for the whole frame is judged by the separate
+//! `perf_audit` gate, post-merge — not by this example's solver-only P-GATE.
 
 use std::path::Path;
 use std::time::Instant;
