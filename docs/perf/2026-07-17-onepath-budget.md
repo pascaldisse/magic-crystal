@@ -93,3 +93,55 @@ plainly"), the runtime bilinear resolve is LEFT IN PLACE and the sole-path cut
 is BLOCKED on a budget fix that needs the Architect's pixel/net ruling. The
 neural path is proven CORRECT (Stage 1 ordeals green) but not yet budget-viable
 at production resolution. Nothing merged.
+
+## FINAL SWEEP — 2026-07-17 21:3x, post `git merge main` (c7189a5), release build
+
+Merge clean (10 files, rimguard/floor-fallthrough from main). Build green in
+21s. Host load HIGH at measure (`uptime` load ~15.9) — GPU numbers run ~±15%
+hot vs the Stage-2 table; the VERDICT is unchanged (walls hold by ~160×).
+
+ORDEALS (real M1 GPU, all green):
+- denoiser (shipping path) `viii2_ordeals` 5/5 — byte-identical same-frame,
+  parity+beats-noisy within derived bound, BAN (no temporal vocab + every
+  `pub fn` current-frame-only), hash-pin weights == committed artifact.
+- upscaler / neural resolve `viii3b_ordeals` 4/4 — GPU determinism
+  byte-identical, GPU-vs-CPU parity + beats-bilinear on both held-out orbits,
+  BAN, full neural path deterministic end-to-end.
+- hash-identity BOTH path selections — `live_loop_hash_identity` run under
+  `GAIA_NATIVE_UPSCALE=bilinear` and `=neural`: 24/24 frames bit-identical
+  serial-vs-overlap AND the per-frame hashes are IDENTICAL across the two
+  selections (frame0 336ef6cab3e95ac1, frame3 28a2ed7cf62257e4) — the 60-fps
+  surface loop is byte-invariant to the resolve selection (neural only
+  changes /scry A/B, never the surface). Full workspace suite 400/0.
+
+### PHASE TABLE — per path (live-loop reality)
+
+**BILINEAR path = the live surface loop** (`live_loop_audit`, 640×480 int,
+spp 2, 960×640 surface), identical under both selections:
+
+| phase                          | SERIAL median ms |
+|--------------------------------|------------------|
+| skin                           | 0.522            |
+| tick (physics+kami)            | 3.542            |
+| splice (refit/merge)           | 0.277            |
+| upload                         | 0.487            |
+| trace (2 spp, no medium)       | 8.880            |
+| blit (2× present)              | 0.495            |
+| **SERIAL TOTAL**               | **14.202 (70.4 fps) PASS** |
+| **OVERLAP wall (pipelined)**   | **8.016 (124.7 fps) PASS** |
+
+**NEURAL path = the /scry A/B capture** (`onepath_budget`, trace/denoise
+640×480 → upscale ×2 → 1280×960, median of 32, hot host):
+
+| phase                          | median ms | min ms |
+|--------------------------------|-----------|--------|
+| denoise 640×480 (fp32)         | 16.198    | 15.769 |
+| upscale 1280×960 (naive fp32)  | 334.901   | 324.649|
+| upscale 1280×960 (FAST f16-tg) | 2687.696  | 2654.999 (parity 5.47e-4) |
+| **combined (best true)**       | **~351 ms (~2.85 fps)** | — |
+
+VERDICT UNCHANGED: neural exceeds the 16.67 ms wall by ~21× (best true
+naive-fp32 combined). The upscaler remains the wall-breaker; fp16 MODE A is
+the only sound denoiser lever and cannot touch it. Sole-path cut stays BLOCKED
+on the Architect's pixel/net ruling; runtime bilinear resolve left in place;
+neural is the proven-correct default /scry resolve. Nothing merged.
