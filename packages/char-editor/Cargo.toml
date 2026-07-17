@@ -1,0 +1,17 @@
+[package]
+name = "char-editor"
+version = "0.1.0"
+edition = "2021"
+description = "DreamForge parametric creature builder: plain-English parameters -> a vessel body preset (regions + palette) + skeleton parameters. Pure data-in -> data-out, no rendering dependency."
+license = "MIT"
+
+[dependencies]
+glam = "0.30.9"
+homunculus = { path = "../homunculus" }
+vessel = { path = "../vessel" }
+
+[dev-dependencies]
+crystal = { path = "../../crates/crystal" }
+scrying-glass = { path = "../scrying-glass" }
+glam = "0.30.9"
+png = "0.17.16"
