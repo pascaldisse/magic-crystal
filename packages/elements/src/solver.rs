@@ -192,6 +192,163 @@ impl Solver {
         self.rigids.len() - 1
     }
 
+    /// Spawn a BONDED box: a particle lattice like [`Solver::spawn_rigid_box`],
+    /// but held together by nearest-neighbor [`DistanceConstraint`] bonds (one
+    /// per lattice edge along +x/+y/+z) instead of a shape-matching
+    /// constraint. A [`RigidBody`] carries no per-bond love/strife bookkeeping
+    /// and so can never fracture (design note, VI-2); a bonded box's bonds
+    /// each carry a real [`crate::constraint::Bond`] and CAN tear when strife
+    /// exceeds love (`Solver::step`'s `fracture_pass` walks `self.constraints`
+    /// exactly as it does for any other bond — no special-casing needed here).
+    ///
+    /// Mass is DERIVED exactly as `spawn_rigid_box`: total = `density × volume`,
+    /// split evenly per particle. `love` is every bond's love in `[0, 1]` (use
+    /// [`crate::constraint::default_bond_love`] to derive it from `density`
+    /// rather than author one). `compliance` is the bonds' inverse stiffness
+    /// (XPBD, `m/N`; `0.0` = rigid) — stiffness is expressed via compliance,
+    /// never a separate 0..1 "rigidity" knob (VI-2 design note: a bonded body
+    /// is not shape-matched, so `RigidBody`'s `stiffness` blend has no
+    /// meaning here). `radius` is each particle's collision thickness.
+    ///
+    /// Returns the new particles' indices in LATTICE (ix, iy, iz) index order
+    /// — the caller's handle for fragment bookkeeping after a break (the same
+    /// order `spawn_rigid_box` uses internally, kept deterministic).
+    #[allow(clippy::too_many_arguments)]
+    pub fn spawn_bonded_box(
+        &mut self,
+        center: Vec3,
+        dims: Vec3,
+        counts: (usize, usize, usize),
+        density: f64,
+        love: f64,
+        compliance: f64,
+        radius: f64,
+    ) -> Vec<usize> {
+        let (nx, ny, nz) = (counts.0.max(1), counts.1.max(1), counts.2.max(1));
+        let n_total = nx * ny * nz;
+        let volume = dims.x * dims.y * dims.z;
+        let particle_mass = density * volume / n_total as f64;
+        let step = Vec3::new(
+            if nx > 1 {
+                dims.x / (nx - 1) as f64
+            } else {
+                0.0
+            },
+            if ny > 1 {
+                dims.y / (ny - 1) as f64
+            } else {
+                0.0
+            },
+            if nz > 1 {
+                dims.z / (nz - 1) as f64
+            } else {
+                0.0
+            },
+        );
+        let origin = center - dims.scale(0.5);
+        // Lattice index -> particle index, filled in (ix, iy, iz) order — the
+        // same triple-nested order spawn_rigid_box uses, so the two spawners
+        // stay comparable and the caller can address a particle by its
+        // lattice coordinate if it needs to.
+        let mut lattice = vec![vec![vec![0usize; nz]; ny]; nx];
+        let mut indices = Vec::with_capacity(n_total);
+        for (ix, plane) in lattice.iter_mut().enumerate() {
+            for (iy, row) in plane.iter_mut().enumerate() {
+                for (iz, slot) in row.iter_mut().enumerate() {
+                    let pos = origin
+                        + Vec3::new(step.x * ix as f64, step.y * iy as f64, step.z * iz as f64);
+                    let inv_mass = 1.0 / particle_mass;
+                    let idx = self.particles.add_with_radius(pos, inv_mass, radius);
+                    *slot = idx;
+                    indices.push(idx);
+                }
+            }
+        }
+        // Nearest-neighbor bonds along each lattice axis. `rest` = the local
+        // step length (each axis may be spaced differently for a non-cubic
+        // `dims`/`counts`).
+        for ix in 0..nx {
+            for iy in 0..ny {
+                for iz in 0..nz {
+                    let here = lattice[ix][iy][iz];
+                    if ix + 1 < nx {
+                        let there = lattice[ix + 1][iy][iz];
+                        self.constraints.push(DistanceConstraint::new(
+                            here, there, step.x, compliance, love,
+                        ));
+                    }
+                    if iy + 1 < ny {
+                        let there = lattice[ix][iy + 1][iz];
+                        self.constraints.push(DistanceConstraint::new(
+                            here, there, step.y, compliance, love,
+                        ));
+                    }
+                    if iz + 1 < nz {
+                        let there = lattice[ix][iy][iz + 1];
+                        self.constraints.push(DistanceConstraint::new(
+                            here, there, step.z, compliance, love,
+                        ));
+                    }
+                }
+            }
+        }
+        indices
+    }
+
+    /// Flood-fill connected components of `particles` over the SURVIVING bond
+    /// graph (i.e. call this AFTER `fracture_pass` has removed torn bonds —
+    /// `Solver::step` already does, so this reads `self.constraints` as it
+    /// stands post-step). CPU-side, deterministic, index-ordered: components
+    /// are discovered by BFS starting from the lowest unvisited particle
+    /// index in `particles` (ascending order), and each component's own
+    /// members are pushed in the order the BFS queue visits them — two
+    /// identical worldlines therefore always yield byte-identical fragment
+    /// partitions (the replay-determinism ordeal's bedrock).
+    ///
+    /// Only bonds with BOTH endpoints inside `particles` count as edges (a
+    /// bonded body's own lattice does not fracture-merge with an unrelated
+    /// body that happens to share no bond with it). A particle in `particles`
+    /// but touched by no surviving bond is its own singleton fragment.
+    pub fn fragment_components(&self, particles: &[usize]) -> Vec<Vec<usize>> {
+        use std::collections::{BTreeSet, VecDeque};
+        let members: BTreeSet<usize> = particles.iter().copied().collect();
+        // Adjacency restricted to `members`, built once (index-ordered by
+        // constraint list order — deterministic).
+        let mut adjacency: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
+        for &p in &members {
+            adjacency.entry(p).or_default();
+        }
+        for c in &self.constraints {
+            if members.contains(&c.a) && members.contains(&c.b) {
+                adjacency.entry(c.a).or_default().push(c.b);
+                adjacency.entry(c.b).or_default().push(c.a);
+            }
+        }
+        let mut visited: BTreeSet<usize> = BTreeSet::new();
+        let mut components = Vec::new();
+        for &start in &members {
+            if visited.contains(&start) {
+                continue;
+            }
+            let mut component = Vec::new();
+            let mut queue = VecDeque::new();
+            queue.push_back(start);
+            visited.insert(start);
+            while let Some(p) = queue.pop_front() {
+                component.push(p);
+                if let Some(neighbors) = adjacency.get(&p) {
+                    for &n in neighbors {
+                        if visited.insert(n) {
+                            queue.push_back(n);
+                        }
+                    }
+                }
+            }
+            components.push(component);
+        }
+        components
+    }
+
     /// Advance the world one fixed tick: substep integrate → solve bindings →
     /// read back velocity → tally strife → tear what love could not hold.
     ///

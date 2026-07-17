@@ -24,7 +24,10 @@ pub mod rigid;
 pub mod solver;
 
 pub use collision::{Collider, Contact, ContactMaterial, Triangle};
-pub use constraint::{Bond, DistanceConstraint, FractureEvent};
+pub use constraint::{
+    default_bond_love, Bond, DistanceConstraint, FractureEvent, BALSA_DENSITY, BOND_LOVE_FLOOR,
+    STONE_DENSITY,
+};
 pub use hash::{hash3, jitter, StateHasher};
 pub use mat3::{polar_rotation, Mat3, PolarConfig};
 pub use math::Vec3;
