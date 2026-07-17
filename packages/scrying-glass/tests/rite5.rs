@@ -700,9 +700,14 @@ fn weld_attached_body_position_equals_walker_0e0() {
         .iter()
         .position(|b| b.gaia_id == "nari")
         .unwrap();
-    // 50 ticks → x ∈ [0, 4.9], the FLAT seawall band (a raised feature sits near
-    // x≈6; the tracking claim is proven on flat ground where grounded y holds).
-    let walk = walker_walk(0.1, 50);
+    // 25 ticks → x ∈ [0, 2.4], the FLAT seawall band. The 21-vessel realm added
+    // the mirror panel at [3, 2.9, 18] (a thin 0.08 m slab whose horizontal top
+    // at y=4.4 the F1 floor treats as walkable ground, x-footprint [2.96, 3.04]),
+    // and the chain-post at x=6 (footprint [5.86, 6.14]) still sits beyond it. So
+    // the flat band clear of BOTH is x < 2.96; walking to x=2.4 keeps a 0.56 m
+    // margin to the panel — the tracking claim stays proven on ground where the
+    // grounded y provably holds constant (no panel/post top under the column).
+    let walk = walker_walk(0.1, 25);
     // The grounded model-origin y at tick 0 (seawall is flat — it must not move).
     let grounded_y = {
         scene.command_bodies_walked(99.0, Some(walk[0]));
@@ -868,10 +873,19 @@ fn weld_shadow_follows_the_walked_body() {
     let beside = radiance(shadow_x + 3.0, shadow_z);
     let shadow_diff = beside - under;
 
-    // The null: the SAME probe pair back at her AUTHORED spot (x≈0), which she
-    // has VACATED — no body there now, so no darkening.
+    // The null: the probe pair back at her AUTHORED spot (x≈0), which she has
+    // VACATED — no body there now, so no darkening. The 21-vessel realm added
+    // the mirror panel at [3, 2.9, 18]; at this null z (shadow_z≈17.64) the
+    // panel's OWN cast shadow darkens the seawall across x∈[1.0, 3.0], so the
+    // old +3.0 beside-probe landed IN the panel shadow (a false darkening, not
+    // the body's). Re-derive the beside offset to +7.0: at x=7.0 the ground is
+    // lit (nearest shadow is the x=6 chain-post's at x≈5.5 — a 1.5 m margin,
+    // and the panel shadow ends at x=3.0, a 4 m margin), while null_under at
+    // x=0 is lit 1.0 m clear of the panel shadow's x=1.0 edge. Both probes now
+    // read the same lit ground → null_diff≈0 (the true vacated null).
+    const NULL_BESIDE_DX: f32 = 7.0;
     let null_under = radiance(0.0, shadow_z);
-    let null_beside = radiance(3.0, shadow_z);
+    let null_beside = radiance(NULL_BESIDE_DX, shadow_z);
     let null_diff = (null_beside - null_under).abs();
 
     let floor = 0.5 * sun_lum;
