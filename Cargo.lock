@@ -963,6 +963,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fracture"
+version = "0.1.0"
+dependencies = [
+ "crystal",
+ "elements",
+ "serde_json",
+ "transmutation",
+]
+
+[[package]]
 name = "futures-channel"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2434,6 +2444,7 @@ version = "0.1.0"
 dependencies = [
  "crystal",
  "elements",
+ "fracture",
  "glam",
  "scrying-glass",
  "serde",
@@ -3044,6 +3055,7 @@ dependencies = [
  "bytemuck",
  "crystal",
  "elements",
+ "fracture",
  "glam",
  "homunculus",
  "kami",

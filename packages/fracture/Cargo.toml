@@ -1,0 +1,12 @@
+[package]
+name = "fracture"
+version = "0.1.0"
+edition = "2021"
+description = "DreamForge: fracture — the VI-2 seam (bond break -> flood-fill fragments -> transmute re-mesh -> ECS vessel birth), shared by scrying-glass (the real runtime path) and oracle's tests (the same-wave canon ordeal), without a dependency cycle between them"
+license = "MIT"
+
+[dependencies]
+elements = { path = "../elements" }
+transmutation = { path = "../transmute" }
+crystal = { path = "../../crates/crystal" }
+serde_json = "1"

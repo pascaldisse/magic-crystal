@@ -32,4 +32,10 @@ scrying-glass = { path = "../scrying-glass" }
 # `elements::ContactMaterial::default().contact_margin` — the same body-vs-body
 # chain-step term physics.rs uses (F2/F3 convention), reused verbatim by the
 # shared rest-pose derivation so the analytic step matches physics.rs exactly.
+# Also the VI-2 same-wave canon ordeal (dev-only: the oracle crate proper stays
+# physics/geometry-agnostic).
 elements = { path = "../elements" }
+# VI-2 fragment birth for the same-wave ordeal. `fracture` depends on
+# `elements` + `transmutation` + `crystal`, never on `oracle` or
+# `scrying-glass` — no cycle either way.
+fracture = { path = "../fracture" }

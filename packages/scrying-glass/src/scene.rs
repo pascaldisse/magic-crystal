@@ -1575,11 +1575,15 @@ pub struct Dynamics {
     /// so re-reading the transform each tick never compounds.
     binds: BTreeMap<String, BindPose>,
     entities: Vec<DynamicEntity>,
-    #[allow(dead_code)]
     emission_intensity: f32,
     /// The Elements' rigid solver bound to the realm's declared bodies; `None`
     /// when no `body` is declared (the physics path is then wholly inert).
     physics: Option<Physics>,
+    /// VI-2 — `(fragment_gaia_id, particle_indices)` for every fragment born
+    /// so far, so its centroid can keep being read back every subsequent
+    /// tick (a broken bonded body's `Physics` binding stops reporting once
+    /// broken — this is where "shards settle" lives after birth).
+    fragment_particles: Vec<(String, Vec<usize>)>,
     seed: u64,
     dt: f64,
     clock: u64,
@@ -1594,6 +1598,7 @@ impl Dynamics {
             entities: Vec::new(),
             emission_intensity,
             physics: None,
+            fragment_particles: Vec::new(),
             seed: 0,
             dt: 1.0 / 60.0,
             clock: 0,
@@ -1688,7 +1693,7 @@ impl Dynamics {
         // transform — the same Flow of Data KAMI uses, so the body's
         // triangles ride the dynamic BVH splice and the traced light sees it
         // move. Read all poses first (shared borrow), then write (world borrow).
-        let body_poses: Vec<(String, [f64; 3], [f32; 3])> = match self.physics.as_mut() {
+        let mut body_poses: Vec<(String, [f64; 3], [f32; 3])> = match self.physics.as_mut() {
             Some(physics) => {
                 for op in incoming {
                     if let Op::Impulse(impulse) = op {
@@ -1707,6 +1712,76 @@ impl Dynamics {
             }
             None => Vec::new(),
         };
+        // VI-2 — SOMETHING BREAKS: bonded bodies poll separately (no shape-
+        // matched RigidBody pose to read). Still-whole bonded bodies ride
+        // the same transform write-back as a rigid body (translation only,
+        // rotation identity — see `Physics::poll_bonded`'s doc). A body that
+        // broke THIS tick births its fragments as real ECS vessels — the
+        // SAME wave: no separate tick, no lag — with a Great Chain re-mesh
+        // (`fracture::fragment_mesh` -> `transmute_default`, the one
+        // geometry path) spliced into the dynamic BVH by pushing a
+        // `DynamicEntity` per fragment (picked up by `dynamic_leaf_
+        // triangles` this exact tick, same as any other dynamic entity).
+        if let Some(physics) = self.physics.as_mut() {
+            let (still_whole, newly_broken) = physics.poll_bonded();
+            for (id, position) in still_whole {
+                body_poses.push((id, position, [0.0, 0.0, 0.0]));
+            }
+            for (parent_id, fragments, cube_size) in newly_broken {
+                // Fragments inherit the parent's authored material (colour +
+                // emissive flag) — fragments are made of the same stuff, no
+                // invented colour.
+                let inherited = self
+                    .entities
+                    .iter()
+                    .find(|de| de.gaia_id == parent_id)
+                    .and_then(|de| de.materials.first().copied())
+                    .unwrap_or(([0.6, 0.6, 0.6], false));
+                // The whole-body vessel is gone — its geometry is replaced
+                // by its fragments (no double-draw of the same matter).
+                self.entities.retain(|de| de.gaia_id != parent_id);
+
+                let fragment_ids =
+                    fracture::birth_fragment_entities(&mut self.world, &parent_id, &fragments);
+                let params = TransmuteParams::default();
+                for (frag_id, fragment) in fragment_ids.iter().zip(fragments.iter()) {
+                    let mesh = fracture::fragment_mesh(physics.solver(), fragment, cube_size);
+                    if mesh.indices.is_empty() {
+                        continue;
+                    }
+                    let Ok(dag) = fracture::fragment_dag(&mesh, &params) else {
+                        continue;
+                    };
+                    let chain = MaterialChain {
+                        dag,
+                        color: inherited.0,
+                        emissive: if inherited.1 { 1.0 } else { 0.0 },
+                        metallic: 0.0,
+                        roughness: 1.0,
+                    };
+                    let tris = chain_leaf_triangles(&chain, self.emission_intensity);
+                    let c = fragment.centroid;
+                    let bind_model =
+                        Mat4::from_translation(Vec3::new(c.x as f32, c.y as f32, c.z as f32));
+                    self.entities.push(DynamicEntity {
+                        gaia_id: frag_id.clone(),
+                        materials: vec![inherited],
+                        bind_tris: tris,
+                        bind_model,
+                        model: Mat4::IDENTITY,
+                    });
+                    self.fragment_particles
+                        .push((frag_id.clone(), fragment.particles.clone()));
+                }
+            }
+            // Fragments already born keep settling (translation-only
+            // tracking of their own fixed particle set) every subsequent
+            // tick — "shards at rest" needs them to keep moving after birth.
+            for (id, particles) in &self.fragment_particles {
+                let c = physics.group_centroid(particles);
+                body_poses.push((id.clone(), c, [0.0, 0.0, 0.0]));
+            }
+        }
         for (id, position, rotation) in &body_poses {
             if let Some(entity) = self.world.entity_for_gaia(id) {
                 let value = json!({

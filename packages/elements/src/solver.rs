@@ -71,6 +71,31 @@ pub struct Solver {
     pub tick: u64,
     /// The journal of fractures written this run (append-only).
     pub fractures: Vec<FractureEvent>,
+    /// VI-2 — every bonded lattice's ORIGINAL (whole, pre-fracture) particle
+    /// set, one entry per `spawn_bonded_box` call, in spawn order. Used only
+    /// by `particle_cluster_lookup` to find each bonded body's LIVE fragments
+    /// (via `fragment_components`) so post-break shards collide against each
+    /// other and against rigids (`solve_body_collisions`, generalized) —
+    /// never touched by anything else, so an ordinary loose `DistanceConstraint`
+    /// chain/rope/cloth built by hand (not through `spawn_bonded_box`) is
+    /// unaffected and keeps costing exactly zero in that pass, as before.
+    pub bonded_groups: Vec<Vec<usize>>,
+}
+
+/// A collision cluster: particles in the SAME cluster never collide with
+/// each other in `Solver::solve_body_collisions` (they're held together by
+/// their OWN internal constraint — shape matching or surviving bonds);
+/// particles in DIFFERENT clusters do. `Rigid` = a shape-matched body's index
+/// in `rigids`. `Bonded` = one LIVE connected component of a
+/// `spawn_bonded_box` lattice's surviving bond graph — while whole this is
+/// exactly one cluster per body (no self-collision, as before VI-2); the
+/// tick a fracture splits it, `fragment_components` reports 2+ components
+/// and each becomes its own cluster, so shards immediately collide against
+/// each other instead of free-falling through one another.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ClusterId {
+    Rigid(usize),
+    Bonded(usize),
 }
 
 impl Solver {
@@ -83,6 +108,7 @@ impl Solver {
             collider: None,
             tick: 0,
             fractures: Vec::new(),
+            bonded_groups: Vec::new(),
         }
     }
 
@@ -192,6 +218,165 @@ impl Solver {
         self.rigids.len() - 1
     }
 
+    /// Spawn a BONDED box: a particle lattice like [`Solver::spawn_rigid_box`],
+    /// but held together by nearest-neighbor [`DistanceConstraint`] bonds (one
+    /// per lattice edge along +x/+y/+z) instead of a shape-matching
+    /// constraint. A [`RigidBody`] carries no per-bond love/strife bookkeeping
+    /// and so can never fracture (design note, VI-2); a bonded box's bonds
+    /// each carry a real [`crate::constraint::Bond`] and CAN tear when strife
+    /// exceeds love (`Solver::step`'s `fracture_pass` walks `self.constraints`
+    /// exactly as it does for any other bond — no special-casing needed here).
+    ///
+    /// Mass is DERIVED exactly as `spawn_rigid_box`: total = `density × volume`,
+    /// split evenly per particle. `love` is every bond's love in `[0, 1]` (use
+    /// [`crate::constraint::default_bond_love`] to derive it from `density`
+    /// rather than author one). `compliance` is the bonds' inverse stiffness
+    /// (XPBD, `m/N`; `0.0` = rigid) — stiffness is expressed via compliance,
+    /// never a separate 0..1 "rigidity" knob (VI-2 design note: a bonded body
+    /// is not shape-matched, so `RigidBody`'s `stiffness` blend has no
+    /// meaning here). `radius` is each particle's collision thickness.
+    ///
+    /// Returns the new particles' indices in LATTICE (ix, iy, iz) index order
+    /// — the caller's handle for fragment bookkeeping after a break (the same
+    /// order `spawn_rigid_box` uses internally, kept deterministic).
+    #[allow(clippy::too_many_arguments)]
+    pub fn spawn_bonded_box(
+        &mut self,
+        center: Vec3,
+        dims: Vec3,
+        counts: (usize, usize, usize),
+        density: f64,
+        love: f64,
+        compliance: f64,
+        radius: f64,
+    ) -> Vec<usize> {
+        let (nx, ny, nz) = (counts.0.max(1), counts.1.max(1), counts.2.max(1));
+        let n_total = nx * ny * nz;
+        let volume = dims.x * dims.y * dims.z;
+        let particle_mass = density * volume / n_total as f64;
+        let step = Vec3::new(
+            if nx > 1 {
+                dims.x / (nx - 1) as f64
+            } else {
+                0.0
+            },
+            if ny > 1 {
+                dims.y / (ny - 1) as f64
+            } else {
+                0.0
+            },
+            if nz > 1 {
+                dims.z / (nz - 1) as f64
+            } else {
+                0.0
+            },
+        );
+        let origin = center - dims.scale(0.5);
+        // Lattice index -> particle index, filled in (ix, iy, iz) order — the
+        // same triple-nested order spawn_rigid_box uses, so the two spawners
+        // stay comparable and the caller can address a particle by its
+        // lattice coordinate if it needs to.
+        let mut lattice = vec![vec![vec![0usize; nz]; ny]; nx];
+        let mut indices = Vec::with_capacity(n_total);
+        for (ix, plane) in lattice.iter_mut().enumerate() {
+            for (iy, row) in plane.iter_mut().enumerate() {
+                for (iz, slot) in row.iter_mut().enumerate() {
+                    let pos = origin
+                        + Vec3::new(step.x * ix as f64, step.y * iy as f64, step.z * iz as f64);
+                    let inv_mass = 1.0 / particle_mass;
+                    let idx = self.particles.add_with_radius(pos, inv_mass, radius);
+                    *slot = idx;
+                    indices.push(idx);
+                }
+            }
+        }
+        // Nearest-neighbor bonds along each lattice axis. `rest` = the local
+        // step length (each axis may be spaced differently for a non-cubic
+        // `dims`/`counts`).
+        for ix in 0..nx {
+            for iy in 0..ny {
+                for iz in 0..nz {
+                    let here = lattice[ix][iy][iz];
+                    if ix + 1 < nx {
+                        let there = lattice[ix + 1][iy][iz];
+                        self.constraints.push(DistanceConstraint::new(
+                            here, there, step.x, compliance, love,
+                        ));
+                    }
+                    if iy + 1 < ny {
+                        let there = lattice[ix][iy + 1][iz];
+                        self.constraints.push(DistanceConstraint::new(
+                            here, there, step.y, compliance, love,
+                        ));
+                    }
+                    if iz + 1 < nz {
+                        let there = lattice[ix][iy][iz + 1];
+                        self.constraints.push(DistanceConstraint::new(
+                            here, there, step.z, compliance, love,
+                        ));
+                    }
+                }
+            }
+        }
+        self.bonded_groups.push(indices.clone());
+        indices
+    }
+
+    /// Flood-fill connected components of `particles` over the SURVIVING bond
+    /// graph (i.e. call this AFTER `fracture_pass` has removed torn bonds —
+    /// `Solver::step` already does, so this reads `self.constraints` as it
+    /// stands post-step). CPU-side, deterministic, index-ordered: components
+    /// are discovered by BFS starting from the lowest unvisited particle
+    /// index in `particles` (ascending order), and each component's own
+    /// members are pushed in the order the BFS queue visits them — two
+    /// identical worldlines therefore always yield byte-identical fragment
+    /// partitions (the replay-determinism ordeal's bedrock).
+    ///
+    /// Only bonds with BOTH endpoints inside `particles` count as edges (a
+    /// bonded body's own lattice does not fracture-merge with an unrelated
+    /// body that happens to share no bond with it). A particle in `particles`
+    /// but touched by no surviving bond is its own singleton fragment.
+    pub fn fragment_components(&self, particles: &[usize]) -> Vec<Vec<usize>> {
+        use std::collections::{BTreeSet, VecDeque};
+        let members: BTreeSet<usize> = particles.iter().copied().collect();
+        // Adjacency restricted to `members`, built once (index-ordered by
+        // constraint list order — deterministic).
+        let mut adjacency: std::collections::BTreeMap<usize, Vec<usize>> =
+            std::collections::BTreeMap::new();
+        for &p in &members {
+            adjacency.entry(p).or_default();
+        }
+        for c in &self.constraints {
+            if members.contains(&c.a) && members.contains(&c.b) {
+                adjacency.entry(c.a).or_default().push(c.b);
+                adjacency.entry(c.b).or_default().push(c.a);
+            }
+        }
+        let mut visited: BTreeSet<usize> = BTreeSet::new();
+        let mut components = Vec::new();
+        for &start in &members {
+            if visited.contains(&start) {
+                continue;
+            }
+            let mut component = Vec::new();
+            let mut queue = VecDeque::new();
+            queue.push_back(start);
+            visited.insert(start);
+            while let Some(p) = queue.pop_front() {
+                component.push(p);
+                if let Some(neighbors) = adjacency.get(&p) {
+                    for &n in neighbors {
+                        if visited.insert(n) {
+                            queue.push_back(n);
+                        }
+                    }
+                }
+            }
+            components.push(component);
+        }
+        components
+    }
+
     /// Advance the world one fixed tick: substep integrate → solve bindings →
     /// read back velocity → tally strife → tear what love could not hold.
     ///
@@ -214,10 +399,12 @@ impl Solver {
             c.bond.strife = 0.0;
         }
 
-        // Which rigid (if any) owns each particle — rigid membership never
-        // changes mid-tick (fracture tears distance bonds, never a rigid's
-        // particle set), so this is built once, not per substep.
-        let particle_rigid = self.particle_rigid_lookup();
+        // Which collision cluster (if any) owns each particle — cluster
+        // membership never changes mid-tick (fracture only tears bonds, and
+        // only at the very end of `step`, in `fracture_pass` below; a
+        // rigid's particle set never changes at all), so this is built once,
+        // not per substep.
+        let particle_cluster = self.particle_cluster_lookup();
 
         for _sub in 0..n {
             // The velocity entering this substep — the incoming normal speed
@@ -230,7 +417,7 @@ impl Solver {
                 self.solve_distance(dt_sub);
                 self.solve_shape_matching();
                 contacts = self.solve_collision_normal();
-                contacts.extend(self.solve_body_collisions(&particle_rigid));
+                contacts.extend(self.solve_body_collisions(&particle_cluster));
             }
             self.read_back_velocity(dt_sub);
             // Coulomb friction on VELOCITY, after the normal solve: rigid
@@ -320,24 +507,48 @@ impl Solver {
         contacts
     }
 
-    /// Which rigid body (if any) owns each particle, indexed by particle
-    /// index. `None` = a free (non-rigid) particle.
-    fn particle_rigid_lookup(&self) -> Vec<Option<usize>> {
+    /// Which collision cluster (if any) owns each particle, indexed by
+    /// particle index. `None` = a free particle belonging to neither a rigid
+    /// body nor a `spawn_bonded_box` lattice (an ordinary hand-built
+    /// `DistanceConstraint` chain/rope/cloth particle, say) — excluded from
+    /// `solve_body_collisions` exactly as before VI-2, so those scenes' cost
+    /// and behavior are unchanged.
+    ///
+    /// Bonded clusters are numbered by flood-filling EACH registered bonded
+    /// group's OWN surviving bonds independently (`fragment_components`,
+    /// deterministic BFS) and offsetting the running id by the groups seen so
+    /// far — collisions are checked by `ClusterId` equality, never the raw
+    /// number, so the offset only needs to keep different groups' components
+    /// from colliding under numerically-equal ids; it carries no other
+    /// meaning.
+    fn particle_cluster_lookup(&self) -> Vec<Option<ClusterId>> {
         let mut lookup = vec![None; self.particles.pos.len()];
         for (body_idx, body) in self.rigids.iter().enumerate() {
             for &i in &body.indices {
-                lookup[i] = Some(body_idx);
+                lookup[i] = Some(ClusterId::Rigid(body_idx));
+            }
+        }
+        let mut next_bonded_id = 0usize;
+        for group in &self.bonded_groups {
+            for component in self.fragment_components(group) {
+                for i in component {
+                    lookup[i] = Some(ClusterId::Bonded(next_bonded_id));
+                }
+                next_bonded_id += 1;
             }
         }
         lookup
     }
 
-    /// The BODY-vs-BODY half of collision: two RIGID bodies' particles cannot
-    /// occupy the same space (a stacked crate must rest on the one below it,
-    /// not fall through it). Brute-force over every particle pair not owned
-    /// by the same rigid — adequate at this atom's particle/body counts (a
-    /// handful of low-resolution lattices); a spatial broad-phase is future
-    /// work once a scene needs many more bodies than a small stack.
+    /// The BODY-vs-BODY half of collision: two distinct collision clusters'
+    /// particles cannot occupy the same space — two shape-matched rigids (a
+    /// stacked crate must rest on the one below it, not fall through it), a
+    /// rigid and a bonded lattice/fragment, or (VI-2) two fragments of the
+    /// SAME broken bonded body once it has split. Brute-force over every
+    /// particle pair not sharing a cluster — adequate at this atom's
+    /// particle/body counts (a handful of low-resolution lattices); a spatial
+    /// broad-phase is future work once a scene needs many more bodies than a
+    /// small stack.
     ///
     /// The resting gap is DERIVED from the static (particle-vs-triangle) pass'
     /// convention, not asserted independently. The static pass rests a
@@ -354,21 +565,25 @@ impl Solver {
     /// to the crate's documented default when no static collider is
     /// installed at all, e.g. two bodies colliding in free space) — never a
     /// second hardcoded margin.
-    fn solve_body_collisions(&mut self, particle_rigid: &[Option<usize>]) -> Vec<Contact> {
+    fn solve_body_collisions(&mut self, particle_cluster: &[Option<ClusterId>]) -> Vec<Contact> {
         let mut contacts = Vec::new();
-        // Fewer than two rigids ⇒ no body-vs-body pair can exist; free
-        // (non-rigid) particles never collide with each other here (that was
-        // never this pass's job, and skipping it keeps a chain/cloth scene's
-        // O(n²) cost at exactly zero instead of scanning every free pair).
-        if self.rigids.len() < 2 {
+        // Only particles OWNED BY A CLUSTER (a rigid, or a spawn_bonded_box
+        // lattice/fragment) are candidates — restricts the brute-force scan
+        // to (Σ per-cluster particle counts), never the whole free-particle
+        // population. An ordinary hand-built DistanceConstraint chain/rope/
+        // cloth particle (never a rigid, never spawned by spawn_bonded_box)
+        // has no cluster and is excluded here exactly as before VI-2 — that
+        // scene shape's O(n²) cost stays at exactly zero.
+        let clustered_particles: Vec<usize> = (0..particle_cluster.len())
+            .filter(|&i| particle_cluster[i].is_some())
+            .collect();
+        // Fewer than two clustered particles from DIFFERENT clusters can't
+        // happen without at least two clusters existing; cheapest short
+        // circuit is just "any candidates at all" — the inner loop's own
+        // same-cluster skip handles the rest with no separate count needed.
+        if clustered_particles.len() < 2 {
             return contacts;
         }
-        // Only particles OWNED BY A RIGID are candidates — restricts the
-        // brute-force scan to (Σ per-body particle counts), never the whole
-        // free-particle population.
-        let rigid_particles: Vec<usize> = (0..particle_rigid.len())
-            .filter(|&i| particle_rigid[i].is_some())
-            .collect();
         let restitution = match &self.collider {
             Some(c) => c.material.restitution,
             None => 0.0,
@@ -383,11 +598,11 @@ impl Solver {
             None => ContactMaterial::default().contact_margin,
         };
         let p = &mut self.particles;
-        for (a, &i) in rigid_particles.iter().enumerate() {
+        for (a, &i) in clustered_particles.iter().enumerate() {
             let wi = p.inv_mass[i];
-            for &j in &rigid_particles[(a + 1)..] {
-                if particle_rigid[i] == particle_rigid[j] {
-                    continue; // same body — held by shape matching, not collision
+            for &j in &clustered_particles[(a + 1)..] {
+                if particle_cluster[i] == particle_cluster[j] {
+                    continue; // same cluster — held by its own constraint, not collision
                 }
                 let wj = p.inv_mass[j];
                 let w = wi + wj;
@@ -629,9 +844,46 @@ impl Solver {
         let Some(body) = self.rigids.get(rigid_index) else {
             return;
         };
-        for &i in &body.indices {
+        self.apply_impulse_to_particles(&body.indices.clone(), delta_velocity);
+    }
+
+    /// Apply an instantaneous velocity change to an explicit particle set —
+    /// the generalization `apply_impulse` (rigid-only) delegates to. VI-2's
+    /// bonded lattices have no `RigidBody` (see `spawn_bonded_box`'s doc), so
+    /// a bonded body's impulse (e.g. an authored drop's lateral/angular
+    /// component — the "op is the hand" seam, never solver-invented) is
+    /// applied here directly by particle index instead. Same law as the
+    /// rigid path: anchors (`inv_mass == 0`) are left untouched.
+    pub fn apply_impulse_to_particles(&mut self, particles: &[usize], delta_velocity: Vec3) {
+        for &i in particles {
             if self.particles.inv_mass[i] != 0.0 {
                 self.particles.vel[i] = self.particles.vel[i] + delta_velocity;
+            }
+        }
+    }
+
+    /// Apply a RIGID-BODY-style spin (uniform angular velocity `ω` about
+    /// `center`) as an instantaneous per-particle velocity change:
+    /// `v += ω × (pos - center)`, the standard rigid-rotation velocity
+    /// field. VI-2 uses this to give an authored bonded lattice a tumble
+    /// before it falls — unlike a uniform `apply_impulse_to_particles` delta
+    /// (which moves every particle the same way and so cannot, by itself,
+    /// stress any bond), a spin puts particles on OPPOSITE sides of `center`
+    /// moving in OPPOSITE directions, which is exactly what makes the
+    /// lattice's own bonds carry real internal strife even before any
+    /// external contact — an honest way to make a drop's impact (and its
+    /// resulting fracture) asymmetric, driven by physics the solver already
+    /// has, not a second staged effect.
+    pub fn apply_spin_to_particles(
+        &mut self,
+        particles: &[usize],
+        center: Vec3,
+        angular_velocity: Vec3,
+    ) {
+        for &i in particles {
+            if self.particles.inv_mass[i] != 0.0 {
+                let r = self.particles.pos[i] - center;
+                self.particles.vel[i] = self.particles.vel[i] + angular_velocity.cross(r);
             }
         }
     }

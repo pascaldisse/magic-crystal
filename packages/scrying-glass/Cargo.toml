@@ -12,6 +12,7 @@ tauri-build = "2.6.3"
 bytemuck = { version = "1.24.0", features = ["derive"] }
 crystal = { path = "../../crates/crystal" }
 elements = { path = "../elements" }
+fracture = { path = "../fracture" }
 glam = "0.30.9"
 kami = { path = "../kami" }
 png = "0.17.16"
@@ -35,6 +36,10 @@ tokio = { version = "1", features = ["full"] }
 [[example]]
 name = "n2_presence"
 path = "examples/n2_presence.rs"
+
+[[example]]
+name = "vi2_break"
+path = "examples/vi2_break.rs"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6.2"
