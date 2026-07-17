@@ -304,25 +304,100 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
 /// gate should flag), so the gate is scoped to the literal text between the
 /// `VIII-0 AOV EXPORT BEGIN`/`END` markers this atom introduced, which is
 /// grep-able and exhaustive over every line this wave added to those files.
+///
+/// The vocabulary list (adversary review, night-2): beyond the obvious
+/// `previous_frame`/`history`/`motion_vector`/`temporal`, the reprojection/
+/// recurrent-net/optical-flow family the ban's substance actually targets —
+/// `reproject`, `warp`, `feedback`, `recurrent`, `accum_prev`, `prev_`,
+/// `last_frame`, `frame_history`, and `velocity` (a motion-vector alias in
+/// most renderer codebases). This list is intentionally scoped to ONLY the
+/// AOV/denoiser seam (never the whole crate): a word like `warp` is a
+/// plausible false positive elsewhere in scrying-glass (e.g. a
+/// `domain_warp` noise helper, were one to exist) that has nothing to do
+/// with temporal frame synthesis — scanning the whole crate for these words
+/// would eventually false-positive on unrelated legitimate code. Confirmed
+/// by direct audit at the time this list was widened: `grep -rniE` for
+/// every word above across `src/error_metric.rs`, `src/integrator.rs`, and
+/// `src/integrator.wgsl` returns zero hits outside this gate's own strings —
+/// no existing collision to work around.
+///
+/// SCOPE IS FORWARD-PROOF, so VIII-1 does not require editing this test to
+/// be covered: a file is "ban-scoped" (and therefore scanned whole) if
+/// EITHER (a) its name matches the glob `src/denoiser*.rs` (a placeholder
+/// for the VIII-1 net module), OR (b) it contains the literal marker
+/// comment `// BAN-SCOPED` anywhere in its text. **THE VIII-1 MODULE MUST
+/// CARRY A `// BAN-SCOPED` HEADER COMMENT (or be named `denoiser*.rs`) OR IT
+/// WILL NOT BE CHECKED BY THIS GATE — this is not automatic from merely
+/// adding a new file.** `src/error_metric.rs` itself carries the marker so
+/// the forward-proof mechanism is exercised (not just declared) by this
+/// very ordeal.
 #[test]
 fn ban_no_temporal_vocabulary_in_the_new_aov_error_module() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let forbidden = ["previous_frame", "history", "motion_vector", "temporal"];
+    let forbidden = [
+        "previous_frame",
+        "history",
+        "motion_vector",
+        "temporal",
+        "reproject",
+        "warp",
+        "feedback",
+        "recurrent",
+        "accum_prev",
+        "prev_",
+        "last_frame",
+        "frame_history",
+        "velocity",
+    ];
 
-    // Whole-file scope: brand-new files added by this atom.
-    let whole_file_scope = ["src/error_metric.rs"];
-    for rel in whole_file_scope {
-        let text = fs::read_to_string(root.join(rel)).expect("read new module");
+    // Forward-proof scope: walk src/ once, collect every file that is
+    // EITHER named `denoiser*.rs` OR carries a `// BAN-SCOPED` marker
+    // comment anywhere in its text. A future VIII-1 module is captured
+    // automatically the moment it adds that marker — no edit to this test
+    // required.
+    let src_dir = root.join("src");
+    let mut ban_scoped_files: Vec<std::path::PathBuf> = Vec::new();
+    let mut stack = vec![src_dir.clone()];
+    while let Some(dir) = stack.pop() {
+        for entry in fs::read_dir(&dir).expect("read src dir") {
+            let entry = entry.expect("dir entry");
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let is_denoiser_glob = name.starts_with("denoiser") && name.ends_with(".rs");
+            let is_marked = fs::read_to_string(&path)
+                .map(|t| t.contains("// BAN-SCOPED"))
+                .unwrap_or(false);
+            if is_denoiser_glob || is_marked {
+                ban_scoped_files.push(path);
+            }
+        }
+    }
+    assert!(
+        ban_scoped_files
+            .iter()
+            .any(|p| p.ends_with("error_metric.rs")),
+        "forward-proof scope mechanism did not pick up src/error_metric.rs via its \
+         `// BAN-SCOPED` marker — the scan itself is broken"
+    );
+    for path in &ban_scoped_files {
+        let text = fs::read_to_string(path).expect("read ban-scoped module");
         for word in forbidden {
             assert!(
                 !text.to_lowercase().contains(word),
-                "forbidden temporal vocabulary '{word}' found in new module {rel}"
+                "forbidden temporal vocabulary '{word}' found in ban-scoped module {}",
+                path.display()
             );
         }
     }
 
     // Marked-block scope: pre-existing files this atom only ADDED lines to
-    // (see the honest scope rationale above).
+    // (see the honest scope rationale above) — these predate the BAN-SCOPED
+    // marker convention, so they use the narrower BEGIN/END block markers
+    // instead of being scanned whole.
     let marked_scope = ["src/integrator.rs", "src/integrator.wgsl"];
     for rel in marked_scope {
         let text = fs::read_to_string(root.join(rel)).expect("read pre-existing file");

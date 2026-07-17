@@ -8,7 +8,11 @@
 //! "close to zero").
 //!
 //! Scope note for the BAN grep-gate (see `tests/viii0_ordeals.rs`): this file
-//! is a NEW module added whole-cloth for VIII-0, so the gate scans it in full.
+//! is a NEW module added whole-cloth for VIII-0, so the gate scans it in
+//! full — via the `// BAN-SCOPED` marker below, the same forward-proof
+//! mechanism the VIII-1 net module is expected to carry.
+
+// BAN-SCOPED
 
 use glam::Vec3;
 
