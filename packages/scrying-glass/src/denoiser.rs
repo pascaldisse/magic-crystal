@@ -178,6 +178,32 @@ impl Mlp {
         self.config
     }
 
+    /// The per-layer `(in_dim, out_dim)` chain, in evaluation order. The GPU
+    /// port (`denoiser_gpu.rs`) uses this to size its dispatch and to index
+    /// the flat weight buffer with the SAME layer geometry `forward` walks —
+    /// current-frame inference metadata only, no cross-pass state.
+    pub fn layer_dims(&self) -> Vec<(u32, u32)> {
+        self.layers
+            .iter()
+            .map(|l| (l.in_dim as u32, l.out_dim as u32))
+            .collect()
+    }
+
+    /// Flatten this network into one contiguous f32 array for upload to a
+    /// compute buffer: for each layer in evaluation order, its
+    /// `in_dim*out_dim` row-major weights (the SAME row-major layout
+    /// [`Self::forward`] indexes as `o*in_dim + i`) followed by its `out_dim`
+    /// biases. Byte-for-byte the numbers `forward` already uses — the GPU
+    /// port is a transcription of this net, never a re-derivation of it.
+    pub fn flat_weights(&self) -> Vec<f32> {
+        let mut out = Vec::new();
+        for l in &self.layers {
+            out.extend_from_slice(&l.w);
+            out.extend_from_slice(&l.b);
+        }
+        out
+    }
+
     /// Forward pass for one pixel's feature vector. Fixed loop order
     /// throughout (index-ordered `for` loops only) — byte-deterministic.
     /// `needless_range_loop` is silenced deliberately: the index order
