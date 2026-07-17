@@ -23,18 +23,17 @@ distance) · RITE VIII waves 0+1 (AOV truth baseline + THE
 DREAM-DENOISER, CPU ref, hash-pinned weights, strictly beats noisy on
 held-out frames, BAN machine-checked) · F6 (senses read solver truth —
 canon migrated to solver-rested poses).
-READY BUT UNMERGED (the Architect stopped the night before this merge):
-**rite7-vii0b @ f2c44b5** — THE FIRST GROUND render weld: terrain
-sigil (no stored geometry) → tile_mesh → Great Chain → drawn under the
-sky; oracle learns it same wave (analytic bounds + affirmative gaze
-ordeal); NO-STORAGE + translation-invariance-at-planetary-magnitude
-ordeals; jormungandr suite flake fixed at source (torn-write race in
-test scaffolding). Adversary: HOLDS, zero MUST-FIX, all advisories
-discharged. 352/352 green in-lane, suite run twice. Proofs
-vii0-ground.png + orbit read by the conductor (the patch floats
-offshore — honest note; the walkable seam is VII-1's charter).
-Merging it is one command away: `git merge --no-ff rite7-vii0b`, full
-suite, push.
+MERGED (morning 07-17, correction by the Guardian): **rite7-vii0b IS
+ON MAIN** (`git log main..rite7-vii0b` empty; cec148f in main's
+history, pushed). THE FIRST GROUND render weld: terrain sigil (no
+stored geometry) → tile_mesh → Great Chain → drawn under the sky;
+oracle learns it same wave; NO-STORAGE +
+translation-invariance-at-planetary-magnitude ordeals; jormungandr
+flake fixed at source. Adversary: HOLDS, zero MUST-FIX. 352/352 green
+in-lane. Proofs vii0-ground.png + orbit (patch floats offshore —
+honest note; the walkable seam is VII-1's charter).
+REPO FOLDER renamed 07-17: ~/projects/magic-crystal (was
+gaia-dreamforge — matches the remote).
 NOT BUILT (the queue's remainder): VII-1 (walker crosses onto generated
 ground — collider from generated triangles, pose-trace guard, seam step
 without pose discontinuity) · VII-2 (the horizon streams — ring
@@ -57,7 +56,7 @@ char-editor C0) PLUS this night's growth:
 - THE FIRST GROUND — naruko_first_ground: a terrain SIGIL (seed
   20260717, tile 0,2 — NO stored geometry) that materializes 64×64 m of
   generated ground at load, offshore at z[128,192]; drawn under the sky,
-  known to the gaze. ONLY on branch rite7-vii0b (unmerged, see above).
+  known to the gaze. ON MAIN (merged morning 07-17, see above).
 - worlds/naruko-vi2 — an isolated proof diorama (seawall copy, named
   debt): naruko_break_crate, a BONDED lattice that falls, fractures at
   strife > bond love, and shatters into six fragment vessels the oracle
