@@ -1724,6 +1724,8 @@ fn run_render_loop(
         // (non-blocking) — keeps the /scry capture ring draining.
         let _ = renderer.device.poll(wgpu::PollType::Poll);
         // Service moving-eye requests off the frame loop's hot path.
+        // /scry's wait_indefinitely also completes `pending` — each scry
+        // momentarily collapses the overlap; harmless (verification organ).
         while let Ok(request) = scry_rx.try_recv() {
             let frame = renderer.capture_pose(&request.params);
             let _ = request.reply.send(frame);
@@ -1775,6 +1777,8 @@ fn run_render_loop(
             if frame_times.len() > hud_window.max(1) {
                 frame_times.pop_front();
             }
+            // HUD shows DELIVERED cadence (incl. vsync/pacing) — render-cost
+            // instruments are GAIA_NATIVE_HUD_LOG + live_loop_audit.
             let mut sorted: Vec<f64> = frame_times.iter().copied().collect();
             sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
             let median_ms = sorted[sorted.len() / 2];
