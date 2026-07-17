@@ -2891,4 +2891,100 @@ mod tests {
         let vertices = scene.select_vertices(&scene.camera, 640);
         assert_eq!(vertices.len(), leaf_tris * 3, "finest cut == all leaves");
     }
+
+    // ---- VII-0b ordeal (c): THE COORDINATE SEAM — translation invariance ----
+
+    /// `terrain_placement_offset` MUST route `i64 -> f64 -> subtract ->
+    /// f32` (never `i64 -> f32` directly, which collapses past `2^24` m —
+    /// VII-0a's module doc), so that a residual offset between a tile's
+    /// origin and the render origin stays EXACT regardless of how far either
+    /// magnitude sits from the world origin — THE camera-relative-rendering
+    /// guarantee, provable here without a far camera anywhere in a realm.
+    ///
+    /// Two regimes: NEAR (tile origin and render origin both close to zero)
+    /// and FAR (tile_x = 10_000_000, render_origin CO-LOCATED with that same
+    /// huge tile origin, both magnitudes in the hundreds of millions of
+    /// meters). In both regimes the render-relative residual is engineered
+    /// to be the identical small vector `(1.5, 0.0, -2.25)` (an arbitrary
+    /// small "camera not quite at the tile origin" offset). If the far
+    /// regime's f64 subtraction lost precision, the resulting f32 offset
+    /// would drift from the near regime's; VII-0a already proved
+    /// `seed::tile_mesh`'s LOCAL vertex positions are exact at any tile
+    /// magnitude, so composing that exact local mesh with an exactly
+    /// identical placement offset must produce BIT-IDENTICAL world-space
+    /// leaf triangles between the two regimes — the translation-invariance
+    /// ordeal this atom owes.
+    #[test]
+    fn terrain_placement_offset_is_translation_invariant_at_planetary_tile_magnitude() {
+        let params = seed::TerrainParams::default();
+        let world_seed = seed::Seed(0x5eed);
+
+        // NEAR regime: tile (0,0), tile_origin = (0,0). Render origin offset
+        // by the small residual so tile_origin - render_origin = -residual.
+        let near_tile = seed::TerrainTile::new(0, 0);
+        let near_tile_origin = seed::tile_origin_m(near_tile, &params);
+        let residual = [1.5_f64, 0.0, -2.25];
+        let near_render_origin = [
+            near_tile_origin.0 - residual[0],
+            0.0 - residual[1],
+            near_tile_origin.1 - residual[2],
+        ];
+        let near_offset = terrain_placement_offset(near_tile_origin, near_render_origin);
+
+        // FAR regime: tile (10_000_000, -10_000_000) — a planet-scale tile
+        // coordinate (Ruling 4's own worked example). Render origin tracks
+        // the SAME residual relative to THIS tile's (huge) origin.
+        let far_tile = seed::TerrainTile::new(10_000_000, -10_000_000);
+        let far_tile_origin = seed::tile_origin_m(far_tile, &params);
+        let far_render_origin = [
+            far_tile_origin.0 - residual[0],
+            0.0 - residual[1],
+            far_tile_origin.1 - residual[2],
+        ];
+        let far_offset = terrain_placement_offset(far_tile_origin, far_render_origin);
+
+        assert_eq!(
+            near_offset, far_offset,
+            "the SAME residual, at planetary tile magnitude, must produce a \
+             BIT-IDENTICAL f32 placement offset — {near_offset:?} vs {far_offset:?}"
+        );
+        assert_eq!(
+            near_offset,
+            Vec3::new(residual[0] as f32, residual[1] as f32, residual[2] as f32),
+            "the offset must equal the residual exactly (both magnitudes cancel \
+             in f64 before the f32 cast)"
+        );
+
+        // Composing an ACTUAL generated mesh with each regime's offset (via
+        // `append_terrain`, the real production path) must then also be
+        // bit-identical — not just the scalar offset in isolation.
+        let mesh = seed::tile_mesh(world_seed, near_tile, &params);
+        let mut collider_a = Vec::new();
+        let mut collider_b = Vec::new();
+        let mut buckets_a = BTreeMap::<MatKey, MatBucket>::new();
+        let mut buckets_b = BTreeMap::<MatKey, MatBucket>::new();
+        append_terrain(
+            &mut buckets_a,
+            &mesh,
+            near_offset,
+            [1.0, 1.0, 1.0],
+            &mut collider_a,
+        );
+        append_terrain(
+            &mut buckets_b,
+            &mesh,
+            far_offset,
+            [1.0, 1.0, 1.0],
+            &mut collider_b,
+        );
+        let key = buckets_a.keys().next().copied().expect("one bucket");
+        let verts_a = &buckets_a[&key].vertices;
+        let verts_b = &buckets_b[&key].vertices;
+        assert_eq!(verts_a.len(), verts_b.len());
+        assert_eq!(
+            verts_a, verts_b,
+            "placed leaf-vertex world positions must be bit-identical across the \
+             near/far tile-magnitude regimes"
+        );
+    }
 }
