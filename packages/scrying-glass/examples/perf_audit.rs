@@ -395,7 +395,7 @@ fn main() {
 
     for (pose_name, camera) in &poses {
         // ── Segment A: DYN-ON — the living world, steam bound. ──────────────
-        let dyn_bvh = Bvh::build(&scene.dynamic_leaf_triangles(), &bvh_params);
+        let dyn_bvh = Bvh::build(&scene.dynamic_leaf_triangles(), &bvh_params.dynamic());
         let merged = Bvh::merge(&static_bvh, &dyn_bvh);
         let mut integrator = Integrator::new(
             &device,
@@ -417,7 +417,7 @@ fn main() {
             let tick_ms = t.elapsed().as_secs_f64() * 1e3;
 
             let t = Instant::now();
-            let dyn_bvh = Bvh::build(&scene.dynamic_leaf_triangles(), &bvh_params);
+            let dyn_bvh = Bvh::build(&scene.dynamic_leaf_triangles(), &bvh_params.dynamic());
             let merged = Bvh::merge(&static_bvh, &dyn_bvh);
             let splice_ms = t.elapsed().as_secs_f64() * 1e3;
 
@@ -460,7 +460,7 @@ fn main() {
 
         // Frozen splice for the static segments: the world as statue at the
         // last measured tick — same geometry, zero dynamics.
-        let dyn_bvh = Bvh::build(&scene.dynamic_leaf_triangles(), &bvh_params);
+        let dyn_bvh = Bvh::build(&scene.dynamic_leaf_triangles(), &bvh_params.dynamic());
         let frozen = Bvh::merge(&static_bvh, &dyn_bvh);
 
         // ── Segment B: STATIC+MED — frozen splice, steam still bound. ───────

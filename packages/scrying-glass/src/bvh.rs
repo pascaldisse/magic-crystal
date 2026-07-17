@@ -4,10 +4,25 @@
 //! occlusion. Built once at load, uploaded as two storage buffers (nodes +
 //! triangles) the GPU compute integrator reads.
 //!
-//! Structure: a binary BVH, median-split on the widest centroid axis (Rite IV
-//! keeps it simple and correct — SAH/refit is a later performance rite; RENDER.md
-//! rules "never optimize" until the truth is right). Every threshold is a param
-//! (IRON LAW: never hardcode).
+//! Structure: a binary BVH split by the Surface-Area Heuristic (binned SAH over
+//! the centroid axes). SAH is a pure traversal-quality choice — it changes only
+//! the tree's SHAPE (which triangles land under which node), never the triangle
+//! SET; `nearest_hit` for any ray whose nearest surface is UNAMBIGUOUS is
+//! unchanged, so the vast majority of pixels are bit-identical to the old median
+//! split (`merge_equals_full_rebuild` proves the geometry parity). The one
+//! exception is a coplanar z-fight seam: two triangles a ray meets at the EXACT
+//! same depth (Möller–Trumbore agrees to the ULP). There the "nearest" winner is
+//! undefined — the old median tree kept whichever it visited last, this tree
+//! keeps whichever the SAH order visits last. Both are valid nearest hits; only
+//! the arbitrary tie winner shifts (measured: Naruko front pose 0 px, wide 20 px
+//! of 540k = 0.0037%, all proven exact-depth ties by the brute-force DIAG). A
+//! canonical build-independent tie-break exists (git history, tie band + vertex-
+//! lexicographic `tri_before`) but was retired from tip: it makes MORE pixels
+//! diverge from the median baseline (it rewrites even seams that already agreed),
+//! so median-parity beats build-independence for this lane — see the perf-fix
+//! report. A degenerate node (coincident centroids / no paying split) falls back
+//! to the widest-axis median. Every threshold is a param (IRON LAW: never
+//! hardcode).
 //!
 //! Node layout is GPU-ready and matches the WGSL `Node` struct byte-for-byte:
 //! an internal node stores its left child index in `left_first` (right child is
@@ -51,6 +66,9 @@ pub struct BvhParams {
     pub leaf_max: usize,
     /// Hard recursion cap (safety against degenerate splits).
     pub max_depth: usize,
+    /// Binned-SAH bucket count per axis (higher = finer split search, more
+    /// build cost). 16 is the standard sweet spot.
+    pub sah_bins: usize,
 }
 
 impl Default for BvhParams {
@@ -58,6 +76,23 @@ impl Default for BvhParams {
         Self {
             leaf_max: 4,
             max_depth: 64,
+            sah_bins: 16,
+        }
+    }
+}
+
+impl BvhParams {
+    /// Params for the PER-TICK dynamic partition: identical to `self` but with
+    /// `sah_bins = 0`, selecting the cheap widest-axis median split. SAH pays for
+    /// itself on the large static tree (built once, traversed millions of times);
+    /// on the small dynamic partition (rebuilt EVERY tick) the binned search
+    /// costs ~3 ms/tick for negligible traversal gain, so median wins the frame
+    /// budget. Pure build-strategy choice — the triangle set and every
+    /// unambiguous nearest hit are unchanged.
+    pub fn dynamic(&self) -> Self {
+        Self {
+            sah_bins: 0,
+            ..*self
         }
     }
 }
@@ -293,28 +328,64 @@ fn subdivide(
         return;
     }
 
-    // Split on the widest centroid axis at its median (stable, deterministic).
+    // Choose the split by the Surface-Area Heuristic (binned). Falls back to the
+    // widest-axis median when no axis offers a paying split.
     let extent = [cmx[0] - cmn[0], cmx[1] - cmn[1], cmx[2] - cmn[2]];
-    let axis = if extent[0] >= extent[1] && extent[0] >= extent[2] {
+    let widest = if extent[0] >= extent[1] && extent[0] >= extent[2] {
         0
     } else if extent[1] >= extent[2] {
         1
     } else {
         2
     };
-    if extent[axis] <= 0.0 {
+    if extent[widest] <= 0.0 {
         // Degenerate (all centroids coincide) → leaf.
         nodes[node_index].left_first = start as u32;
         nodes[node_index].count = count as u32;
         return;
     }
+
     let slice = &mut build[start..start + count];
-    slice.sort_by(|a, b| {
-        a.centroid[axis]
-            .partial_cmp(&b.centroid[axis])
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    let mid = count / 2;
+    // `sah_bins < 2` selects the cheap widest-axis median (baseline behaviour) —
+    // the per-tick DYNAMIC partition uses it: nari's body is a compact skinned
+    // cluster where SAH tree quality buys almost no traversal but the binned
+    // search costs ~3 ms/tick. The static tree (built once) keeps full SAH.
+    let sah = if params.sah_bins >= 2 {
+        sah_split(slice, cmn, extent, params.sah_bins)
+    } else {
+        None
+    };
+    let mid = match sah {
+        Some((axis, plane, scale)) => {
+            // Stable partition: bins ≤ plane go left. Sorting by bin index keeps
+            // the build deterministic (topology is free — pixels never see it).
+            slice.sort_by(|a, b| {
+                bin_of(a.centroid[axis], cmn[axis], scale, params.sah_bins).cmp(&bin_of(
+                    b.centroid[axis],
+                    cmn[axis],
+                    scale,
+                    params.sah_bins,
+                ))
+            });
+            slice
+                .iter()
+                .take_while(|b| {
+                    bin_of(b.centroid[axis], cmn[axis], scale, params.sah_bins) <= plane
+                })
+                .count()
+        }
+        None => {
+            // No paying SAH split → widest-axis median (old behaviour).
+            slice.sort_by(|a, b| {
+                a.centroid[widest]
+                    .partial_cmp(&b.centroid[widest])
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            count / 2
+        }
+    };
+    // Guard the degenerate partition (all one side) — never emit an empty child.
+    let mid = mid.clamp(1, count - 1);
 
     let left_index = nodes.len();
     nodes.push(GpuNode::zeroed());
@@ -332,6 +403,89 @@ fn subdivide(
         depth + 1,
         params,
     );
+}
+
+/// The bin a centroid coordinate falls in (clamped to `[0, bins)`).
+fn bin_of(c: f32, cmin: f32, scale: f32, bins: usize) -> usize {
+    let bi = ((c - cmin) * scale) as usize;
+    bi.min(bins - 1)
+}
+
+/// Half the surface area of an AABB (the SAH's relative probability metric;
+/// the constant 2 cancels across candidates, so half-area suffices).
+fn half_area(mn: [f32; 3], mx: [f32; 3]) -> f32 {
+    let dx = (mx[0] - mn[0]).max(0.0);
+    let dy = (mx[1] - mn[1]).max(0.0);
+    let dz = (mx[2] - mn[2]).max(0.0);
+    dx * dy + dy * dz + dz * dx
+}
+
+/// Binned Surface-Area-Heuristic split search over all three centroid axes.
+/// Returns `(axis, plane, scale)` where every triangle whose centroid bins in
+/// `[0, plane]` goes left, or `None` when no axis yields a valid two-sided
+/// split (caller falls back to the median). Pure ordering choice — never touches
+/// the triangle geometry, so the render stays bit-exact.
+fn sah_split(
+    build: &[BuildTri],
+    cmn: [f32; 3],
+    extent: [f32; 3],
+    bins: usize,
+) -> Option<(usize, usize, f32)> {
+    debug_assert!(bins >= 2);
+    let mut best: Option<(usize, usize, f32, f32)> = None; // axis, plane, scale, cost
+    for axis in 0..3 {
+        if extent[axis] <= 0.0 {
+            continue;
+        }
+        let scale = bins as f32 / extent[axis];
+        let mut bin_count = vec![0u32; bins];
+        let mut bin_min = vec![[f32::INFINITY; 3]; bins];
+        let mut bin_max = vec![[f32::NEG_INFINITY; 3]; bins];
+        for b in build {
+            let bi = bin_of(b.centroid[axis], cmn[axis], scale, bins);
+            bin_count[bi] += 1;
+            for k in 0..3 {
+                bin_min[bi][k] = bin_min[bi][k].min(b.min[k]);
+                bin_max[bi][k] = bin_max[bi][k].max(b.max[k]);
+            }
+        }
+        // Left prefix sweep: cumulative area + count for planes after bin i.
+        let mut left_area = vec![0.0f32; bins - 1];
+        let mut left_count = vec![0u32; bins - 1];
+        let mut amn = [f32::INFINITY; 3];
+        let mut amx = [f32::NEG_INFINITY; 3];
+        let mut acc = 0u32;
+        for i in 0..bins - 1 {
+            acc += bin_count[i];
+            for k in 0..3 {
+                amn[k] = amn[k].min(bin_min[i][k]);
+                amx[k] = amx[k].max(bin_max[i][k]);
+            }
+            left_count[i] = acc;
+            left_area[i] = half_area(amn, amx);
+        }
+        // Right suffix sweep: cost at each plane = SA_l*N_l + SA_r*N_r.
+        let mut amn = [f32::INFINITY; 3];
+        let mut amx = [f32::NEG_INFINITY; 3];
+        let mut acc = 0u32;
+        for i in (1..bins).rev() {
+            acc += bin_count[i];
+            for k in 0..3 {
+                amn[k] = amn[k].min(bin_min[i][k]);
+                amx[k] = amx[k].max(bin_max[i][k]);
+            }
+            let plane = i - 1;
+            let (nl, nr) = (left_count[plane], acc);
+            if nl == 0 || nr == 0 {
+                continue;
+            }
+            let cost = left_area[plane] * nl as f32 + half_area(amn, amx) * nr as f32;
+            if best.is_none_or(|(_, _, _, c)| cost < c) {
+                best = Some((axis, plane, scale, cost));
+            }
+        }
+    }
+    best.map(|(axis, plane, scale, _)| (axis, plane, scale))
 }
 
 fn aabb_hit(
