@@ -32,6 +32,13 @@
 //! `world.core` and the next gaze reflects it"). Only `transform` changes
 //! under physics; `mesh`/`body` are unchanged, so the fresh oracle load
 //! supplies them correctly.
+//!
+//! This module is compiled once per integration-test binary that `mod
+//! rest_pose;`s it (`canon.rs`, `rest_pose_canon.rs`) — each binary only
+//! calls a subset of its items (e.g. `canon.rs` never calls `fresh_scene`
+//! directly, only through `rested_canon_world`), so `dead_code` is allowed
+//! rather than trimming the shared surface per caller.
+#![allow(dead_code)]
 
 use crystal::{load_world_dir, EcsWorld};
 use oracle::World;
