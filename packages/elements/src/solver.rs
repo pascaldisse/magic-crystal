@@ -214,6 +214,11 @@ impl Solver {
             c.bond.strife = 0.0;
         }
 
+        // Which rigid (if any) owns each particle — rigid membership never
+        // changes mid-tick (fracture tears distance bonds, never a rigid's
+        // particle set), so this is built once, not per substep.
+        let particle_rigid = self.particle_rigid_lookup();
+
         for _sub in 0..n {
             // The velocity entering this substep — the incoming normal speed
             // the restitution pass reflects (captured before gravity/solve).
@@ -225,6 +230,7 @@ impl Solver {
                 self.solve_distance(dt_sub);
                 self.solve_shape_matching();
                 contacts = self.solve_collision_normal();
+                contacts.extend(self.solve_body_collisions(&particle_rigid));
             }
             self.read_back_velocity(dt_sub);
             // Coulomb friction on VELOCITY, after the normal solve: rigid
@@ -309,6 +315,86 @@ impl Solver {
                         restitution: mat.restitution,
                     }),
                 }
+            }
+        }
+        contacts
+    }
+
+    /// Which rigid body (if any) owns each particle, indexed by particle
+    /// index. `None` = a free (non-rigid) particle.
+    fn particle_rigid_lookup(&self) -> Vec<Option<usize>> {
+        let mut lookup = vec![None; self.particles.pos.len()];
+        for (body_idx, body) in self.rigids.iter().enumerate() {
+            for &i in &body.indices {
+                lookup[i] = Some(body_idx);
+            }
+        }
+        lookup
+    }
+
+    /// The BODY-vs-BODY half of collision: two RIGID bodies' particles cannot
+    /// occupy the same space (a stacked crate must rest on the one below it,
+    /// not fall through it). Brute-force over every particle pair not owned
+    /// by the same rigid — adequate at this atom's particle/body counts (a
+    /// handful of low-resolution lattices); a spatial broad-phase is future
+    /// work once a scene needs many more bodies than a small stack.
+    ///
+    /// The resting gap follows the SAME single-radius convention the static
+    /// collision pass (and every realm author) uses: two particles rest with
+    /// centres `(r_i + r_j) / 2` apart — for equal radii that's exactly `r`,
+    /// matching `rest_height = below_top + half_extent + contact_radius`
+    /// (one radius, not two) used throughout this crate and the realm data.
+    fn solve_body_collisions(&mut self, particle_rigid: &[Option<usize>]) -> Vec<Contact> {
+        let mut contacts = Vec::new();
+        // Fewer than two rigids ⇒ no body-vs-body pair can exist; free
+        // (non-rigid) particles never collide with each other here (that was
+        // never this pass's job, and skipping it keeps a chain/cloth scene's
+        // O(n²) cost at exactly zero instead of scanning every free pair).
+        if self.rigids.len() < 2 {
+            return contacts;
+        }
+        // Only particles OWNED BY A RIGID are candidates — restricts the
+        // brute-force scan to (Σ per-body particle counts), never the whole
+        // free-particle population.
+        let rigid_particles: Vec<usize> = (0..particle_rigid.len())
+            .filter(|&i| particle_rigid[i].is_some())
+            .collect();
+        let restitution = match &self.collider {
+            Some(c) => c.material.restitution,
+            None => 0.0,
+        };
+        let p = &mut self.particles;
+        for (a, &i) in rigid_particles.iter().enumerate() {
+            let wi = p.inv_mass[i];
+            for &j in &rigid_particles[(a + 1)..] {
+                if particle_rigid[i] == particle_rigid[j] {
+                    continue; // same body — held by shape matching, not collision
+                }
+                let wj = p.inv_mass[j];
+                let w = wi + wj;
+                if w == 0.0 {
+                    continue; // two anchors — nothing to push apart
+                }
+                let delta = p.pos[i] - p.pos[j];
+                let dist = delta.length();
+                let min_dist = (p.radius[i] + p.radius[j]) * 0.5;
+                if dist >= min_dist || dist <= 0.0 {
+                    continue;
+                }
+                let normal = delta.scale(1.0 / dist);
+                let depth = min_dist - dist;
+                p.pos[i] = p.pos[i] + normal.scale(depth * (wi / w));
+                p.pos[j] = p.pos[j] - normal.scale(depth * (wj / w));
+                contacts.push(Contact {
+                    particle: i,
+                    normal,
+                    restitution,
+                });
+                contacts.push(Contact {
+                    particle: j,
+                    normal: normal.scale(-1.0),
+                    restitution,
+                });
             }
         }
         contacts
