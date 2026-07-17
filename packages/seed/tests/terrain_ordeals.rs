@@ -192,16 +192,25 @@ fn ordeal_seam_all_four_directions_byte_identical() {
                 all_identical = false;
             }
             assert_eq!(
-                c.0.to_bits(), nb.0.to_bits(),
-                "seam {name} vertex {idx}: world_x mismatch {:?} vs {:?}", c, nb
+                c.0.to_bits(),
+                nb.0.to_bits(),
+                "seam {name} vertex {idx}: world_x mismatch {:?} vs {:?}",
+                c,
+                nb
             );
             assert_eq!(
-                c.1.to_bits(), nb.1.to_bits(),
-                "seam {name} vertex {idx}: world_y (height) mismatch {:?} vs {:?}", c, nb
+                c.1.to_bits(),
+                nb.1.to_bits(),
+                "seam {name} vertex {idx}: world_y (height) mismatch {:?} vs {:?}",
+                c,
+                nb
             );
             assert_eq!(
-                c.2.to_bits(), nb.2.to_bits(),
-                "seam {name} vertex {idx}: world_z mismatch {:?} vs {:?}", c, nb
+                c.2.to_bits(),
+                nb.2.to_bits(),
+                "seam {name} vertex {idx}: world_z mismatch {:?} vs {:?}",
+                c,
+                nb
             );
         }
     }
@@ -230,7 +239,9 @@ fn ordeal_different_seed_different_mesh() {
 
     println!(
         "ORDEAL(d) different-seed: digest_a={:#x} digest_b={:#x} differ={}",
-        digest_a, digest_b, digest_a != digest_b
+        digest_a,
+        digest_b,
+        digest_a != digest_b
     );
 }
 

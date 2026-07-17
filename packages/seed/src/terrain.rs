@@ -118,8 +118,7 @@ impl Default for TerrainParams {
         // Derived grid_resolution: the finest octave's wavelength must still
         // clear the Nyquist floor against the vertex spacing, or the mesh
         // can't represent the detail the field is generating.
-        let finest_wavelength_m =
-            base_wavelength_m / fbm.lacunarity.powi(fbm.octaves as i32 - 1);
+        let finest_wavelength_m = base_wavelength_m / fbm.lacunarity.powi(fbm.octaves as i32 - 1);
         let max_cell_size_m = finest_wavelength_m / NYQUIST_SAMPLES_PER_WAVELENGTH;
         let grid_resolution = (tile_size_m / max_cell_size_m).ceil().max(1.0) as u32;
 
@@ -204,7 +203,12 @@ pub fn tile_origin_m(tile: TerrainTile, params: &TerrainParams) -> (f64, f64) {
 /// regardless of `tile_size_m` / `grid_resolution`'s divisibility. Computing
 /// each tile's origin independently and adding a local offset would instead
 /// sum two different rounding errors on each side of the seam.
-pub fn grid_vertex_world_position(tile: TerrainTile, params: &TerrainParams, i: u32, j: u32) -> (f32, f32) {
+pub fn grid_vertex_world_position(
+    tile: TerrainTile,
+    params: &TerrainParams,
+    i: u32,
+    j: u32,
+) -> (f32, f32) {
     let n = params.grid_resolution as i64;
     let cell_size = params.cell_size_m() as f64;
     let global_i = tile.tile_x * n + i as i64;
@@ -223,7 +227,13 @@ pub fn grid_vertex_world_position(tile: TerrainTile, params: &TerrainParams, i: 
 /// detail the triangles can't show, and a larger one would blur across
 /// neighboring cells. `cell_size_m` is therefore the natural — and derived —
 /// choice.
-fn normal_at(world_seed: Seed, params: &TerrainParams, world_x: f32, world_z: f32, step: f32) -> [f32; 3] {
+fn normal_at(
+    world_seed: Seed,
+    params: &TerrainParams,
+    world_x: f32,
+    world_z: f32,
+    step: f32,
+) -> [f32; 3] {
     let h_neg_x = height(world_seed, params, world_x - step, world_z);
     let h_pos_x = height(world_seed, params, world_x + step, world_z);
     let h_neg_z = height(world_seed, params, world_x, world_z - step);
