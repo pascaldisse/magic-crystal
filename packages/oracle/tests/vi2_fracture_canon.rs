@@ -199,7 +199,7 @@ fn ordeal_no_orphan_matter_every_fragment_traces_to_its_parent() {
         // The traced parent must itself resolve to a real, gazable vessel —
         // not a dangling reference to an id nothing binds.
         assert!(
-            world.geometry(&traced_parent).is_some(),
+            world.geometry(traced_parent).is_some(),
             "fragment {id}'s parent reference {traced_parent:?} does not resolve to any vessel \
              in the live ECS"
         );

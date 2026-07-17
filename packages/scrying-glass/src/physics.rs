@@ -18,6 +18,14 @@
 use elements::{Collider, ContactMaterial, Mat3, Solver, SolverConfig, Triangle, Vec3};
 use serde::Deserialize;
 
+/// VI-2 — `Physics::poll_bonded`'s "still whole" half: one `(gaia_id,
+/// live_centroid)` per bonded body that has not yet fractured.
+type StillWholePoses = Vec<(String, [f64; 3])>;
+/// VI-2 — `Physics::poll_bonded`'s "newly broken" half: one
+/// `(parent_gaia_id, fragments, cube_size)` per bonded body that fractured
+/// THIS tick.
+type NewlyBrokenFragments = Vec<(String, Vec<fracture::Fragment>, f64)>;
+
 /// The `body` sigil — realm data declaring a vessel as physical matter the
 /// world tick simulates. Every field is plain English with a documented
 /// default; only `shape` selects the discretization, the rest are solver dials.
@@ -256,12 +264,7 @@ impl Physics {
     ///   component — the caller (Dynamics) births fragment vessels from
     ///   this exactly once (`broken` flips true here so it is never
     ///   reported again).
-    pub fn poll_bonded(
-        &mut self,
-    ) -> (
-        Vec<(String, [f64; 3])>,
-        Vec<(String, Vec<fracture::Fragment>, f64)>,
-    ) {
+    pub fn poll_bonded(&mut self) -> (StillWholePoses, NewlyBrokenFragments) {
         let mut still_whole = Vec::new();
         let mut newly_broken = Vec::new();
         for binding in &mut self.bonded {

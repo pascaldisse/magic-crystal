@@ -307,10 +307,8 @@ fn ordeal_momentum_through_fracture_bounded() {
         // measures. `y <= drop_start` is a cheap proxy: skip nothing before
         // the drop even starts falling meaningfully far (t small) so the
         // free-fall baseline itself is well-formed.
-        if !is_fracture_tick && t > 2 {
-            if drift < gate {
-                checked += 1;
-            }
+        if !is_fracture_tick && t > 2 && drift < gate {
+            checked += 1;
         }
         prev = now;
     }
