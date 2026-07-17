@@ -38,6 +38,9 @@ struct UpscaleUniform {
 }
 
 pub const UPSCALER_SHADER: &str = include_str!("upscaler.wgsl");
+/// The fp16-threadgroup-cached fast port (MODE A: f16 storage, f32 accumulate).
+/// Requires a device created with [`wgpu::Features::SHADER_F16`].
+pub const UPSCALER_FAST_SHADER: &str = include_str!("upscaler_fast.wgsl");
 
 /// A GPU upscaler bound to one net's weights. Build once (weights upload +
 /// pipeline), then [`Self::upscale`] any number of current frames.
@@ -49,11 +52,24 @@ pub struct GpuUpscaler {
 }
 
 impl GpuUpscaler {
+    /// Build the naive per-pixel port (device-storage weights, f32).
+    pub fn new(device: &wgpu::Device, mlp: &Mlp) -> Self {
+        Self::build(device, mlp, UPSCALER_SHADER)
+    }
+
+    /// Build the fp16-threadgroup-cached FAST port (MODE A). The device MUST
+    /// have [`wgpu::Features::SHADER_F16`]. Output/inputs identical; only the
+    /// on-GPU weight residence + f16 storage differ (parity ordeal derives the
+    /// fp16 bound and asserts it).
+    pub fn new_fast(device: &wgpu::Device, mlp: &Mlp) -> Self {
+        Self::build(device, mlp, UPSCALER_FAST_SHADER)
+    }
+
     /// Build the pipeline and upload `mlp`'s flat weights. The per-layer
     /// offsets into the flat buffer are computed here from the net geometry
     /// (weights block then bias block per layer, in evaluation order) — the
     /// exact layout [`Mlp::flat_weights`] produces.
-    pub fn new(device: &wgpu::Device, mlp: &Mlp) -> Self {
+    fn build(device: &wgpu::Device, mlp: &Mlp, shader_src: &str) -> Self {
         let dims = mlp.layer_dims();
         assert!(
             dims.len() <= MAX_LAYERS,
@@ -62,7 +78,9 @@ impl GpuUpscaler {
         );
         let mut uniform = UpscaleUniform {
             dims: [0, 0, 0, 0],
-            info: [dims.len() as u32, 0, 0, 0],
+            // info.y = total weight count (the fast shader's cooperative
+            // threadgroup load bound); harmless/unused by the naive shader.
+            info: [dims.len() as u32, mlp.flat_weights().len() as u32, 0, 0],
             layers: [[0; 4]; MAX_LAYERS],
         };
         let mut offset: u32 = 0;
@@ -91,7 +109,7 @@ impl GpuUpscaler {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("VIII-3 upscaler"),
-            source: wgpu::ShaderSource::Wgsl(UPSCALER_SHADER.into()),
+            source: wgpu::ShaderSource::Wgsl(shader_src.into()),
         });
 
         let uniform_entry = wgpu::BindGroupLayoutEntry {
@@ -391,4 +409,27 @@ impl GpuUpscaler {
         }
         Some(out)
     }
+}
+
+/// A headless GPU device requesting `SHADER_F16` (for the fast upscaler) plus
+/// `TIMESTAMP_QUERY` when available (for pass timing). Returns `None` when no
+/// adapter is available OR the adapter lacks `SHADER_F16` (the fast port
+/// cannot run on this host — the caller reports the gap honestly).
+pub fn headless_device_f16_timed() -> Option<(wgpu::Device, wgpu::Queue)> {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: None,
+        force_fallback_adapter: false,
+        ..Default::default()
+    }))
+    .ok()?;
+    if !adapter.features().contains(wgpu::Features::SHADER_F16) {
+        return None;
+    }
+    let wanted = wgpu::Features::SHADER_F16 | wgpu::Features::TIMESTAMP_QUERY;
+    let features = adapter.features() & wanted;
+    let mut desc = wgpu::DeviceDescriptor::default();
+    desc.required_features = features;
+    pollster::block_on(adapter.request_device(&desc)).ok()
 }
