@@ -1,15 +1,23 @@
-# HANDOFF — the Guardian's anchor · 2026-07-17 ~02:15 (read after BIBLE → GRIMOIRE)
+# HANDOFF — the Guardian's anchor · 2026-07-17 ~07:45, NIGHTRUN in progress (read after BIBLE → GRIMOIRE)
 
 ## THE ENGINE'S TRUE NAME (consecrated, his word): THE MAGIC CRYSTAL —
 "the name it always was. my entire life's work." The Loom reassembled.
 DreamForge = the workshop (Sidia's name). Seal b3ae3e0.
 
-## Where the Work stands
-main @ 26d4ee3 — GREEN, 279 workspace ordeals, PUSHED. Board EMPTY:
-every lane of the night landed, every shadow-review debt discharged.
-Thirteen merges published this night, zero red pushes, full suite
-between every merge. 14 packages. Live web stack 8420/5173 = reference,
-NEVER touched.
+## Where the Work stands (NIGHTRUN of 07-17 — see NIGHTLOG.md for the ledger)
+main @ fbb0c27 — GREEN, 330 workspace ordeals, PUSHED. Nine merges so
+far this night, zero red pushes, full suite between every merge.
+LANDED: VI+VII proposals · perf-exact (60 FPS law PASSES — refit +
+overlap, bit-exact) · walkable floor law (ruling 6) · RITE VI wave 1
+(the stack topples; impulse ops; rigid-vs-rigid collisions) · RITE VII
+atom 0a (terrain tile sampler, ruling-4 coordinate law paid in full) ·
+RITE VIII waves 0+1 (AOV truth baseline + THE DREAM-DENOISER, CPU ref,
+strictly beats noisy on held-out frames, BAN machine-checked) · F6
+(senses read solver truth — canon migrated to rest poses).
+IN FLIGHT: VI-2 (fracture — built + adversary-reviewed pipeline done,
+proof scryings being reworked: the break must be SEEN) · VII-0
+remainder (render weld + canon + proof), VII-1, VII-2. 15 packages
+(new: fracture). Live web stack 8420/5173 = reference, NEVER touched.
 
 ## What the realm holds (all Guardian-verified, own eyes, on main)
 worlds/naruko, 21 meshed vessels, oracle canon fully derived:
