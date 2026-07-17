@@ -56,6 +56,43 @@
 - **Proofs read**: numbers lane (ordeal output verbatim); pose-trace canon
   byte-unchanged.
 
+### 5. rite6-vi1 → main (queue item 3, wave VI-1) — THE STACK TOPPLES
+- **What**: three crates stacked on the pier (authored at derived chained rest
+  heights), impulse plumbing end-to-end (Solver::apply_impulse → Physics →
+  Op::Impulse → tick_with_ops — the op is the hand, the engine never invents a
+  magnitude), NEW rigid-vs-rigid collision pass with the rest gap DERIVED from
+  the static convention (mean radius + contact_margin), canon learned all three
+  vessels same wave.
+- **Merge**: d84dc52, PUSHED. Suite on main post-merge: 298 passed / 0 failed.
+- **Adversary**: 1 MUST-FIX — the momentum ordeal was VACUOUS (endpoint zeros
+  vs fabricated literal; ground friction would launder any leak). Rewritten:
+  zero-gravity isolated collision course, floor derived from f64 eps × momentum
+  × ops/tick (bit-exact-zero measurement honestly stated), per-tick 10× gate,
+  plus a should-panic discrimination twin (injected 0.1% asymmetry fires the
+  gate 13 orders of magnitude over). 4 ADVISORY discharged (margin convention
+  derived; wrong-mass comment fixed; solver cost named honestly).
+- **Key numbers**: 900-tick topple replay byte-identical; release solver
+  5.52 ms/tick (static-soup scaling named; broadphase = the exact win when
+  VI-2 multiplies bodies). Composed audit POST-MERGE with 4 bodies:
+  **front OVERLAP 10.98 ms PASS · wide 12.83 ms PASS** — the solver tick hides
+  fully under the GPU trace; the 60 FPS law holds with the grown realm.
+- **Proofs read**: vi1-stack-{before,mid,after}.png — conductor's own eyes.
+
+### 6. rite8-viii0 → main (queue item 5, wave VIII-0) — THE NOISE AND THE TRUTH
+- **What**: the denoiser baseline, no net yet. AOV export (albedo/normal/depth,
+  separate geometry-only pass, beauty path byte-identical when off — golden-hash
+  ordeal with documented derivation), error metric (f64 fixed-order, 0e0
+  self-test, discrimination test), reference oracle (noisy 1 spp RMSE 0.053325
+  vs 512-frame reference; convergence RMSE(512,256)=0.001728). THE BAN
+  machine-checked from day one: current-frame-only architecture + grep-gate
+  with widened vocabulary and forward-proof BAN-SCOPED module discovery.
+- **Merge**: c5230c5, PUSHED. Suite on main post-merge: 308 passed / 0 failed.
+- **Adversary**: HOLDS, zero MUST-FIX; A1/A2 discharged (gate teeth widened;
+  proposal weld text reconciled — one extra closest-hit traversal, no light
+  transport, honestly worded now).
+- **Proofs read**: viii0-truth.png (grainy 1 spp beside clean converged, same
+  scene), three AOV scryings (coherent G-buffer) — conductor's own eyes.
+
 ## In flight
 - **rite6-vi1** (queue item 3, wave VI-1 THE STACK TOPPLES): built @ d642551 —
   impulse plumbing (Solver::apply_impulse → Physics → Op::Impulse →
