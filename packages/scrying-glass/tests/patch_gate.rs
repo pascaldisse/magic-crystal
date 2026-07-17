@@ -110,9 +110,7 @@ fn contact_radius_matches_measured_foot_half_extent() {
         measured_max = measured_max.max(half_x).max(half_z);
     }
 
-    println!(
-        "[contact-patch] measured_max={measured_max:.4} default={DEFAULT_CONTACT_RADIUS:.4}"
-    );
+    println!("[contact-patch] measured_max={measured_max:.4} default={DEFAULT_CONTACT_RADIUS:.4}");
     assert!(
         DEFAULT_CONTACT_RADIUS >= measured_max,
         "DEFAULT_CONTACT_RADIUS {DEFAULT_CONTACT_RADIUS} must be a ROUNDED-UP bound on the \

@@ -357,7 +357,14 @@ impl Ground {
     /// handful of times per tick (once per rejected sliver, which in
     /// practice is 0 almost everywhere and 1 over a mirror edge), not once
     /// per triangle.
-    pub fn height_at_gated(&self, x: f32, z: f32, ceiling: f32, radius: f32, tol: f32) -> Option<f32> {
+    pub fn height_at_gated(
+        &self,
+        x: f32,
+        z: f32,
+        ceiling: f32,
+        radius: f32,
+        tol: f32,
+    ) -> Option<f32> {
         let mut ceiling = ceiling;
         // Belt-and-braces bound: each iteration must strictly exclude at
         // least the current winning candidate (via GATED_EXCLUSION_STEP >
