@@ -695,3 +695,168 @@ fn ordeal_replay_determinism_drop_break_settle_including_fragments() {
         fold_b
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// ORDEAL (g) — FRAGMENT-VS-FRAGMENT DOES NOT INTERPENETRATE. The conductor's
+// own-eyes gate rejected an earlier proof scrying whose shards visually fell
+// through each other into one mass; `Solver::solve_body_collisions`
+// (`solver.rs`) was generalized from rigid-only clusters to any `ClusterId`
+// (rigid OR one live `fragment_components` component of a `spawn_bonded_box`
+// lattice) so post-break shards collide against each other exactly as two
+// rigids do. This ordeal is the missing numeric proof of that fix: after a
+// real multi-fragment break, no two particles belonging to DIFFERENT
+// fragments may sit closer than their derived rest gap by more than a
+// measured (never frozen) epsilon, checked every tick of a settle window,
+// not just at one endpoint.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// The overlap-residual FLOOR: isolate `solve_body_collisions` on two
+/// single-particle rigid spheres of the SAME collision radius the crate's
+/// bonded lattice uses, dropped to rest one atop the other on a ground
+/// plane — no fracture, no bonds, nothing but the same position-correction
+/// pass fragments use. Once settled, the steady-state `min_dist - measured_
+/// dist` this isolated pair exhibits is the honest per-substep numerical
+/// residual the pass leaves on ANY resting contact (same measure-don't-
+/// guess pattern `ordeal_mixed_radius_bodies_rest_at_derived_gap`, in
+/// `ordeals.rs`, uses for its own settle-residual tolerance) — the floor
+/// this ordeal's fragment-vs-fragment gate is derived from, not a plucked
+/// literal. Falls back to an `f64::EPSILON`-scaled derivation (same shape
+/// as `momentum_drift_gate`, above) if the measured floor is non-positive
+/// (a legitimately exact settle, no real residual to measure).
+fn body_overlap_floor(cfg: SolverConfig, particle_radius: f64) -> f64 {
+    let mut s = Solver::new(cfg);
+    s.collider = Some(Collider::ground_plane(0.0, 50.0, ContactMaterial::default()));
+    let contact_margin = s.collider.as_ref().unwrap().material.contact_margin;
+    let density = 500.0;
+    let sphere_radius = 0.08;
+    let min_dist = particle_radius + contact_margin; // equal-radius F2/F3 gap: mean(r,r)+margin
+    let bottom_y = particle_radius + contact_margin;
+    let bottom = s.spawn_rigid_sphere(
+        Vec3::new(0.0, bottom_y, 0.0),
+        sphere_radius,
+        1,
+        density,
+        1.0,
+        particle_radius,
+    );
+    let top = s.spawn_rigid_sphere(
+        Vec3::new(0.0, bottom_y + min_dist + 0.02, 0.0),
+        sphere_radius,
+        1,
+        density,
+        1.0,
+        particle_radius,
+    );
+    let settle_ticks = 300u64;
+    for _ in 0..settle_ticks {
+        s.step();
+    }
+    let window = (1.0 / cfg.dt).round() as u64; // one second's worth, same shape as the rest-stability ordeal
+    let mut max_overlap = f64::NEG_INFINITY;
+    for _ in 0..window {
+        s.step();
+        let dist = (s.particles.pos[s.rigids[top].indices[0]]
+            - s.particles.pos[s.rigids[bottom].indices[0]])
+            .length();
+        max_overlap = max_overlap.max(min_dist - dist);
+    }
+    if max_overlap > 0.0 {
+        max_overlap
+    } else {
+        // No measurable residual — derive a floor from the solver's own
+        // rounding budget instead of asserting a bare 0.0 tolerance later.
+        let operations_per_tick = 2.0 * cfg.substeps as f64; // 2 particles x substeps/tick
+        f64::EPSILON * min_dist.max(1.0) * operations_per_tick
+    }
+}
+
+#[test]
+fn ordeal_fragments_do_not_interpenetrate_after_break() {
+    let particle_radius = 0.03; // same collision radius drop_scenario's crate lattice uses
+    let cfg = SolverConfig {
+        dt: 1.0 / 120.0,
+        substeps: 12,
+        fracture_threshold: 4.0e3,
+        ..SolverConfig::default()
+    };
+    let floor = body_overlap_floor(cfg, particle_radius);
+    let gate = 10.0 * floor; // same 10x-floor convention as momentum_drift_gate
+
+    let (mut s, whole, _total_mass) = drop_scenario(DROP_HEIGHT);
+    let contact_margin = s.collider.as_ref().unwrap().material.contact_margin;
+
+    let (broke_at, _) = run_until_break_or(&mut s, RUN_TICKS);
+    assert!(
+        broke_at.is_some(),
+        "setup must actually break, or this ordeal is vacuous"
+    );
+    let fragments = s.fragment_components(&whole);
+    assert!(
+        fragments.len() >= 2,
+        "a real break must yield at least two fragments to exercise fragment-vs-fragment \
+         collision at all"
+    );
+
+    // Which fragment (index into `fragments`) owns each particle in `whole`.
+    let mut membership = vec![usize::MAX; s.particles.pos.len()];
+    for (fi, fragment) in fragments.iter().enumerate() {
+        for &p in fragment {
+            membership[p] = fi;
+        }
+    }
+
+    // Continue settling PAST the fracture tick — `run_until_break_or` stops
+    // the instant a fracture is first recorded, before the shards have had
+    // any chance to fall apart and actually test collision between them
+    // (the vi2_break proof example's own "settled" reading is tick 300 post-
+    // drop; this window is checked every tick, not just at one endpoint).
+    let settle_extra = 300u64;
+    let mut max_overlap_over_window = f64::NEG_INFINITY;
+    let mut min_cross_fragment_sep = f64::INFINITY;
+    for t in 0..settle_extra {
+        s.step();
+        for (a, &i) in whole.iter().enumerate() {
+            for &j in &whole[(a + 1)..] {
+                if membership[i] == membership[j] {
+                    continue; // same fragment — held by its own surviving bonds, not collision
+                }
+                let dist = (s.particles.pos[i] - s.particles.pos[j]).length();
+                let min_dist =
+                    (s.particles.radius[i] + s.particles.radius[j]) * 0.5 + contact_margin;
+                let overlap = min_dist - dist;
+                min_cross_fragment_sep = min_cross_fragment_sep.min(dist);
+                if overlap > max_overlap_over_window {
+                    max_overlap_over_window = overlap;
+                }
+                assert!(
+                    overlap < gate,
+                    "tick {t}: fragments {} and {} interpenetrate — particles {i}/{j} overlap by \
+                     {overlap:.3e} m, exceeding the derived gate {gate:.3e} m (10x measured \
+                     resting-contact residual {floor:.3e} m)",
+                    membership[i],
+                    membership[j]
+                );
+            }
+        }
+    }
+
+    // Sanity: the fragments must have actually gotten close to each other at
+    // some point, or a trivially-satisfied bound (fragments that never
+    // approach) would make the assertion above vacuous.
+    let typical_gap = particle_radius + contact_margin;
+    assert!(
+        min_cross_fragment_sep < typical_gap * 3.0,
+        "fragments never came close to each other (min cross-fragment separation \
+         {min_cross_fragment_sep:.4} m, typical rest gap {typical_gap:.4} m) — this ordeal would \
+         be vacuous unless real near-contact happens"
+    );
+
+    println!(
+        "ORDEAL fragments-do-not-interpenetrate: {} fragments, {settle_extra} settle ticks, \
+         gate={gate:.3e} m (10x measured resting-pair residual {floor:.3e} m), max cross-\
+         fragment overlap observed={max_overlap_over_window:.3e} m (< gate), min cross-fragment \
+         separation={min_cross_fragment_sep:.4} m (typical gap {typical_gap:.4} m) — fragments \
+         collided against each other and settled apart without merging",
+        fragments.len()
+    );
+}
