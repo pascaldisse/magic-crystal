@@ -1,5 +1,5 @@
 //! CANON ORDEALS — hand-derived against the LIVE canon realm `worlds/naruko`
-//! (the 14-vessel realm the CLI gazes at by default), NOT the pinned 7-vessel
+//! (the 15-vessel realm the CLI gazes at by default), NOT the pinned 7-vessel
 //! fixture under `tests/fixtures/naruko`. The fixture ordeals (in `src/lib.rs`)
 //! stay the frozen geometric gate; THESE ordeals derive the same pure-geometry
 //! truth against the canon scene and the canon spawn eye `[0,7,44]` yaw 0.
@@ -40,6 +40,15 @@
 //!                         it at runtime; the senses read the STATIC scene, so its
 //!                         canon bounds are the authored drop pose) center
 //!                         [-11.15, 4.5, 13]
+//!   naruko_cat            x[-5.0808,-4.9192] y[0.0000,0.4555] z[22.9420,23.4789]
+//!     — RITE V·V2, the 15th vessel. NOT authored primitives: the SKINNED
+//!     pink_cat vessel (QUADRUPED morphology) at sama's idle pose
+//!     (`body = {preset:"pink_cat"}`), skeleton-local AABB min[-0.080758,
+//!     -0.359289,-0.058035] max[0.080762,0.096240,0.478921] (byte-identical per
+//!     the V2 vessel determinism ordeal), placed by her transform
+//!     `pos=[-5,0.359289,23]` (four paws on the terra top y=0 = 0.359289 +
+//!     (-0.359289); the lowest paw vertex IS the mesh min y, so grounding the
+//!     whole AABB grounds the paws). center [-4.999998, 0.227765, 23.210443]
 //! Eye basis at yaw 0: fwd=(0,0,-1), right=(1,0,0), up=(0,1,0); FOV 60 vertical
 //! (aspect 1) ⇒ tan_half = tan(30°) = 0.5773502692.
 
@@ -92,7 +101,10 @@ fn range_of(g: &Glance, id: &str) -> f32 {
 /// |x|≈0 ⇒ deep inside the 60° cone ⇒ in-frustum. Then ELEMENTS P3 grows it to
 /// FOURTEEN: `naruko_crate` (a wooden `body`) hung above the pier, world AABB
 /// center [-11.15, 4.5, 13] — z_view=31 ahead, |x_off|=11.15 < tan30·31 = 17.898
-/// ⇒ inside the left plane ⇒ in-frustum. So entity_count = 14.
+/// ⇒ inside the left plane ⇒ in-frustum. Then RITE V·V2 grows it to FIFTEEN:
+/// `naruko_cat` (the skinned pink_cat vessel) by the ramen stall, world AABB
+/// center [-5, 0.2278, 23.21] — z_view = 44−23.21 = 20.79 ahead, |x_off|=5 <
+/// tan30·20.79 = 12.00 ⇒ inside the left plane ⇒ in-frustum. So entity_count = 15.
 #[test]
 fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
     let world = canon();
@@ -124,10 +136,13 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
     // above the pier near the stall (AABB center [-11.15, 4.5, 13], range
     // 33.0390 from spawn) — the FOURTEENTH meshed vessel. z_view = 44−13 = 31
     // ahead; |x_off| = 11.15 < the half-width tan30·31 = 17.898, INSIDE the left
-    // plane ⇒ in-frustum.
+    // plane ⇒ in-frustum. RITE V·V2 skinned the pink_cat by the stall (AABB
+    // center [-5, 0.2278, 23.21], range 22.4292 from spawn) — the FIFTEENTH
+    // meshed vessel. z_view = 44−23.21 = 20.79 ahead; |x_off| = 5 < the
+    // half-width tan30·20.79 = 12.00, INSIDE the left plane ⇒ in-frustum.
     assert_eq!(
-        g.entity_count, 14,
-        "exactly the fourteen meshed vessels are in-frustum (Rite V: + nari; P3: + crate)"
+        g.entity_count, 15,
+        "exactly the fifteen meshed vessels are in-frustum (Rite V: + nari, + cat; P3: + crate)"
     );
     let caps = caption_ids(&g);
     for id in [
@@ -145,6 +160,7 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
         "naruko_chrome_orb",
         "nari",
         "naruko_crate",
+        "naruko_cat",
     ] {
         assert!(caps.contains(&id.to_string()), "{id} must be in-frustum");
     }
@@ -159,6 +175,7 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
 ///
 /// DERIVATION — range = |center − eye|, center = AABB midpoint, eye = [0,7,44]:
 ///   stall_massing  center [-1, 1.45, 25.225]  → √(1+30.80+352.50)   = 19.6037
+///   cat            center [-5, 0.2278, 23.210] → √(25+45.863+432.206) = 22.4292
 ///   lantern        center [-7.265, 2.025, 20] → √(52.78+24.75+576)  = 25.6320
 ///   chain_posts    center [-2, 1.95, 18]      → √(4+25.50+676)      = 26.5613
 ///   seawall        center [0, 0.7, 18]        → √(0+39.69+676)      = 26.7524
@@ -171,11 +188,14 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
 ///   lighthouse_tower center[0, 41, -120]      → √(1156+26896)       = 167.4873
 ///   (sea 604.06, terra 9.41 are SUPPORT — demoted.)
 /// So the default nearest_n=5 captions, in order. RITE V inserts `nari` at
-/// 26.3911 — between lantern (25.6320) and chain_posts (26.5613). The P3 crate
-/// (33.0390) and the chrome orb (34.5227) both sit BEYOND seawall (26.7524),
-/// so neither reaches the top-5; nari's insertion is what pushes them out:
-///   [stall_massing, lantern, nari, chain_posts, seawall]
-/// (crate 6th at 33.0390, chrome orb 7th at 34.5227, pier 8th at 48.1812).
+/// 26.3911 — between lantern (25.6320) and chain_posts (26.5613). RITE V·V2
+/// inserts `naruko_cat` at 22.4292 — between stall_massing (19.6037) and lantern
+/// (25.6320), so the cat takes the SECOND slot and pushes seawall (26.7524) out
+/// of the top-5 (nari already displaced the crate/orb; the cat now displaces
+/// seawall too):
+///   [stall_massing, naruko_cat, lantern, nari, chain_posts]
+/// (seawall 6th at 26.7524, crate 7th at 33.0390, chrome orb 8th at 34.5227,
+/// pier 9th at 48.1812).
 /// TOLERANCE (DERIVED): each range is the live f32 √(Σ(center−eye)²) vs the f64
 /// reference above quoted to 4 decimals. The measured live-vs-reference
 /// discrepancy across all thirteen ranges peaks at 6.1e-5 m (at the 604 m sea
@@ -194,12 +214,12 @@ fn canon_nearest_ordering_and_ranges_are_derived() {
         caption_ids(&g),
         vec![
             "naruko_stall_massing",
+            "naruko_cat",
             "naruko_lantern",
             "nari",
             "naruko_chain_posts",
-            "naruko_seawall",
         ],
-        "default nearest-5 caption order (Rite V: nari 26.3911 slots 3rd; P3 crate 33.0390 stays 6th)"
+        "default nearest-5 caption order (Rite V·V2: cat 22.4292 slots 2nd, pushes seawall to 6th)"
     );
 
     // Support surfaces never eat a caption slot.
@@ -221,6 +241,7 @@ fn canon_nearest_ordering_and_ranges_are_derived() {
     .unwrap();
     for (id, expect) in [
         ("naruko_stall_massing", 19.6037_f32),
+        ("naruko_cat", 22.4292),
         ("naruko_lantern", 25.6320),
         ("naruko_chain_posts", 26.5613),
         ("naruko_seawall", 26.7524),
@@ -459,6 +480,12 @@ fn canon_depth_band_column_16_is_front_face_path_length() {
 /// box lies outside the right plane (margin 0.056 m) ⇒ out of frustum. So the
 /// pier glance stays SEVEN vessels; the crate never enters (its range here,
 /// were it in, would be 3.2653 m).
+/// The RITE V·V2 cat sits near the stall too (AABB center [-5, 0.2278, 23.21])
+/// but is CULLED HARD: forward is -z, and the cat's NEAREST z-face is min
+/// z=22.9420 — wholly BEHIND the eye at z=15 (z_off = 23.21−15 = +8.21 > 0). The
+/// whole box lies on the far side of the eye's near plane ⇒ out of frustum by a
+/// 7.94 m margin (22.9420 − 15). So the pier glance stays SEVEN; the cat never
+/// enters (its range here, were it in, would be 11.66 m).
 /// Pier range: center [-12,-0.8375,-2] − eye [-13,2.7,15] = [1,-3.5375,-17] →
 ///   √(1 + 12.51 + 289) = 17.3929 m. Lighthouse still ahead: rock 135.75 m,
 ///   tower 140.93 m, both bearing ≈ +5.5° (well inside the 30° half-FOV).

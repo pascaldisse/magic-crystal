@@ -149,6 +149,11 @@
     "transform": { "position": [0, 2.505, 18] },
     "body": { "preset": "nari" }
   },
+  "naruko_cat": {
+    "transform": { "position": [-5, 0.359289, 23] },
+    "body": { "preset": "pink_cat" },
+    "behavior": { "kind": "cat", "home": [-5, 0.359289, 23], "radius": 1.4 }
+  },
   "naruko_crate": {
     "transform": { "position": [-11.15, 4.5, 13] },
     "mesh": { "parts": [

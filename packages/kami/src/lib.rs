@@ -50,6 +50,9 @@ use crystal::{ComponentId, EcsWorld, Entity, Op, QuerySpec, SetOp};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+mod cat;
+pub use cat::{CatDrive, CatMind, CatState};
+
 mod decorative;
 pub use decorative::{is_color_string, BindPose, Decorative, Sample};
 

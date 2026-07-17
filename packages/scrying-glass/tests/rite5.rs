@@ -53,7 +53,13 @@ fn v0_body_composes_from_the_sigil() {
     let core = load_naruko();
     let scene = RenderScene::from_ecs(core.world, &naruko_params()).expect("render scene");
 
-    assert_eq!(scene.bodies.len(), 1, "exactly nari carries a body sigil");
+    // RITE V·V2 added the pink cat, so TWO bodies now carry the sigil; they
+    // sort by gaia id ("nari" < "naruko_cat"), so nari stays index 0.
+    assert_eq!(
+        scene.bodies.len(),
+        2,
+        "nari + the pink cat carry body sigils"
+    );
     let nari = &scene.bodies[0];
     assert_eq!(nari.gaia_id, "nari");
     assert_eq!(nari.preset, "nari");
@@ -76,14 +82,15 @@ fn v0_body_composes_from_the_sigil() {
 #[test]
 fn v0_body_enters_dynamic_partition_each_tick() {
     let mut scene = RenderScene::from_ecs(load_naruko().world, &naruko_params()).expect("scene");
-    let body_tris = scene.bodies[0].world_tris.len();
+    // RITE V·V2: BOTH embodied bodies (nari + the cat) enter the partition.
+    let body_tris: usize = scene.bodies.iter().map(|b| b.world_tris.len()).sum();
     let living = scene.dynamics.leaf_triangles().len();
 
     let dynamic = scene.dynamic_leaf_triangles();
     assert_eq!(
         dynamic.len(),
         living + body_tris,
-        "dynamic partition = living layer + the embodied body"
+        "dynamic partition = living layer + every embodied body"
     );
 
     // Feet on the seawall: the lowest body vertex is the seawall top (y=1.4).
@@ -114,10 +121,11 @@ fn v0_body_enters_dynamic_partition_each_tick() {
     // in the dynamic partition (V0 idle ⇒ same triangles; V1 drives the pose).
     scene.tick();
     let after = scene.dynamic_leaf_triangles();
+    let body_tris_after: usize = scene.bodies.iter().map(|b| b.world_tris.len()).sum();
     assert_eq!(
         after.len(),
-        scene.dynamics.leaf_triangles().len() + body_tris,
-        "the body re-enters the dynamic partition every tick"
+        scene.dynamics.leaf_triangles().len() + body_tris_after,
+        "the bodies re-enter the dynamic partition every tick"
     );
     println!(
         "[v0-render] dynamic partition = {} living + {} body = {}; persists across tick",
@@ -425,4 +433,130 @@ fn v1_body_casts_a_traced_shadow_on_the_seawall() {
         null_diff < floor,
         "far from her the ground is unshadowed (null): null_diff {null_diff:.2e} >= floor {floor:.4}",
     );
+}
+
+// ---------------------------------------------------------------------------
+// RITE V · V2 — THE PINK CAT ANIMATES. The cat carries a `behavior`
+// `{kind:"cat"}`, so its body is MINDED: it drives its own idle loop from the
+// world clock (Sit → TailFlick → Walk circuit → Sit), independent of the
+// walker. nari (no behavior) stays walker-driven. These ordeals prove the
+// wiring: the minded cat moves on its circuit and returns home, nari does not
+// move when the walker is still, and the whole animated stream is deterministic.
+// ---------------------------------------------------------------------------
+
+/// The cat body picks up its mind and nari stays mindless.
+#[test]
+fn v2_cat_body_is_minded_nari_is_not() {
+    let scene = RenderScene::from_ecs(load_naruko().world, &naruko_params()).expect("scene");
+    let cat = scene
+        .bodies
+        .iter()
+        .find(|b| b.gaia_id == "naruko_cat")
+        .expect("cat body");
+    let nari = scene
+        .bodies
+        .iter()
+        .find(|b| b.gaia_id == "nari")
+        .expect("nari body");
+    assert_eq!(cat.preset, "pink_cat");
+    assert!(cat.is_minded(), "the cat carries a behavior spirit");
+    assert!(!nari.is_minded(), "nari is walker-driven, not minded");
+    println!(
+        "[v2-wire] cat is minded ({} tris), nari is not",
+        cat.world_tris.len()
+    );
+}
+
+/// Ticking the world with the walker STILL (speed 0): the minded cat still
+/// walks its circuit (position leaves home by ~radius, then returns), while
+/// nari — walker-driven at speed 0 — never moves. The clock is what animates
+/// the cat, not the walker.
+#[test]
+fn v2_cat_walks_its_circuit_while_nari_holds() {
+    let mut scene = RenderScene::from_ecs(load_naruko().world, &naruko_params()).expect("scene");
+    let home = [-5.0_f32, 23.0_f32]; // authored cat home xz
+    let cat_idx = scene
+        .bodies
+        .iter()
+        .position(|b| b.gaia_id == "naruko_cat")
+        .unwrap();
+    let nari_idx = scene
+        .bodies
+        .iter()
+        .position(|b| b.gaia_id == "nari")
+        .unwrap();
+    let nari_start = scene.bodies[nari_idx].world_origin();
+
+    // One full loop is ~17 s at 1/60 dt ≈ 1030 ticks; sweep 1100 to cover it.
+    let mut max_from_home = 0.0_f32;
+    let mut min_walk_speed_seen = f32::INFINITY;
+    let mut walked = false;
+    for _ in 0..1100 {
+        scene.command_bodies(0.0); // walker STILL
+        let o = scene.bodies[cat_idx].world_origin();
+        let d = ((o[0] - home[0]).powi(2) + (o[2] - home[1]).powi(2)).sqrt();
+        max_from_home = max_from_home.max(d);
+        let sp = scene.bodies[cat_idx].commanded_speed();
+        if sp > 0.0 {
+            walked = true;
+            min_walk_speed_seen = min_walk_speed_seen.min(sp);
+        }
+        scene.tick();
+    }
+
+    // The cat reached out to ~its 1.4 m circuit radius at some tick.
+    assert!(
+        max_from_home > 1.0,
+        "cat must walk out on its circuit, max_from_home={max_from_home}"
+    );
+    assert!(
+        walked,
+        "cat must command a positive speed during the Walk phase"
+    );
+    assert!(
+        min_walk_speed_seen > 0.0 && min_walk_speed_seen.is_finite(),
+        "walk speed positive"
+    );
+
+    // nari never moved (walker still, and she is mindless).
+    let nari_end = scene.bodies[nari_idx].world_origin();
+    let nari_moved = ((nari_end[0] - nari_start[0]).powi(2)
+        + (nari_end[1] - nari_start[1]).powi(2)
+        + (nari_end[2] - nari_start[2]).powi(2))
+    .sqrt();
+    assert!(
+        nari_moved < 1e-6,
+        "mindless nari must not move when the walker is still, moved {nari_moved}"
+    );
+    println!(
+        "[v2-wire] cat reached {max_from_home:.3} m from home on its circuit; nari held (moved {nari_moved:.2e})"
+    );
+}
+
+/// DETERMINISM of the animated body: two scenes ticked the SAME number of times
+/// with the walker still produce BYTE-IDENTICAL cat triangles (the clock-driven
+/// idle loop is pure).
+#[test]
+fn v2_cat_animation_is_byte_identical() {
+    let run = || -> Vec<u8> {
+        let mut scene =
+            RenderScene::from_ecs(load_naruko().world, &naruko_params()).expect("scene");
+        let idx = scene
+            .bodies
+            .iter()
+            .position(|b| b.gaia_id == "naruko_cat")
+            .unwrap();
+        for _ in 0..400 {
+            scene.command_bodies(0.0);
+            scene.tick();
+        }
+        // sample deep in the Walk phase (tick 400 ≈ 6.7 s > sit+flick)
+        tris_bytes(&scene.bodies[idx].world_tris)
+    };
+    assert_eq!(
+        run(),
+        run(),
+        "animated cat body must be byte-identical across runs"
+    );
+    println!("[v2-wire] animated cat body byte-identical across two runs");
 }
