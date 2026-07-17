@@ -49,10 +49,19 @@ fn load_naruko() -> Core {
     core
 }
 
-fn naruko_ground() -> Ground {
+/// The static-floor triangle soup itself, kept separate from [`Ground`]
+/// construction so a determinism ordeal can build TWO independent [`Ground`]
+/// instances from the exact same positions (see
+/// `patch_gate_query_is_deterministic`) — the actual nondeterminism risk is
+/// in construction (iteration order, float reduction order), not the query.
+fn naruko_leaf_positions() -> Vec<[f32; 3]> {
     let core = load_naruko();
     let scene = RenderScene::from_ecs(core.world, &naruko_params()).expect("render scene");
-    Ground::from_positions(&scene.leaf_positions())
+    scene.leaf_positions()
+}
+
+fn naruko_ground() -> Ground {
+    Ground::from_positions(&naruko_leaf_positions())
 }
 
 /// DERIVATION ORDEAL: [`DEFAULT_CONTACT_RADIUS`] must track nari's REAL
@@ -190,10 +199,26 @@ fn legitimate_floors_are_unchanged() {
     );
 }
 
+/// Bracket tightness for [`patch_radius_gate_discriminates_both_directions`]:
+/// the E/W probes at angle 0 and π land at exactly `x = ±radius`, so the
+/// EXACT geometric threshold for "does the probe still land on a strip of
+/// half-width `w`" is `w == radius`. A `5%` bracket around that point —
+/// reject at `radius * (1 - BRACKET_TIGHTNESS)`, accept at
+/// `radius * (1 + BRACKET_TIGHTNESS)` — is tight enough that an
+/// implementation pinned to any OTHER scale factor (say, testing at
+/// `0.5 * radius` or `2 * radius` instead of the probe ring's true
+/// `radius`) would fail one side or the other, while staying well clear of
+/// float/geometric noise (the barycentric edge epsilon is `1e-4`, the height
+/// acceptance epsilon `player::COLUMN_EPSILON` is `1e-3`; a `5%` shift on a
+/// `0.2` m radius is `0.01` m, two orders of magnitude coarser than either).
+const BRACKET_TIGHTNESS: f32 = 0.05;
+
 /// ORDEAL (c) — PATCH RADIUS HONOURED, BOTH DIRECTIONS (synthetic). Two
 /// narrow floor strips of half-width `w`, one narrower than the patch
 /// (`w < radius`, must be REJECTED — the probes on either side of the strip
-/// fall off it) and one wider (`w > radius` with margin, must be ACCEPTED).
+/// fall off it) and one wider (`w > radius`, must be ACCEPTED), both
+/// bracketing the EXACT threshold `w == radius` at [`BRACKET_TIGHTNESS`] —
+/// see that constant's doc for why the bracket is drawn there and not looser.
 /// Both strips sit above a huge real floor at y=0, so a rejected candidate
 /// must fall through to that floor rather than returning `None`.
 #[test]
@@ -211,8 +236,9 @@ fn patch_radius_gate_discriminates_both_directions() {
         [-50.0, 0.0, 50.0],
     ];
 
-    // A narrow strip at y=2, half-width 0.05 (< radius 0.2): rejected.
-    let narrow_half = 0.05f32;
+    // A narrow strip at y=2, half-width radius*(1 - BRACKET_TIGHTNESS):
+    // just inside the reject side of the exact w==radius threshold.
+    let narrow_half = radius * (1.0 - BRACKET_TIGHTNESS);
     positions.extend([
         [-narrow_half, 2.0, -10.0],
         [narrow_half, 2.0, -10.0],
@@ -222,9 +248,10 @@ fn patch_radius_gate_discriminates_both_directions() {
         [-narrow_half, 2.0, 10.0],
     ]);
 
-    // A wide strip at y=3, half-width 1.0 (>> radius 0.2, well clear of the
-    // narrow strip's xz footprint): accepted.
-    let wide_half = 1.0f32;
+    // A wide strip at y=3, half-width radius*(1 + BRACKET_TIGHTNESS): just
+    // past the accept side of the same threshold, well clear of the narrow
+    // strip's xz footprint.
+    let wide_half = radius * (1.0 + BRACKET_TIGHTNESS);
     positions.extend([
         [20.0 - wide_half, 3.0, -10.0],
         [20.0 + wide_half, 3.0, -10.0],
@@ -289,23 +316,118 @@ fn pier_plank_is_unchanged() {
     );
 }
 
-/// ORDEAL (d) — DETERMINISM. The same query, twice, over the real naruko
-/// floor (mirror included), returns the byte-identical answer — the K-probe
-/// pattern is a fixed compass sweep, never anything time- or order-dependent.
+/// EXPECTED-ADMIT DOCUMENTATION ORDEAL — the honest boundary of Ruling 6
+/// tonight. `patch_supported` tests only "does the floor SET have raw floor
+/// within `tol` of `y` under all [`CONTACT_PROBE_COUNT`] ring probes" — it is
+/// a ring-of-points existence check, NOT proof of one contiguous surface
+/// spanning the whole disc (see the doc comment on `Ground::patch_supported`
+/// in `src/player.rs`). One concrete consequence: an 8cm-wide (half-width
+/// 0.04m, narrower than [`DEFAULT_CONTACT_RADIUS`]) sliver hovering low
+/// enough above a real surrounding floor that ALL 8 ring probes still land
+/// on that lower floor within `tol` gets ADMITTED as standable, even though
+/// the sliver itself is far too narrow to hold a foot. With
+/// `DEFAULT_CONTACT_RADIUS` (0.09m), `contact_tolerance` is ≈0.29m, so a
+/// sliver 0.2m above the real floor sits inside that budget. This is NOT a
+/// bug fix target for tonight's Ruling 6 pass — it is the accepted seam,
+/// machine-recorded here so the day it matters (someone builds a low narrow
+/// ledge over a big floor and expects it to reject) this test is already a
+/// failing-test flip away from proving the regression. No behaviour change:
+/// this test only documents existing, intentional behaviour.
 #[test]
-fn patch_gate_query_is_deterministic() {
-    let ground = naruko_ground();
-    let a = ground.height_at(3.0, 18.0, f32::INFINITY);
-    let b = ground.height_at(3.0, 18.0, f32::INFINITY);
-    assert_eq!(
-        a.map(f32::to_bits),
-        b.map(f32::to_bits),
-        "the same column query must return the byte-identical answer"
+fn sliver_low_enough_above_floor_is_admitted_by_design() {
+    let radius = DEFAULT_CONTACT_RADIUS;
+    let tol = contact_tolerance(radius);
+    let sliver_height = 0.2f32;
+    assert!(
+        sliver_height < tol,
+        "test setup: the sliver height {sliver_height} must sit inside the {tol} tolerance \
+         budget for this to demonstrate the documented admit"
     );
 
-    // Also check a legitimate-floor column, and a fully synthetic one with a
-    // non-default radius, so determinism isn't only proven on one path.
-    let seawall_a = ground.height_at(20.0, 18.0, f32::INFINITY);
-    let seawall_b = ground.height_at(20.0, 18.0, f32::INFINITY);
+    // A big flat floor at y=0 underneath everything.
+    let mut positions = vec![
+        [-50.0, 0.0, -50.0],
+        [50.0, 0.0, -50.0],
+        [50.0, 0.0, 50.0],
+        [-50.0, 0.0, -50.0],
+        [50.0, 0.0, 50.0],
+        [-50.0, 0.0, 50.0],
+    ];
+
+    // An 8cm-wide sliver (half-width 0.04, narrower than `radius`) hovering
+    // `sliver_height` above the floor, centred at the origin. All 8 ring
+    // probes (at distance `radius` > 0.04 from the centre) fall OFF this
+    // sliver's xz footprint and land on the y=0 floor instead — within `tol`
+    // of `sliver_height`, so every probe reports "floor found nearby" and
+    // the sliver is admitted.
+    let sliver_half = 0.04f32;
+    positions.extend([
+        [-sliver_half, sliver_height, -sliver_half],
+        [sliver_half, sliver_height, -sliver_half],
+        [sliver_half, sliver_height, sliver_half],
+        [-sliver_half, sliver_height, -sliver_half],
+        [sliver_half, sliver_height, sliver_half],
+        [-sliver_half, sliver_height, sliver_half],
+    ]);
+
+    let ground = Ground::from_positions(&positions);
+    let y = ground
+        .height_at_gated(0.0, 0.0, f32::INFINITY, radius, tol)
+        .expect("floor exists under the sliver column");
+    assert!(
+        (y - sliver_height).abs() < 1e-3,
+        "documented admit: expected the low sliver at {sliver_height} to be ADMITTED (ring \
+         probes all find the surrounding floor within tol), got {y} instead — if this now \
+         rejects, the gate's semantics changed and this test's doc comment needs revisiting, \
+         not silent deletion"
+    );
+}
+
+/// ORDEAL (d) — DETERMINISM, earning its place: this exercises the FULL
+/// gated query (fallthrough included, not a single-shot lookup) at a
+/// probe-straddling coordinate (the mirror-panel column, `(3.0, 18.0)` —
+/// its 8cm sliver rejects on the first fallthrough step and falls through to
+/// the seawall, so this genuinely walks the loop, not just one raw scan)
+/// over the real naruko soup, run TWICE against the SAME `Ground`, and once
+/// more against a FRESH `Ground` rebuilt from the SAME leaf positions. The
+/// same-`Ground`-twice checks the query path (the K-probe compass sweep is
+/// fixed, never time- or order-dependent); the fresh-rebuild check guards
+/// the actual risk determinism has going forward — nondeterministic
+/// CONSTRUCTION (triangle iteration order, float reduction order) producing
+/// a `Ground` whose floor SET differs run to run even from identical input
+/// positions.
+#[test]
+fn patch_gate_query_is_deterministic() {
+    let positions = naruko_leaf_positions();
+    let ground_a = Ground::from_positions(&positions);
+    let ground_b = Ground::from_positions(&positions);
+
+    let straddle_a1 = ground_a.height_at(3.0, 18.0, f32::INFINITY);
+    let straddle_a2 = ground_a.height_at(3.0, 18.0, f32::INFINITY);
+    assert_eq!(
+        straddle_a1.map(f32::to_bits),
+        straddle_a2.map(f32::to_bits),
+        "the same fallthrough-exercising query on the same Ground must return the \
+         byte-identical answer"
+    );
+    assert!(
+        straddle_a1.is_some_and(|y| y < 4.0),
+        "sanity: the mirror column must actually be exercising the fallthrough (rejecting the \
+         sliver), got {straddle_a1:?}"
+    );
+
+    let straddle_b = ground_b.height_at(3.0, 18.0, f32::INFINITY);
+    assert_eq!(
+        straddle_a1.map(f32::to_bits),
+        straddle_b.map(f32::to_bits),
+        "a Ground rebuilt from the identical leaf positions must answer the identical \
+         fallthrough query identically — construction, not just the query, must be \
+         deterministic"
+    );
+
+    // Also check a legitimate-floor column (no fallthrough needed) on both
+    // instances, so determinism isn't proven only on the fallthrough path.
+    let seawall_a = ground_a.height_at(20.0, 18.0, f32::INFINITY);
+    let seawall_b = ground_b.height_at(20.0, 18.0, f32::INFINITY);
     assert_eq!(seawall_a.map(f32::to_bits), seawall_b.map(f32::to_bits));
 }

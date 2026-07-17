@@ -321,14 +321,29 @@ impl Ground {
         best
     }
 
-    /// GUARDIAN RULING 6: whether the floor SET can hold a contact patch of
-    /// `radius` centred at `(x, z, y)` — probe [`CONTACT_PROBE_COUNT`]
-    /// deterministic compass points on the circle of `radius` around
-    /// `(x, z)`, and require EVERY probe to find raw floor within `tol` of
-    /// `y`. A surface smaller than the patch (the mirror-panel top edge) has
-    /// probes that either miss the surface entirely (raw floor far below, at
+    /// GUARDIAN RULING 6: whether the FLOOR SET (not necessarily one
+    /// connected surface) has SOME raw floor within `tol` of `y` under EVERY
+    /// one of [`CONTACT_PROBE_COUNT`] deterministic compass points on the
+    /// circle of `radius` around `(x, z)`. This is exactly what it tests and
+    /// no more: it is a ring-of-points existence check on the floor set, NOT
+    /// a proof that a single contiguous surface spans the whole disc. A
+    /// surface smaller than the patch (the mirror-panel top edge) has probes
+    /// that either miss the surface entirely (raw floor far below, at
     /// whatever real ground sits under the mirror) or land on no floor at
-    /// all — either way the probe fails and the whole candidate is rejected.
+    /// all — either way the probe fails and the whole candidate is rejected,
+    /// which is what closes the mirror-edge seam. But the same looseness
+    /// means the gate can be fooled two ways it does not claim to guard
+    /// against: (1) a sliver low enough above the surrounding real floor
+    /// that ALL 8 probes still land on that lower floor within `tol` gets
+    /// ADMITTED even though it is itself no wider than the sliver (see the
+    /// `sliver_low_enough_above_floor_is_admitted_by_design` documentation
+    /// ordeal in `tests/patch_gate.rs` for the concrete boundary); (2)
+    /// disjoint patches of floor scattered around the ring, none of them
+    /// spanning the centre, could in principle each individually satisfy one
+    /// probe and add up to a false ADMIT. Neither case is exercised by
+    /// naruko's authored geometry tonight, so this is documented risk, not a
+    /// bug — closing it would need per-probe surface identity, not just a
+    /// height check, and is left to a future ruling.
     fn patch_supported(&self, x: f32, z: f32, y: f32, radius: f32, tol: f32) -> bool {
         if radius <= 0.0 {
             return true; // patch test disabled — degrade to the raw query
@@ -378,16 +393,28 @@ impl Ground {
         tol: f32,
     ) -> Option<f32> {
         let mut ceiling = ceiling;
-        // Belt-and-braces bound: each iteration must strictly exclude at
-        // least the current winning candidate (via GATED_EXCLUSION_STEP >
-        // COLUMN_EPSILON, see that constant's doc comment), so the number of
-        // fallthrough steps can never exceed the number of walkable
-        // triangles in the floor set — there is no way to reject more
-        // distinct candidates than there are triangles to reject. Any
-        // overrun therefore means the exclusion invariant broke (a logic
-        // bug, not an expected runtime condition), so debug builds assert
-        // loudly and release builds fail safe by returning `None` rather
-        // than looping forever or panicking in the field.
+        // Belt-and-braces bound, PROVEN unreachable, not just hoped safe:
+        // each retry lowers the ceiling by GATED_EXCLUSION_STEP (2 *
+        // COLUMN_EPSILON), which strictly exceeds COLUMN_EPSILON — the only
+        // epsilon `raw_height_at` uses to accept a candidate. So every
+        // accepted `y` this loop sees is strictly less than every `y` it saw
+        // before (`y_next <= ceiling_next + COLUMN_EPSILON == y_prev -
+        // GATED_EXCLUSION_STEP + COLUMN_EPSILON < y_prev`), i.e. candidates
+        // form a strictly decreasing sequence. `raw_height_at` only ever
+        // returns heights that come from this floor's own triangle set, so
+        // there are at most `self.triangles.len()` distinct candidate
+        // heights to strictly decrease through before the column runs out of
+        // floor and `raw_height_at` returns `None` (caught by the `?` above,
+        // outside this loop). Therefore this loop CANNOT run more than
+        // `triangles.len()` iterations while the exclusion-step invariant
+        // holds — if it ever does, the invariant itself broke (someone
+        // changed GATED_EXCLUSION_STEP or COLUMN_EPSILON without keeping the
+        // former strictly larger, or `raw_height_at`'s acceptance rule
+        // changed underneath it). That is a logic bug in code the proof
+        // above says can never legitimately execute, so it gets a loud crash
+        // in EVERY profile — not a quiet `None` that would silently drop the
+        // player through the floor in the field — so it is caught in CI
+        // instead of hidden behind a "safe" fallback.
         let max_iterations = self.triangles.len();
         for _ in 0..=max_iterations {
             let y = self.raw_height_at(x, z, ceiling)?;
@@ -398,13 +425,13 @@ impl Ground {
             // and retry with the next-highest raw floor below it.
             ceiling = y - GATED_EXCLUSION_STEP;
         }
-        debug_assert!(
-            false,
+        panic!(
             "height_at_gated exceeded {max_iterations} fallthrough iterations (bounded by the \
-             triangle count) — the exclusion-step invariant must have broken; this is a logic \
-             bug, not a runtime hang, so release builds fail safe with None instead of looping"
+             triangle count) — the GATED_EXCLUSION_STEP > COLUMN_EPSILON exclusion invariant \
+             this bound is proven from (see this loop's doc comment) must have broken; this is \
+             unreachable-by-proof code firing, a logic bug that deserves a crash in every \
+             profile, not a quiet fall-through-world"
         );
-        None
     }
 
     /// Highest floor height in column `(x, z)` that sits at or below
