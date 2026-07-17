@@ -1,18 +1,15 @@
-//! RITE VIII-3 — THE UPSCALER: forge-time training. Generates, per pose:
-//!   - a LOW-resolution noisy 1-spp traced frame (the internal render),
-//!   - the TARGET-resolution AOVs (albedo/normal/depth — cheap, full-res),
-//!   - the TARGET-resolution converged N-frame reference (the truth),
-//! across the SAME naruko poses/split the denoiser uses (shared
-//! `upscaler_dataset`), trains the per-pixel residual-over-bilinear MLP
-//! (`scrying_glass::upscaler`) on the TRAIN split, evaluates NEURAL vs NAIVE
-//! BILINEAR per held-out VALIDATION frame (whole poses, never pixels — the
-//! bound must be per-frame), and writes:
-//!
-//!   - packages/scrying-glass/data/upscaler-weights-v1.bin
-//!   - packages/scrying-glass/data/upscaler-weights-v1.provenance.json
-//!     (dataset hash, config, scale, per-frame bilinear/neural RMSE table,
-//!     the DERIVED pinned bound = worst validation frame's NEURAL RMSE, and
-//!     the beats-bilinear margin per pose, sha256 of the weights).
+//! RITE VIII-3 — THE UPSCALER: forge-time training. Generates, per pose, a
+//! LOW-resolution noisy 1-spp traced frame (the internal render), the
+//! TARGET-resolution AOVs (albedo/normal/depth — cheap, full-res), and the
+//! TARGET-resolution converged N-frame reference (the truth), across the SAME
+//! naruko poses/split the denoiser uses (shared `upscaler_dataset`), trains
+//! the per-pixel residual-over-bilinear MLP (`scrying_glass::upscaler`) on the
+//! TRAIN split, evaluates NEURAL vs NAIVE BILINEAR per held-out VALIDATION
+//! frame (whole poses, never pixels — the bound must be per-frame), and writes
+//! `data/upscaler-weights-v1.bin` + `data/upscaler-weights-v1.provenance.json`
+//! (dataset hash, config, scale, per-frame bilinear/neural RMSE table, the
+//! DERIVED pinned bound = worst validation frame's NEURAL RMSE, the
+//! beats-bilinear margin per pose, sha256 of the weights).
 //!
 //! Run:  cargo run -p scrying-glass --release --example viii3_train
 //!       GAIA_VIII3_EPOCHS=400 cargo run -p scrying-glass --release --example viii3_train
@@ -125,7 +122,10 @@ fn render_pose(
     );
     let (hi_albedo, hi_normal, hi_depth) = split_aov(&raw_aov);
 
-    let hit_frac = hi_albedo.iter().filter(|a| a.length_squared() > 0.0).count() as f32
+    let hit_frac = hi_albedo
+        .iter()
+        .filter(|a| a.length_squared() > 0.0)
+        .count() as f32
         / hi_albedo.len() as f32;
     eprintln!(
         "[viii3-train] pose '{name}' low={low_w}x{low_h} target={target_w}x{target_h} ref_frames={ref_frames} hi_hit_frac={hit_frac:.3}"
@@ -249,7 +249,10 @@ fn main() {
     );
     let mut worst_neural_rmse = 0.0f64;
     let mut val_rows = Vec::new();
-    for d in data.iter().filter(|d| VALIDATION_POSE_NAMES.contains(&d.name)) {
+    for d in data
+        .iter()
+        .filter(|d| VALIDATION_POSE_NAMES.contains(&d.name))
+    {
         let f = &d.frame;
         let bilinear = bilinear_upsample(&f.low_radiance, f.low_w, f.low_h, f.target_w, f.target_h);
         let neural = upscale_image(
@@ -309,7 +312,9 @@ fn main() {
         "\n[viii3-train] neural strictly beats naive bilinear on EVERY validation frame: {}",
         if all_beat { "YES" } else { "NO — WALL" }
     );
-    println!("[viii3-train] PINNED BOUND (worst validation-frame NEURAL RMSE) = {worst_neural_rmse:.6}");
+    println!(
+        "[viii3-train] PINNED BOUND (worst validation-frame NEURAL RMSE) = {worst_neural_rmse:.6}"
+    );
 
     // ── serialize + provenance ──────────────────────────────────────────
     let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("data");

@@ -422,12 +422,7 @@ fn bilinear_taps(
     let y1i = clampi(y0 + 1.0, low_h);
     let idx = |x: usize, y: usize| y * low_w as usize + x;
     (
-        [
-            idx(x0i, y0i),
-            idx(x1i, y0i),
-            idx(x0i, y1i),
-            idx(x1i, y1i),
-        ],
+        [idx(x0i, y0i), idx(x1i, y0i), idx(x0i, y1i), idx(x1i, y1i)],
         dx,
         dy,
     )
@@ -467,6 +462,7 @@ pub fn bilinear_upsample(
 /// CURRENT-FRAME buffers only: the 2×2 low-res demod-log radiance taps, the
 /// subpixel offset, and this target pixel's high-res albedo/normal/depth.
 /// (One of the `pub fn`s the ban ordeal's signature scan checks.)
+#[allow(clippy::too_many_arguments)]
 pub fn pixel_features(
     low_radiance: &[Vec3],
     low_w: u32,
@@ -607,7 +603,13 @@ pub fn train_epoch(
     let mut inputs: Vec<[f32; INPUT_FEATURES]> = Vec::new();
     let mut targets: Vec<[f32; OUTPUT_CHANNELS]> = Vec::new();
     for fr in dataset {
-        let base = bilinear_upsample(&fr.low_radiance, fr.low_w, fr.low_h, fr.target_w, fr.target_h);
+        let base = bilinear_upsample(
+            &fr.low_radiance,
+            fr.low_w,
+            fr.low_h,
+            fr.target_w,
+            fr.target_h,
+        );
         for ty in 0..fr.target_h {
             for tx in 0..fr.target_w {
                 let i = (ty * fr.target_w + tx) as usize;

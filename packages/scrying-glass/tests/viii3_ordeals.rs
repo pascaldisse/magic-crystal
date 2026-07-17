@@ -89,7 +89,13 @@ fn fixed_pose() -> (Bvh, Camera, SunLight, [f32; 4], [f32; 4]) {
         intensity: 2.0,
         ambient_intensity: 0.15,
     };
-    (bvh, camera, sun, [0.1, 0.12, 0.22, 1.0], [0.55, 0.42, 0.5, 1.0])
+    (
+        bvh,
+        camera,
+        sun,
+        [0.1, 0.12, 0.22, 1.0],
+        [0.55, 0.42, 0.5, 1.0],
+    )
 }
 
 /// One validation pose's rendered buffers: (name, low_noisy, hi_albedo,
@@ -228,7 +234,8 @@ fn measure_render_nondeterminism_margin(
     let mut max_relative_spread = 0.0f64;
     for i in 0..renders.len() {
         for j in (i + 1)..renders.len() {
-            max_relative_spread = max_relative_spread.max(rmse(&renders[i], &renders[j]) / magnitude);
+            max_relative_spread =
+                max_relative_spread.max(rmse(&renders[i], &renders[j]) / magnitude);
         }
     }
     let margin = if max_relative_spread > 0.0 {
@@ -255,11 +262,29 @@ fn a_inference_is_byte_identical_same_frame_twice_cold() {
         ..IntegratorParams::default()
     };
     let low = resolve(&trace_headless(
-        &device, &queue, &bvh, &camera, &sun, sky_top, sky_horizon, low_w, low_h, 1, &noisy_params,
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &sun,
+        sky_top,
+        sky_horizon,
+        low_w,
+        low_h,
+        1,
+        &noisy_params,
         None,
     ));
     let raw_aov = trace_headless_aov(
-        &device, &queue, &bvh, &camera, &sun, sky_top, sky_horizon, target_w, target_h,
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &sun,
+        sky_top,
+        sky_horizon,
+        target_w,
+        target_h,
     );
     let (hi_albedo, hi_normal, hi_depth) = split_aov(&raw_aov);
 
@@ -305,7 +330,10 @@ fn d_scale_one_degenerates_to_exact_identity() {
         .map(|i| GVec3::new((i as f32).sin().abs(), (i as f32 * 0.3).cos().abs(), 0.2))
         .collect();
     let identity = bilinear_upsample(&img, 7, 5, 7, 5);
-    assert_eq!(identity, img, "bilinear resampler at scale 1 is not bit-exact identity");
+    assert_eq!(
+        identity, img,
+        "bilinear resampler at scale 1 is not bit-exact identity"
+    );
 
     // Neural path at scale 1: base == input, residual head over it. With the
     // COMMITTED (trained) weights the residual is nonzero, so this is NOT a
@@ -447,7 +475,10 @@ fn public_fn_signatures(text: &str) -> Vec<(String, String)> {
             .map(|e| name_start + e)
             .unwrap_or(name_start);
         let name = text[name_start..name_end].trim().to_string();
-        let body_start = text[start..].find('{').map(|e| start + e).unwrap_or(text.len());
+        let body_start = text[start..]
+            .find('{')
+            .map(|e| start + e)
+            .unwrap_or(text.len());
         sigs.push((name, text[start..body_start].to_string()));
         search_from = (body_start + 1).max(start + 1);
     }
@@ -486,9 +517,7 @@ fn f_ban_every_public_fn_signature_in_upscaler_takes_current_frame_inputs_only()
     }
 }
 
-#[test]
-fn scale_factor_is_at_least_one() {
-    // Sanity: the scale parameter is a real factor (the derivation and the
-    // scale-1 identity ordeal assume >= 1).
-    assert!(UPSCALE_SCALE >= 1, "UPSCALE_SCALE must be >= 1");
-}
+// Sanity: the scale parameter is a real factor (the derivation and the
+// scale-1 identity ordeal assume >= 1) — a compile-time invariant, not a
+// runtime test (clippy correctly notes a runtime assert on a const is moot).
+const _: () = assert!(UPSCALE_SCALE >= 1, "UPSCALE_SCALE must be >= 1");

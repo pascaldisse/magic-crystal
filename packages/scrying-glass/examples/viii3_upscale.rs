@@ -46,7 +46,15 @@ fn linear_to_srgb(c: f32) -> f32 {
     }
 }
 
-fn write_triptych(a: &[GVec3], b: &[GVec3], c: &[GVec3], w: u32, h: u32, exposure: f32, path: &Path) {
+fn write_triptych(
+    a: &[GVec3],
+    b: &[GVec3],
+    c: &[GVec3],
+    w: u32,
+    h: u32,
+    exposure: f32,
+    path: &Path,
+) {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).unwrap();
     }
@@ -66,7 +74,10 @@ fn write_triptych(a: &[GVec3], b: &[GVec3], c: &[GVec3], w: u32, h: u32, exposur
     let mut enc = png::Encoder::new(writer, 3 * w, h);
     enc.set_color(png::ColorType::Rgb);
     enc.set_depth(png::BitDepth::Eight);
-    enc.write_header().unwrap().write_image_data(&bytes).unwrap();
+    enc.write_header()
+        .unwrap()
+        .write_image_data(&bytes)
+        .unwrap();
     eprintln!("[viii3-upscale] wrote {}", path.display());
 }
 
@@ -103,29 +114,57 @@ fn main() {
         ..IntegratorParams::default()
     };
     let low_noisy = resolve(&trace_headless(
-        &device, &queue, &bvh, camera, &scene.sun, scene.sky_top, scene.sky_horizon, low_w, low_h,
-        1, &noisy_params, None,
+        &device,
+        &queue,
+        &bvh,
+        camera,
+        &scene.sun,
+        scene.sky_top,
+        scene.sky_horizon,
+        low_w,
+        low_h,
+        1,
+        &noisy_params,
+        None,
     ));
 
     // TARGET AOVs + TARGET converged reference (truth).
     let raw_aov = trace_headless_aov(
-        &device, &queue, &bvh, camera, &scene.sun, scene.sky_top, scene.sky_horizon, target_w,
+        &device,
+        &queue,
+        &bvh,
+        camera,
+        &scene.sun,
+        scene.sky_top,
+        scene.sky_horizon,
+        target_w,
         target_h,
     );
     let (hi_albedo, hi_normal, hi_depth) = split_aov(&raw_aov);
     let reference = resolve(&trace_headless(
-        &device, &queue, &bvh, camera, &scene.sun, scene.sky_top, scene.sky_horizon, target_w,
-        target_h, ref_frames, &IntegratorParams::default(), None,
+        &device,
+        &queue,
+        &bvh,
+        camera,
+        &scene.sun,
+        scene.sky_top,
+        scene.sky_horizon,
+        target_w,
+        target_h,
+        ref_frames,
+        &IntegratorParams::default(),
+        None,
     ));
 
     // Load COMMITTED weights (never retrained here).
     let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("data");
-    let weights_bytes = std::fs::read(data_dir.join("upscaler-weights-v1.bin")).unwrap_or_else(|e| {
-        panic!(
-            "[viii3-upscale] could not read upscaler-weights-v1.bin ({e}) — run \
+    let weights_bytes =
+        std::fs::read(data_dir.join("upscaler-weights-v1.bin")).unwrap_or_else(|e| {
+            panic!(
+                "[viii3-upscale] could not read upscaler-weights-v1.bin ({e}) — run \
              `cargo run -p scrying-glass --release --example viii3_train` first"
-        )
-    });
+            )
+        });
     let mlp = deserialize_weights(&weights_bytes).expect("deserialize committed weights");
 
     let bilinear = bilinear_upsample(&low_noisy, low_w, low_h, target_w, target_h);
@@ -135,17 +174,27 @@ fn main() {
 
     let bilinear_rmse = rmse(&bilinear, &reference);
     let neural_rmse = rmse(&neural, &reference);
-    println!("[viii3-upscale] pose='orbit_-20' (VALIDATION-split, held out) — GENERALIZATION proof");
-    println!("[viii3-upscale]   low internal = {low_w}x{low_h}, native target = {target_w}x{target_h}, scale = {UPSCALE_SCALE}");
+    println!(
+        "[viii3-upscale] pose='orbit_-20' (VALIDATION-split, held out) — GENERALIZATION proof"
+    );
+    println!(
+        "[viii3-upscale]   low internal = {low_w}x{low_h}, native target = {target_w}x{target_h}, scale = {UPSCALE_SCALE}"
+    );
     println!("[viii3-upscale]   RMSE(naive bilinear, truth {ref_frames}f) = {bilinear_rmse:.6}");
     println!("[viii3-upscale]   RMSE(neural upscale,  truth {ref_frames}f) = {neural_rmse:.6}");
     println!(
         "[viii3-upscale]   neural beats bilinear: {} (margin {:.6})",
-        if neural_rmse < bilinear_rmse { "YES" } else { "NO" },
+        if neural_rmse < bilinear_rmse {
+            "YES"
+        } else {
+            "NO"
+        },
         bilinear_rmse - neural_rmse
     );
 
     let proof = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../proof/viii3-upscale.png");
-    write_triptych(&bilinear, &neural, &reference, target_w, target_h, exposure, &proof);
+    write_triptych(
+        &bilinear, &neural, &reference, target_w, target_h, exposure, &proof,
+    );
     eprintln!("[viii3-upscale] naive bilinear | neural | truth — side by side.");
 }
