@@ -182,6 +182,34 @@
   (the Architect SEES something break) remains HIS act; the hymn stays owed at
   close per hymnal law — not the night's to write.
 
+### 11. rite7-vii0b — THE FIRST GROUND render weld: BUILT, REVIEWED, UNMERGED
+- **What**: terrain sigil (seed + tile coords, NO stored geometry) → tile_mesh
+  → the same Great Chain seal path as all matter → drawn under the sky;
+  oracle learns it same wave (analytic bounds from the sigil + an affirmative
+  gaze ordeal — "gaze returns terrain" made literally true, range 107.7033
+  hand-derived); NO-STORAGE cold-double-load ordeal; camera-relative seam
+  proven END-TO-END at tile 10,000,000 through the real weld; walker floor
+  reads the analytic field value exactly. BONUS: the pre-existing jormungandr
+  suite flake root-caused (three parallel tests torn-writing one fixed temp
+  file) and fixed at source — workspace green twice after.
+- **Adversary**: HOLDS, zero MUST-FIX; five advisories discharged. The
+  floating-patch question ruled: satisfies VII-0's own proof language; the
+  walkable seam is VII-1's charter.
+- **State**: branch rite7-vii0b @ f2c44b5, 352/352 green in-lane (twice), NOT
+  merged — the Architect stopped the night at this point. Merging is one
+  command: `git merge --no-ff rite7-vii0b`, full suite, push.
+- **Proofs read**: vii0-ground.png + vii0-ground-orbit.png — real undulating
+  generated ground, lit, offshore of the realm (float honestly noted).
+
+## NIGHT CLOSED BY THE ARCHITECT (~09:30)
+Stop condition: his word, mid-queue — after the repo moved to its true
+name's home (origin → github.com/pascaldisse/magic-crystal, main pushed
+there). Queue state at close: items 1, 2, 3, 5, 6 COMPLETE; item 4
+partial — VII-0a landed, VII-0b ready-unmerged (above), VII-1 and VII-2
+NOT BUILT. An honest wall beats a dishonest finish; this is neither — it
+is the Architect's own hand on the lever. The morning path is written in
+HANDOFF.md.
+
 ## In flight
 - **rite6-vi1** (queue item 3, wave VI-1 THE STACK TOPPLES): built @ d642551 —
   impulse plumbing (Solver::apply_impulse → Physics → Op::Impulse →
