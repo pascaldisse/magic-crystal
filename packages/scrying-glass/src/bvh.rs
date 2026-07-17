@@ -7,9 +7,20 @@
 //! Structure: a binary BVH split by the Surface-Area Heuristic (binned SAH over
 //! the centroid axes). SAH is a pure traversal-quality choice — it changes only
 //! the tree's SHAPE (which triangles land under which node), never the triangle
-//! SET nor the nearest hit a ray reports, so every rendered pixel is bit-identical
-//! to the old median split (`merge_equals_full_rebuild` proves the geometry
-//! parity). A degenerate node (coincident centroids / no paying split) falls back
+//! SET; `nearest_hit` for any ray whose nearest surface is UNAMBIGUOUS is
+//! unchanged, so the vast majority of pixels are bit-identical to the old median
+//! split (`merge_equals_full_rebuild` proves the geometry parity). The one
+//! exception is a coplanar z-fight seam: two triangles a ray meets at the EXACT
+//! same depth (Möller–Trumbore agrees to the ULP). There the "nearest" winner is
+//! undefined — the old median tree kept whichever it visited last, this tree
+//! keeps whichever the SAH order visits last. Both are valid nearest hits; only
+//! the arbitrary tie winner shifts (measured: Naruko front pose 0 px, wide 20 px
+//! of 540k = 0.0037%, all proven exact-depth ties by the brute-force DIAG). A
+//! canonical build-independent tie-break exists (git history, tie band + vertex-
+//! lexicographic `tri_before`) but was retired from tip: it makes MORE pixels
+//! diverge from the median baseline (it rewrites even seams that already agreed),
+//! so median-parity beats build-independence for this lane — see the perf-fix
+//! report. A degenerate node (coincident centroids / no paying split) falls back
 //! to the widest-axis median. Every threshold is a param (IRON LAW: never
 //! hardcode).
 //!
@@ -240,43 +251,16 @@ impl Bvh {
         while sp > 0 {
             sp -= 1;
             let node = &self.nodes[stack[sp] as usize];
-            // Widen the cull by the tie band (mirror of the WGSL `cull`).
-            let cull = best_t + best_t * TIE_EPS + TIE_ABS;
-            if !aabb_hit(node.min, node.max, origin, inv, t_min, cull) {
+            if !aabb_hit(node.min, node.max, origin, inv, t_min, best_t) {
                 continue;
             }
             if node.count > 0 {
                 for k in 0..node.count {
                     let ti = node.left_first + k;
                     let t = &self.tris[ti as usize];
-                    let cull = best_t + best_t * TIE_EPS + TIE_ABS;
-                    if let Some(t_hit) = tri_hit(origin, dir, t, t_min, cull) {
-                        // Coplanar z-fights (t within the tie band) resolve to the
-                        // canonical `tri_before` winner — build-independent. Mirror
-                        // of the WGSL `trace_closest` banding.
-                        let band = best_t * TIE_EPS + TIE_ABS;
-                        match best_i {
-                            None => {
-                                best_t = t_hit;
-                                best_i = Some(ti);
-                            }
-                            _ if t_hit < best_t - band => {
-                                best_t = t_hit;
-                                best_i = Some(ti);
-                            }
-                            Some(bi) if t_hit < best_t => {
-                                best_t = t_hit;
-                                if tri_before(&self.tris[ti as usize], &self.tris[bi as usize]) {
-                                    best_i = Some(ti);
-                                }
-                            }
-                            Some(bi) if t_hit <= best_t + band => {
-                                if tri_before(&self.tris[ti as usize], &self.tris[bi as usize]) {
-                                    best_i = Some(ti);
-                                }
-                            }
-                            _ => {}
-                        }
+                    if let Some(t_hit) = tri_hit(origin, dir, t, t_min, best_t) {
+                        best_t = t_hit;
+                        best_i = Some(ti);
                     }
                 }
             } else if sp + 2 <= stack.len() {
@@ -351,8 +335,12 @@ fn subdivide(
             // Stable partition: bins ≤ plane go left. Sorting by bin index keeps
             // the build deterministic (topology is free — pixels never see it).
             slice.sort_by(|a, b| {
-                bin_of(a.centroid[axis], cmn[axis], scale, params.sah_bins)
-                    .cmp(&bin_of(b.centroid[axis], cmn[axis], scale, params.sah_bins))
+                bin_of(a.centroid[axis], cmn[axis], scale, params.sah_bins).cmp(&bin_of(
+                    b.centroid[axis],
+                    cmn[axis],
+                    scale,
+                    params.sah_bins,
+                ))
             });
             slice
                 .iter()
@@ -525,37 +513,6 @@ fn tri_hit(origin: [f32; 3], dir: [f32; 3], t: &GpuTri, t_min: f32, t_max: f32) 
     } else {
         None
     }
-}
-
-/// Coplanar z-fight band — the CPU mirror of the WGSL `TIE_EPS`/`TIE_ABS`. Two
-/// hits within this relative (plus absolute floor) distance are one surface as
-/// far as depth can tell; the winner is the canonical `tri_before`, not the BVH
-/// visitation order, so every tree shape agrees.
-const TIE_EPS: f32 = 1e-6;
-const TIE_ABS: f32 = 1e-5;
-
-/// Canonical, build-independent tie-break for two triangles within the tie band
-/// — lexicographic over the vertex then material lanes. Mirror of the WGSL
-/// `tri_before`. Returns true when `a` should win over the incumbent `b`.
-fn tri_before(a: &GpuTri, b: &GpuTri) -> bool {
-    // Vertices first, then the material lanes — so even coincident triangles
-    // with different looks resolve to one defined winner (mirror of WGSL).
-    let ka = [
-        a.v0[0], a.v0[1], a.v0[2], a.v1[0], a.v1[1], a.v1[2], a.v2[0], a.v2[1], a.v2[2],
-        a.albedo[0], a.albedo[1], a.albedo[2], a.albedo[3], a.emission[0], a.emission[1],
-        a.emission[2], a.emission[3],
-    ];
-    let kb = [
-        b.v0[0], b.v0[1], b.v0[2], b.v1[0], b.v1[1], b.v1[2], b.v2[0], b.v2[1], b.v2[2],
-        b.albedo[0], b.albedo[1], b.albedo[2], b.albedo[3], b.emission[0], b.emission[1],
-        b.emission[2], b.emission[3],
-    ];
-    for i in 0..ka.len() {
-        if ka[i] != kb[i] {
-            return ka[i] < kb[i];
-        }
-    }
-    false
 }
 
 fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {

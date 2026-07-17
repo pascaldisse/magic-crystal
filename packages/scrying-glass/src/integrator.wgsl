@@ -328,38 +328,6 @@ fn tri_hit(o: vec3<f32>, d: vec3<f32>, i: u32, t_min: f32, t_max: f32) -> f32 {
   return -1.0;
 }
 
-// Canonical tie-break for two triangles a ray meets at the EXACT same distance
-// (shared edges / coplanar seams — z-fighting the ray can't resolve by depth).
-// Without this the winner is whichever the BVH happened to visit last, so a tree
-// re-shape (e.g. SAH) would flip such pixels. Ordering by the triangles' vertex
-// data is intrinsic to the geometry — independent of build order — so the picked
-// surface is defined and every acceleration structure agrees. Returns true when
-// `i` should win over the incumbent `j`.
-fn tri_before(i: u32, j: u32) -> bool {
-  let a = tris[i];
-  let b = tris[j];
-  if (a.v0.x != b.v0.x) { return a.v0.x < b.v0.x; }
-  if (a.v0.y != b.v0.y) { return a.v0.y < b.v0.y; }
-  if (a.v0.z != b.v0.z) { return a.v0.z < b.v0.z; }
-  if (a.v1.x != b.v1.x) { return a.v1.x < b.v1.x; }
-  if (a.v1.y != b.v1.y) { return a.v1.y < b.v1.y; }
-  if (a.v1.z != b.v1.z) { return a.v1.z < b.v1.z; }
-  if (a.v2.x != b.v2.x) { return a.v2.x < b.v2.x; }
-  if (a.v2.y != b.v2.y) { return a.v2.y < b.v2.y; }
-  if (a.v2.z != b.v2.z) { return a.v2.z < b.v2.z; }
-  // Coincident triangles (identical verts, different look): decide by material
-  // so even authored z-fight has ONE defined winner, build-order-free.
-  if (a.albedo.x != b.albedo.x) { return a.albedo.x < b.albedo.x; }
-  if (a.albedo.y != b.albedo.y) { return a.albedo.y < b.albedo.y; }
-  if (a.albedo.z != b.albedo.z) { return a.albedo.z < b.albedo.z; }
-  if (a.albedo.w != b.albedo.w) { return a.albedo.w < b.albedo.w; }
-  if (a.emission.x != b.emission.x) { return a.emission.x < b.emission.x; }
-  if (a.emission.y != b.emission.y) { return a.emission.y < b.emission.y; }
-  if (a.emission.z != b.emission.z) { return a.emission.z < b.emission.z; }
-  if (a.emission.w != b.emission.w) { return a.emission.w < b.emission.w; }
-  return false;
-}
-
 fn aabb_hit(mn: vec3<f32>, mx: vec3<f32>, o: vec3<f32>, inv: vec3<f32>, t_min: f32, t_max: f32) -> bool {
   let t0 = (mn - o) * inv;
   let t1 = (mx - o) * inv;
@@ -369,16 +337,6 @@ fn aabb_hit(mn: vec3<f32>, mx: vec3<f32>, o: vec3<f32>, inv: vec3<f32>, t_min: f
   let tmax = min(min(hi.x, hi.y), min(hi.z, t_max));
   return tmax >= tmin;
 }
-
-// Coplanar z-fight band. Two surfaces the ray meets within this RELATIVE (plus a
-// tiny ABSOLUTE floor) distance are unresolvable by depth — Moller–Trumbore rounds
-// their `t` a few ULP apart even on the SAME plane, so which one a raw nearest
-// search keeps depends on BVH visitation order (and thus flips when the tree is
-// re-shaped, e.g. SAH). Treating them as a tie and picking the canonical
-// `tri_before` winner makes the choice geometry-defined and build-independent.
-// Chosen ≫ the observed ULP gap (~1e-7 relative) yet ≪ any real surface spacing.
-const TIE_EPS: f32 = 1e-6;
-const TIE_ABS: f32 = 1e-5;
 
 fn trace_closest(o: vec3<f32>, d: vec3<f32>, t_min: f32, t_max: f32) -> Hit {
   var result: Hit;
@@ -394,29 +352,15 @@ fn trace_closest(o: vec3<f32>, d: vec3<f32>, t_min: f32, t_max: f32) -> Hit {
     if (sp <= 0) { break; }
     sp = sp - 1;
     let node = nodes[stack[sp]];
-    // Widen the cull by the tie band so no coplanar twin is skipped by order.
-    let cull = result.t + result.t * TIE_EPS + TIE_ABS;
-    if (!aabb_hit(node.min, node.max, o, inv, t_min, cull)) { continue; }
+    if (!aabb_hit(node.min, node.max, o, inv, t_min, result.t)) { continue; }
     if (node.count > 0u) {
       for (var k = 0u; k < node.count; k = k + 1u) {
         let ti = node.left_first + k;
-        let cull2 = result.t + result.t * TIE_EPS + TIE_ABS;
-        let t = tri_hit(o, d, ti, t_min, cull2);
+        let t = tri_hit(o, d, ti, t_min, result.t);
         if (t > 0.0) {
-          let band = result.t * TIE_EPS + TIE_ABS;
-          if (!result.ok || t < result.t - band) {
-            // A genuinely nearer surface: it starts a fresh tie group.
-            result.t = t;
-            result.tri = ti;
-            result.ok = true;
-          } else if (t < result.t) {
-            // Nearer but inside the band: tighten the min, contest the winner.
-            result.t = t;
-            if (tri_before(ti, result.tri)) { result.tri = ti; }
-          } else if (t <= result.t + band) {
-            // Farther but inside the band: contest the winner only.
-            if (tri_before(ti, result.tri)) { result.tri = ti; }
-          }
+          result.t = t;
+          result.tri = ti;
+          result.ok = true;
         }
       }
     } else {

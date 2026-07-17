@@ -73,9 +73,9 @@ fn select_medium_light(
     plume_center: [f32; 3],
     fallback_reach: f32,
 ) -> BoundLight {
-    let nearest = sources.iter().min_by(|a, b| {
-        dist2(a.position, plume_center).total_cmp(&dist2(b.position, plume_center))
-    });
+    let nearest = sources
+        .iter()
+        .min_by(|a, b| dist2(a.position, plume_center).total_cmp(&dist2(b.position, plume_center)));
     match nearest {
         Some(s) if dist2(s.position, plume_center).sqrt() <= fallback_reach => BoundLight {
             light: MediumLightGpu::Point {
@@ -129,9 +129,23 @@ fn steam_medium(bound: &BoundLight, counter_top_y: f32) -> MediumGpu {
 
 fn key17(t: &scrying_glass::bvh::GpuTri) -> [OrdF; 17] {
     [
-        t.v0[0], t.v0[1], t.v0[2], t.v1[0], t.v1[1], t.v1[2], t.v2[0], t.v2[1], t.v2[2],
-        t.albedo[0], t.albedo[1], t.albedo[2], t.albedo[3], t.emission[0], t.emission[1],
-        t.emission[2], t.emission[3],
+        t.v0[0],
+        t.v0[1],
+        t.v0[2],
+        t.v1[0],
+        t.v1[1],
+        t.v1[2],
+        t.v2[0],
+        t.v2[1],
+        t.v2[2],
+        t.albedo[0],
+        t.albedo[1],
+        t.albedo[2],
+        t.albedo[3],
+        t.emission[0],
+        t.emission[1],
+        t.emission[2],
+        t.emission[3],
     ]
     .map(OrdF)
 }
@@ -196,7 +210,11 @@ fn main() {
         panic!("[parity] no GPU");
     };
     let (w, h) = (900u32, 600u32);
-    let frames = if std::env::var("PRIM_ONLY").is_ok() { 1 } else { 4 };
+    let frames = if std::env::var("PRIM_ONLY").is_ok() {
+        1
+    } else {
+        4
+    };
 
     let world_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../worlds/naruko");
     let mut core = Core::default();
@@ -210,7 +228,13 @@ fn main() {
         RenderScene::from_ecs(std::mem::take(&mut core.world), &params).expect("render scene");
 
     let plume_center = [-1.0, counter_top_y + 1.7, 25.6];
-    let bound = select_medium_light(&sources, &scene.sun, params.emission_intensity, plume_center, 1.47);
+    let bound = select_medium_light(
+        &sources,
+        &scene.sun,
+        params.emission_intensity,
+        plume_center,
+        1.47,
+    );
     let medium = steam_medium(&bound, counter_top_y);
 
     let bvh_params = BvhParams::default();
@@ -273,14 +297,23 @@ fn main() {
                 far: params.far,
             },
         ),
-        ("wide", camera_at([-4.5, 8.5, 33.0], [-5.5, 2.0, 15.5], 60.0)),
-        ("a2_steam", camera_at([3.5, 3.4, 33.0], [-1.0, 4.2, 25.6], 55.0)),
+        (
+            "wide",
+            camera_at([-4.5, 8.5, 33.0], [-5.5, 2.0, 15.5], 60.0),
+        ),
+        (
+            "a2_steam",
+            camera_at([3.5, 3.4, 33.0], [-1.0, 4.2, 25.6], 55.0),
+        ),
     ];
 
     // CPU diagnosis: does the tree's hit() ever disagree with a brute-force
     // linear nearest-hit (the topology-free ground truth)? Same tiebreak.
     if std::env::var("DIAG").is_ok() {
-        let pi: usize = std::env::var("DIAG_POSE").ok().and_then(|v| v.parse().ok()).unwrap_or(1);
+        let pi: usize = std::env::var("DIAG_POSE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1);
         let cam = &poses[pi].1;
         const TE: f32 = 1e-5;
         const TA: f32 = 1e-4;
@@ -306,12 +339,11 @@ fn main() {
             let band = tmin * TE + TA;
             let mut win: Option<usize> = None;
             for (i, t) in tris.iter().enumerate() {
-                if let Some(th) = tri_hit_pub(o, d, t, 1e-3, f32::INFINITY) {
-                    if th <= tmin + band {
-                        if win.is_none() || key17(t) < key17(&tris[win.unwrap()]) {
-                            win = Some(i);
-                        }
-                    }
+                if let Some(th) = tri_hit_pub(o, d, t, 1e-3, f32::INFINITY)
+                    && th <= tmin + band
+                    && (win.is_none() || key17(t) < key17(&tris[win.unwrap()]))
+                {
+                    win = Some(i);
                 }
             }
             win.map(|i| (tmin, i))
