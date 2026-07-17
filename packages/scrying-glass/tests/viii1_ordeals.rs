@@ -132,21 +132,22 @@ fn a_inference_is_byte_identical_same_frame_twice_cold() {
     );
 }
 
-/// Re-render the SAME two held-out validation poses `examples/viii1_train.rs`
-/// used ("orbit_-20", "orbit_+40" — see that file's module docs for the
-/// full documented dataset scope), from the same naruko realm, same fixed
-/// seed/params, so the pinned bound can be replayed deterministically here.
-fn render_validation_poses(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-) -> Vec<(
+/// One validation pose's rendered buffers: (name, noisy, albedo, normal,
+/// depth, reference).
+type ValidationPose = (
     &'static str,
     Vec<GVec3>,
     Vec<GVec3>,
     Vec<GVec3>,
     Vec<f32>,
     Vec<GVec3>,
-)> {
+);
+
+/// Re-render the SAME two held-out validation poses `examples/viii1_train.rs`
+/// used ("orbit_-20", "orbit_+40" — see that file's module docs for the
+/// full documented dataset scope), from the same naruko realm, same fixed
+/// seed/params, so the pinned bound can be replayed deterministically here.
+fn render_validation_poses(device: &wgpu::Device, queue: &wgpu::Queue) -> Vec<ValidationPose> {
     fn naruko_params() -> SceneParameters {
         SceneParameters {
             fov_y_degrees: 60.0,
@@ -410,6 +411,7 @@ fn e_senses_unchanged_oracle_sha_equal_pass_on_or_off() {
         ..IntegratorParams::default()
     };
 
+    #[allow(clippy::too_many_arguments)]
     fn render_truth(
         device: &wgpu::Device,
         queue: &wgpu::Queue,

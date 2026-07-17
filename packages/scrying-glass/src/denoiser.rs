@@ -171,6 +171,10 @@ impl Mlp {
 
     /// Forward pass for one pixel's feature vector. Fixed loop order
     /// throughout (index-ordered `for` loops only) — byte-deterministic.
+    /// `needless_range_loop` is silenced deliberately: the index order
+    /// itself is the point (module docs, `error_metric.rs` precedent), not
+    /// an oversight an iterator rewrite should "fix".
+    #[allow(clippy::needless_range_loop)]
     pub fn forward(&self, input: &[f32]) -> [f32; OUTPUT_CHANNELS] {
         let mut activation = input.to_vec();
         for (li, layer) in self.layers.iter().enumerate() {
@@ -193,6 +197,7 @@ impl Mlp {
     /// post-activation vectors (needed by [`Self::backward`]). Index-ordered,
     /// same math as [`Self::forward`] — kept as a separate function so the
     /// hot inference path stays simple and allocation-light.
+    #[allow(clippy::needless_range_loop)]
     fn forward_train(&self, input: &[f32]) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
         let mut activations = vec![input.to_vec()];
         let mut pre_activations = Vec::with_capacity(self.layers.len());
@@ -220,6 +225,7 @@ impl Mlp {
     /// mean-squared-error loss on the OUTPUT_CHANNELS-dim output. Returns
     /// per-layer weight/bias gradients (same shapes as `self.layers`),
     /// index-ordered throughout.
+    #[allow(clippy::needless_range_loop)]
     fn backward(
         &self,
         input: &[f32],
@@ -302,6 +308,7 @@ impl Adam {
 
     /// One Adam update from raw (summed, unaveraged is fine — caller
     /// controls batch scale) gradients.
+    #[allow(clippy::needless_range_loop)]
     pub fn step(&mut self, mlp: &mut Mlp, w_grads: &[Vec<f32>], b_grads: &[Vec<f32>]) {
         self.t += 1;
         let t = self.t as f32;

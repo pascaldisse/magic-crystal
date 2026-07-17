@@ -23,6 +23,7 @@
 //!     two authored poses (a per-pixel MLP needs varied surfaces/angles/
 //!     lighting incidence to generalize, not just varied camera FRAMING of
 //!     the same two shots).
+//!
 //! TRAIN = {front, wide, orbit_+20}. VALIDATION = {orbit_-20, orbit_+40}
 //! (whole, held-out poses — never seen during training). This is a small,
 //! honestly-scoped set (one realm, five static views) — a prime-Guardian
@@ -46,6 +47,11 @@ use scrying_glass::integrator::{
     IntegratorParams, headless_device, resolve, split_aov, trace_headless, trace_headless_aov,
 };
 use scrying_glass::scene::{Camera, RenderScene, SceneParameters, SunDefaults};
+
+/// Forge-time weight-init PRNG seed (deterministic starting point — see
+/// `Mlp::new_random` docs; training itself is NOT promised bit-reproducible,
+/// proposal OPEN 4). A plain constant, not a magic number hidden inline.
+const INIT_SEED: u64 = 0x0005_eed1;
 
 /// Naruko authoring dials — the SAME front pose `perf_audit.rs`/
 /// `viii0_truth.rs` render from (reused verbatim, not reinvented).
@@ -140,6 +146,7 @@ fn default_dataset_wh() -> (u32, u32) {
     (96, 64)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_pose(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -313,7 +320,7 @@ fn main() {
 
     // ── train ────────────────────────────────────────────────────────────
     let config = MlpConfig::default();
-    let mut mlp = Mlp::new_random(config, 0x5eed_1 /* forge-time init seed, LOVE-free */);
+    let mut mlp = Mlp::new_random(config, INIT_SEED);
     let lr = env_f32("GAIA_VIII1_LR", 0.001);
     let epochs = env_u32("GAIA_VIII1_EPOCHS", 120);
     let batch_size = env_u32("GAIA_VIII1_BATCH", 64) as usize;
@@ -398,7 +405,7 @@ fn main() {
             "batch_size": batch_size,
             "learning_rate": lr,
             "optimizer": "adam",
-            "init_seed": 0x5eed_1u64,
+            "init_seed": INIT_SEED,
         },
         "dataset": {
             "realm": "naruko",
