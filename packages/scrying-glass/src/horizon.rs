@@ -315,6 +315,25 @@ impl HorizonRing {
         // Evict farthest-from-observer non-required tiles until the new loads
         // fit. Because required_bytes ≤ budget, evicting every non-required
         // tile always frees enough — the loop can never fail.
+        //
+        // ADVISORY (adversary, VII-2 review): this reserve math (`needed_new`,
+        // and the eviction target `self.resident_bytes + needed_new >
+        // self.budget_bytes`) is computed from the ANALYTIC `self.tile_bytes`
+        // (uniform per-tile cost, see `tile_byte_cost`), while `resident_bytes`
+        // itself accumulates the MEASURED `mesh_bytes(&mesh)` per tile below.
+        // Today these are proven equal — every tile is the same uniform grid,
+        // so analytic and measured costs coincide exactly (see the ring's own
+        // tests). The moment tile meshes stop being uniform (LOD skirts,
+        // adaptive tessellation, degenerate edge stitching, etc. — any
+        // non-uniform per-tile geometry), analytic `tile_bytes` and measured
+        // `mesh_bytes` diverge, and this reserve UNDER-COUNTS: it would
+        // pre-clear space for the analytic estimate while the real load can
+        // cost more, silently blowing the budget invariant enforced by the
+        // debug_assert above. At that point either (a) assert analytic ==
+        // measured per tile as a load-time invariant, or (b) switch this
+        // reserve to track measured bytes (e.g. a running max or per-tile
+        // measured cache) instead of the analytic constant. Not yet done —
+        // parked, no non-uniform tile mesh exists yet to force the choice.
         let mut evicted: Vec<TerrainTile> = Vec::new();
         while self.resident_bytes + needed_new > self.budget_bytes {
             let victim = self
