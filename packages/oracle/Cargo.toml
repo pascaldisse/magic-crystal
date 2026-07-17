@@ -19,6 +19,10 @@ serde = { version = "1", features = ["derive"] }
 vessel = { path = "../vessel" }
 glam = "0.30.9"
 serde_json = "1"
+# VII-0b — `terrain_world_aabb` (model.rs) derives a `terrain` sigil's bounds
+# from the SAME `seed::TerrainSigil` schema the renderer parses. No cycle:
+# `seed` depends only on glam + transmutation (see `packages/seed/Cargo.toml`).
+seed = { path = "../seed" }
 
 [dev-dependencies]
 # GUARDIAN RULING F6 — senses read SOLVER TRUTH. `rest_pose_canon.rs` (and the

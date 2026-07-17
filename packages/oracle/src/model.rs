@@ -22,6 +22,14 @@ use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+// VII-0b — the oracle derives a `terrain` sigil's bounds from the SAME
+// `seed::TerrainSigil` schema the renderer parses (`scrying-glass::scene`),
+// never a hand-rolled duplicate. `seed` depends on nothing in this
+// workspace's `oracle`/`scrying-glass` pair (`packages/seed/Cargo.toml`:
+// glam + transmutation only) — a plain forward edge, no cycle, the same
+// footing as this file's existing `vessel` dependency.
+
+
 /// Fallback half-extent for a primitive whose shape carries no dimensions
 /// (param-driven default, never a hidden constant). Matches the renderer's
 /// authored default of a unit primitive (`size [1,1,1]`, `radius 0.5`).
@@ -225,11 +233,13 @@ impl World {
         let mesh = self.component_value(id, "mesh");
         let spawn = self.component_value(id, "spawn");
         let body = self.component_value(id, "body");
+        let terrain = self.component_value(id, "terrain");
         Some(derive_geometry(
             transform.as_ref(),
             mesh.as_ref(),
             spawn.as_ref(),
             body.as_ref(),
+            terrain.as_ref(),
             ent.components.iter().any(|c| c == "spawn"),
         ))
     }
@@ -279,6 +289,7 @@ fn derive_geometry(
     mesh: Option<&Value>,
     spawn: Option<&Value>,
     body: Option<&Value>,
+    terrain: Option<&Value>,
     has_spawn: bool,
 ) -> EntityGeom {
     let origin = read_vec3(transform.and_then(|t| t.get("position")), [0.0; 3]);
@@ -292,6 +303,22 @@ fn derive_geometry(
     // skeleton-local; the entity transform places it. GENERIC: any named preset.
     if let Some(local) = body_local_aabb(body) {
         let world = entity_affine.transform_aabb(&local);
+        bounds = Some(match bounds {
+            Some(b) => b.union(&world),
+            None => world,
+        });
+    }
+
+    // VII-0b — a `terrain` sigil's bounds are derived ANALYTICALLY from its
+    // own fields (tile origin + tile_size × height-amplitude bounds), never
+    // from a mesh: the oracle never builds the generated patch's geometry, it
+    // reads the SIGIL, the world's own data (the same law that keeps the
+    // patch's triangles out of `worlds/` — see `scrying-glass::scene`'s
+    // NO-STORAGE ordeal). `terrain_world_aabb` is already WORLD-space (tile
+    // placement is derived from tile coords, not the entity transform — a
+    // terrain entity authors no transform), so it's unioned in directly,
+    // never composed through `entity_affine`.
+    if let Some(world) = terrain_world_aabb(terrain) {
         bounds = Some(match bounds {
             Some(b) => b.union(&world),
             None => world,
@@ -344,6 +371,37 @@ fn body_local_aabb(body: Option<&Value>) -> Option<Aabb> {
     Some(Aabb {
         min: [lo.x, lo.y, lo.z],
         max: [hi.x, hi.y, hi.z],
+    })
+}
+
+/// World-space axis-aligned bounds of a `terrain` sigil (VII-0b), derived
+/// ANALYTICALLY from `seed::TerrainSigil::params()` — no mesh is ever built.
+/// x/z span exactly the tile footprint (`tile_origin ..
+/// tile_origin+tile_size_m`, [`seed::tile_origin_m`]); y spans
+/// `± height_amplitude` (the fBm's normalized `[-1,1]` sum scaled by
+/// `height_amplitude` — [`seed::terrain::height_at_grid_index`]'s doc: `sum /
+/// norm` stays in `[-1,1]` because every octave's weight is amplitude-summed
+/// into `norm`, so the field can never exceed its own peak amplitude
+/// regardless of how many octaves are stacked). `None` when the entity
+/// carries no `terrain` sigil, or an unparseable one (an authoring error
+/// surfaced elsewhere, not silently swallowed into an empty AABB here —
+/// `World::geometry` simply omits terrain bounds and the caller sees a
+/// smaller-than-authored gaze, which is how every other malformed-component
+/// case in this file already degrades).
+fn terrain_world_aabb(terrain: Option<&Value>) -> Option<Aabb> {
+    let terrain = terrain?;
+    let sigil: seed::TerrainSigil = serde_json::from_value(terrain.clone()).ok()?;
+    let params = sigil.params();
+    let (origin_x, origin_z) = seed::tile_origin_m(sigil.tile(), &params);
+    let (origin_x, origin_z) = (origin_x as f32, origin_z as f32);
+    let amplitude = params.height_amplitude;
+    Some(Aabb {
+        min: [origin_x, -amplitude, origin_z],
+        max: [
+            origin_x + params.tile_size_m,
+            amplitude,
+            origin_z + params.tile_size_m,
+        ],
     })
 }
 
@@ -705,7 +763,7 @@ mod aabb_tests {
     /// World bounds of an authored `{transform, mesh}` doc (the live path a gaze
     /// takes), so rotation/scale composition is under test end-to-end.
     fn world_bounds(transform: Value, mesh: Value) -> Option<Aabb> {
-        derive_geometry(Some(&transform), Some(&mesh), None, None, false).bounds
+        derive_geometry(Some(&transform), Some(&mesh), None, None, None, false).bounds
     }
 
     /// Local bounds of a single part (primitive derivation under test).
