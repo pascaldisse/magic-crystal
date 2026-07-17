@@ -1,31 +1,49 @@
 //! REFIT DEGRADE SWEEP — derive `RefitParams::degrade_ratio` honestly instead
 //! of freezing a literal. LEVER 1 (refit-not-rebuild) trades a per-tick REBUILD
 //! for a per-tick REFIT: same topology, fresh bounds. Bounds loosen the longer
-//! a tree goes un-rebuilt (the dynamic-root half-area grows), and loose bounds
-//! cost extra GPU traversal. `degrade_ratio` is the multiple of the last-rebuild
-//! half-area at which we pay the rebuild back. House law: tolerances are
-//! DERIVED — measure the noise floor, gate ~10x the floor, prove the gate
-//! actually discriminates real drift from measurement noise.
+//! a tree goes un-rebuilt, and loose bounds cost extra GPU traversal.
+//! `degrade_ratio` is the multiple of the last-rebuild total-node-half-area at
+//! which we pay the rebuild back. House law: tolerances are DERIVED — measure
+//! the noise floor, gate ~10x the floor, prove the gate actually discriminates
+//! real drift from measurement noise.
+//!
+//! REVISION 2 (adversary MUST-FIX): the first pass of this sweep computed
+//! `area_ratio = refit_current / fresh_build_this_tick` — a topology-staleness
+//! signal that stays pinned near 1.0 and is NOT the quantity
+//! `DynamicSplice::update`'s gate actually divides by
+//! (`current_sum / rebuild_reference_area`, the sum captured AT THE LAST
+//! REBUILD — a comparison across TIME, not a same-tick comparison). This
+//! revision reports the GATED ratio itself, split into its two components so
+//! they're separately visible:
+//!   - `stale`  = refit_current / fresh_build_this_tick     (interior topology decay)
+//!   - `pose`   = fresh_build_this_tick / rebuild_reference  (silhouette oscillation since the last rebuild)
+//!   - `gated`  = refit_current / rebuild_reference = stale × pose  (what the gate tests)
 //!
 //! Method (see docs/perf/2026-07-17-refit-degrade-derivation.md for the run):
 //!  1. Warm the merged Naruko realm to the composed mid-stride tick (same
 //!     scaffolding as `refit_parity.rs`).
 //!  2. Build a `DynamicSplice` with a refit gate that NEVER trips
-//!     (`degrade_ratio: f32::INFINITY`) so every tick refits — the pure
-//!     degradation signal, unmasked by any self-correcting rebuild.
-//!  3. Drive N real ticks. Every tick, compute the area-ratio = current
-//!     refit-tree dynamic-root half-area / half-area of a FRESH build over the
-//!     identical dynamic tris that tick.
+//!     (`degrade_ratio: f32::INFINITY`) so every tick refits and
+//!     `rebuild_reference_area` stays frozen at the tick-202 warmup value for
+//!     the whole sweep — the pure degradation signal (both components),
+//!     unmasked by any self-correcting rebuild.
+//!  3. Drive N real ticks. Every tick, compute `stale`, `pose`, `gated` as above.
 //!  4. Every K ticks, GPU-trace (perf_audit's trace_frame style, wide pose —
 //!     the worst pose per the audit) the refit-N-ticks merged tree and a fresh
 //!     rebuild merged tree over the identical tris: ~4 warmup + ~16 measured
 //!     frames each, mean+std.
 //!  5. DRIFT = refit trace mean − rebuild trace mean. Noise floor = std of the
-//!     rebuild trace means across samples. Gate = 10x floor. The derived
-//!     `degrade_ratio` is the area-ratio at which drift first exceeds the gate,
-//!     or — if the sweep never degrades enough to bite (a periodic walk cycle
-//!     may never accumulate that much drift) — the max benign ratio observed
-//!     times the same 10x headroom, stated plainly.
+//!     rebuild trace means across samples. Gate = 10x floor (the DRIFT gate —
+//!     a distinct 10x from the derivation formula's headroom in step 6, named
+//!     separately so the two aren't conflated). The derived `degrade_ratio` is
+//!     the GATED ratio at which drift first exceeds the drift gate, or — if
+//!     the sweep never degrades enough to bite (a periodic walk cycle may
+//!     never accumulate that much drift) — an EXCURSION-form fallback (step 6).
+//!  6. Fallback derivation (never-bit case): `degrade_ratio = 1 + K × max(0,
+//!     max observed benign `gated` ratio − 1.0)`, K = 10 (the tolerance-law
+//!     headroom, applied to the benign EXCURSION above 1.0 — not a flat
+//!     multiplier on the ratio itself, so a benign ratio near 1.0 doesn't
+//!     inflate the gate disproportionately).
 //!
 //! Run:  cargo run -p scrying-glass --release --example refit_degrade
 
@@ -328,15 +346,15 @@ fn main() {
         "[refit-degrade] {w}x{h}, wide pose, {trace_warmup} warmup + {trace_measured} measured trace frames per sample"
     );
     println!(
-        "| tick | area_ratio | refit ms (mean) | refit std | rebuild ms (mean) | rebuild std | drift ms |"
+        "| tick | stale (refit/fresh) | pose (fresh/rebuildRef) | gated (refit/rebuildRef) | refit ms (mean) | refit std | rebuild ms (mean) | rebuild std | drift ms |"
     );
     println!(
-        "|------|------------|------------------|-----------|--------------------|-------------|----------|"
+        "|------|----------------------|--------------------------|----------------------------|------------------|-----------|--------------------|-------------|----------|"
     );
 
     let mut rebuild_means: Vec<f64> = Vec::new();
-    let mut samples: Vec<(u64, f32, f64, f64)> = Vec::new(); // tick, ratio, drift, rebuild_mean
-    let mut max_benign_ratio = 0.0f32;
+    let mut samples: Vec<(u64, f32, f64, f64)> = Vec::new(); // tick, gated_ratio, drift, rebuild_mean
+    let mut max_benign_gated_ratio = 0.0f32;
 
     for tick in 1..=ticks {
         scene.command_bodies(6.0);
@@ -346,8 +364,14 @@ fn main() {
 
         if tick % stride == 0 {
             let fresh_dyn = Bvh::build(&dyn_tris, &bvh_params.dynamic());
-            let area_ratio =
-                splice.dyn_total_half_area() / fresh_dyn.total_node_half_area().max(1e-9);
+            let fresh_area = fresh_dyn.total_node_half_area().max(1e-9);
+            let refit_area = splice.dyn_total_half_area();
+            let rebuild_ref_area = splice.rebuild_reference_area().max(1e-9);
+            // The gate's OWN quantity — `DynamicSplice::update` divides by
+            // exactly this reference, not a same-tick fresh build.
+            let gated_ratio = refit_area / rebuild_ref_area;
+            let stale_ratio = refit_area / fresh_area; // topology decay only
+            let pose_ratio = fresh_area / rebuild_ref_area; // silhouette oscillation only
             let rebuild_merged = Bvh::merge(&static_bvh, &fresh_dyn);
 
             let (refit_mean, refit_std) = measure_trace_ms(
@@ -382,49 +406,58 @@ fn main() {
             );
             let drift = refit_mean - rebuild_mean;
             println!(
-                "| {tick:4} | {area_ratio:10.4} | {refit_mean:16.4} | {refit_std:9.4} | {rebuild_mean:18.4} | {rebuild_std:11.4} | {drift:8.4} |"
+                "| {tick:4} | {stale_ratio:20.4} | {pose_ratio:24.4} | {gated_ratio:26.4} | {refit_mean:16.4} | {refit_std:9.4} | {rebuild_mean:18.4} | {rebuild_std:11.4} | {drift:8.4} |"
             );
             rebuild_means.push(rebuild_mean);
-            samples.push((tick, area_ratio, drift, rebuild_mean));
-            max_benign_ratio = max_benign_ratio.max(area_ratio);
+            samples.push((tick, gated_ratio, drift, rebuild_mean));
+            max_benign_gated_ratio = max_benign_gated_ratio.max(gated_ratio);
         }
     }
 
-    // DERIVE: floor = std of rebuild trace means across samples (the honest
-    // measurement noise on the ground-truth arm); gate = 10x floor.
+    // DERIVE (DRIFT gate — the GPU-trace-ms discriminator, a SEPARATE 10x from
+    // the derivation headroom below): floor = std of rebuild trace means
+    // across samples (the honest measurement noise on the ground-truth arm);
+    // drift_gate = 10x floor.
     let (rebuild_of_rebuilds_mean, floor) = mean_std(&rebuild_means);
-    let gate = 10.0 * floor;
+    let drift_gate = 10.0 * floor;
     println!(
         "[derive] noise floor (std of rebuild trace means across {} samples) = {floor:.4} ms",
         rebuild_means.len()
     );
     println!("[derive] rebuild trace grand mean = {rebuild_of_rebuilds_mean:.4} ms");
-    println!("[derive] gate = 10x floor = {gate:.4} ms");
+    println!("[derive] drift_gate = 10x floor = {drift_gate:.4} ms");
 
-    let first_bite = samples.iter().find(|(_, _, drift, _)| *drift > gate);
+    let first_bite = samples.iter().find(|(_, _, drift, _)| *drift > drift_gate);
     let derived = match first_bite {
-        Some((tick, ratio, drift, _)) => {
+        Some((tick, gated_ratio, drift, _)) => {
             println!(
-                "[derive] drift first exceeds gate at tick {tick}: area_ratio {ratio:.4}, drift {drift:.4} ms > gate {gate:.4} ms"
+                "[derive] drift first exceeds drift_gate at tick {tick}: gated_ratio {gated_ratio:.4}, drift {drift:.4} ms > drift_gate {drift_gate:.4} ms"
             );
             println!(
-                "[derive] observed max benign area_ratio over the sweep = {max_benign_ratio:.4}"
+                "[derive] observed max benign gated_ratio over the sweep = {max_benign_gated_ratio:.4}"
             );
-            println!("[derive] result: degrade_ratio = R = {ratio:.4} (drift-discriminating gate)");
-            *ratio
+            println!(
+                "[derive] result: degrade_ratio = gated_ratio at the crossing = {gated_ratio:.4} (drift-discriminating gate)"
+            );
+            *gated_ratio
         }
         None => {
+            let excursion = (max_benign_gated_ratio - 1.0).max(0.0);
+            let headroom_k = 10.0f32;
+            let result = 1.0 + headroom_k * excursion;
             println!(
-                "[derive] drift NEVER exceeded the gate across the {} ticks / {} samples swept (a periodic walk cycle may never degrade past a bite)",
+                "[derive] drift NEVER exceeded drift_gate across the {} ticks / {} samples swept (a periodic walk cycle may never degrade past a bite)",
                 ticks,
                 samples.len()
             );
             println!(
-                "[derive] observed max benign area_ratio over the sweep = {max_benign_ratio:.4}"
+                "[derive] observed max benign gated_ratio over the sweep = {max_benign_gated_ratio:.4}"
             );
-            let result = max_benign_ratio * 10.0;
             println!(
-                "[derive] result: degrade_ratio = max observed area_ratio x 10 (tolerance-law headroom) = {result:.4}"
+                "[derive] excursion above 1.0 = {excursion:.4}; headroom K = {headroom_k:.1} (tolerance-law, distinct from the drift_gate's own 10x)"
+            );
+            println!(
+                "[derive] result: degrade_ratio = 1 + K x excursion = 1 + {headroom_k:.1} x {excursion:.4} = {result:.4}"
             );
             result
         }

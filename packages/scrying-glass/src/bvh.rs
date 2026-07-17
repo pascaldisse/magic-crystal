@@ -419,19 +419,25 @@ pub enum SpliceKind {
 pub struct RefitParams {
     /// Rebuild once the refit tree's TOTAL node half-area (sum over every
     /// node, `Bvh::total_node_half_area`) grows past this multiple of the sum
-    /// at the last rebuild. Refit keeps the tree's topology and only re-fits
-    /// bounds; as the body deforms across many refits without a rebuild,
-    /// sibling bounds loosen and overlap even though the root stays tight (a
-    /// BVH's root is always the exact union of its leaves — the root alone
-    /// can't see interior decay). The node-sum tracks that interior looseness
-    /// and correlates with the extra GPU traversal cost a decayed tree pays.
-    /// Default derived by the 300-tick trace-drift sweep
-    /// (`examples/refit_degrade.rs`) — see
-    /// `docs/perf/2026-07-17-refit-degrade-derivation.md`. That sweep's own
-    /// gate (10x the rebuild-trace noise floor) never bit across 300 ticks of
-    /// a real walk cycle, so the derived default is the sweep's own "never
-    /// bit" fallback: observed max benign node-sum ratio x the 10x
-    /// tolerance-law headroom.
+    /// AT THE LAST REBUILD (`DynamicSplice::rebuild_reference_area` — a
+    /// reference across TIME, not a same-tick comparison to a fresh build).
+    /// Refit keeps the tree's topology and only re-fits bounds; across many
+    /// refits without a rebuild this gated ratio grows from two compounding
+    /// causes: (1) interior topology staleness (sibling bounds loosen/overlap
+    /// even though the root — the exact union of every leaf — stays tight,
+    /// so the root alone can't see it) and (2) the body's overall silhouette
+    /// oscillating relative to whatever pose the last rebuild happened to
+    /// freeze as the reference. Both cost extra GPU traversal; the gate
+    /// watches their product, which is what actually accumulates tick over
+    /// tick between rebuilds. Default derived by the 300-tick + 1200-tick
+    /// trace-drift sweep (`examples/refit_degrade.rs`), which reports this
+    /// EXACT gated ratio (not a proxy) alongside its two components — see
+    /// `docs/perf/2026-07-17-refit-degrade-derivation.md` (revision 2, which
+    /// replaced a first derivation that measured the wrong ratio). The
+    /// derived default is `1 + 10 × (max observed benign gated-ratio
+    /// excursion above 1.0)` — an excursion-form headroom, not a flat
+    /// multiplier, so a benign ratio near 1.0 doesn't inflate the gate
+    /// disproportionately.
     pub degrade_ratio: f32,
     /// Hard cap on consecutive refits between rebuilds (belt-and-braces against
     /// a slow area creep that never trips the ratio). `0` = unlimited.
@@ -447,13 +453,17 @@ impl Default for RefitParams {
     }
 }
 
-/// `RefitParams::degrade_ratio` default — derived by the 300-tick trace-drift
-/// sweep (`examples/refit_degrade.rs`, total-node-half-area signal); see
-/// `docs/perf/2026-07-17-refit-degrade-derivation.md` for the run and the
-/// derivation. The sweep's own gate never bit across 300 ticks of a real walk
-/// cycle, so this is the sweep's "never bit" fallback: observed max benign
-/// node-half-area-sum ratio x the 10x tolerance-law headroom.
-const DEFAULT_DEGRADE_RATIO: f32 = 10.0964;
+/// `RefitParams::degrade_ratio` default — derived by the 300-tick + 1200-tick
+/// (20 full gait cycles) trace-drift sweep (`examples/refit_degrade.rs`),
+/// reporting the EXACT ratio `DynamicSplice::update`'s gate divides by
+/// (`current total-node-half-area sum / the sum at the last rebuild`), not a
+/// same-tick proxy. See `docs/perf/2026-07-17-refit-degrade-derivation.md`
+/// (revision 2 — the first derivation measured a different, structurally-
+/// pinned ratio and is superseded). The sweep's drift gate never bit, so this
+/// is the excursion-form fallback: `1 + 10 × (max observed benign gated-ratio
+/// excursion above 1.0)`. `pub` so `main.rs`'s env-var default can reference
+/// this constant instead of re-typing the literal.
+pub const DEFAULT_DEGRADE_RATIO: f32 = 1.7030;
 
 /// The persistent two-level splice (LEVER 1: refit-not-rebuild). Holds the
 /// cached STATIC tree, a PERSISTENT dynamic tree, its build permutation, and the
@@ -488,6 +498,17 @@ impl DynamicSplice {
     /// needs it directly since `update` applies the gate internally.
     pub fn dyn_total_half_area(&self) -> f32 {
         self.dyn_bvh.total_node_half_area()
+    }
+
+    /// The total-node-half-area sum captured at the LAST REBUILD — the exact
+    /// reference `update`'s gate divides by (`degraded = current_sum >
+    /// rebuild_reference_area * degrade_ratio`, see `update` below). Exposed
+    /// read-only so measurement code (`refit_degrade`) can compute the SAME
+    /// ratio the gate actually watches, instead of a same-tick fresh-build
+    /// comparison that measures a different signal (topology staleness, not
+    /// growth since the last rebuild).
+    pub fn rebuild_reference_area(&self) -> f32 {
+        self.rebuild_area
     }
 
     /// First build: full dynamic build + merge, capturing the permutation and the
@@ -1066,27 +1087,36 @@ mod tests {
         assert_eq!(splice.update(&static_bvh, &dyn2), SpliceKind::Rebuilt);
     }
 
-    /// A large displacement that blows the dynamic bounds past the degrade ratio
-    /// forces a rebuild even though the count is unchanged.
+    /// DISCRIMINATING TEST (b): a genuine blowup FIRES the DEFAULT gate
+    /// (`RefitParams::default()` — the real, freshly-derived `degrade_ratio`,
+    /// no inline fixture) before any `max_refits` cap could — proving the
+    /// default is not decorative. A modest move first proves the default
+    /// tolerates ordinary motion (refit holds); scattering the triangles far
+    /// apart then blows the total-node-half-area sum far past the default
+    /// ratio, forcing a rebuild even though `max_refits: 0` (unlimited) never
+    /// engages the cap.
     #[test]
-    fn dynamic_splice_rebuilds_on_degradation() {
+    fn dynamic_splice_default_gate_fires_on_blowup() {
         let params = BvhParams::default();
         let static_bvh = Bvh::build(&quad(0.0, 50.0, [0.6, 0.6, 0.6], [0.0; 3]), &params);
         let mut dyn0 = Vec::new();
         for i in 0..8 {
             dyn0.extend(quad(3.0 + i as f32 * 0.3, 1.0, [0.0; 3], [1.0, 1.0, 1.0]));
         }
-        let refit = RefitParams {
-            degrade_ratio: 1.6,
-            max_refits: 0,
-        };
-        let mut splice = DynamicSplice::build(&static_bvh, &dyn0, &params.dynamic(), refit);
-        // A modest move → refit holds.
+        let mut splice = DynamicSplice::build(
+            &static_bvh,
+            &dyn0,
+            &params.dynamic(),
+            RefitParams::default(),
+        );
+        // A modest move → the DEFAULT gate holds (refit).
         assert_eq!(
             splice.update(&static_bvh, &shift(&dyn0, [0.2, 0.1, 0.1])),
-            SpliceKind::Refit
+            SpliceKind::Refit,
+            "a modest, plausible move must not trip the default gate"
         );
-        // Scatter the tris far apart → root area explodes → rebuild.
+        // Scatter the tris far apart → total node half-area explodes → the
+        // DEFAULT gate (no inline fixture) fires a rebuild.
         let scattered: Vec<LeafTriangle> = dyn0
             .iter()
             .enumerate()
@@ -1098,6 +1128,64 @@ mod tests {
                 LeafTriangle::lambertian(p, t.albedo, t.emission)
             })
             .collect();
-        assert_eq!(splice.update(&static_bvh, &scattered), SpliceKind::Rebuilt);
+        assert_eq!(
+            splice.update(&static_bvh, &scattered),
+            SpliceKind::Rebuilt,
+            "a genuine blowup must fire the DEFAULT degrade_ratio gate, not rely on max_refits"
+        );
+    }
+
+    /// DISCRIMINATING TEST (a): the DEFAULT gate must NOT fire across a
+    /// bounded, periodic, walk-cycle-scale oscillation — the exact motion
+    /// class the default was derived to tolerate. Six independent "limbs"
+    /// each swing around their own fixed base offset with their own phase (a
+    /// single RIGID whole-body translation would leave every node's
+    /// half-area unchanged and prove nothing — independent per-limb motion is
+    /// what actually reshapes internal node boxes, same as a real gait's
+    /// limbs swinging relative to the torso). Amplitude/period are the same
+    /// ORDER as the real sweep's observed envelope
+    /// (`docs/perf/2026-07-17-refit-degrade-derivation.md`, revision 2: a
+    /// bounded ±7% total-sum oscillation over 20 real gait cycles), not a
+    /// blowup. Driven for several synthetic "cycles" — 0 rebuilds expected.
+    #[test]
+    fn dynamic_splice_default_holds_across_bounded_oscillation() {
+        let params = BvhParams::default();
+        let static_bvh = Bvh::build(&quad(0.0, 50.0, [0.6, 0.6, 0.6], [0.0; 3]), &params);
+
+        let limb_x: [f32; 6] = [0.0, 1.5, 3.0, 4.5, 6.0, 7.5];
+        let base_quad = quad(0.0, 0.4, [0.0; 3], [1.0, 1.0, 1.0]);
+        let pose_at = |tick: u64| -> Vec<LeafTriangle> {
+            let mut out = Vec::new();
+            for (i, &x) in limb_x.iter().enumerate() {
+                let phase = (tick as f32 / 60.0) * std::f32::consts::TAU
+                    + i as f32 * std::f32::consts::PI / 3.0;
+                let d = [x, 3.0 + phase.sin() * 0.35, phase.cos() * 0.2];
+                out.extend(shift(&base_quad, d));
+            }
+            out
+        };
+
+        let mut splice = DynamicSplice::build(
+            &static_bvh,
+            &pose_at(0),
+            &params.dynamic(),
+            RefitParams::default(),
+        );
+        assert_eq!(splice.last_kind, SpliceKind::Rebuilt);
+
+        let cycles = 4u64; // ≥2 cycles, matching the real sweep's multi-cycle coverage
+        let ticks = 60 * cycles;
+        let mut rebuilds = 0u32;
+        for tick in 1..=ticks {
+            match splice.update(&static_bvh, &pose_at(tick)) {
+                SpliceKind::Refit => {}
+                SpliceKind::Rebuilt => rebuilds += 1,
+            }
+        }
+        assert_eq!(
+            rebuilds, 0,
+            "RefitParams::default() must hold across a bounded gait-like oscillation \
+             (0 rebuilds expected over {cycles} cycles) — {rebuilds} fired"
+        );
     }
 }

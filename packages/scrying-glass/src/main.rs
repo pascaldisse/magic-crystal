@@ -17,7 +17,7 @@ use scrying_glass::{input, player};
 use crystal::{Core, GaiaPackage, load_world_dir};
 use glam::Vec3;
 use scrying_glass::ScryingGlassPackage;
-use scrying_glass::bvh::{Bvh, BvhParams, DynamicSplice, RefitParams};
+use scrying_glass::bvh::{Bvh, BvhParams, DEFAULT_DEGRADE_RATIO, DynamicSplice, RefitParams};
 use scrying_glass::integrator::{Integrator, IntegratorParams, IntegratorUniform};
 use scrying_glass::scene::{
     Camera, RenderScene, SceneParameters, SunDefaults, SunLight, WalkerPose,
@@ -138,7 +138,10 @@ impl ScryingGlassConfig {
                 sah_bins: integer("GAIA_NATIVE_BVH_SAH_BINS", 16)? as usize,
             },
             refit: RefitParams {
-                degrade_ratio: number("GAIA_NATIVE_BVH_REFIT_DEGRADE", 10.0964)? as f32,
+                degrade_ratio: number(
+                    "GAIA_NATIVE_BVH_REFIT_DEGRADE",
+                    DEFAULT_DEGRADE_RATIO as f64,
+                )? as f32,
                 max_refits: integer("GAIA_NATIVE_BVH_REFIT_MAX", 0)?,
             },
             capture_frames: integer("GAIA_NATIVE_CAPTURE_FRAMES", 48)?,
