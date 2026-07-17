@@ -6,7 +6,7 @@
 //! the REAL `from_ecs`/`from_ecs_at` weld — the exact path a realm loads
 //! through (the `body_sigil.rs` precedent).
 
-use crystal::{load_world_dir, EcsWorld};
+use crystal::{EcsWorld, load_world_dir};
 use scrying_glass::player::Ground;
 use scrying_glass::scene::{RenderScene, SceneParameters, SunDefaults};
 
@@ -41,9 +41,7 @@ fn terrain_only_world(tag: &str, terrain_json: &str) -> (std::path::PathBuf, Ren
     let dir = std::env::temp_dir().join(format!("gaia_vii0b_{tag}_{}", std::process::id()));
     let scenes = dir.join("scenes");
     std::fs::create_dir_all(&scenes).expect("create temp scenes dir");
-    let scene = format!(
-        r#"{{ "naruko_first_ground": {{ "terrain": {terrain_json} }} }}"#
-    );
+    let scene = format!(r#"{{ "naruko_first_ground": {{ "terrain": {terrain_json} }} }}"#);
     std::fs::write(scenes.join("main.json"), scene).expect("write temp scene");
     let mut world = EcsWorld::default();
     load_world_dir(&dir, &mut world).expect("load the terrain-only realm");

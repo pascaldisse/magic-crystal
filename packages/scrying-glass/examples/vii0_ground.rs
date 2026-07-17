@@ -22,10 +22,10 @@ use std::path::Path;
 
 use glam::Vec3 as GVec3;
 use scrying_glass::bvh::{Bvh, BvhParams};
-use scrying_glass::integrator::{headless_device, resolve, trace_headless, IntegratorParams};
+use scrying_glass::integrator::{IntegratorParams, headless_device, resolve, trace_headless};
 use scrying_glass::scene::{Camera, RenderScene, SceneParameters, SunDefaults};
 
-use crystal::{load_world_dir, EcsWorld};
+use crystal::{EcsWorld, load_world_dir};
 
 /// Naruko authoring dials (mirror the window / p3_crate defaults).
 fn naruko_params() -> SceneParameters {

@@ -862,7 +862,9 @@ fn canon_terrain_patch_bounds_and_range_are_derived() {
     let geom = world
         .geometry("naruko_first_ground")
         .expect("naruko_first_ground is a registered entity");
-    let bounds = geom.bounds.expect("a terrain sigil derives analytic bounds");
+    let bounds = geom
+        .bounds
+        .expect("a terrain sigil derives analytic bounds");
 
     const AABB_TOL: f32 = 1e-4;
     let want_min = [0.0_f32, -9.6, 128.0];

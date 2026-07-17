@@ -853,7 +853,13 @@ impl RenderScene {
                     Some(hex) => linear_rgb(hex)?,
                     None => default_color,
                 };
-                append_terrain(&mut static_buckets, &mesh, offset, color, &mut collider_triangles);
+                append_terrain(
+                    &mut static_buckets,
+                    &mesh,
+                    offset,
+                    color,
+                    &mut collider_triangles,
+                );
             }
         }
 

@@ -29,7 +29,6 @@ use std::path::{Path, PathBuf};
 // glam + transmutation only) — a plain forward edge, no cycle, the same
 // footing as this file's existing `vessel` dependency.
 
-
 /// Fallback half-extent for a primitive whose shape carries no dimensions
 /// (param-driven default, never a hidden constant). Matches the renderer's
 /// authored default of a unit primitive (`size [1,1,1]`, `radius 0.5`).

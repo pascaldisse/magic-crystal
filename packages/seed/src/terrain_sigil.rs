@@ -154,7 +154,10 @@ mod tests {
         let derived = TerrainParams::derive(32.0);
         assert_eq!(params.grid_resolution, derived.grid_resolution);
         assert_eq!(params.height_amplitude, derived.height_amplitude);
-        assert_ne!(params.grid_resolution, TerrainParams::default().grid_resolution.max(0) + 999);
+        assert_ne!(
+            params.grid_resolution,
+            TerrainParams::default().grid_resolution.max(0) + 999
+        );
     }
 
     #[test]
