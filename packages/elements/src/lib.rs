@@ -14,6 +14,7 @@
 //! friction and restitution. Still no render, no ECS wiring (a later rite).
 //! CPU only, no main thread owed.
 
+pub mod broadphase;
 pub mod building;
 pub mod collision;
 pub mod constraint;
