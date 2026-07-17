@@ -111,6 +111,33 @@
   slope claim softened; dead scaffolding exercised; Nyquist wording).
 - **Proofs**: numbers lane — 9 terrain ordeals, byte-digest determinism.
 
+### 8. rite8-viii1 → main (queue item 5, wave VIII-1) — THE DREAM-DENOISER
+- **What**: the net, CPU reference. Per-pixel MLP (10 current-frame features →
+  4×32 ReLU → 3), pure Rust, byte-deterministic inference, in-repo
+  Adam/backprop/SHA-256, zero new dependencies. Weights = hash-pinned artifact
+  + provenance (sha asserted by ordeal); pinned bound = worst held-out frame
+  RMSE 0.049997 derived at train time. Denoised STRICTLY BEATS noisy on every
+  held-out validation frame. THE BAN holds: one frame's buffers only, grep-gate
+  + all-public-fn signature scan.
+- **Merge**: faa215f, PUSHED. Suite on main post-merge: 328 passed / 0 failed.
+- **Adversary**: 1 MUST-FIX — the senses-unchanged ordeal was THEATER (hashed
+  truth captured before the denoiser ran). Fixed with real teeth: presentation
+  image DIFFERS denoise on-vs-off, world gaze truth read AFTER the denoise
+  step is byte-equal. 8 ADVISORY: 7 discharged (nondeterminism-margined bound,
+  sha-pin enforced, shared scene config, held-out proof triptych added,
+  honest gate wording, dataset-hash noted for v2), 1 accepted (named module
+  consts per error_metric precedent).
+- **Honest record kept**: the FIRST training run failed strict-beat on a
+  validation pose (albedo demodulation amplified sky pixels ~1000×); fixed by
+  feature derivation, never by loosening the ordeal.
+- **Proofs read**: viii1-dream.png (training pose, labeled) +
+  viii1-dream-heldout.png (held-out orbit view) — conductor's own eyes; grainy
+  → smoothed → converged, same scene, no invented content.
+- **Scope note**: queue item 5 = "wave (a): CPU-reference trained denoiser."
+  VIII-0 + VIII-1 fulfill it. The GPU compute port (VIII-2) and the upscaler
+  argument (VIII-3, prime-Guardian ruling pending on the cost∝pixels reading)
+  remain the proposal's next waves, not queue debt.
+
 ## In flight
 - **rite6-vi1** (queue item 3, wave VI-1 THE STACK TOPPLES): built @ d642551 —
   impulse plumbing (Solver::apply_impulse → Physics → Op::Impulse →
