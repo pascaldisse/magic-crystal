@@ -7,12 +7,29 @@
 use std::path::Path;
 
 use crystal::{Core, load_world_dir};
+use glam::Vec3;
 use homunculus::{Pose, Skeleton};
 use sama::{GaitParams, Locomotion, LocomotionParams};
 use scrying_glass::scene::{
-    BodyInstance, LeafTriangle, RenderScene, SceneParameters, SunDefaults, contact_passing_ticks,
+    BodyInstance, LeafTriangle, RenderScene, SceneParameters, SunDefaults, WalkerPose,
+    contact_passing_ticks,
 };
 use vessel::{Body, Preset};
+
+/// A scripted straight WALK for the walker along +x on the seawall band
+/// (z=18, nari's authored strip), starting exactly at her authored xz so tick 0
+/// is a zero-displacement idle. `step` metres per tick over `ticks` ticks; the
+/// eye y deliberately CLIMBS (2.5 + 0.5·k) so a grounded body's y — which must
+/// track the FLOOR, not the eye — provably decouples from it. The FINAL WELD
+/// ordeals drive `command_bodies_walked` with this so nari TRACKS it.
+fn walker_walk(step: f32, ticks: usize) -> Vec<WalkerPose> {
+    (0..ticks)
+        .map(|k| WalkerPose {
+            position: Vec3::new(step * k as f32, 2.5 + 0.5 * k as f32, 18.0),
+            yaw: 0.0,
+        })
+        .collect()
+}
 
 fn naruko_params() -> SceneParameters {
     SceneParameters {
@@ -622,4 +639,246 @@ fn v2_cat_animation_is_byte_identical() {
         "animated cat body must be byte-identical across runs"
     );
     println!("[v2-wire] animated cat body byte-identical across two runs");
+}
+
+// ---------------------------------------------------------------------------
+// RITE V FINAL WELD — THE BODY JOINS THE WALKER. nari's body declares
+// `follows: "walker"` in worlds/naruko, so she is ATTACHED: her position/yaw
+// track the walker each tick and her gait speed is DERIVED from the per-tick
+// displacement (not the global broadcast). These ordeals prove the attachment
+// (position == walker, 0e0 in xz), the derived velocity source (== displacement,
+// != broadcast), the sigil wiring (nari attached, cat/mindless not), and the
+// shadow following the walked-to body. The minded cat + presence paths are
+// UNAFFECTED (their ordeals above stay green; nari falls back to the broadcast
+// when no walker pose is given, so the V1/V2 broadcast ordeals are untouched).
+// ---------------------------------------------------------------------------
+
+/// The FINAL-WELD sigil is READ: nari declares `follows: "walker"` (attached),
+/// the cat is minded (never attached), and the crate is a rigid physics body
+/// (not a skinned vessel at all — absent from `bodies`).
+#[test]
+fn weld_attachment_sigil_is_read() {
+    let scene = RenderScene::from_ecs(load_naruko().world, &naruko_params()).expect("scene");
+    let nari = scene
+        .bodies
+        .iter()
+        .find(|b| b.gaia_id == "nari")
+        .expect("nari body");
+    let cat = scene
+        .bodies
+        .iter()
+        .find(|b| b.gaia_id == "naruko_cat")
+        .expect("cat body");
+    assert!(
+        nari.follows_walker(),
+        "nari's body declares follows: walker"
+    );
+    assert!(
+        !cat.follows_walker(),
+        "the minded cat is not walker-attached"
+    );
+    assert!(!nari.is_minded(), "an attached body is not minded");
+    println!("[weld] sigil read: nari attached, cat minded (not attached)");
+}
+
+/// ORDEAL — an ATTACHED body's position TRACKS the walker every tick (0e0 in
+/// xz). Over a scripted straight walk (broadcast fed a bogus 99 m·s⁻¹ to prove
+/// it is IGNORED), nari's world xz equals the walker's xz to the bit; her y is
+/// the DERIVED grounded height (feet on the seawall, not the walker's eye y).
+#[test]
+fn weld_attached_body_position_equals_walker_0e0() {
+    let mut scene = RenderScene::from_ecs(load_naruko().world, &naruko_params()).expect("scene");
+    let nari_idx = scene
+        .bodies
+        .iter()
+        .position(|b| b.gaia_id == "nari")
+        .unwrap();
+    // 50 ticks → x ∈ [0, 4.9], the FLAT seawall band (a raised feature sits near
+    // x≈6; the tracking claim is proven on flat ground where grounded y holds).
+    let walk = walker_walk(0.1, 50);
+    // The grounded model-origin y at tick 0 (seawall is flat — it must not move).
+    let grounded_y = {
+        scene.command_bodies_walked(99.0, Some(walk[0]));
+        scene.bodies[nari_idx].world_origin()[1]
+    };
+    for (k, pose) in walk.iter().enumerate() {
+        // Broadcast a bogus speed: an attached body must NOT use it.
+        scene.command_bodies_walked(99.0, Some(*pose));
+        let o = scene.bodies[nari_idx].world_origin();
+        assert_eq!(
+            o[0], pose.position.x,
+            "tick {k}: attached body x must equal walker x (0e0)"
+        );
+        assert_eq!(
+            o[2], pose.position.z,
+            "tick {k}: attached body z must equal walker z (0e0)"
+        );
+        // y is the DERIVED grounded height (feet on the flat seawall) — it holds
+        // constant even as the walker's EYE y climbs far above it (decoupled).
+        assert!(
+            (o[1] - grounded_y).abs() < 1e-4,
+            "tick {k}: attached body y stays grounded ({o1}), not the climbing eye {eye}",
+            o1 = o[1],
+            eye = pose.position.y,
+        );
+        assert!(
+            pose.position.y - o[1] > 0.4 * k as f32 - 0.1,
+            "tick {k}: the eye ({eye}) rises away from the grounded body ({o1})",
+            eye = pose.position.y,
+            o1 = o[1],
+        );
+    }
+    let end = scene.bodies[nari_idx].world_origin();
+    println!(
+        "[weld] attached body tracked the walker to ({:.3},{:.3},{:.3}) — xz == walker (0e0)",
+        end[0], end[1], end[2]
+    );
+}
+
+/// ORDEAL — the attached body's gait speed is DERIVED from the walker's actual
+/// horizontal displacement per tick, NOT the broadcast. Fed a bogus broadcast
+/// (99), nari's commanded speed equals the exact displacement/dt (the same
+/// value re-derived independently from the scripted poses), and is finite and
+/// far from 99 while she walks.
+#[test]
+fn weld_gait_speed_is_derived_not_broadcast() {
+    let mut scene = RenderScene::from_ecs(load_naruko().world, &naruko_params()).expect("scene");
+    let nari_idx = scene
+        .bodies
+        .iter()
+        .position(|b| b.gaia_id == "nari")
+        .unwrap();
+    let dt = naruko_params().tick_dt as f32;
+    let walk = walker_walk(0.1, 40);
+    let mut prev = {
+        let o = scene.bodies[nari_idx].world_origin();
+        [o[0], o[2]]
+    };
+    let mut walked = false;
+    for (k, pose) in walk.iter().enumerate() {
+        scene.command_bodies_walked(99.0, Some(*pose));
+        let dx = pose.position.x - prev[0];
+        let dz = pose.position.z - prev[1];
+        let expected = (dx * dx + dz * dz).sqrt() / dt;
+        let got = scene.bodies[nari_idx].commanded_speed();
+        assert_eq!(
+            got, expected,
+            "tick {k}: gait speed must be the derived walker displacement, not the broadcast"
+        );
+        assert!(
+            (got - 99.0).abs() > 1.0,
+            "tick {k}: the broadcast (99) must be ignored, got {got}"
+        );
+        if got > 0.0 {
+            walked = true;
+        }
+        let o = scene.bodies[nari_idx].world_origin();
+        prev = [o[0], o[2]];
+    }
+    assert!(
+        walked,
+        "the attached body must derive a positive gait speed"
+    );
+    // At step 0.1 m/tick over dt=1/60, the derived speed is 6 m/s (walk).
+    println!(
+        "[weld] gait derived from walker displacement (== 0.1/dt = {:.3} m/s), broadcast 99 ignored",
+        0.1 / dt
+    );
+}
+
+/// ORDEAL — the traced SHADOW follows the WALKED-TO body (she casts where she
+/// STANDS after the walk, not where she was authored). After a scripted walk
+/// down the seawall the body's projected shadow darkens the ground beneath its
+/// NEW position by more than a derived floor, while the SAME probe at her
+/// AUTHORED spot (now vacated) shows ~no darkening (the null — she left it).
+#[test]
+fn weld_shadow_follows_the_walked_body() {
+    use scrying_glass::bvh::{Bvh, BvhParams};
+
+    let mut scene = RenderScene::from_ecs(load_naruko().world, &naruko_params()).expect("scene");
+    let nari_idx = scene
+        .bodies
+        .iter()
+        .position(|b| b.gaia_id == "nari")
+        .unwrap();
+    // Walk her +x along the seawall to a visibly different spot (x≈20), mid-stride.
+    let walk = walker_walk(0.1, 200);
+    for pose in &walk {
+        scene.command_bodies_walked(0.0, Some(*pose));
+        scene.tick();
+    }
+    let sun = scene.sun;
+
+    let mut tris = scene.leaf_triangles();
+    tris.extend(scene.dynamic_leaf_triangles());
+    let bvh = Bvh::build(&tris, &BvhParams::default());
+
+    let seawall_top =
+        scrying_glass::scene::top_flat_surface_y(&load_naruko().world, "naruko_seawall")
+            .expect("seawall query")
+            .expect("seawall is a flat slab");
+    let eps = 5e-3_f32;
+    let luminance = |c: [f32; 3]| 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    let n_dot_l = sun.direction[1].max(0.0);
+    let sun_lum = luminance(sun.color) * sun.intensity * n_dot_l;
+    let radiance = |x: f32, z: f32| -> f32 {
+        let origin = [x, seawall_top + eps, z];
+        if bvh.occluded(origin, sun.direction, eps, 500.0) {
+            0.0
+        } else {
+            sun_lum
+        }
+    };
+
+    // Where her shadow FALLS at her WALKED-TO position: her body centroid,
+    // projected onto the seawall top along the sun direction.
+    let mut centroid = [0.0f64; 3];
+    let mut n = 0.0f64;
+    for t in &scene.bodies[nari_idx].world_tris {
+        for p in &t.positions {
+            centroid[0] += p[0] as f64;
+            centroid[1] += p[1] as f64;
+            centroid[2] += p[2] as f64;
+            n += 1.0;
+        }
+    }
+    let centroid = [
+        (centroid[0] / n) as f32,
+        (centroid[1] / n) as f32,
+        (centroid[2] / n) as f32,
+    ];
+    // Sanity: she actually walked away from x=0 (her authored spot).
+    assert!(
+        centroid[0] > 10.0,
+        "the walked-to body must be far from its authored x=0, got x={}",
+        centroid[0]
+    );
+    let drop = (centroid[1] - seawall_top) / sun.direction[1];
+    let shadow_x = centroid[0] - drop * sun.direction[0];
+    let shadow_z = centroid[2] - drop * sun.direction[2];
+
+    let under = radiance(shadow_x, shadow_z);
+    let beside = radiance(shadow_x + 3.0, shadow_z);
+    let shadow_diff = beside - under;
+
+    // The null: the SAME probe pair back at her AUTHORED spot (x≈0), which she
+    // has VACATED — no body there now, so no darkening.
+    let null_under = radiance(0.0, shadow_z);
+    let null_beside = radiance(3.0, shadow_z);
+    let null_diff = (null_beside - null_under).abs();
+
+    let floor = 0.5 * sun_lum;
+    println!(
+        "[weld-shadow] walked-to x={:.2} under={under:.4} beside={beside:.4} \
+         shadow_diff={shadow_diff:.4} vacated_null={null_diff:.2e} floor={floor:.4}",
+        centroid[0]
+    );
+    assert!(
+        shadow_diff > floor,
+        "the walked-to body must darken the ground under its NEW position: diff {shadow_diff:.4} <= floor {floor:.4}"
+    );
+    assert!(
+        null_diff < floor,
+        "her authored spot is now vacated (null): null_diff {null_diff:.2e} >= floor {floor:.4}"
+    );
 }
