@@ -21,10 +21,10 @@ use std::path::Path;
 
 use glam::Vec3 as GVec3;
 use scrying_glass::bvh::{Bvh, BvhParams};
-use scrying_glass::integrator::{headless_device, resolve, trace_headless, IntegratorParams};
+use scrying_glass::integrator::{IntegratorParams, headless_device, resolve, trace_headless};
 use scrying_glass::scene::{Camera, LeafTriangle, SunLight};
 
-use elements::building::{erect, settle, topple, BuildingSpec};
+use elements::building::{BuildingSpec, erect, settle, topple};
 
 const TOPPLE_SPEED: f64 = 30.0;
 const TOPPLE_FRACTION: f64 = 0.5;
@@ -106,9 +106,7 @@ fn fragment_color(fi: usize, total: usize) -> [f32; 3] {
 /// `he`, with the given albedo.
 fn push_box(tris: &mut Vec<LeafTriangle>, c: GVec3, he: GVec3, albedo: [f32; 3]) {
     let e = [0.0f32, 0.0, 0.0]; // no emission — lit by sun/sky
-    let v = |sx: f32, sy: f32, sz: f32| {
-        [c.x + sx * he.x, c.y + sy * he.y, c.z + sz * he.z]
-    };
+    let v = |sx: f32, sy: f32, sz: f32| [c.x + sx * he.x, c.y + sy * he.y, c.z + sz * he.z];
     // 8 corners
     let p = [
         v(-1.0, -1.0, -1.0),
@@ -130,8 +128,16 @@ fn push_box(tris: &mut Vec<LeafTriangle>, c: GVec3, he: GVec3, albedo: [f32; 3])
         [3, 2, 6, 7], // +y
     ];
     for f in faces {
-        tris.push(LeafTriangle::lambertian([p[f[0]], p[f[1]], p[f[2]]], albedo, e));
-        tris.push(LeafTriangle::lambertian([p[f[0]], p[f[2]], p[f[3]]], albedo, e));
+        tris.push(LeafTriangle::lambertian(
+            [p[f[0]], p[f[1]], p[f[2]]],
+            albedo,
+            e,
+        ));
+        tris.push(LeafTriangle::lambertian(
+            [p[f[0]], p[f[2]], p[f[3]]],
+            albedo,
+            e,
+        ));
     }
 }
 
@@ -143,9 +149,21 @@ fn scene_triangles(building: &elements::building::Building) -> (Vec<LeafTriangle
     let (nx, ny, nz) = spec.lattice;
     // Cube half-extents ≈ 0.48 × the lattice spacing per axis, so the standing
     // tower reads as solid and chunks stay visible when they scatter.
-    let sx = if nx > 1 { spec.footprint.0 / (nx - 1) as f64 } else { spec.footprint.0 };
-    let sy = if ny > 1 { spec.height / (ny - 1) as f64 } else { spec.height };
-    let sz = if nz > 1 { spec.footprint.1 / (nz - 1) as f64 } else { spec.footprint.1 };
+    let sx = if nx > 1 {
+        spec.footprint.0 / (nx - 1) as f64
+    } else {
+        spec.footprint.0
+    };
+    let sy = if ny > 1 {
+        spec.height / (ny - 1) as f64
+    } else {
+        spec.height
+    };
+    let sz = if nz > 1 {
+        spec.footprint.1 / (nz - 1) as f64
+    } else {
+        spec.footprint.1
+    };
     let he = GVec3::new((0.48 * sx) as f32, (0.48 * sy) as f32, (0.48 * sz) as f32);
 
     let fragments = s.fragment_components(&building.whole);
@@ -206,7 +224,18 @@ fn render_stop(
         building.solver.tick
     );
     let accum = trace_headless(
-        device, queue, &bvh, camera, sun, sky_top, sky_horizon, w, h, frames, &params, None,
+        device,
+        queue,
+        &bvh,
+        camera,
+        sun,
+        sky_top,
+        sky_horizon,
+        w,
+        h,
+        frames,
+        &params,
+        None,
     );
     write_png(&resolve(&accum), w, h, 1.1, &proof.join(name));
 }
@@ -238,7 +267,15 @@ fn main() {
     // then render the intact multi-storey structure.
     let rest_frags = settle(&mut b, SETTLE_TICKS);
     eprintln!("[pscale] settled to rest: {rest_frags} fragment(s) (want 1)");
-    render_stop(&device, &queue, &b, &camera, &sun, "pscale-standing.png", &proof);
+    render_stop(
+        &device,
+        &queue,
+        &b,
+        &camera,
+        &sun,
+        "pscale-standing.png",
+        &proof,
+    );
 
     // The hand strikes: a lateral shove on the upper storeys.
     topple(&mut b, TOPPLE_SPEED, TOPPLE_FRACTION);
@@ -248,11 +285,19 @@ fn main() {
     // free while still elevated), which reads far better than the already-
     // flattened first-many-fragments tick. Height, not fragment count, is
     // the visual "collapse in progress" signal.
-    let stand_h: f64 = b.whole.iter().map(|&p| b.solver.particles.pos[p].y).fold(0.0, f64::max);
+    let stand_h: f64 = b
+        .whole
+        .iter()
+        .map(|&p| b.solver.particles.pos[p].y)
+        .fold(0.0, f64::max);
     let mut collapse_tick = None;
     for _ in 0..COLLAPSE_TICKS {
         b.solver.step();
-        let h: f64 = b.whole.iter().map(|&p| b.solver.particles.pos[p].y).fold(0.0, f64::max);
+        let h: f64 = b
+            .whole
+            .iter()
+            .map(|&p| b.solver.particles.pos[p].y)
+            .fold(0.0, f64::max);
         let frags = b.solver.fragment_components(&b.whole).len();
         if h < 0.55 * stand_h && frags > 4 {
             collapse_tick = Some(b.solver.tick);
@@ -260,14 +305,30 @@ fn main() {
         }
     }
     eprintln!("[pscale] mid-collapse captured at tick {:?}", collapse_tick);
-    render_stop(&device, &queue, &b, &camera, &sun, "pscale-collapse.png", &proof);
+    render_stop(
+        &device,
+        &queue,
+        &b,
+        &camera,
+        &sun,
+        "pscale-collapse.png",
+        &proof,
+    );
 
     // ── RUBBLE: settle the rest of the way.
     while b.solver.tick < SETTLE_TICKS + COLLAPSE_TICKS {
         b.solver.step();
     }
     let final_frags = b.solver.fragment_components(&b.whole).len();
-    render_stop(&device, &queue, &b, &camera, &sun, "pscale-rubble.png", &proof);
+    render_stop(
+        &device,
+        &queue,
+        &b,
+        &camera,
+        &sun,
+        "pscale-rubble.png",
+        &proof,
+    );
     eprintln!(
         "[pscale] settled: {} fragments at tick {}",
         final_frags, b.solver.tick

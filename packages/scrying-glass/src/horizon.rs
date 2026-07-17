@@ -51,7 +51,7 @@ use std::collections::BTreeMap;
 
 use crate::scene::{RenderScene, SceneParameters};
 use crystal::{ComponentDescriptor, EcsWorld};
-use seed::terrain::{tile_mesh, tile_origin_m, TerrainParams, TerrainTile};
+use seed::terrain::{TerrainParams, TerrainTile, tile_mesh, tile_origin_m};
 use serde_json::json;
 use std::collections::BTreeMap as FieldMap;
 use transmutation::Mesh;
@@ -366,7 +366,10 @@ impl HorizonRing {
             let bytes = mesh_bytes(&mesh);
             self.resident.insert(
                 (tile.tile_x, tile.tile_y),
-                ResidentTile { bytes, center_world },
+                ResidentTile {
+                    bytes,
+                    center_world,
+                },
             );
             self.resident_bytes += bytes;
             self.stats.loads += 1;

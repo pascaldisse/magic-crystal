@@ -20,11 +20,11 @@ use std::path::Path;
 
 use glam::Vec3;
 use scrying_glass::bvh::{Bvh, BvhParams};
-use scrying_glass::horizon::{tile_byte_cost, HorizonRing};
-use scrying_glass::integrator::{headless_device, resolve, trace_headless, IntegratorParams};
+use scrying_glass::horizon::{HorizonRing, tile_byte_cost};
+use scrying_glass::integrator::{IntegratorParams, headless_device, resolve, trace_headless};
 use scrying_glass::player::{Ground, Player, PlayerParams};
 use scrying_glass::scene::{Camera, RenderScene, SceneParameters, SunDefaults};
-use seed::terrain::{tile_origin_m, TerrainParams, TerrainTile};
+use seed::terrain::{TerrainParams, TerrainTile, tile_origin_m};
 
 const SEED: u64 = 20260717;
 const TICK_DT: f32 = 1.0 / 60.0;
@@ -170,7 +170,10 @@ fn horizon_shot(
         "[vii2] walker settled: local eye=[{:.2},{:.2},{:.2}] feet_y={feet_y:.2} grounded={grounded}",
         eye.x, eye.y, eye.z
     );
-    assert!(grounded, "the walker must be grounded before the horizon shot");
+    assert!(
+        grounded,
+        "the walker must be grounded before the horizon shot"
+    );
 
     // Look along +x, tilted slightly down, so the streamed horizon of generated
     // hills fills the frame ahead of the feet.
@@ -233,5 +236,7 @@ fn main() {
         &proof.join("vii2-horizon-far.png"),
     );
 
-    eprintln!("[vii2] the horizon streams around a walker on ground no hand stored — read the relics with eyes.");
+    eprintln!(
+        "[vii2] the horizon streams around a walker on ground no hand stored — read the relics with eyes."
+    );
 }

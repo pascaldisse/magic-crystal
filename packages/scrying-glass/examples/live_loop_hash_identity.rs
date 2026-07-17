@@ -35,10 +35,16 @@ use scrying_glass::scene::{
 use vessel::{Body, Preset};
 
 fn env_u32(name: &str, default: u32) -> u32 {
-    std::env::var(name).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
 }
 fn env_f32(name: &str, default: f32) -> f32 {
-    std::env::var(name).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
 }
 
 /// Naruko authoring dials — verbatim from `live_loop_audit::naruko_params`.
@@ -126,8 +132,8 @@ fn main() {
     let build_scene = || {
         let mut core = Core::default();
         load_world_dir(&world_path, &mut core.world).expect("load naruko");
-        let mut scene = RenderScene::from_ecs(std::mem::take(&mut core.world), &params)
-            .expect("render scene");
+        let mut scene =
+            RenderScene::from_ecs(std::mem::take(&mut core.world), &params).expect("render scene");
         for _ in 0..target {
             scene.command_bodies_walked(0.0, Some(vista));
             scene.tick();
@@ -146,8 +152,17 @@ fn main() {
         // samples_before = 0: moving dynamics reset accumulation every frame in
         // the live surface path (the 2spp-live tradeoff) — matches both loops.
         IntegratorUniform::build(
-            &camera, &sun, sky_top, sky_horizon, w, h,
-            integrator.node_count, integrator.tri_count, 0, &int_params, None,
+            &camera,
+            &sun,
+            sky_top,
+            sky_horizon,
+            w,
+            h,
+            integrator.node_count,
+            integrator.tri_count,
+            0,
+            &int_params,
+            None,
         )
     };
     let make_readback = || {
@@ -175,10 +190,17 @@ fn main() {
     let serial_hashes: Vec<u64> = {
         let mut scene = build_scene();
         let mut splice = DynamicSplice::build(
-            &static_bvh, &scene.dynamic_leaf_triangles(), &bvh_params.dynamic(), refit_params,
+            &static_bvh,
+            &scene.dynamic_leaf_triangles(),
+            &bvh_params.dynamic(),
+            refit_params,
         );
-        let mut integrator =
-            Integrator::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, &splice.merged, None);
+        let mut integrator = Integrator::new(
+            &device,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            &splice.merged,
+            None,
+        );
         let accum = integrator.make_accum(&device, w, h);
         let readback = make_readback();
         let mut hashes = Vec::with_capacity(frames as usize);
@@ -191,7 +213,14 @@ fn main() {
             let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("serial trace+readback"),
             });
-            integrator.dispatch(&queue, &mut enc, &uniform_for(&integrator), &compute_bg, w, h);
+            integrator.dispatch(
+                &queue,
+                &mut enc,
+                &uniform_for(&integrator),
+                &compute_bg,
+                w,
+                h,
+            );
             enc.copy_buffer_to_buffer(&accum, 0, &readback, 0, accum_bytes);
             let (tx, rx) = std::sync::mpsc::channel();
             enc.map_buffer_on_submit(&readback, wgpu::MapMode::Read, .., move |r| {
@@ -199,7 +228,9 @@ fn main() {
             });
             queue.submit(Some(enc.finish()));
             let _ = device.poll(wgpu::PollType::wait_indefinitely());
-            rx.recv().expect("serial readback chan").expect("serial map");
+            rx.recv()
+                .expect("serial readback chan")
+                .expect("serial map");
             hashes.push(hash_of(&readback));
         }
         hashes
@@ -212,15 +243,26 @@ fn main() {
     let overlap_hashes: Vec<u64> = {
         let mut scene = build_scene();
         let mut splice = DynamicSplice::build(
-            &static_bvh, &scene.dynamic_leaf_triangles(), &bvh_params.dynamic(), refit_params,
+            &static_bvh,
+            &scene.dynamic_leaf_triangles(),
+            &bvh_params.dynamic(),
+            refit_params,
         );
-        let mut integrator =
-            Integrator::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, &splice.merged, None);
+        let mut integrator = Integrator::new(
+            &device,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            &splice.merged,
+            None,
+        );
         let accum = integrator.make_accum(&device, w, h);
         let mut hashes = vec![0u64; frames as usize];
         let mut pending: Option<wgpu::SubmissionIndex> = None;
         // (frame index, its own readback, its own map-completion receiver)
-        let mut in_flight: Option<(usize, wgpu::Buffer, std::sync::mpsc::Receiver<Result<(), wgpu::BufferAsyncError>>)> = None;
+        let mut in_flight: Option<(
+            usize,
+            wgpu::Buffer,
+            std::sync::mpsc::Receiver<Result<(), wgpu::BufferAsyncError>>,
+        )> = None;
         for frame in 0..frames as usize {
             scene.command_bodies_walked(0.0, Some(vista));
             scene.tick();
@@ -232,7 +274,14 @@ fn main() {
             let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("overlap trace+readback"),
             });
-            integrator.dispatch(&queue, &mut enc, &uniform_for(&integrator), &compute_bg, w, h);
+            integrator.dispatch(
+                &queue,
+                &mut enc,
+                &uniform_for(&integrator),
+                &compute_bg,
+                w,
+                h,
+            );
             enc.copy_buffer_to_buffer(&accum, 0, &readback, 0, accum_bytes);
             let (tx, rx) = std::sync::mpsc::channel();
             enc.map_buffer_on_submit(&readback, wgpu::MapMode::Read, .., move |r| {
@@ -251,7 +300,9 @@ fn main() {
                 });
             }
             if let Some((pf, prb, prx)) = in_flight.take() {
-                prx.recv().expect("overlap readback chan").expect("overlap map");
+                prx.recv()
+                    .expect("overlap readback chan")
+                    .expect("overlap map");
                 hashes[pf] = hash_of(&prb);
             }
             pending = Some(idx);
@@ -259,10 +310,15 @@ fn main() {
         }
         // Drain the final in-flight frame.
         if let Some(prev) = pending.take() {
-            let _ = device.poll(wgpu::PollType::Wait { submission_index: Some(prev), timeout: None });
+            let _ = device.poll(wgpu::PollType::Wait {
+                submission_index: Some(prev),
+                timeout: None,
+            });
         }
         if let Some((pf, prb, prx)) = in_flight.take() {
-            prx.recv().expect("overlap readback chan").expect("overlap map");
+            prx.recv()
+                .expect("overlap readback chan")
+                .expect("overlap map");
             hashes[pf] = hash_of(&prb);
         }
         hashes

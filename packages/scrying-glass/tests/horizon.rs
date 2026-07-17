@@ -23,10 +23,10 @@
 //! Every bound is derived live; nothing here is a plucked literal.
 
 use glam::Vec3;
-use scrying_glass::horizon::{tile_byte_cost, HorizonRing};
-use scrying_glass::player::{contact_tolerance, Ground, Key, Player, PlayerParams};
+use scrying_glass::horizon::{HorizonRing, tile_byte_cost};
+use scrying_glass::player::{Ground, Key, Player, PlayerParams, contact_tolerance};
 use scrying_glass::scene::{RenderScene, SceneParameters, SunDefaults};
-use seed::terrain::{tile_origin_m, TerrainParams, TerrainTile};
+use seed::terrain::{TerrainParams, TerrainTile, tile_origin_m};
 
 const TICK_DT: f32 = 1.0 / 60.0;
 
@@ -87,13 +87,9 @@ fn world_step_bound(walk_speed: f32, local_mag: f32, origin_mag: f64) -> f64 {
 
 /// Advance a straight-line observer flight and return, per tick, the
 /// `(loaded, evicted)` tile-key sequence — the determinism witness.
-fn flight_sequence(
-    budget: u64,
-    steps: u64,
-    v: f64,
-) -> Vec<(Vec<(i64, i64)>, Vec<(i64, i64)>)> {
-    let mut ring = HorizonRing::new(SEED, walkable_terrain(), Some("#4a7c59".into()), budget)
-        .expect("ring");
+fn flight_sequence(budget: u64, steps: u64, v: f64) -> Vec<(Vec<(i64, i64)>, Vec<(i64, i64)>)> {
+    let mut ring =
+        HorizonRing::new(SEED, walkable_terrain(), Some("#4a7c59".into()), budget).expect("ring");
     let ts = ring.params().tile_size_m as f64;
     let z = ts * 0.5;
     let mut x = 0.0f64;
@@ -115,8 +111,7 @@ fn ordeal1_horizon_materializes_ahead_evicts_behind_under_budget() {
     let tb = tile_byte_cost(&tparams);
     // Budget sized for exactly a 7×7 = 49-tile residency square (radius 3).
     let budget = 49 * tb;
-    let mut ring =
-        HorizonRing::new(SEED, tparams, Some("#4a7c59".into()), budget).expect("ring");
+    let mut ring = HorizonRing::new(SEED, tparams, Some("#4a7c59".into()), budget).expect("ring");
     assert_eq!(ring.radius_tiles(), 3, "√49 = 7 = 2·3+1 ⇒ radius 3");
 
     let v = PlayerParams::from_env().expect("player params").walk_speed as f64;
@@ -152,8 +147,14 @@ fn ordeal1_horizon_materializes_ahead_evicts_behind_under_budget() {
         total_evicts += tick.evicted.len();
     }
     // Materialize-ahead AND evict-behind both actually happened.
-    assert!(total_loads > 0, "tiles must materialize ahead over the walk");
-    assert!(total_evicts > 0, "tiles must be evicted behind over the walk");
+    assert!(
+        total_loads > 0,
+        "tiles must materialize ahead over the walk"
+    );
+    assert!(
+        total_evicts > 0,
+        "tiles must be evicted behind over the walk"
+    );
 
     // The tile the walk started in is now ~20 tiles behind the horizon: gone.
     assert!(
@@ -162,7 +163,10 @@ fn ordeal1_horizon_materializes_ahead_evicts_behind_under_budget() {
     );
     // The ground under and ahead of the walker IS resident.
     let cur = ring.tile_at(x, z);
-    assert!(ring.is_resident(cur), "the walker's current tile is resident");
+    assert!(
+        ring.is_resident(cur),
+        "the walker's current tile is resident"
+    );
     assert!(
         ring.is_resident(cur.neighbor(1, 0)),
         "the tile one ahead (load-ahead) is resident"
@@ -181,10 +185,16 @@ fn ordeal1_horizon_materializes_ahead_evicts_behind_under_budget() {
     let steps = 400u64;
     let a = flight_sequence(budget, steps, v);
     let b = flight_sequence(budget, steps, v);
-    assert_eq!(a, b, "identical flight must replay an identical load/evict sequence");
+    assert_eq!(
+        a, b,
+        "identical flight must replay an identical load/evict sequence"
+    );
     let seq_loads: usize = a.iter().map(|(l, _)| l.len()).sum();
     let seq_evicts: usize = a.iter().map(|(_, e)| e.len()).sum();
-    assert!(seq_loads > 0 && seq_evicts > 0, "the replayed flight must load AND evict");
+    assert!(
+        seq_loads > 0 && seq_evicts > 0,
+        "the replayed flight must load AND evict"
+    );
     eprintln!(
         "[ordeal] determinism: {steps}-tick flight replays byte-identical ({seq_loads} loads, {seq_evicts} evicts, both runs equal)"
     );
@@ -230,12 +240,11 @@ fn rebasing_walk_mode(
     sabotage: bool,
 ) -> RebaseWalk {
     let sp = scene_params();
-    let mut ring =
-        HorizonRing::new(SEED, walkable_terrain(), Some("#4a7c59".into()), {
-            // Radius-2 square (25 tiles): reach = 2·16 = 32 m of local coords.
-            25 * tile_byte_cost(&walkable_terrain())
-        })
-        .expect("ring");
+    let mut ring = HorizonRing::new(SEED, walkable_terrain(), Some("#4a7c59".into()), {
+        // Radius-2 square (25 tiles): reach = 2·16 = 32 m of local coords.
+        25 * tile_byte_cost(&walkable_terrain())
+    })
+    .expect("ring");
     assert_eq!(ring.radius_tiles(), 2);
     let reach_mag = (ring.radius_tiles() as f32 + 1.0) * ring.params().tile_size_m;
 
@@ -273,8 +282,7 @@ fn rebasing_walk_mode(
     for _ in 0..walk_ticks {
         player.step(TICK_DT, &ground);
         let p = player.pose();
-        max_local_mag = max_local_mag
-            .max(p.position.x.abs().max(p.position.z.abs()));
+        max_local_mag = max_local_mag.max(p.position.x.abs().max(p.position.z.abs()));
         let world = Vec3Wide {
             x: p.position.x as f64 + origin[0],
             y: p.position.y as f64 + origin[1],
@@ -425,7 +433,10 @@ fn ordeal3_planetary_magnitude_walk_holds_the_invariants() {
     let (ox, oz) = tile_origin_m(far_tile, &tparams);
     // Start a little inside the tile so the walker crosses its far edge.
     let w = rebasing_walk(ox + 2.0, oz + 8.0, 900);
-    assert!(w.budget_ok, "budget held across the planetary rebasing walk");
+    assert!(
+        w.budget_ok,
+        "budget held across the planetary rebasing walk"
+    );
     assert!(
         w.rebases >= 2,
         "the planetary walk must rebase render_origin at least twice (got {})",
@@ -444,7 +455,14 @@ fn ordeal3_planetary_magnitude_walk_holds_the_invariants() {
     );
     eprintln!(
         "[ordeal] rebase @ planetary tile ({},{}): origin ~{:.3e} m; {} rebases, max world-tick delta {:.6} m ≤ bound {:.6} m; max |local| {:.2} m ≤ reach {:.2} m",
-        far_tile.tile_x, far_tile.tile_y, ox, w.rebases, w.max_world_delta, w.bound, w.max_local_mag, reach
+        far_tile.tile_x,
+        far_tile.tile_y,
+        ox,
+        w.rebases,
+        w.max_world_delta,
+        w.bound,
+        w.max_local_mag,
+        reach
     );
 }
 
@@ -477,10 +495,7 @@ fn ordeal4_evicted_tile_leaves_the_collision_world() {
     let origin_a = ring.render_origin_for(ax, az);
     let ground_a = build_ground(&ring, origin_a, &sp);
     let (tcx, tcz) = tile_center(t, ring.params());
-    let ta_local = (
-        (tcx - origin_a[0]) as f32,
-        (tcz - origin_a[2]) as f32,
-    );
+    let ta_local = ((tcx - origin_a[0]) as f32, (tcz - origin_a[2]) as f32);
     assert!(
         ground_a
             .height_at(ta_local.0, ta_local.1, f32::INFINITY)
@@ -498,10 +513,7 @@ fn ordeal4_evicted_tile_leaves_the_collision_world() {
 
     let origin_b = ring.render_origin_for(bx, az);
     let ground_b = build_ground(&ring, origin_b, &sp);
-    let tb_local = (
-        (tcx - origin_b[0]) as f32,
-        (tcz - origin_b[2]) as f32,
-    );
+    let tb_local = ((tcx - origin_b[0]) as f32, (tcz - origin_b[2]) as f32);
     // THE NEGATIVE — the evicted tile no longer collides.
     assert!(
         ground_b
