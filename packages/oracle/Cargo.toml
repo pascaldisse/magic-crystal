@@ -19,3 +19,17 @@ serde = { version = "1", features = ["derive"] }
 vessel = { path = "../vessel" }
 glam = "0.30.9"
 serde_json = "1"
+
+[dev-dependencies]
+# GUARDIAN RULING F6 — senses read SOLVER TRUTH. `rest_pose_canon.rs` (and the
+# migrated physics rows in `canon.rs`, both via the shared `tests/rest_pose`
+# module) tick the realm's physics to rest through scrying-glass, then gaze at
+# the RESTED ECS with the oracle's own eyes. oracle and scrying-glass are
+# SIBLINGS (both depend only on `crystal`, which depends back on neither) —
+# scrying-glass never depends on oracle, so this dev-dep carries ZERO cycle
+# risk. Tests-only surface.
+scrying-glass = { path = "../scrying-glass" }
+# `elements::ContactMaterial::default().contact_margin` — the same body-vs-body
+# chain-step term physics.rs uses (F2/F3 convention), reused verbatim by the
+# shared rest-pose derivation so the analytic step matches physics.rs exactly.
+elements = { path = "../elements" }
