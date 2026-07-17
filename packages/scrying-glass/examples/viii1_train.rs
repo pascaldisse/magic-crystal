@@ -201,7 +201,12 @@ fn render_pose(
     );
     let (albedo, normal, depth) = split_aov(&raw_aov);
 
-    eprintln!("[viii1-train] rendered pose '{name}' ({w}x{h}, ref_frames={ref_frames})");
+    let hit_frac = albedo.iter().filter(|a| a.length_squared() > 0.0).count() as f32 / albedo.len() as f32;
+    let mean_depth = depth.iter().sum::<f32>() / depth.len() as f32;
+    let max_depth = depth.iter().cloned().fold(0.0f32, f32::max);
+    eprintln!(
+        "[viii1-train] rendered pose '{name}' ({w}x{h}, ref_frames={ref_frames}) hit_frac={hit_frac:.3} mean_depth={mean_depth:.2} max_depth={max_depth:.2}"
+    );
     PoseFrame {
         name,
         albedo,

@@ -325,11 +325,38 @@ impl Adam {
     }
 }
 
+/// Below this squared-length, `albedo` is treated as a NO-HIT (sky) pixel,
+/// not a legitimately near-black surface: the AOV export writes exactly
+/// zero albedo for a primary-ray miss (there is no surface to shade), so
+/// any nonzero length here is real material data.
+const NO_HIT_ALBEDO_THRESHOLD_SQ: f32 = 1e-8;
+
+/// The demodulation divisor for a pixel's albedo. Demodulating by "surface
+/// albedo" is only meaningful where a surface was actually hit; for a
+/// primary-ray miss (sky), `albedo` is exactly zero and dividing by
+/// `ALBEDO_DEMOD_EPS` (a small floor meant only to avoid a divide-by-
+/// literal-zero on dark-but-real surfaces) would amplify sky radiance by up
+/// to ~1000x — blowing the feature/target scale far past hit pixels' and
+/// making the network's generalization depend on each frame's sky-vs-hit
+/// pixel MIX rather than the underlying signal. So: no-hit pixels use a
+/// divisor of 1.0 (no demodulation, radiance passes through as-is); real
+/// hits use `albedo + ALBEDO_DEMOD_EPS` as before. Found and fixed during
+/// this atom's honest-iteration pass (validation frame `orbit_+40`, which
+/// has a different sky/hit mix than the training poses, initially made the
+/// denoiser WORSE than noisy — see the training report).
+fn demod_divisor(albedo: Vec3) -> Vec3 {
+    if albedo.length_squared() > NO_HIT_ALBEDO_THRESHOLD_SQ {
+        albedo + Vec3::splat(ALBEDO_DEMOD_EPS)
+    } else {
+        Vec3::ONE
+    }
+}
+
 /// Build the 10-scalar feature vector for one pixel from CURRENT-FRAME
 /// buffers only (see module docs — this is the architecture guarantee the
 /// ban ordeal checks).
 pub fn pixel_features(noisy_radiance: Vec3, albedo: Vec3, normal: Vec3, depth: f32) -> [f32; INPUT_FEATURES] {
-    let demod = noisy_radiance / (albedo + Vec3::splat(ALBEDO_DEMOD_EPS));
+    let demod = noisy_radiance / demod_divisor(albedo);
     let log_r = Vec3::new(
         (demod.x.max(0.0) + 1.0).ln(),
         (demod.y.max(0.0) + 1.0).ln(),
@@ -346,14 +373,14 @@ pub fn pixel_features(noisy_radiance: Vec3, albedo: Vec3, normal: Vec3, depth: f
 fn undo_output_transform(raw: [f32; OUTPUT_CHANNELS], albedo: Vec3) -> Vec3 {
     let expm1 = Vec3::new(raw[0].exp() - 1.0, raw[1].exp() - 1.0, raw[2].exp() - 1.0);
     let demod = Vec3::new(expm1.x.max(0.0), expm1.y.max(0.0), expm1.z.max(0.0));
-    demod * (albedo + Vec3::splat(ALBEDO_DEMOD_EPS))
+    demod * demod_divisor(albedo)
 }
 
 /// Forward-transform a target (reference) radiance the same way training
 /// targets are prepared, for computing the training loss in the network's
 /// output space.
 fn target_transform(reference_radiance: Vec3, albedo: Vec3) -> [f32; OUTPUT_CHANNELS] {
-    let demod = reference_radiance / (albedo + Vec3::splat(ALBEDO_DEMOD_EPS));
+    let demod = reference_radiance / demod_divisor(albedo);
     [
         (demod.x.max(0.0) + 1.0).ln(),
         (demod.y.max(0.0) + 1.0).ln(),
