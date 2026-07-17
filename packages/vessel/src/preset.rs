@@ -69,6 +69,7 @@ impl Preset {
     /// - WHISKERS / facial features — no face geometry on a capsule skull.
     /// - PAW toes / claws — the `.foot` is a single small capsule tip.
     /// - fur texture — flat per-region albedo, no strand/shading detail.
+    ///
     /// The `tail` region IS carried (the skeleton has an 8-segment tail chain),
     /// so the tail silhouette is honest geometry.
     pub fn pink_cat() -> Preset {

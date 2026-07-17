@@ -55,7 +55,11 @@ fn v0_body_composes_from_the_sigil() {
 
     // RITE V·V2 added the pink cat, so TWO bodies now carry the sigil; they
     // sort by gaia id ("nari" < "naruko_cat"), so nari stays index 0.
-    assert_eq!(scene.bodies.len(), 2, "nari + the pink cat carry body sigils");
+    assert_eq!(
+        scene.bodies.len(),
+        2,
+        "nari + the pink cat carry body sigils"
+    );
     let nari = &scene.bodies[0];
     assert_eq!(nari.gaia_id, "nari");
     assert_eq!(nari.preset, "nari");
@@ -457,7 +461,10 @@ fn v2_cat_body_is_minded_nari_is_not() {
     assert_eq!(cat.preset, "pink_cat");
     assert!(cat.is_minded(), "the cat carries a behavior spirit");
     assert!(!nari.is_minded(), "nari is walker-driven, not minded");
-    println!("[v2-wire] cat is minded ({} tris), nari is not", cat.world_tris.len());
+    println!(
+        "[v2-wire] cat is minded ({} tris), nari is not",
+        cat.world_tris.len()
+    );
 }
 
 /// Ticking the world with the walker STILL (speed 0): the minded cat still
@@ -468,8 +475,16 @@ fn v2_cat_body_is_minded_nari_is_not() {
 fn v2_cat_walks_its_circuit_while_nari_holds() {
     let mut scene = RenderScene::from_ecs(load_naruko().world, &naruko_params()).expect("scene");
     let home = [-5.0_f32, 23.0_f32]; // authored cat home xz
-    let cat_idx = scene.bodies.iter().position(|b| b.gaia_id == "naruko_cat").unwrap();
-    let nari_idx = scene.bodies.iter().position(|b| b.gaia_id == "nari").unwrap();
+    let cat_idx = scene
+        .bodies
+        .iter()
+        .position(|b| b.gaia_id == "naruko_cat")
+        .unwrap();
+    let nari_idx = scene
+        .bodies
+        .iter()
+        .position(|b| b.gaia_id == "nari")
+        .unwrap();
     let nari_start = scene.bodies[nari_idx].world_origin();
 
     // One full loop is ~17 s at 1/60 dt ≈ 1030 ticks; sweep 1100 to cover it.
@@ -494,7 +509,10 @@ fn v2_cat_walks_its_circuit_while_nari_holds() {
         max_from_home > 1.0,
         "cat must walk out on its circuit, max_from_home={max_from_home}"
     );
-    assert!(walked, "cat must command a positive speed during the Walk phase");
+    assert!(
+        walked,
+        "cat must command a positive speed during the Walk phase"
+    );
     assert!(
         min_walk_speed_seen > 0.0 && min_walk_speed_seen.is_finite(),
         "walk speed positive"
@@ -521,8 +539,13 @@ fn v2_cat_walks_its_circuit_while_nari_holds() {
 #[test]
 fn v2_cat_animation_is_byte_identical() {
     let run = || -> Vec<u8> {
-        let mut scene = RenderScene::from_ecs(load_naruko().world, &naruko_params()).expect("scene");
-        let idx = scene.bodies.iter().position(|b| b.gaia_id == "naruko_cat").unwrap();
+        let mut scene =
+            RenderScene::from_ecs(load_naruko().world, &naruko_params()).expect("scene");
+        let idx = scene
+            .bodies
+            .iter()
+            .position(|b| b.gaia_id == "naruko_cat")
+            .unwrap();
         for _ in 0..400 {
             scene.command_bodies(0.0);
             scene.tick();
@@ -530,6 +553,10 @@ fn v2_cat_animation_is_byte_identical() {
         // sample deep in the Walk phase (tick 400 ≈ 6.7 s > sit+flick)
         tris_bytes(&scene.bodies[idx].world_tris)
     };
-    assert_eq!(run(), run(), "animated cat body must be byte-identical across runs");
+    assert_eq!(
+        run(),
+        run(),
+        "animated cat body must be byte-identical across runs"
+    );
     println!("[v2-wire] animated cat body byte-identical across two runs");
 }

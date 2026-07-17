@@ -363,14 +363,20 @@ impl BodyInstance {
             return;
         };
         let drive = mind.drive(t);
-        let position = Vec3::new(drive.position[0] as f32, self.ground_y, drive.position[2] as f32);
+        let position = Vec3::new(
+            drive.position[0] as f32,
+            self.ground_y,
+            drive.position[2] as f32,
+        );
         self.model = transform_matrix(
             position,
             Vec3::new(0.0, drive.yaw as f32, 0.0),
             self.base_scale,
         );
         self.commanded_speed = drive.speed as f32;
-        self.pose = self.locomotion.step(&self.body.skeleton, self.commanded_speed);
+        self.pose = self
+            .locomotion
+            .step(&self.body.skeleton, self.commanded_speed);
         self.world_tris = skin_body(&self.body, &self.pose, self.model, &self.albedo);
     }
 

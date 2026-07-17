@@ -82,7 +82,11 @@ fn v2_cat_palette_paints_every_region() {
     assert_eq!(preset.palette.color_of("head"), "#ffd0dc", "soft pink face");
     assert_eq!(preset.palette.color_of("body"), "#ffc0cb", "pink coat");
     assert_eq!(preset.palette.color_of("legs"), "#ffb0c0", "pink legs");
-    assert_eq!(preset.palette.color_of("tail"), "#ff9fb6", "deeper pink tail");
+    assert_eq!(
+        preset.palette.color_of("tail"),
+        "#ff9fb6",
+        "deeper pink tail"
+    );
 
     // Every region resolves to a colour used by at least one vertex (no dead
     // region — the cat's tail chain IS honest geometry, so `tail` must paint).
