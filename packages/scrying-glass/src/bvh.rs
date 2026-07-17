@@ -531,8 +531,8 @@ fn tri_hit(origin: [f32; 3], dir: [f32; 3], t: &GpuTri, t_min: f32, t_max: f32) 
 /// hits within this relative (plus absolute floor) distance are one surface as
 /// far as depth can tell; the winner is the canonical `tri_before`, not the BVH
 /// visitation order, so every tree shape agrees.
-const TIE_EPS: f32 = 1e-4;
-const TIE_ABS: f32 = 1e-3;
+const TIE_EPS: f32 = 1e-6;
+const TIE_ABS: f32 = 1e-5;
 
 /// Canonical, build-independent tie-break for two triangles within the tie band
 /// — lexicographic over the vertex then material lanes. Mirror of the WGSL

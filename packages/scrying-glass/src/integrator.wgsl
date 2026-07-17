@@ -377,8 +377,8 @@ fn aabb_hit(mn: vec3<f32>, mx: vec3<f32>, o: vec3<f32>, inv: vec3<f32>, t_min: f
 // re-shaped, e.g. SAH). Treating them as a tie and picking the canonical
 // `tri_before` winner makes the choice geometry-defined and build-independent.
 // Chosen ≫ the observed ULP gap (~1e-7 relative) yet ≪ any real surface spacing.
-const TIE_EPS: f32 = 1e-4;
-const TIE_ABS: f32 = 1e-3;
+const TIE_EPS: f32 = 1e-6;
+const TIE_ABS: f32 = 1e-5;
 
 fn trace_closest(o: vec3<f32>, d: vec3<f32>, t_min: f32, t_max: f32) -> Hit {
   var result: Hit;
