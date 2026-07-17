@@ -88,8 +88,10 @@ VIII (THE DREAM-DENOISER) — waves (a)+(b) DONE: VIII-0 truth baseline
 port (91a6263+89e351c). VIII-2 BUDGET NOTE: present-resolution cost
 27ms exceeds the 16.67ms frame — whether that matters = OPEN 1 (the
 upscaler's cost∝pixels reading): low-res denoise + upscale would make
-1.3ms the real cost; the fp16 atom is GATED on that ruling. VIII-3
-upscaler + temporal accumulation still await rulings.
+1.3ms the real cost; the fp16 atom is GATED on that ruling. Wave (c)
+VIII-3 CPU reference MERGED (a2d293b, adversary faaa2c3: beats-bilinear
+held-out margins 0.0246/0.0096, weights hash-pinned); remaining: GPU
+port + live blit_fs wiring + temporal ruling.
 IX (THE CHAIN TAKES FLESH) — stays a proposal; NOT required: the 60 FPS
 law passes without it.
 
