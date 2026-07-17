@@ -12,9 +12,11 @@ use std::path::Path;
 use glam::Vec3 as GVec3;
 
 use scrying_glass::bvh::{Bvh, BvhParams};
-use scrying_glass::denoiser::{deserialize_weights, denoise_image};
+use scrying_glass::denoiser::{denoise_image, deserialize_weights};
 use scrying_glass::error_metric::rmse;
-use scrying_glass::integrator::{IntegratorParams, headless_device, resolve, split_aov, trace_headless, trace_headless_aov};
+use scrying_glass::integrator::{
+    IntegratorParams, headless_device, resolve, split_aov, trace_headless, trace_headless_aov,
+};
 use scrying_glass::scene::{Camera, RenderScene, SceneParameters, SunDefaults};
 
 /// Naruko authoring dials — the SAME front pose `viii0_truth.rs` uses.
@@ -58,7 +60,15 @@ fn linear_to_srgb(c: f32) -> f32 {
     }
 }
 
-fn write_triptych(a: &[GVec3], b: &[GVec3], c: &[GVec3], w: u32, h: u32, exposure: f32, path: &Path) {
+fn write_triptych(
+    a: &[GVec3],
+    b: &[GVec3],
+    c: &[GVec3],
+    w: u32,
+    h: u32,
+    exposure: f32,
+    path: &Path,
+) {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).unwrap();
     }
@@ -78,7 +88,10 @@ fn write_triptych(a: &[GVec3], b: &[GVec3], c: &[GVec3], w: u32, h: u32, exposur
     let mut enc = png::Encoder::new(writer, 3 * w, h);
     enc.set_color(png::ColorType::Rgb);
     enc.set_depth(png::BitDepth::Eight);
-    enc.write_header().unwrap().write_image_data(&bytes).unwrap();
+    enc.write_header()
+        .unwrap()
+        .write_image_data(&bytes)
+        .unwrap();
     eprintln!("[viii1-dream] wrote {}", path.display());
 }
 
@@ -182,10 +195,16 @@ fn main() {
     let noisy_rmse = rmse(&noisy, &reference);
     let denoised_rmse = rmse(&denoised, &reference);
     println!("[viii1-dream] RMSE(noisy 1spp, reference {ref_frames}frames)     = {noisy_rmse:.6}");
-    println!("[viii1-dream] RMSE(denoised,   reference {ref_frames}frames)     = {denoised_rmse:.6}");
+    println!(
+        "[viii1-dream] RMSE(denoised,   reference {ref_frames}frames)     = {denoised_rmse:.6}"
+    );
     println!(
         "[viii1-dream] denoised beats noisy at this pose: {}",
-        if denoised_rmse < noisy_rmse { "YES" } else { "NO" }
+        if denoised_rmse < noisy_rmse {
+            "YES"
+        } else {
+            "NO"
+        }
     );
 
     write_triptych(

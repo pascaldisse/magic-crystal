@@ -220,7 +220,11 @@ impl Mlp {
     /// mean-squared-error loss on the OUTPUT_CHANNELS-dim output. Returns
     /// per-layer weight/bias gradients (same shapes as `self.layers`),
     /// index-ordered throughout.
-    fn backward(&self, input: &[f32], target: &[f32; OUTPUT_CHANNELS]) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
+    fn backward(
+        &self,
+        input: &[f32],
+        target: &[f32; OUTPUT_CHANNELS],
+    ) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
         let (pre_activations, activations) = self.forward_train(input);
         let n_layers = self.layers.len();
         let mut w_grads: Vec<Vec<f32>> = self.layers.iter().map(|l| vec![0.0; l.w.len()]).collect();
@@ -264,7 +268,6 @@ impl Mlp {
         }
         (w_grads, b_grads)
     }
-
 }
 
 /// Minimal in-repo Adam optimizer (~60 lines) — no new dependency, matches
@@ -355,7 +358,12 @@ fn demod_divisor(albedo: Vec3) -> Vec3 {
 /// Build the 10-scalar feature vector for one pixel from CURRENT-FRAME
 /// buffers only (see module docs — this is the architecture guarantee the
 /// ban ordeal checks).
-pub fn pixel_features(noisy_radiance: Vec3, albedo: Vec3, normal: Vec3, depth: f32) -> [f32; INPUT_FEATURES] {
+pub fn pixel_features(
+    noisy_radiance: Vec3,
+    albedo: Vec3,
+    normal: Vec3,
+    depth: f32,
+) -> [f32; INPUT_FEATURES] {
     let demod = noisy_radiance / demod_divisor(albedo);
     let log_r = Vec3::new(
         (demod.x.max(0.0) + 1.0).ln(),
@@ -364,7 +372,8 @@ pub fn pixel_features(noisy_radiance: Vec3, albedo: Vec3, normal: Vec3, depth: f
     );
     let log_depth = (depth.max(0.0) + 1.0).ln();
     [
-        log_r.x, log_r.y, log_r.z, albedo.x, albedo.y, albedo.z, normal.x, normal.y, normal.z, log_depth,
+        log_r.x, log_r.y, log_r.z, albedo.x, albedo.y, albedo.z, normal.x, normal.y, normal.z,
+        log_depth,
     ]
 }
 
@@ -394,7 +403,13 @@ fn target_transform(reference_radiance: Vec3, albedo: Vec3) -> [f32; OUTPUT_CHAN
 /// (noisy radiance, albedo, normal, depth) — no cross-frame state, no frame index.
 /// This is the architecture guarantee THE BAN ordeal checks against this
 /// function's public signature.
-pub fn denoise_image(mlp: &Mlp, noisy_radiance: &[Vec3], albedo: &[Vec3], normal: &[Vec3], depth: &[f32]) -> Vec<Vec3> {
+pub fn denoise_image(
+    mlp: &Mlp,
+    noisy_radiance: &[Vec3],
+    albedo: &[Vec3],
+    normal: &[Vec3],
+    depth: &[f32],
+) -> Vec<Vec3> {
     let n = noisy_radiance.len();
     assert_eq!(albedo.len(), n);
     assert_eq!(normal.len(), n);
@@ -425,7 +440,12 @@ pub struct TrainingPixel {
 /// shuffle, so callers wanting shuffled minibatches must pre-shuffle the
 /// slice deterministically before calling). Returns the epoch's mean MSE
 /// (network output space) for progress reporting.
-pub fn train_epoch(mlp: &mut Mlp, adam: &mut Adam, pixels: &[TrainingPixel], batch_size: usize) -> f64 {
+pub fn train_epoch(
+    mlp: &mut Mlp,
+    adam: &mut Adam,
+    pixels: &[TrainingPixel],
+    batch_size: usize,
+) -> f64 {
     let mut total_loss = 0.0f64;
     let mut i = 0usize;
     while i < pixels.len() {
@@ -516,7 +536,12 @@ pub fn deserialize_weights(bytes: &[u8]) -> Option<Mlp> {
             b.push(f32::from_le_bytes(bytes4));
             cursor += 4;
         }
-        layers.push(Layer { in_dim, out_dim, w, b });
+        layers.push(Layer {
+            in_dim,
+            out_dim,
+            w,
+            b,
+        });
     }
     Some(Mlp {
         config: MlpConfig {
@@ -533,17 +558,20 @@ pub fn deserialize_weights(bytes: &[u8]) -> Option<Mlp> {
 /// test against the standard NIST test vector for "abc" below.
 pub fn sha256_hex(data: &[u8]) -> String {
     const K: [u32; 64] = [
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98,
-        0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
-        0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8,
-        0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
-        0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819,
-        0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
-        0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
+        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
+        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
         0xc67178f2,
     ];
     let mut h: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x5be0cd19,
     ];
 
     let mut msg = data.to_vec();

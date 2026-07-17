@@ -201,7 +201,8 @@ fn render_pose(
     );
     let (albedo, normal, depth) = split_aov(&raw_aov);
 
-    let hit_frac = albedo.iter().filter(|a| a.length_squared() > 0.0).count() as f32 / albedo.len() as f32;
+    let hit_frac =
+        albedo.iter().filter(|a| a.length_squared() > 0.0).count() as f32 / albedo.len() as f32;
     let mean_depth = depth.iter().sum::<f32>() / depth.len() as f32;
     let max_depth = depth.iter().cloned().fold(0.0f32, f32::max);
     eprintln!(
@@ -265,15 +266,30 @@ fn main() {
         ("wide", wide_camera),
         (
             "orbit_+20",
-            orbit_camera(params.camera_position, front_pivot, 20.0, params.fov_y_degrees),
+            orbit_camera(
+                params.camera_position,
+                front_pivot,
+                20.0,
+                params.fov_y_degrees,
+            ),
         ),
         (
             "orbit_-20",
-            orbit_camera(params.camera_position, front_pivot, -20.0, params.fov_y_degrees),
+            orbit_camera(
+                params.camera_position,
+                front_pivot,
+                -20.0,
+                params.fov_y_degrees,
+            ),
         ),
         (
             "orbit_+40",
-            orbit_camera(params.camera_position, front_pivot, 40.0, params.fov_y_degrees),
+            orbit_camera(
+                params.camera_position,
+                front_pivot,
+                40.0,
+                params.fov_y_degrees,
+            ),
         ),
     ];
     let train_names = ["front", "wide", "orbit_+20"];
@@ -312,7 +328,10 @@ fn main() {
 
     // ── validate: PER-FRAME RMSE, whole poses only ──────────────────────
     println!("\n[viii1-train] === VALIDATION (per-frame RMSE, radiance space) ===");
-    println!("{:<12} {:>14} {:>14} {:>10}", "pose", "noisy_rmse", "denoised_rmse", "beats?");
+    println!(
+        "{:<12} {:>14} {:>14} {:>10}",
+        "pose", "noisy_rmse", "denoised_rmse", "beats?"
+    );
     let mut worst_val_rmse = 0.0f64;
     let mut val_rows = Vec::new();
     for f in frames.iter().filter(|f| val_names.contains(&f.name)) {
@@ -337,7 +356,10 @@ fn main() {
         let denoised = denoise_image(&mlp, &f.noisy, &f.albedo, &f.normal, &f.depth);
         let noisy_rmse = rmse(&f.noisy, &f.reference);
         let denoised_rmse = rmse(&denoised, &f.reference);
-        println!("{:<12} {:>14.6} {:>14.6}", f.name, noisy_rmse, denoised_rmse);
+        println!(
+            "{:<12} {:>14.6} {:>14.6}",
+            f.name, noisy_rmse, denoised_rmse
+        );
         train_rows.push((f.name, noisy_rmse, denoised_rmse));
     }
 
@@ -355,7 +377,11 @@ fn main() {
     let weights_path = data_dir.join("denoiser-weights-v1.bin");
     std::fs::write(&weights_path, &weights_bytes).unwrap();
     let weights_sha256 = sha256_hex(&weights_bytes);
-    println!("[viii1-train] wrote {} ({} bytes)", weights_path.display(), weights_bytes.len());
+    println!(
+        "[viii1-train] wrote {} ({} bytes)",
+        weights_path.display(),
+        weights_bytes.len()
+    );
     println!("[viii1-train] weights sha256 = {weights_sha256}");
 
     let provenance = serde_json::json!({
@@ -399,7 +425,11 @@ fn main() {
         },
     });
     let provenance_path = data_dir.join("denoiser-weights-v1.provenance.json");
-    std::fs::write(&provenance_path, serde_json::to_string_pretty(&provenance).unwrap()).unwrap();
+    std::fs::write(
+        &provenance_path,
+        serde_json::to_string_pretty(&provenance).unwrap(),
+    )
+    .unwrap();
     println!("[viii1-train] wrote {}", provenance_path.display());
 
     if !all_beat {

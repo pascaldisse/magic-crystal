@@ -25,12 +25,14 @@ use std::path::Path;
 use glam::Vec3 as GVec3;
 
 use scrying_glass::bvh::{Bvh, BvhParams};
-use scrying_glass::denoiser::{Mlp, deserialize_weights, denoise_image, sha256_hex};
+use scrying_glass::denoiser::{Mlp, denoise_image, deserialize_weights, sha256_hex};
 use scrying_glass::error_metric::rmse;
 use scrying_glass::integrator::{
     IntegratorParams, headless_device, resolve, split_aov, trace_headless, trace_headless_aov,
 };
-use scrying_glass::scene::{Camera, LeafTriangle, RenderScene, SceneParameters, SunDefaults, SunLight};
+use scrying_glass::scene::{
+    Camera, LeafTriangle, RenderScene, SceneParameters, SunDefaults, SunLight,
+};
 
 /// The same small fixed pose `viii0_ordeals.rs` uses — fast, non-vacuous
 /// (the triangle fills a good part of the frame), no full-realm load.
@@ -83,7 +85,9 @@ fn load_provenance() -> serde_json::Value {
 #[test]
 fn a_inference_is_byte_identical_same_frame_twice_cold() {
     let Some((device, queue)) = headless_device() else {
-        eprintln!("[VIII-1 inference determinism] no GPU adapter on this host — ordeal could not run");
+        eprintln!(
+            "[VIII-1 inference determinism] no GPU adapter on this host — ordeal could not run"
+        );
         return;
     };
     let (bvh, camera, sun, sky_top, sky_horizon, w, h) = fixed_pose();
@@ -105,7 +109,17 @@ fn a_inference_is_byte_identical_same_frame_twice_cold() {
         &noisy_params,
         None,
     ));
-    let raw_aov = trace_headless_aov(&device, &queue, &bvh, &camera, &sun, sky_top, sky_horizon, w, h);
+    let raw_aov = trace_headless_aov(
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &sun,
+        sky_top,
+        sky_horizon,
+        w,
+        h,
+    );
     let (albedo, normal, depth) = split_aov(&raw_aov);
 
     let mlp = load_committed_weights();
@@ -125,7 +139,14 @@ fn a_inference_is_byte_identical_same_frame_twice_cold() {
 fn render_validation_poses(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-) -> Vec<(&'static str, Vec<GVec3>, Vec<GVec3>, Vec<GVec3>, Vec<f32>, Vec<GVec3>)> {
+) -> Vec<(
+    &'static str,
+    Vec<GVec3>,
+    Vec<GVec3>,
+    Vec<GVec3>,
+    Vec<f32>,
+    Vec<GVec3>,
+)> {
     fn naruko_params() -> SceneParameters {
         SceneParameters {
             fov_y_degrees: 60.0,
@@ -183,11 +204,21 @@ fn render_validation_poses(
     let poses: Vec<(&'static str, Camera)> = vec![
         (
             "orbit_-20",
-            orbit_camera(params.camera_position, front_pivot, -20.0, params.fov_y_degrees),
+            orbit_camera(
+                params.camera_position,
+                front_pivot,
+                -20.0,
+                params.fov_y_degrees,
+            ),
         ),
         (
             "orbit_+40",
-            orbit_camera(params.camera_position, front_pivot, 40.0, params.fov_y_degrees),
+            orbit_camera(
+                params.camera_position,
+                front_pivot,
+                40.0,
+                params.fov_y_degrees,
+            ),
         ),
     ];
 
@@ -226,7 +257,17 @@ fn render_validation_poses(
                 &IntegratorParams::default(),
                 None,
             ));
-            let raw_aov = trace_headless_aov(device, queue, &bvh, &camera, &scene.sun, scene.sky_top, scene.sky_horizon, w, h);
+            let raw_aov = trace_headless_aov(
+                device,
+                queue,
+                &bvh,
+                &camera,
+                &scene.sun,
+                scene.sky_top,
+                scene.sky_horizon,
+                w,
+                h,
+            );
             let (albedo, normal, depth) = split_aov(&raw_aov);
             (name, noisy, albedo, normal, depth, reference)
         })
@@ -382,9 +423,21 @@ fn e_senses_unchanged_oracle_sha_equal_pass_on_or_off() {
         params: &IntegratorParams,
     ) -> Vec<u8> {
         let noisy = resolve(&trace_headless(
-            device, queue, bvh, camera, sun, sky_top, sky_horizon, w, h, 1, params, None,
+            device,
+            queue,
+            bvh,
+            camera,
+            sun,
+            sky_top,
+            sky_horizon,
+            w,
+            h,
+            1,
+            params,
+            None,
         ));
-        let raw_aov = trace_headless_aov(device, queue, bvh, camera, sun, sky_top, sky_horizon, w, h);
+        let raw_aov =
+            trace_headless_aov(device, queue, bvh, camera, sun, sky_top, sky_horizon, w, h);
         let mut bytes = Vec::new();
         for px in &noisy {
             bytes.extend_from_slice(bytemuck::cast_slice(&px.to_array()));
@@ -396,14 +449,46 @@ fn e_senses_unchanged_oracle_sha_equal_pass_on_or_off() {
     }
 
     // Pass OFF: render, hash, denoiser never invoked at all in this branch.
-    let truth_off = render_truth(&device, &queue, &bvh, &camera, &sun, sky_top, sky_horizon, w, h, &noisy_params);
+    let truth_off = render_truth(
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &sun,
+        sky_top,
+        sky_horizon,
+        w,
+        h,
+        &noisy_params,
+    );
     let hash_off = sha256_hex(&truth_off);
 
     // Pass ON: render the SAME pose again, run the denoiser on its output
     // (a pure function of the buffers, returns a new Vec, mutates nothing),
     // THEN hash the render's own truth buffers again.
-    let truth_on = render_truth(&device, &queue, &bvh, &camera, &sun, sky_top, sky_horizon, w, h, &noisy_params);
-    let raw_aov = trace_headless_aov(&device, &queue, &bvh, &camera, &sun, sky_top, sky_horizon, w, h);
+    let truth_on = render_truth(
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &sun,
+        sky_top,
+        sky_horizon,
+        w,
+        h,
+        &noisy_params,
+    );
+    let raw_aov = trace_headless_aov(
+        &device,
+        &queue,
+        &bvh,
+        &camera,
+        &sun,
+        sky_top,
+        sky_horizon,
+        w,
+        h,
+    );
     let (albedo, normal, depth) = split_aov(&raw_aov);
     let noisy = resolve(&trace_headless(
         &device,
