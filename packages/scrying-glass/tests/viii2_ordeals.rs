@@ -127,9 +127,13 @@ fn derived_parity_rel_bound(mlp: &Mlp) -> f64 {
         .iter()
         .map(|&(i, o)| (i as u64) * (o as u64))
         .sum();
-    // 7 transcendentals in the feature+undo path; a generous 4-ULP budget
-    // each (Metal fast-math transcendentals; still derived, not chosen for a
-    // value) — the accumulated MAC term dominates this anyway.
+    // 7 transcendentals in the feature+undo path (3 `ln` demodulated-radiance
+    // channels in + 1 `ln` depth in + 3 `exp` radiance channels out —
+    // denoiser.rs `extract_features`/`undo_transform`); RE-VERIFY this count
+    // if the feature transform ever changes shape. 4-ULP budget each (Metal
+    // fast-math transcendentals; still derived, not chosen for a value) —
+    // the accumulated MAC term dominates this anyway. This ULP-budget slack
+    // must be revisited before any fp16 port (see docs/perf/2026-07-17-viii2-gpu-denoise.md).
     const TRANSCENDENTAL_ULP_BUDGET: u64 = 7 * 4;
     let unit_roundoff = f32::EPSILON as f64; // 2^-23, worst-case fp32 rounding step
     (macs + TRANSCENDENTAL_ULP_BUDGET) as f64 * unit_roundoff

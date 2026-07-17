@@ -23,22 +23,29 @@ never a frozen literal):
   `exp` out); budget 4 ULP each = 28·u (the MAC term dominates).
 - relative bound = `(macs + 28)·u` ≈ **4.19e-4**.
 
-MEASURED relative spread `rmse(gpu,cpu)/rmse(cpu,0)`:
+MEASURED relative spread `rmse(gpu,cpu)/rmse(cpu,0)` (from the standalone
+example `viii2_gpu_dream`, which runs `front` + `orbit_-20`):
 - front (train pose):    **5.965e-7**
 - orbit_-20 (held-out):  **5.759e-7**
 
-→ ~700× under the derived bound. Ordeal `b_and_c` asserts `parity_rel ≤ bound`.
+→ ~700× under the derived bound. The ordeal `b_and_c` re-derives and asserts
+`parity_rel ≤ bound` itself, machine-checked over the OFFICIAL validation set
+(`VALIDATION_POSE_NAMES` = `orbit_-20` + `orbit_+40` — see the quality-gate
+section below for those numbers).
 
 ## Quality gate on GPU output — beats-noisy, machine-checked (the real gate)
 
-The GPU-denoised RMSE vs the 128-frame reference, both held-out validation
-poses, at the pinned dataset resolution 96×64:
-- front:      noisy 0.074531 → GPU-denoised **0.043506** (matches CPU 0.043506)
+The GPU-denoised RMSE vs the 128-frame reference, the two TRUE held-out
+validation poses the ordeal gates (`VALIDATION_POSE_NAMES` = `orbit_-20` +
+`orbit_+40` — NOT `front`, which is a TRAIN pose; `front` appears above only
+in the parity measurement, taken from the standalone example), at the
+pinned dataset resolution 96×64:
 - orbit_-20:  noisy 0.052073 → GPU-denoised **0.042999** (matches CPU 0.042999)
+- orbit_+40:  noisy 0.095662 → GPU-denoised **0.049997** (matches CPU 0.049997)
 
 Both strictly beat noisy (ordeal `b_and_c`, `gpu_rmse < noisy_rmse`). The GPU
 result equals the CPU reference to 6 decimals — the pinned VIII-1 bound
-(0.049997) still holds on GPU output.
+(0.049997, on `orbit_+40`) still holds on GPU output.
 
 ## GPU denoise-pass cost — measured (timestamp queries), M1
 
