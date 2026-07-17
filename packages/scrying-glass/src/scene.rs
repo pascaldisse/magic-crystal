@@ -2446,14 +2446,15 @@ mod tests {
     /// as the dynamic partition, with NO triangle lost or duplicated. Naruko
     /// carries the lantern (bob) + beacon (pulse) + the three SIGNAL RINGS
     /// (pulse — the lighthouse broadcasts) + the Mirror Proof's kami orb
-    /// (orbit).
+    /// (orbit) + RITE VI · VI-1's four `body` vessels (naruko_crate + the
+    /// three stack crates).
     #[test]
     fn dynamic_split_leaf_parity_holds() {
         let scene = naruko_scene();
         assert_eq!(
             scene.dynamics.entities().len(),
-            7,
-            "the realm breath: lantern + beacon + ring_a/b/c + kami orb (behaviors) + crate (body) are dynamic"
+            10,
+            "the realm breath: lantern + beacon + ring_a/b/c + kami orb (behaviors) + crate + stack_crate_0/1/2 (bodies) are dynamic"
         );
 
         // STATIC BVH triangles (built once) and the DYNAMIC partition triangles.

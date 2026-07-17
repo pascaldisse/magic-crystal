@@ -268,7 +268,10 @@ fn stack_settles_at_derived_chained_heights() {
     const REST_TOL: f64 = 0.005; // same tolerance the single-crate rest ordeal derives
     for (id, exp) in STACK_IDS.iter().zip(expected.iter()) {
         let pos = scene.body_position(id).unwrap();
-        eprintln!("[ordeal] stack rest: {id} y={:.4} expected={exp:.4}", pos[1]);
+        eprintln!(
+            "[ordeal] stack rest: {id} y={:.4} expected={exp:.4}",
+            pos[1]
+        );
         assert!(
             (pos[1] - exp).abs() < REST_TOL,
             "{id} rest y {} != derived chained height {exp} (tol {REST_TOL})",
