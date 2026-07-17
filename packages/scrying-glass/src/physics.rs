@@ -51,9 +51,34 @@ pub struct Body {
     #[serde(default = "default_contact_radius")]
     pub contact_radius: f64,
     /// Shape-match stiffness on `[0, 1]`: `1.0` = perfectly rigid, `< 1.0` =
-    /// deformable. Default `1.0` (a rigid crate).
+    /// deformable. Default `1.0` (a rigid crate). Ignored when `bonded` is
+    /// true (a bonded body is not shape-matched — see `bonded`'s doc).
     #[serde(default = "default_rigidity")]
     pub rigidity: f64,
+    /// VI-2 — SOMETHING BREAKS: `true` makes this body a BONDED lattice
+    /// (nearest-neighbor [`elements::DistanceConstraint`] bonds, each
+    /// carrying a real love/strife [`elements::Bond`]) instead of a
+    /// shape-matched [`elements::RigidBody`]. Only a bonded body can
+    /// fracture — a shape-matched rigid keeps no per-bond bookkeeping to
+    /// tear (see `elements::Solver::spawn_bonded_box`'s doc). Default
+    /// `false` (every EXISTING scene's bodies stay rigid, byte-unchanged).
+    #[serde(default)]
+    pub bonded: bool,
+    /// A bonded body's per-bond love in `[0, 1]`, or `None` to DERIVE it
+    /// from `density` via [`elements::default_bond_love`] (the essence
+    /// rule: `density` stands in for the material's essence — stone >
+    /// wood > glass, GRIMOIRE). Ignored when `bonded` is false.
+    #[serde(default)]
+    pub love: Option<f64>,
+    /// A bonded body's bond compliance (XPBD inverse stiffness, `m/N`;
+    /// `0.0` = rigid). Default `1e-7` — near-rigid (matches the "nearly-
+    /// rigid" compliance the elements ordeals already use for a stiff
+    /// chain link, see `packages/elements/tests/ordeals.rs`'s comment on
+    /// its own `1.0e-6` — one order tighter here since a crate's own bonds
+    /// should read stiffer than a hanging chain's links). Ignored when
+    /// `bonded` is false.
+    #[serde(default = "default_bond_compliance")]
+    pub compliance: f64,
 }
 
 fn default_shape() -> String {
@@ -73,6 +98,9 @@ fn default_contact_radius() -> f64 {
 }
 fn default_rigidity() -> f64 {
     1.0
+}
+fn default_bond_compliance() -> f64 {
+    1.0e-7
 }
 
 /// A declared body wired into the solver: which vessel it animates and its
@@ -100,6 +128,20 @@ pub struct BodyPose {
     pub rotation_columns: [[f64; 3]; 3],
 }
 
+/// VI-2 — a BONDED body wired into the solver: which vessel it (used to)
+/// animate, its whole particle set, and the lattice cube size its fragments'
+/// render mesh is built from. `broken` flips to `true` the tick a break is
+/// first observed (see `Physics::poll_bonded`) — once broken, this binding
+/// stops contributing a whole-body pose (its vessel entity is gone, replaced
+/// by fragment vessels the caller births).
+#[derive(Clone, Debug)]
+struct BondedBinding {
+    gaia_id: String,
+    whole: Vec<usize>,
+    cube_size: f64,
+    broken: bool,
+}
+
 /// The physics seam: the Elements' solver holding every declared body, plus the
 /// bindings back to their vessels. Owned by the living layer; stepped once per
 /// world tick.
@@ -107,6 +149,10 @@ pub struct BodyPose {
 pub struct Physics {
     solver: Solver,
     bindings: Vec<BodyBinding>,
+    /// VI-2 — bonded (fracturable) bodies, tracked separately from rigid
+    /// `bindings` (a bonded body carries no `elements::RigidBody`, so it has
+    /// no shape-matched pose to read the way `Physics::pose` does).
+    bonded: Vec<BondedBinding>,
 }
 
 impl Physics {
@@ -136,30 +182,127 @@ impl Physics {
             material: ContactMaterial::default(),
         });
         let mut bindings = Vec::with_capacity(declarations.len());
+        let mut bonded = Vec::new();
         for (gaia_id, body, center) in declarations {
-            // Only the box shape is discretized in P3; any other shape falls
-            // back to a box of its extents (generic, never a hard error).
-            let rigid = solver.spawn_rigid_box(
-                Vec3::new(center[0], center[1], center[2]),
-                Vec3::new(body.size[0], body.size[1], body.size[2]),
-                (body.resolution[0], body.resolution[1], body.resolution[2]),
-                body.density,
-                body.rigidity,
-                body.contact_radius,
-            );
-            bindings.push(BodyBinding {
-                gaia_id,
-                rigid,
-                half_height: body.size[1] * 0.5,
-                contact_radius: body.contact_radius,
-            });
+            let dims = Vec3::new(body.size[0], body.size[1], body.size[2]);
+            let counts = (body.resolution[0], body.resolution[1], body.resolution[2]);
+            if body.bonded {
+                // VI-2 — SOMETHING BREAKS: a nearest-neighbor bonded lattice,
+                // never shape-matched. Love defaults from essence (density)
+                // when not explicitly authored.
+                let love = body.love.unwrap_or_else(|| elements::default_bond_love(body.density));
+                let whole = solver.spawn_bonded_box(
+                    Vec3::new(center[0], center[1], center[2]),
+                    dims,
+                    counts,
+                    body.density,
+                    love,
+                    body.compliance,
+                    body.contact_radius,
+                );
+                let cube_size = fracture::lattice_cube_size(dims, counts);
+                bonded.push(BondedBinding {
+                    gaia_id,
+                    whole,
+                    cube_size,
+                    broken: false,
+                });
+            } else {
+                // Only the box shape is discretized in P3; any other shape
+                // falls back to a box of its extents (generic, never a hard
+                // error).
+                let rigid = solver.spawn_rigid_box(
+                    Vec3::new(center[0], center[1], center[2]),
+                    dims,
+                    counts,
+                    body.density,
+                    body.rigidity,
+                    body.contact_radius,
+                );
+                bindings.push(BodyBinding {
+                    gaia_id,
+                    rigid,
+                    half_height: body.size[1] * 0.5,
+                    contact_radius: body.contact_radius,
+                });
+            }
         }
-        Some(Physics { solver, bindings })
+        Some(Physics {
+            solver,
+            bindings,
+            bonded,
+        })
     }
 
     /// Advance every declared body one fixed tick (the entropy coordinate).
     pub fn step(&mut self) {
         self.solver.step();
+    }
+
+    /// VI-2 — poll every NOT-YET-BROKEN bonded body: still whole, or broke
+    /// THIS tick? Call once per tick, AFTER `step()`. Returns `(still_whole,
+    /// newly_broken)`:
+    /// - `still_whole`: `(gaia_id, live_centroid)` for every bonded body
+    ///   that has not yet fractured — its vessel keeps riding this pose
+    ///   (translation only; rotation held identity — VI-2 design note: a
+    ///   bonded lattice under uniform gravity alone free-falls without
+    ///   torque, so this is exact pre-impact; post-impact it is a
+    ///   documented simplification, see `RITE-VI-STRIFE.md`'s VI-2 section
+    ///   in this crate's example doc).
+    /// - `newly_broken`: `(parent_gaia_id, fragments, cube_size)` for every
+    ///   bonded body whose flood-fill just split into more than one
+    ///   component — the caller (Dynamics) births fragment vessels from
+    ///   this exactly once (`broken` flips true here so it is never
+    ///   reported again).
+    pub fn poll_bonded(
+        &mut self,
+    ) -> (Vec<(String, [f64; 3])>, Vec<(String, Vec<fracture::Fragment>, f64)>) {
+        let mut still_whole = Vec::new();
+        let mut newly_broken = Vec::new();
+        for binding in &mut self.bonded {
+            if binding.broken {
+                continue;
+            }
+            let fragments = fracture::compute_fragments(&self.solver, &binding.whole);
+            if fragments.len() <= 1 {
+                let c = fragments
+                    .first()
+                    .map(|f| f.centroid)
+                    .unwrap_or(elements::Vec3::ZERO);
+                still_whole.push((binding.gaia_id.clone(), [c.x, c.y, c.z]));
+            } else {
+                binding.broken = true;
+                newly_broken.push((binding.gaia_id.clone(), fragments, binding.cube_size));
+            }
+        }
+        (still_whole, newly_broken)
+    }
+
+    /// VI-2 — the live mass-weighted centroid of an arbitrary particle set
+    /// (a fragment's fixed particle indices, tracked by the caller since the
+    /// tick it was born). Used to keep settling fragments moving every tick
+    /// after birth (translation only, same design note as `poll_bonded`).
+    pub fn group_centroid(&self, particles: &[usize]) -> [f64; 3] {
+        let mut sum = elements::Vec3::ZERO;
+        let mut mass = 0.0;
+        for &i in particles {
+            let inv_m = self.solver.particles.inv_mass[i];
+            let m = if inv_m > 0.0 { 1.0 / inv_m } else { 0.0 };
+            sum = sum + self.solver.particles.pos[i].scale(m);
+            mass += m;
+        }
+        let c = if mass > 0.0 {
+            sum.scale(1.0 / mass)
+        } else {
+            elements::Vec3::ZERO
+        };
+        [c.x, c.y, c.z]
+    }
+
+    /// VI-2 — read-only access to the solver (fragment mesh building needs
+    /// live particle positions at the birth tick).
+    pub fn solver(&self) -> &Solver {
+        &self.solver
     }
 
     /// The bindings — each body's vessel id and rigid index.

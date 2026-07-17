@@ -3054,6 +3054,7 @@ dependencies = [
  "bytemuck",
  "crystal",
  "elements",
+ "fracture",
  "glam",
  "homunculus",
  "kami",
