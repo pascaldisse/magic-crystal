@@ -20,6 +20,7 @@
 //! Run:  cargo run -p scrying-glass --release --example floor_fallthrough_hunt
 
 use std::path::Path;
+use std::time::Instant;
 
 use crystal::{Core, load_world_dir};
 use glam::Vec3;
@@ -191,61 +192,94 @@ fn run_walk(ground: &Ground, pp: &PlayerParams, w: &Walk) -> Option<(f32, f32, f
 /// (solid ground the body should be resting on but is now beneath = the real
 /// bug) versus EDGE (raw floor at/below the feet = the body walked off a ledge).
 fn coverage_sweep(ground: &Ground, pp: &PlayerParams) {
+    // Focused on the REPORTED region — the naruko plaza/spawn walk box with a
+    // few metres of margin — not the whole realm. Dense grid starts, walk each
+    // cardinal in walk/run/run+jump. Anti-hang: per-column progress, a derived
+    // max-walk bail, and a wall-clock budget that dumps state and returns
+    // rather than stalling silently (the failure mode that killed the last run).
     println!("\n== COVERAGE SWEEP (grid starts, walk/run/jump, classified) ==");
-    let (x0, x1, z0, z1, step) = (-40.0f32, 40.0f32, 10.0f32, 66.0f32, 2.0f32);
+    let (x0, x1, z0, z1, step) = (-14.0f32, 14.0f32, 13.0f32, 37.0f32, 2.0f32);
+    let settle = 45u32; // flat plaza grounds a 0.2 m spawn well under this
+    let walk_ticks = 100u32; // ~10–23 m of travel per walk
+    let budget = std::time::Duration::from_secs(140);
+    let start_clock = Instant::now();
     let dirs = [("W", Key::Forward), ("S", Key::Back), ("A", Key::Left), ("D", Key::Right)];
     let modes: [(&str, bool, bool); 3] =
         [("walk", false, false), ("run", true, false), ("runjump", true, true)];
     let mut tunnels = 0usize;
     let mut edges = 0usize;
+    let mut walks_run = 0usize;
     let mut tunnel_hits: Vec<(f32, f32, f32, f32, &str)> = Vec::new();
+    let cols = ((x1 - x0) / step).round() as i32 + 1;
+    let mut col = 0;
+    let mut bailed = false;
     let mut sx = x0;
-    while sx <= x1 + 1e-4 {
+    'outer: while sx <= x1 + 1e-4 {
+        col += 1;
         let mut sz = z0;
         while sz <= z1 + 1e-4 {
             // Only start where there is genuine floor (skip sea/void starts).
             let (raw0, _g) = probe(ground, pp, sx, sz);
             if raw0.is_none() { sz += step; continue; }
+            let start_floor = raw0.unwrap();
             for (_dn, dk) in dirs {
                 for (mn, run, jump) in modes {
-                    let eye = Vec3::new(sx, raw0.unwrap() + pp.eye_stand + 0.2, sz);
+                    if start_clock.elapsed() > budget {
+                        bailed = true;
+                        break 'outer;
+                    }
+                    let eye = Vec3::new(sx, start_floor + pp.eye_stand + 0.2, sz);
                     let mut player = Player::new(*pp, eye, 0.0);
-                    for _ in 0..90 { player.step(DT, ground); }
+                    for _ in 0..settle { player.step(DT, ground); }
                     if !player.grounded { continue; }
                     player.keys.insert(dk);
                     if run { player.keys.insert(Key::Run); }
-                    // ~120 ticks ≈ 12–24 m of travel.
-                    for t in 0..120 {
+                    walks_run += 1;
+                    for t in 0..walk_ticks {
                         if jump && t % 30 == 15 { player.keys.insert(Key::Jump); }
                         else { player.keys.remove(&Key::Jump); }
                         player.step(DT, ground);
                         let feet = player.position.y - player.eye_height;
-                        let (raw, _g2) = probe(ground, pp, player.position.x, player.position.z);
-                        if let Some(r) = raw {
-                            if feet < r - 0.3 && player.vy <= 0.05 {
-                                // Solid floor well above the feet: TUNNEL.
-                                tunnels += 1;
-                                if tunnel_hits.len() < 30 {
-                                    tunnel_hits.push((player.position.x, player.position.z, feet, r, mn));
+                        // CHEAP trigger (no query): feet under the plaza slab, or
+                        // a runaway downward velocity not yet caught by a floor.
+                        // Only THEN pay a probe to classify TUNNEL vs EDGE.
+                        if feet < PLAZA_Y - FALL_EPS || player.vy < -8.0 {
+                            let (raw, _g2) = probe(ground, pp, player.position.x, player.position.z);
+                            match raw {
+                                Some(r) if feet < r - 0.3 => {
+                                    // Solid floor well above the feet: TUNNEL.
+                                    tunnels += 1;
+                                    if tunnel_hits.len() < 30 {
+                                        tunnel_hits.push((player.position.x, player.position.z, feet, r, mn));
+                                    }
                                 }
-                                break;
-                            } else if feet < PLAZA_Y - FALL_EPS {
-                                edges += 1;
-                                break;
+                                _ => edges += 1,
                             }
+                            break;
                         }
                     }
                 }
             }
             sz += step;
         }
+        println!(
+            "  ... column {col}/{cols} (x={sx:.0}) done  walks={walks_run} tunnels={tunnels} edges={edges}  t={:.1}s",
+            start_clock.elapsed().as_secs_f64()
+        );
         sx += step;
+    }
+    if bailed {
+        println!(
+            "  !! WALL-CLOCK BAIL after {:.1}s at column {col}/{cols} (x={sx:.0}) — partial coverage",
+            start_clock.elapsed().as_secs_f64()
+        );
     }
     println!("TUNNEL events (body below a solid floor): {tunnels}");
     for (x, z, feet, r, mn) in &tunnel_hits {
         println!("  TUNNEL ({x:6.2},{z:6.2}) feetY={feet:.3} floor_above={r:.3} mode={mn}");
     }
     println!("EDGE drops (walked off a ledge, expected): {edges}");
+    println!("coverage: {walks_run} walks driven in {:.1}s", start_clock.elapsed().as_secs_f64());
 }
 
 fn walk_sweep(ground: &Ground, pp: &PlayerParams) {
@@ -299,9 +333,9 @@ fn walk_sweep(ground: &Ground, pp: &PlayerParams) {
         for _ in 0..w.ticks {
             player.step(DT, ground);
             let feet = player.position.y - player.eye_height;
-            let (raw, _g) = probe(ground, pp, player.position.x, player.position.z);
-            let plaza_here = raw.map(|r| (r - PLAZA_Y).abs() <= FALL_EPS).unwrap_or(false);
-            if plaza_here && feet < PLAZA_Y - FALL_EPS
+            // Cheap trigger: feet below the plaza slab. run_walk-style, no
+            // per-tick probe — once under the plaza the body has fallen through.
+            if feet < PLAZA_Y - FALL_EPS
                 && worst.map(|(_, _, f, _)| feet < f).unwrap_or(true) {
                 worst = Some((player.position.x, player.position.z, feet, player.vy));
             }
@@ -315,16 +349,19 @@ fn walk_sweep(ground: &Ground, pp: &PlayerParams) {
 }
 
 fn main() {
+    let t0 = Instant::now();
     let (ground, pp) = build();
     println!(
-        "naruko ground: {} walkable triangles; contact_radius={:.4} ground_snap={:.3} void_y={:.1}",
+        "naruko ground: {} walkable triangles; contact_radius={:.4} ground_snap={:.3} void_y={:.1}  (build {:.1}s)",
         ground.triangle_count(),
         pp.contact_radius,
         pp.ground_snap,
-        pp.void_y
+        pp.void_y,
+        t0.elapsed().as_secs_f64()
     );
-    height_field(&ground, &pp);
-    static_map(&ground, &pp);
-    coverage_sweep(&ground, &pp);
-    walk_sweep(&ground, &pp);
+    let t = Instant::now(); height_field(&ground, &pp); println!("[height_field {:.1}s]", t.elapsed().as_secs_f64());
+    let t = Instant::now(); static_map(&ground, &pp);   println!("[static_map {:.1}s]", t.elapsed().as_secs_f64());
+    let t = Instant::now(); coverage_sweep(&ground, &pp); println!("[coverage_sweep {:.1}s]", t.elapsed().as_secs_f64());
+    let t = Instant::now(); walk_sweep(&ground, &pp);   println!("[walk_sweep {:.1}s]", t.elapsed().as_secs_f64());
+    println!("[TOTAL {:.1}s]", t0.elapsed().as_secs_f64());
 }
