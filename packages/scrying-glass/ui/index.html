@@ -13,10 +13,12 @@
       p { margin: 0 0 14px; color: rgba(240,248,255,.8); font-size: 13px; line-height: 1.4; }
       button { width: 100%; border: 0; border-radius: 8px; padding: 10px; color: #06101f; background: #91d9ff; font-weight: 700; cursor: pointer; }
       button:active { transform: translateY(1px); }
+      #hud { display: none; margin: 0 0 12px; padding: 6px 10px; border-radius: 6px; background: rgba(6,10,18,.55); color: #f0f8ff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; letter-spacing: .02em; white-space: pre; width: fit-content; }
     </style>
   </head>
   <body>
     <section class="panel">
+      <div id="hud"></div>
       <h1>Render-window · wgpu + webview</h1>
       <p>This transparent child webview is above the Metal-backed wgpu surface.</p>
       <button id="ipc">Rust IPC log</button>
@@ -27,6 +29,13 @@
         await invoke("panel_pressed");
         console.log("[overlay] panel_pressed invoked");
       });
+      // FPS COUNTER BURST — Rust pushes real numbers over the existing eval
+      // channel; this DOM never measures its own time (no rAF/perf timer here).
+      const hud = document.querySelector("#hud");
+      window.__gaiaHud = (fps, ms) => {
+        hud.style.display = "block";
+        hud.textContent = `${fps.toFixed(1)} fps  ${ms.toFixed(2)} ms`;
+      };
     </script>
   </body>
 </html>
