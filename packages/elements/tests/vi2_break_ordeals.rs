@@ -817,6 +817,12 @@ fn ordeal_fragments_do_not_interpenetrate_after_break() {
         s.step();
         for (a, &i) in whole.iter().enumerate() {
             for &j in &whole[(a + 1)..] {
+                // Advisory (adversary review, rite6-fragcol-sonnet merge): every particle in
+                // `whole` must have been assigned a fragment above — a usize::MAX here would
+                // silently fall through the `!=` check into a real cross-fragment comparison
+                // against a particle that was never classified. Seal that hole structurally.
+                debug_assert!(membership[i] != usize::MAX, "particle {i} was never assigned a fragment");
+                debug_assert!(membership[j] != usize::MAX, "particle {j} was never assigned a fragment");
                 if membership[i] == membership[j] {
                     continue; // same fragment — held by its own surviving bonds, not collision
                 }
@@ -839,6 +845,11 @@ fn ordeal_fragments_do_not_interpenetrate_after_break() {
             }
         }
     }
+
+    // Advisory (adversary review, rite6-fragcol-sonnet merge): the measured max cross-
+    // fragment overlap is itself strictly positive (1.388e-17 m in the reference run) —
+    // that is the non-vacuousness witness that real contact occurred, distinct from the
+    // separate `min_cross_fragment_sep` sanity check below.
 
     // Sanity: the fragments must have actually gotten close to each other at
     // some point, or a trivially-satisfied bound (fragments that never
