@@ -21,7 +21,7 @@
 //!     identically to authored (centre admitted, past-edge rejected).
 //!
 //! The per-tick bound derivation lives in
-//! `docs/rite7/2026-07-17-vii1-seam-step-epsilon-derivation.md`. Nothing here
+//! `docs/perf/2026-07-17-vii1-seam-step-epsilon-derivation.md`. Nothing here
 //! is a plucked literal.
 
 use crystal::{EcsWorld, load_world_dir};
