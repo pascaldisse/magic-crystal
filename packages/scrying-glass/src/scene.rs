@@ -880,6 +880,15 @@ impl RenderScene {
         self.dynamics.physics.as_ref()
     }
 
+    /// Mutable access to the physics seam — for direct solver-only timing
+    /// (measuring `Solver::step` wall-clock without the kami/BVH overhead
+    /// `tick`/`tick_with_ops` also pay). Not part of the normal Flow of Data;
+    /// callers that step the solver directly here are responsible for also
+    /// writing the pose back if they need the render/ECS to see it move.
+    pub fn physics_mut(&mut self) -> Option<&mut Physics> {
+        self.dynamics.physics.as_mut()
+    }
+
     /// The current world position of a declared body (its solver centroid),
     /// or `None` if the id names no body.
     pub fn body_position(&self, gaia_id: &str) -> Option<[f64; 3]> {
