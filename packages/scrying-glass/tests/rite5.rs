@@ -470,23 +470,30 @@ fn v1_body_casts_a_traced_shadow_on_the_seawall() {
     let shadow_x = centroid[0] - drop * sun.direction[0];
     let shadow_z = centroid[2] - drop * sun.direction[2];
 
-    // In her shadow vs beside her (3 m along +x, clear of her body on the same
-    // seawall band).
+    // In her shadow vs beside her (7 m along +x, clear of her body on the same
+    // seawall band). THE MIRROR PROOF re-derived this offset: the panel
+    // (x[2.96,3.04], y≤ 4.4) casts a sun shadow onto the wall top over
+    // x∈[0.96,3.04] — the old +3 probe (x≈2.25) sat inside the GLASS's shadow;
+    // +6 (x≈5.25) lands in the x=6 chain post's 0.28 m strip (x 5.30±0.14 at
+    // this z). +7 (x≈6.25) is derived clear of panel, posts (next strip at
+    // x≥13.3) and the stall's shadow (z≥22.5), still on the wall top x≤ 60.
     let under = radiance(shadow_x, shadow_z);
-    let beside = radiance(shadow_x + 3.0, shadow_z);
+    let beside = radiance(shadow_x + 7.0, shadow_z);
     let shadow_diff = beside - under;
 
     // The null: the identical probe pair 40 m away, where she casts nothing.
     let far_under = radiance(shadow_x + 40.0, shadow_z);
-    let far_beside = radiance(shadow_x + 43.0, shadow_z);
+    let far_beside = radiance(shadow_x + 47.0, shadow_z);
     let null_diff = (far_beside - far_under).abs();
 
     // Derived floor: half the full direct-sun luminance — a real occlusion, not
     // noise. (A full block gives the whole sun term.)
     let floor = 0.5 * sun_lum;
     println!(
-        "[v1-shadow] under={under:.4} beside={beside:.4} shadow_diff={shadow_diff:.4} \
+        "[v1-shadow] shadow=({shadow_x:.3},{shadow_z:.3}) centroid=({:.3},{:.3},{:.3}) \
+         under={under:.4} beside={beside:.4} shadow_diff={shadow_diff:.4} \
          null_diff={null_diff:.2e} floor={floor:.4} (sun_lum={sun_lum:.4})",
+        centroid[0], centroid[1], centroid[2],
     );
     assert!(
         shadow_diff > floor,

@@ -1,5 +1,5 @@
 //! CANON ORDEALS — hand-derived against the LIVE canon realm `worlds/naruko`
-//! (the 15-vessel realm the CLI gazes at by default), NOT the pinned 7-vessel
+//! (the 18-vessel realm the CLI gazes at by default), NOT the pinned 7-vessel
 //! fixture under `tests/fixtures/naruko`. The fixture ordeals (in `src/lib.rs`)
 //! stay the frozen geometric gate; THESE ordeals derive the same pure-geometry
 //! truth against the canon scene and the canon spawn eye `[0,7,44]` yaw 0.
@@ -69,6 +69,17 @@
 //!     about [0, 56.5], z = ring plane ± 0.175; center = the entity position
 //!     exactly (full symmetry). The `pulse` behavior scales only the RUNTIME
 //!     pose — the senses read the STATIC scene (authored bind, crate precedent).
+//!   naruko_mirror         x[2.96,3.04]  y[1.4,4.4]   z[17,19]
+//!     — THE MIRROR PROOF: a polished panel (metallic 1.0, roughness 0.03)
+//!     standing on the seawall top y=1.4; plane x=3, face toward −x.
+//!     center [3, 2.9, 18]
+//!   naruko_mirror_minor   x[-9.04,-8.96] y[1.4,4.4]  z[17,19]
+//!     — the facing panel across the wall (mirror-in-mirror). center [-9, 2.9, 18]
+//!   naruko_kami_orb       x[-1.35,-0.65] y[1.85,2.55] z[17.75,18.45]
+//!     — cyan emissive sphere r 0.35 riding a kami orbit (center [-2.6,2.2,18.1],
+//!     r 1.6, speed 0.9). Canon bounds are the AUTHORED bind pose — the orbit at
+//!     angle 0 — the crate precedent: the senses read the static scene, the kami
+//!     only moves it at runtime. center [-1, 2.2, 18.1]
 //! Eye basis at yaw 0: fwd=(0,0,-1), right=(1,0,0), up=(0,1,0); FOV 60 vertical
 //! (aspect 1) ⇒ tan_half = tan(30°) = 0.5773502692.
 
@@ -76,7 +87,7 @@ use oracle::{look, EyePose, Glance, Layers, LookParams, World};
 use std::path::PathBuf;
 
 /// The LIVE canon realm the CLI defaults to (`packages/oracle/../../worlds/naruko`).
-/// NOT the pinned fixture — these ordeals derive against the growing 13-vessel
+/// NOT the pinned fixture — these ordeals derive against the growing 18-vessel
 /// canon. Never mutated (read-only gaze).
 fn canon_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -130,7 +141,14 @@ fn range_of(g: &Glance, id: &str) -> f32 {
 /// on the beacon axis (centers [0, 56.5, −118/−117.5/−117], z_view = 162/161.5/
 /// 161), |x| ≤ 14.275 ≪ tan30·161 = 92.95 and y_off = 49.5 ± 14.275 ≪ the same
 /// half-height ⇒ all three deep inside the 60° cone ⇒ in-frustum. The 16th–18th
-/// meshed vessels. So entity_count = 18.
+/// meshed vessels.
+///
+/// THE MIRROR PROOF grows it to TWENTY-ONE: naruko_mirror (center [3,2.9,18],
+/// z_view 26, |x_off|=3 < tan30·26 = 15.01), naruko_mirror_minor (center
+/// [-9,2.9,18], |x_off|=9 < 15.01) and naruko_kami_orb (bind center
+/// [-1,2.2,18.1], z_view 25.9, |x_off|=1 < tan30·25.9 = 14.95) — the 19th–21st
+/// meshed vessels, all dead ahead of the spawn eye ⇒ in-frustum. So
+/// entity_count = 21.
 #[test]
 fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
     let world = canon();
@@ -169,9 +187,14 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
     // + the three SIGNAL RINGS (centers [0,56.5,−118/−117.5/−117], ranges
     // 169.3938/168.9157/168.4377 from spawn — derivation in CANON #2), the
     // 16th–18th meshed vessels, dead ahead on the beacon axis ⇒ in-frustum.
+    // THE MIRROR PROOF stood two polished panels on the seawall (naruko_mirror
+    // center [3,2.9,18] and naruko_mirror_minor center [-9,2.9,18], both
+    // |x_off| < tan30·26 = 15.01) and set the cyan kami orb between them
+    // (naruko_kami_orb, bind center [-1,2.2,18.1], |x_off|=1 < tan30·25.9 =
+    // 14.95) — the 19th–21st meshed vessels, dead ahead.
     assert_eq!(
-        g.entity_count, 18,
-        "exactly the eighteen meshed vessels are in-frustum (Rite V: + nari, + cat; P3: + crate; rings: + a/b/c)"
+        g.entity_count, 21,
+        "exactly the twenty-one meshed vessels are in-frustum (Rite V: + nari, + cat; P3: + crate; rings: + a/b/c; Mirror Proof: + mirror, + minor, + orb)"
     );
     let caps = caption_ids(&g);
     for id in [
@@ -193,6 +216,9 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
         "signal_ring_a",
         "signal_ring_b",
         "signal_ring_c",
+        "naruko_mirror",
+        "naruko_mirror_minor",
+        "naruko_kami_orb",
     ] {
         assert!(caps.contains(&id.to_string()), "{id} must be in-frustum");
     }
@@ -221,22 +247,27 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
 ///   signal_ring_a  center [0, 56.5, -118]     → √(0+2450.25+26244)  = 169.3938
 ///   signal_ring_b  center [0, 56.5, -117.5]   → √(0+2450.25+26082.25)= 168.9157
 ///   signal_ring_c  center [0, 56.5, -117]     → √(0+2450.25+25921)  = 168.4377
+///   mirror         center [3, 2.9, 18]        → √(9+16.81+676)      = 26.4917
+///   mirror_minor   center [-9, 2.9, 18]       → √(81+16.81+676)     = 27.8175
+///   kami_orb       center [-1, 2.2, 18.1]     → √(1+23.04+670.81)   = 26.3600
 ///   (sea 604.06, terra 9.41 are SUPPORT — demoted.)
-/// The SIGNAL RINGS at 168.4–169.4 m sit far beyond the top-5 band (chain_posts
-/// 26.5613 closes it, seawall 26.7524 already 6th post-cat) ⇒ the default
-/// caption order is UNCHANGED by the rings.
+/// The SIGNAL RINGS at 168.4–169.4 m sit far beyond the top-5 band ⇒ inert on
+/// the caption order (they rank 16th–18th).
 /// So the default nearest_n=5 captions, in order. RITE V inserts `nari` at
 /// 26.3911 — between lantern (25.6320) and chain_posts (26.5613). RITE V·V2
 /// inserts `naruko_cat` at 22.4292 — between stall_massing (19.6037) and lantern
-/// (25.6320), so the cat takes the SECOND slot and pushes seawall (26.7524) out
-/// of the top-5 (nari already displaced the crate/orb; the cat now displaces
-/// seawall too):
-///   [stall_massing, naruko_cat, lantern, nari, chain_posts]
-/// (seawall 6th at 26.7524, crate 7th at 33.0390, chrome orb 8th at 34.5227,
-/// pier 9th at 48.1812).
+/// (25.6320), so the cat takes the SECOND slot. THE MIRROR PROOF's kami orb
+/// (26.3600) slots just AHEAD of nari (26.3911) — the 3.1 cm range gap is
+/// 31× RANGE_TOL — taking the FOURTH slot and pushing chain_posts (26.5613)
+/// out of the top-5:
+///   [stall_massing, naruko_cat, lantern, naruko_kami_orb, nari]
+/// (mirror 6th at 26.4917, chain_posts 7th at 26.5613, seawall 8th at 26.7524,
+/// mirror_minor 9th at 27.8175, crate 10th at 33.0390, chrome orb 11th at
+/// 34.5227, pier 12th at 48.1812, city 13th, rock/tower 14th/15th, rings
+/// 16th–18th).
 /// TOLERANCE (DERIVED): each range is the live f32 √(Σ(center−eye)²) vs the f64
 /// reference above quoted to 4 decimals. The measured live-vs-reference
-/// discrepancy across all seventeen ranges peaks at 6.1e-5 m (at the 604 m sea
+/// discrepancy across all twenty ranges peaks at 6.1e-5 m (at the 604 m sea
 /// center) — that budget is the 4-decimal reference rounding (≤5e-5) plus the
 /// f32 center/sub/sqrt round-off (≈1e-5). RANGE_TOL = 1e-3 m is ≈16× that
 /// measured max — tight enough that a wrong center (±0.1 m) or a wrong AABB
@@ -254,10 +285,10 @@ fn canon_nearest_ordering_and_ranges_are_derived() {
             "naruko_stall_massing",
             "naruko_cat",
             "naruko_lantern",
+            "naruko_kami_orb",
             "nari",
-            "naruko_chain_posts",
         ],
-        "default nearest-5 caption order (Rite V·V2: cat 22.4292 slots 2nd, pushes seawall to 6th)"
+        "default nearest-5 caption order (Mirror Proof: kami orb 26.3600 slots 4th, pushes chain_posts to 7th)"
     );
 
     // Support surfaces never eat a caption slot.
@@ -284,6 +315,9 @@ fn canon_nearest_ordering_and_ranges_are_derived() {
         ("naruko_chain_posts", 26.5613),
         ("naruko_seawall", 26.7524),
         ("nari", 26.3911),
+        ("naruko_kami_orb", 26.3600),
+        ("naruko_mirror", 26.4917),
+        ("naruko_mirror_minor", 27.8175),
         ("naruko_crate", 33.0390),
         ("naruko_chrome_orb", 34.5227),
         ("naruko_pier", 48.1812),
@@ -542,7 +576,10 @@ fn canon_depth_band_column_16_is_front_face_path_length() {
 /// z=22.9420 — wholly BEHIND the eye at z=15 (z_off = 23.21−15 = +8.21 > 0). The
 /// whole box lies on the far side of the eye's near plane ⇒ out of frustum by a
 /// 7.94 m margin (22.9420 − 15). So the pier glance stays SEVEN; the cat never
-/// enters (its range here, were it in, would be 11.66 m).
+/// enters (its range here, were it in, would be 11.66 m). The MIRROR PROOF
+/// vessels are culled the same way: min z-faces 17 (mirror), 17 (mirror_minor)
+/// and 17.75 (kami orb) all lie BEHIND the eye at z=15 (margins 2.0, 2.0,
+/// 2.75 m) — the pier glance still counts SEVEN.
 /// Pier range: center [-12,-0.8375,-2] − eye [-13,2.7,15] = [1,-3.5375,-17] →
 ///   √(1 + 12.51 + 289) = 17.3929 m. Lighthouse still ahead: rock 135.75 m,
 ///   tower 140.93 m, both bearing ≈ +5.5° (well inside the 30° half-FOV).

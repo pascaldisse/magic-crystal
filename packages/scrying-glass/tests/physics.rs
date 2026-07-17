@@ -174,11 +174,11 @@ fn no_body_declared_is_byte_unchanged() {
         "no body declared ⇒ no physics seam"
     );
     // The crate is now STATIC (only the behavior-carriers remain dynamic:
-    // lantern + beacon + the three signal rings).
+    // lantern + beacon + the three signal rings + the kami orb).
     assert_eq!(
         scene.dynamics.entities().len(),
-        5,
-        "with the body stripped only the five behavior-carriers are dynamic"
+        6,
+        "with the body stripped only the six behavior-carriers are dynamic"
     );
 
     // Static geometry is byte-unchanged across 300 ticks (nothing falls).
