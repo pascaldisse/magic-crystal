@@ -140,7 +140,11 @@ fn pose_trace_script() {
     if std::env::var_os("BLESS_POSE_TRACE").is_some() {
         fs::create_dir_all(canon_path.parent().unwrap()).expect("create canon dir");
         fs::write(&canon_path, &trace).expect("write pose-trace canon");
-        println!("POSE-TRACE-BLESSED {} bytes -> {}", trace.len(), canon_path.display());
+        println!(
+            "POSE-TRACE-BLESSED {} bytes -> {}",
+            trace.len(),
+            canon_path.display()
+        );
         return;
     }
     let canon = fs::read_to_string(&canon_path).expect(

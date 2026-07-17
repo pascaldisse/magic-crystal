@@ -111,7 +111,9 @@ fn f2_shape_body_is_a_rigid_not_a_vessel() {
         scene.bodies.is_empty(),
         "a shape body is NOT a skinned vessel"
     );
-    let physics = scene.physics().expect("a shape body IS a rigid in the solver");
+    let physics = scene
+        .physics()
+        .expect("a shape body IS a rigid in the solver");
     assert_eq!(
         physics.bindings().len(),
         1,
