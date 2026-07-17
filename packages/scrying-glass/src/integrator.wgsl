@@ -561,6 +561,64 @@ fn integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
   accum[pixel] = vec4<f32>(prev + frame_sum, total);
 }
 
+// ── VIII-0 AOV EXPORT BEGIN ──────────────────────────────────────────────
+// Rite VIII-0 (THE NOISE AND THE TRUTH): auxiliary buffers of the PRIMARY hit
+// only — albedo, world normal, hit distance ("depth"). current-frame-only:
+// every value here is computed fresh from THIS invocation's single camera
+// ray and this frame's Uniform alone. There is no accumulation across
+// frames, no read of any prior frame's buffer, and no parameter carrying a
+// frame index, a previous-frame buffer, or any cross-frame state — the
+// function signature below takes only the current frame's inputs. This is
+// the architecture guarantee the BAN grep-gate ordeal checks
+// (tests/viii0_ordeals.rs).
+//
+// A SEPARATE bind group (@group(1)) so the existing one-light-pass compute
+// bind group layout (@group(0), bindings 0-4) is untouched: the AOV pass is
+// a second pipeline sharing @group(0) (uniform/nodes/tris — read-only there,
+// `accum` and `density` are simply unused by this entry point but must still
+// be bound since they are declared in the same shader module) plus its own
+// @group(1) output. When AOV export is off, this pipeline is never
+// dispatched — zero cost, and the existing `integrate` compute pass and its
+// bind group layout are byte-for-byte what they were before this wave
+// (proven by the AOV-off golden-hash ordeal).
+//
+// Packing (2 vec4<f32> cells per pixel, documented rather than 3 separate
+// buffers, to keep the readback a single buffer/copy):
+//   aov[2*pixel + 0] = (albedo.r, albedo.g, albedo.b, depth)
+//   aov[2*pixel + 1] = (normal.x, normal.y, normal.z, hit ? 1.0 : 0.0)
+// On a primary miss (no surface hit) every component is 0.0 — there is no
+// "primary hit" to report, so the primary-hit AOVs are honestly empty there.
+@group(1) @binding(0) var<storage, read_write> aov: array<vec4<f32>>;
+
+@compute @workgroup_size(8, 8, 1)
+fn integrate_aov(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let w = u.params.x;
+  let h = u.params.y;
+  if (gid.x >= w || gid.y >= h) { return; }
+  let pixel = gid.y * w + gid.x;
+  let inv_w = 1.0 / f32(w);
+  let inv_h = 1.0 / f32(h);
+  // Pixel-CENTER ray (no jitter, no sample loop): the AOV is a single
+  // deterministic geometric query of the primary hit, not a Monte-Carlo
+  // estimate — there is nothing here for repeated frames to converge, so it
+  // needs no accumulation and no random sampler draw (ENTROPY law: no
+  // randomness is used here at all).
+  let sx = (2.0 * (f32(gid.x) + 0.5) * inv_w) - 1.0;
+  let sy = 1.0 - (2.0 * (f32(gid.y) + 0.5) * inv_h);
+  let dir = normalize(u.forward.xyz + u.right.xyz * sx + u.up.xyz * sy);
+  let hit = trace_closest(u.eye.xyz, dir, u.misc.y, INF);
+  if (hit.ok) {
+    let tri = tris[hit.tri];
+    let n = tri_normal(hit.tri, dir);
+    aov[2u * pixel + 0u] = vec4<f32>(tri.albedo.xyz, hit.t);
+    aov[2u * pixel + 1u] = vec4<f32>(n, 1.0);
+  } else {
+    aov[2u * pixel + 0u] = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    aov[2u * pixel + 1u] = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+  }
+}
+// ── VIII-0 AOV EXPORT END ────────────────────────────────────────────────
+
 // ---- present: resolve the accumulation buffer to the (sRGB) target ----
 struct BlitOut {
   @builtin(position) position: vec4<f32>,

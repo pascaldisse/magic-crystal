@@ -239,10 +239,23 @@ pub struct Integrator {
     density_buf: wgpu::Buffer,
     pub node_count: u32,
     pub tri_count: u32,
+    // ── VIII-0 AOV EXPORT BEGIN ──────────────────────────────────────────
+    // A SECOND compute pipeline (own bind group layout at @group(1)) so the
+    // AOV export dial is a split pipeline, not a new binding threaded onto
+    // the existing one-light-pass `compute_layout`/`compute_pipeline` — the
+    // pre-existing path above is untouched by this wave (see integrator.wgsl
+    // "VIII-0 AOV EXPORT" block and the AOV-off golden-hash ordeal).
+    pub aov_pipeline: wgpu::ComputePipeline,
+    pub aov_layout: wgpu::BindGroupLayout,
+    // ── VIII-0 AOV EXPORT END ────────────────────────────────────────────
 }
 
 /// Bytes one accumulation cell occupies (vec4<f32>).
 const ACCUM_CELL: u64 = 16;
+
+/// Bytes one AOV pixel occupies: 2 vec4<f32> cells (albedo+depth,
+/// normal+hit) — see integrator.wgsl "VIII-0 AOV EXPORT" for the packing.
+const AOV_CELL: u64 = 32;
 
 impl Integrator {
     pub fn new(
@@ -388,6 +401,30 @@ impl Integrator {
             cache: None,
         });
 
+        // ── VIII-0 AOV EXPORT BEGIN ────────────────────────────────────────
+        // Own bind group layout at @group(1): a single read_write storage
+        // buffer for the packed albedo/normal/depth cells. `compute_layout`
+        // (@group(0)) is reused UNCHANGED as the AOV pipeline's group 0 —
+        // nothing above this block was touched to add AOV export.
+        let aov_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("integrator aov layout"),
+            entries: &[storage_entry(0, false, wgpu::ShaderStages::COMPUTE)],
+        });
+        let aov_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("integrator aov pipeline layout"),
+            bind_group_layouts: &[Some(&compute_layout), Some(&aov_layout)],
+            immediate_size: 0,
+        });
+        let aov_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("integrator aov pipeline"),
+            layout: Some(&aov_pipeline_layout),
+            module: &shader,
+            entry_point: Some("integrate_aov"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
+        });
+        // ── VIII-0 AOV EXPORT END ──────────────────────────────────────────
+
         Self {
             compute_pipeline,
             blit_pipeline,
@@ -399,6 +436,8 @@ impl Integrator {
             density_buf,
             node_count: bvh.nodes.len() as u32,
             tri_count: bvh.tris.len() as u32,
+            aov_pipeline,
+            aov_layout,
         }
     }
 
@@ -442,6 +481,63 @@ impl Integrator {
             mapped_at_creation: false,
         })
     }
+
+    // ── VIII-0 AOV EXPORT BEGIN ────────────────────────────────────────────
+    /// Allocate a fresh AOV buffer for a `width×height` frame: 2 `vec4<f32>`
+    /// cells per pixel (see integrator.wgsl "VIII-0 AOV EXPORT" for the
+    /// packing). Zeroed, like `make_accum` — but note the AOV shader writes
+    /// EVERY pixel unconditionally (hit or miss), so the zero fill is never
+    /// actually read back; it exists only so the buffer is valid before the
+    /// first dispatch.
+    pub fn make_aov_buffer(&self, device: &wgpu::Device, width: u32, height: u32) -> wgpu::Buffer {
+        let cells = (width as u64) * (height as u64);
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("integrator aov export"),
+            size: (cells.max(1)) * AOV_CELL,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        })
+    }
+
+    /// Bind group for the AOV pipeline's @group(1) (the packed output buffer
+    /// alone — @group(0) is the ordinary `compute_bind_group`).
+    pub fn aov_bind_group(&self, device: &wgpu::Device, aov: &wgpu::Buffer) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("integrator aov bind group"),
+            layout: &self.aov_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: aov.as_entire_binding(),
+            }],
+        })
+    }
+
+    /// Dispatch one AOV export pass: current-frame-only (see
+    /// integrate_aov in integrator.wgsl) — there is no `frames` loop here
+    /// because there is nothing to accumulate; one dispatch is the complete,
+    /// deterministic answer for this camera pose.
+    #[allow(clippy::too_many_arguments)]
+    pub fn dispatch_aov(
+        &self,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        uniform: &IntegratorUniform,
+        compute_bg: &wgpu::BindGroup,
+        aov_bg: &wgpu::BindGroup,
+        width: u32,
+        height: u32,
+    ) {
+        queue.write_buffer(&self.uniform_buf, 0, bytemuck::bytes_of(uniform));
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("integrate aov"),
+            timestamp_writes: None,
+        });
+        pass.set_pipeline(&self.aov_pipeline);
+        pass.set_bind_group(0, compute_bg, &[]);
+        pass.set_bind_group(1, aov_bg, &[]);
+        pass.dispatch_workgroups(width.div_ceil(8), height.div_ceil(8), 1);
+    }
+    // ── VIII-0 AOV EXPORT END ──────────────────────────────────────────────
 
     pub fn compute_bind_group(
         &self,
@@ -628,6 +724,105 @@ pub fn trace_headless(
     readback.unmap();
     out
 }
+
+// ── VIII-0 AOV EXPORT BEGIN ────────────────────────────────────────────────
+/// Trace ONE AOV export pass headlessly and read the packed buffer back.
+/// Current-frame-only (see integrate_aov in integrator.wgsl): this function
+/// takes a single camera pose and the realm's geometry alone — no frame
+/// index, no previous-frame buffer, no accumulation-across-frames parameter.
+/// Calling it twice with identical arguments is the AOV determinism ordeal.
+#[allow(clippy::too_many_arguments)]
+pub fn trace_headless_aov(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    bvh: &Bvh,
+    camera: &Camera,
+    sun: &SunLight,
+    sky_top: [f32; 4],
+    sky_horizon: [f32; 4],
+    width: u32,
+    height: u32,
+) -> Vec<[f32; 4]> {
+    let integrator = Integrator::new(device, wgpu::TextureFormat::Rgba8UnormSrgb, bvh, None);
+    // The AOV pipeline's @group(0) is the same layout as the ordinary
+    // compute pass, so it needs a valid (if here unused) accum buffer too.
+    let accum = integrator.make_accum(device, width, height);
+    let aov_buf = integrator.make_aov_buffer(device, width, height);
+    let compute_bg = integrator.compute_bind_group(device, &accum);
+    let aov_bg = integrator.aov_bind_group(device, &aov_buf);
+
+    let uniform = IntegratorUniform::build(
+        camera,
+        sun,
+        sky_top,
+        sky_horizon,
+        width,
+        height,
+        integrator.node_count,
+        integrator.tri_count,
+        0,
+        &IntegratorParams::default(),
+        None,
+    );
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("headless aov"),
+    });
+    integrator.dispatch_aov(
+        queue,
+        &mut encoder,
+        &uniform,
+        &compute_bg,
+        &aov_bg,
+        width,
+        height,
+    );
+    queue.submit(Some(encoder.finish()));
+    let _ = device.poll(wgpu::PollType::wait_indefinitely());
+
+    let cells = (width as u64) * (height as u64);
+    let readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("headless aov readback"),
+        size: cells * AOV_CELL,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("headless aov copy"),
+    });
+    encoder.copy_buffer_to_buffer(&aov_buf, 0, &readback, 0, cells * AOV_CELL);
+    let (tx, rx) = std::sync::mpsc::channel();
+    encoder.map_buffer_on_submit(&readback, wgpu::MapMode::Read, .., move |r| {
+        let _ = tx.send(r.map(|_| ()));
+    });
+    queue.submit(Some(encoder.finish()));
+    let _ = device.poll(wgpu::PollType::wait_indefinitely());
+    rx.recv().expect("readback channel").expect("map readback");
+    let mapped = readback.get_mapped_range(..).expect("mapped readback");
+    let out: Vec<[f32; 4]> = bytemuck::cast_slice(&mapped).to_vec();
+    drop(mapped);
+    readback.unmap();
+    out
+}
+
+/// Split a raw AOV readback (2 cells/pixel, see `trace_headless_aov`) into
+/// three per-pixel images: albedo (rgb), world normal (xyz, RAW `[-1,1]`
+/// range — callers remap to `[0,1]` for display, see `viii0_truth.rs`), and
+/// hit distance ("depth", 0.0 on a primary miss).
+pub fn split_aov(raw: &[[f32; 4]]) -> (Vec<Vec3>, Vec<Vec3>, Vec<f32>) {
+    let n = raw.len() / 2;
+    let mut albedo = Vec::with_capacity(n);
+    let mut normal = Vec::with_capacity(n);
+    let mut depth = Vec::with_capacity(n);
+    for i in 0..n {
+        let a = raw[2 * i];
+        let b = raw[2 * i + 1];
+        albedo.push(Vec3::new(a[0], a[1], a[2]));
+        depth.push(a[3]);
+        normal.push(Vec3::new(b[0], b[1], b[2]));
+    }
+    (albedo, normal, depth)
+}
+// ── VIII-0 AOV EXPORT END ──────────────────────────────────────────────────
 
 /// Convenience: the linear resolved image (radiance per pixel) from an accum
 /// readback (sum ÷ samples).
