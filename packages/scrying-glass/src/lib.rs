@@ -12,6 +12,8 @@ pub mod physics;
 pub mod player;
 pub mod presence;
 pub mod scene;
+pub mod upscaler;
+pub mod upscaler_dataset;
 
 pub const PACKAGE_NAME: &str = "scrying-glass";
 pub const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
