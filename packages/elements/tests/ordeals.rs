@@ -1079,3 +1079,97 @@ fn ordeal_stack_at_rest_stability_after_topple() {
          m/s (>= floor {REST_SPEED_FLOOR:.1e})"
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// ORDEAL VI-1e — F2/F3: MIXED-RADIUS body-vs-body rest. Two single-particle
+// rigid bodies with DIFFERENT collision radii (`r_bottom != r_top`) stack on
+// a ground plane; the derived rest gap between their centres is
+// `mean(r_bottom, r_top) + contact_margin` (solver.rs' `solve_body_
+// collisions` doc-comment) — NOT the bare mean (pre-F2 bug: no margin) and
+// NOT the sum (pre-F3 bug: double-counts relative to the static single-
+// radius convention). Deliberately unequal radii so a formula regressing to
+// either wrong convention is caught: a bare-mean bug undershoots the gap by
+// exactly `contact_margin`; a sum bug overshoots it by
+// `mean(r_bottom, r_top)` — both far outside the derived tolerance below.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn ordeal_mixed_radius_bodies_rest_at_derived_gap() {
+    let cfg = SolverConfig {
+        dt: 1.0 / 120.0,
+        substeps: 12,
+        seed: 999,
+        ..SolverConfig::default()
+    };
+    let mut s = Solver::new(cfg);
+    let mat = ContactMaterial {
+        restitution: 0.0,
+        ..ContactMaterial::default()
+    };
+    s.collider = Some(Collider::ground_plane(0.0, 50.0, mat));
+    let contact_margin = mat.contact_margin;
+
+    let r_bottom = 0.04; // collision radius, bottom body
+    let r_top = 0.09; // collision radius, top body — deliberately != r_bottom
+    let density = 500.0;
+    let sphere_radius = 0.05; // mass-bearing volume radius (both bodies)
+
+    // Bottom body authored already near its static rest height (radius +
+    // margin above the ground, the SAME single-radius convention the static
+    // pass uses) so it settles fast; top body dropped from a few cm above
+    // where the derived formula predicts it should come to rest.
+    let bottom_y = r_bottom + contact_margin;
+    let expected_gap = (r_bottom + r_top) * 0.5 + contact_margin; // F2/F3 formula
+    let drop_height = 0.05;
+    let bottom = s.spawn_rigid_sphere(
+        Vec3::new(0.0, bottom_y, 0.0),
+        sphere_radius,
+        1,
+        density,
+        1.0,
+        r_bottom,
+    );
+    let top = s.spawn_rigid_sphere(
+        Vec3::new(0.0, bottom_y + expected_gap + drop_height, 0.0),
+        sphere_radius,
+        1,
+        density,
+        1.0,
+        r_top,
+    );
+
+    let settle_ticks = 300u64; // 2.5 s at dt=1/120 — well past the drop_height's fall
+    for _ in 0..settle_ticks {
+        s.step();
+    }
+    let speed = max_body_speed(&s, &s.rigids[bottom]).max(max_body_speed(&s, &s.rigids[top]));
+    assert!(
+        speed < 1.0e-2,
+        "mixed-radius pair did not settle within {settle_ticks} ticks: max speed {speed:.4}"
+    );
+
+    let bottom_pos = s.particles.pos[s.rigids[bottom].indices[0]];
+    let top_pos = s.particles.pos[s.rigids[top].indices[0]];
+    let measured_gap = (top_pos - bottom_pos).length();
+
+    // Derived tolerance: `physics.rs::crate_rest_at_derived_analytic_height`
+    // measured the settle residual on a resting contact at ≈ contact_margin
+    // (the particle hovers within the surface skin) and set its tolerance to
+    // 6x that — tight enough to fail a wrong-convention bug by an order of
+    // magnitude, loose enough never to flap on ordinary settle jitter. Same
+    // derivation, reused (not reinvented) here.
+    let tol = 6.0 * contact_margin;
+    println!(
+        "ORDEAL mixed-radius rest: r_bottom={r_bottom} r_top={r_top} contact_margin={contact_margin:.1e}; \
+         measured gap={measured_gap:.6} expected mean(r_i,r_j)+margin={expected_gap:.6} \
+         (bare-mean would predict {:.6}, sum would predict {:.6}); tol={tol:.1e}",
+        (r_bottom + r_top) * 0.5,
+        r_bottom + r_top + contact_margin,
+    );
+    assert!(
+        (measured_gap - expected_gap).abs() < tol,
+        "mixed-radius rest gap {measured_gap:.6} != derived mean(r_i,r_j)+margin {expected_gap:.6} \
+         (tol {tol:.1e}) — bare-mean would give {:.6}, sum would give {:.6}",
+        (r_bottom + r_top) * 0.5,
+        r_bottom + r_top + contact_margin,
+    );
+}
