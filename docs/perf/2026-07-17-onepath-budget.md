@@ -24,9 +24,22 @@ denoiser port). `tests/viii3b_ordeals.rs` on real M1 GPU:
 test oracle: the SAME rounding arithmetic a GPU f16 shader performs; answers
 the numerical question, never a runtime path). Two modes, DERIVED bounds:
 - **MODE A** (f16 storage/read, **f32 accumulate**): rel bound ≈ **1.392e-3**
-  (`2·u16 + macs·u32`; the accumulator does not compound in f32).
-- **MODE B** (full f16 accumulate): rel bound ≈ **1.703e0** — `macs·u16`, the
-  f16 dot-product error compounds over 3488 MACs (Higham). Garbage-tier.
+  (`2·u16 + macs·u32`; the accumulator does not compound in f32). This is the
+  single-round term; the more rigorous per-LAYER bound is `L·2u16` (each
+  layer re-rounds its activation to f16 before the next dot product, L=5
+  layers here) ≈ 4.9e-3 — still the same order, and the stated 1.392e-3 is
+  conservative-in-direction (understates by ~3.5×) but not wrong-order; the
+  measured 6.49e-4/6.72e-4 parity sits comfortably under both.
+- **MODE B** (full f16 accumulate): ADVISORY CORRECTION — the Higham
+  compounding term is `n·u16` where `n` is the length of one dot-product
+  CHAIN (the layer's `in_dim`, ≤64 for this net: 10/32/32/32/32), not the
+  total MACs (3488) summed across the whole network — layers don't share an
+  accumulator. Honest worst case ≈ **0.03–0.12 rel** (per-layer `n·u16`
+  compounded across L=5 re-roundings), not the 1.703e0 previously quoted —
+  do not cite 1.703 as a tight bound. The REJECTION VERDICT stands: even the
+  corrected 0.03–0.12 range is 20-100× the MODE A margin and can still eat
+  the razor-thin 0.009 margin at untested poses; MODE B remains unsafe to
+  adopt, on the corrected number, not the inflated one.
 
 MEASURED on the two TRUE held-out orbits (96×64, the pinned-margin res):
 
@@ -40,9 +53,11 @@ MODE A parity vs fp32: 6.49e-4 / 6.72e-4 — within the derived 1.392e-3 bound.
 **fp16 VERDICT: MODE A is VIABLE.** The razor-thin 0.009 margin SURVIVES
 (0.009064 vs fp32's 0.009092 on orbit_-20 — loses 0.3% of margin), with a
 soundly-derived bound. **MODE B is REJECTED by derivation** — it happens to
-pass on these two poses but its worst-case bound (1.7 relative) means the
-margin can vanish at untested poses/resolutions; not safe to adopt. The sound
-fp16 lever is f16 storage + f32 accumulate.
+pass on these two poses but its worst-case bound (≈0.03–0.12 relative, per
+the corrected per-dot-chain derivation above — not the 1.703 figure
+previously quoted) means the margin can vanish at untested poses/
+resolutions; not safe to adopt. The sound fp16 lever is f16 storage + f32
+accumulate.
 
 ## STAGE 2 — BUDGET phase table — the honest wall
 
@@ -110,9 +125,17 @@ ORDEALS (real M1 GPU, all green):
 - hash-identity BOTH path selections — `live_loop_hash_identity` run under
   `GAIA_NATIVE_UPSCALE=bilinear` and `=neural`: 24/24 frames bit-identical
   serial-vs-overlap AND the per-frame hashes are IDENTICAL across the two
-  selections (frame0 336ef6cab3e95ac1, frame3 28a2ed7cf62257e4) — the 60-fps
-  surface loop is byte-invariant to the resolve selection (neural only
-  changes /scry A/B, never the surface). Full workspace suite 400/0.
+  selections (frame0 336ef6cab3e95ac1, frame3 28a2ed7cf62257e4). ADVISORY
+  REWORD: this run hashes the surface frame, which is produced UPSTREAM of
+  the resolve selector in the frame loop — the hash match demonstrates the
+  two env-var runs produce identical surface bytes, it does not itself
+  exercise or observe the neural resolve path executing. The stronger claim
+  — that the live surface is INVARIANT to the resolve selection because the
+  selector is structurally unreachable from the frame loop (neural only
+  ever writes /scry A/B, wired nowhere near `run_render_loop`) — is a
+  STRUCTURAL property of the code path (see wiring, not this run's output),
+  not something this hash-identity run demonstrates by itself. Full
+  workspace suite 400/0.
 
 ### PHASE TABLE — per path (live-loop reality)
 

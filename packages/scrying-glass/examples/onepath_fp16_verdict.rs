@@ -22,6 +22,13 @@
 //! MEASURE the actual beats-noisy RMSE on the two TRUE held-out orbits, and
 //! print the verdict. Death certificate or survival — the numbers decide.
 //!
+//! ADVISORY NOTE: this is a bound-derivation + measurement example, not an
+//! asserting ordeal (it prints, it does not `assert!`/gate CI) — correct for
+//! fp16's current status as a test oracle only, never a runtime path. If
+//! fp16 (MODE A) is ever wired as an actual runtime path, this must be
+//! promoted to an asserting ordeal (panics/fails on regression), not left as
+//! a printing example.
+//!
 //! Run: cargo run -p scrying-glass --release --example onepath_fp16_verdict
 
 use std::path::Path;
