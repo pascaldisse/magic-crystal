@@ -12,7 +12,12 @@ glam = "0.30.9"
 # docs/proposals/RITE-VII-THE-PLANET-WALKER.md "The chain"). No cycle: as of
 # this writing `transmutation`'s own Cargo.toml depends only on meshopt,
 # metis, bytemuck, serde, bincode — nothing in the workspace, so seed ->
-# transmutation is a plain forward edge. `default-features = false` skips the
-# optional METIS native build (vendored C partitioner); seed only needs the
-# Mesh/Vertex struct shapes from mesh.rs, which are unconditional either way.
+# transmutation is a plain forward edge. `default-features = false` here only
+# controls the METIS native build (vendored C partitioner) for invocations
+# scoped to seed alone (e.g. `cargo build -p seed`, `cargo test -p seed`) —
+# seed itself only needs the unconditional Mesh/Vertex struct shapes from
+# mesh.rs. It does NOT skip METIS workspace-wide: `jormungandr` and
+# `scrying-glass` both depend on `transmutation` with default features on, so
+# a `--workspace` (or any build that also builds one of them) still unifies
+# features and compiles transmutation with METIS regardless of this line.
 transmutation = { path = "../transmute", default-features = false }

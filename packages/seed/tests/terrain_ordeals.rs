@@ -3,7 +3,8 @@
 //! Idiom mirrors `tests/ordeals.rs`'s S0 ordeals: each test prints its
 //! verbatim numbers and asserts a named property.
 
-use seed::terrain::{height, tile_mesh, tile_origin_m, TerrainParams, TerrainTile};
+use seed::hash::coord_key_i64;
+use seed::terrain::{height, tile_mesh, tile_origin_m, tile_seed, TerrainParams, TerrainTile};
 use seed::Seed;
 use transmutation::Mesh;
 
@@ -118,19 +119,26 @@ fn ordeal_no_storage_cold_rebuild() {
 
 // ---------------------------------------------------------------------------
 // ORDEAL (c) — seam: for adjacent tiles in all four edge directions, the
-// shared-edge vertices' WORLD positions (tile-local + reconstructed origin)
-// are byte-identical f32 values, vertex by vertex.
+// shared-edge vertices agree — HEIGHT (mesh `position[1]`) compared as
+// byte-identical `f32` (it's the direct output of `height_at_grid_index`,
+// never reconstructed from a world coordinate, so bit-exact equality is the
+// honest bar), and horizontal WORLD position (`local + origin`, `f64`)
+// compared within a DERIVED tolerance — see `assert_seam_all_four_directions`
+// for why reconstruction can't be bit-exact even when correct (each side
+// rounds its tile-local `f32` independently before promoting to `f64`) and
+// how the tolerance is derived.
 // ---------------------------------------------------------------------------
 
-/// World-space positions of a mesh's shared edge, in emission order.
-/// `edge` selects which side of the tile: matches `grid_vertex_world_position`'s
+/// A mesh's shared edge, in emission order: `(world_x, height, world_z)` with
+/// `world_x`/`world_z` reconstructed in `f64` from the tile-local `f32`
+/// vertex position plus [`tile_origin_m`] (also `f64`). `edge` matches the
 /// `(i, j)` grid, `i`/`j` in `0..=grid_resolution`.
 fn edge_world_positions(
     world_seed: Seed,
     tile: TerrainTile,
     params: &TerrainParams,
     edge: Edge,
-) -> Vec<(f32, f32, f32)> {
+) -> Vec<(f64, f32, f64)> {
     let n = params.grid_resolution;
     let mesh = tile_mesh(world_seed, tile, params);
     let (origin_x, origin_z) = tile_origin_m(tile, params);
@@ -144,9 +152,9 @@ fn edge_world_positions(
             Edge::MinusZ => (k, 0),
         };
         let v = mesh.vertices[(j * row + i) as usize];
-        let world_x = v.position[0] + origin_x as f32;
+        let world_x = origin_x + v.position[0] as f64;
         let world_y = v.position[1];
-        let world_z = v.position[2] + origin_z as f32;
+        let world_z = origin_z + v.position[2] as f64;
         out.push((world_x, world_y, world_z));
     }
     out
@@ -160,65 +168,175 @@ enum Edge {
     MinusZ,
 }
 
-#[test]
-fn ordeal_seam_all_four_directions_byte_identical() {
-    let world_seed = Seed::new(0xF00D_5EED);
-    let params = small_params();
-    let center = TerrainTile::new(-2, 5);
-
-    // (this tile's edge, this tile's edge direction, neighbor tile, neighbor's
-    // matching opposite edge) — the neighbor's `-x`/`-z` etc face meets the
-    // center tile's `+x`/`+z` etc face.
-    let directions: [(&str, Edge, TerrainTile, Edge); 4] = [
+/// The four (this tile's edge, neighbor tile, neighbor's matching opposite
+/// edge) triples for `center`, shared by the near-origin and large-coordinate
+/// seam ordeals below.
+fn seam_directions(center: TerrainTile) -> [(&'static str, Edge, TerrainTile, Edge); 4] {
+    [
         ("+x", Edge::PlusX, center.neighbor(1, 0), Edge::MinusX),
         ("-x", Edge::MinusX, center.neighbor(-1, 0), Edge::PlusX),
         ("+z", Edge::PlusZ, center.neighbor(0, 1), Edge::MinusZ),
         ("-z", Edge::MinusZ, center.neighbor(0, -1), Edge::PlusZ),
-    ];
+    ]
+}
 
-    let mut all_identical = true;
+/// Check all four edge directions of `center` against their neighbors;
+/// returns the count of vertices checked. Panics on any mismatch, naming the
+/// direction/vertex/component.
+///
+/// HEIGHT (component 1) is compared BIT-EXACT: it's the direct `f32` output
+/// of `height_at_grid_index`, never reconstructed from a tile-local position
+/// plus an origin, so tile-independence means literal `to_bits()` equality.
+///
+/// Horizontal WORLD position (components 0/2) is compared within a DERIVED
+/// tolerance, not bit-exact: reconstructing it sums a tile-local `f32`
+/// (itself already rounded once, independently, on each side of the seam)
+/// into an `f64` origin, so the two sides take genuinely different rounding
+/// paths even when correct. The tolerance is the same one
+/// `ordeal_local_vertex_spacing_stable_at_large_tile_coordinate` derives:
+/// local magnitude is bounded by `tile_size_m` (Ruling 4), so a single f32
+/// rounding step there is worth about `tile_size_m * f32::EPSILON`; two
+/// independent roundings (one per side of the seam) plus a safety margin
+/// gives `4x`. Crucially this bound does NOT grow with the tile coordinate —
+/// that tile-position-independence is exactly what MUST-FIX 1 required.
+fn assert_seam_all_four_directions(
+    world_seed: Seed,
+    params: &TerrainParams,
+    center: TerrainTile,
+    label: &str,
+) -> usize {
+    let tolerance = 4.0 * f32::EPSILON as f64 * params.tile_size_m as f64;
     let mut checked_vertices = 0usize;
-    for (name, center_edge, neighbor_tile, neighbor_edge) in directions {
-        let center_positions = edge_world_positions(world_seed, center, &params, center_edge);
+    for (name, center_edge, neighbor_tile, neighbor_edge) in seam_directions(center) {
+        let center_positions = edge_world_positions(world_seed, center, params, center_edge);
         let neighbor_positions =
-            edge_world_positions(world_seed, neighbor_tile, &params, neighbor_edge);
+            edge_world_positions(world_seed, neighbor_tile, params, neighbor_edge);
         assert_eq!(center_positions.len(), neighbor_positions.len());
         for (idx, (c, nb)) in center_positions.iter().zip(&neighbor_positions).enumerate() {
             checked_vertices += 1;
-            let identical = c.0.to_bits() == nb.0.to_bits()
-                && c.1.to_bits() == nb.1.to_bits()
-                && c.2.to_bits() == nb.2.to_bits();
-            if !identical {
-                all_identical = false;
-            }
-            assert_eq!(
-                c.0.to_bits(),
-                nb.0.to_bits(),
-                "seam {name} vertex {idx}: world_x mismatch {:?} vs {:?}",
+            assert!(
+                (c.0 - nb.0).abs() <= tolerance,
+                "{label} seam {name} vertex {idx}: world_x mismatch {:?} vs {:?} (tol {tolerance})",
                 c,
                 nb
             );
             assert_eq!(
                 c.1.to_bits(),
                 nb.1.to_bits(),
-                "seam {name} vertex {idx}: world_y (height) mismatch {:?} vs {:?}",
+                "{label} seam {name} vertex {idx}: height mismatch {:?} vs {:?}",
                 c,
                 nb
             );
-            assert_eq!(
-                c.2.to_bits(),
-                nb.2.to_bits(),
-                "seam {name} vertex {idx}: world_z mismatch {:?} vs {:?}",
+            assert!(
+                (c.2 - nb.2).abs() <= tolerance,
+                "{label} seam {name} vertex {idx}: world_z mismatch {:?} vs {:?} (tol {tolerance})",
                 c,
                 nb
             );
         }
     }
+    checked_vertices
+}
+
+#[test]
+fn ordeal_seam_all_four_directions_byte_identical() {
+    let world_seed = Seed::new(0xF00D_5EED);
+    let params = small_params();
+    let center = TerrainTile::new(-2, 5);
+
+    let checked_vertices = assert_seam_all_four_directions(world_seed, &params, center, "near-origin");
 
     println!(
-        "ORDEAL(c) seam: directions=4 checked_vertices={} all_identical={}",
-        checked_vertices, all_identical
+        "ORDEAL(c) seam: directions=4 checked_vertices={} height_bit_exact=true world_xz_within_tolerance=true",
+        checked_vertices
     );
+}
+
+// ---------------------------------------------------------------------------
+// ORDEAL (c2) — MUST-FIX 1/2 regression: the same seam property, but at a
+// tile coordinate the adversary's probe showed collapsing under the OLD
+// (world-f32-intermediate) implementation (tile_x = 1_000_000 gave local
+// spacings of 0.0; tile_x = 10_000_000 degenerated entirely). Run at
+// 10_000_000 and its negative twin so both signs of the i64 range are
+// covered.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ordeal_seam_large_tile_coordinate() {
+    let world_seed = Seed::new(0xF00D_5EED);
+    let params = small_params();
+
+    let far_positive = TerrainTile::new(10_000_000, -3_000_000);
+    let checked_positive =
+        assert_seam_all_four_directions(world_seed, &params, far_positive, "tile_x=+1e7");
+
+    let far_negative = TerrainTile::new(-10_000_000, 3_000_000);
+    let checked_negative =
+        assert_seam_all_four_directions(world_seed, &params, far_negative, "tile_x=-1e7");
+
+    println!(
+        "ORDEAL(c2) seam-large-coordinate: tile=({},{}) checked={} within_tolerance=true | tile=({},{}) checked={} within_tolerance=true",
+        far_positive.tile_x, far_positive.tile_y, checked_positive,
+        far_negative.tile_x, far_negative.tile_y, checked_negative,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// ORDEAL (c3) — MUST-FIX 1 direct regression: LOCAL vertex spacing stays
+// `== cell_size_m` (to a derived f32-ULP tolerance) at a large tile
+// coordinate. This is the exact probe the adversary ran (spacing collapsing
+// to 0.0 at tile_x = 1_000_000): tile-local positions must never be derived
+// from a world-magnitude value, so their spacing must be tile-position-
+// INDEPENDENT.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ordeal_local_vertex_spacing_stable_at_large_tile_coordinate() {
+    let params = small_params();
+    let world_seed = Seed::new(0xF00D_5EED);
+    let cell_size = params.cell_size_m();
+
+    // Derived tolerance: local positions are bounded in magnitude by
+    // `tile_size_m` (Ruling 4's whole point), so the worst-case f32 rounding
+    // error on any one of them is about `tile_size_m * f32::EPSILON`; two
+    // such values subtracted can carry twice that, so 4x is a safety margin
+    // on top of the theoretical 2x, not a plucked number.
+    let tolerance = 4.0 * f32::EPSILON * params.tile_size_m;
+
+    for tile in [
+        TerrainTile::new(0, 0),
+        TerrainTile::new(1_000_000, 0),
+        TerrainTile::new(10_000_000, -10_000_000),
+        TerrainTile::new(-10_000_000, 10_000_000),
+    ] {
+        let mesh = tile_mesh(world_seed, tile, &params);
+        let n = params.grid_resolution;
+        let row = n + 1;
+        // Spacing along the i=0 row's first two vertices (j=0, i=0 and i=1).
+        let p0 = mesh.vertices[0].position[0];
+        let p1 = mesh.vertices[1].position[0];
+        let spacing = p1 - p0;
+        assert!(
+            (spacing - cell_size).abs() <= tolerance,
+            "tile ({},{}): local spacing {spacing} != cell_size {cell_size} (tol {tolerance})",
+            tile.tile_x,
+            tile.tile_y
+        );
+        // Same check along j at i=0 (vertex (0,0) vs (0,1), index `row`).
+        let q0 = mesh.vertices[0].position[2];
+        let q1 = mesh.vertices[row as usize].position[2];
+        let spacing_j = q1 - q0;
+        assert!(
+            (spacing_j - cell_size).abs() <= tolerance,
+            "tile ({},{}): local j-spacing {spacing_j} != cell_size {cell_size} (tol {tolerance})",
+            tile.tile_x,
+            tile.tile_y
+        );
+        println!(
+            "ORDEAL(c3) local-spacing: tile=({},{}) spacing_i={:.6} spacing_j={:.6} cell_size={:.6} tol={:.3e}",
+            tile.tile_x, tile.tile_y, spacing, spacing_j, cell_size, tolerance
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -299,4 +417,78 @@ fn height_field_is_a_pure_function_of_world_xz() {
     let h2 = height(world_seed, &params, x, z);
     assert_eq!(h1.to_bits(), h2.to_bits());
     println!("height-purity: height({x},{z}) = {h1} (repeat identical)");
+}
+
+// ---------------------------------------------------------------------------
+// ADVISORY 5 — exercise tile_seed / coord_key_i64 with a real ordeal instead
+// of leaving them as unverified scaffolding: (1) coord_key_i64 is injective
+// over a coordinate sweep spanning both signs and both ends of the i64
+// range near overflow, (2) tile_seed gives distinct tiles distinct seeds
+// over the same sweep (no collisions), and (3) it's deterministic (same
+// tile -> same seed, twice).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ordeal_tile_seed_and_coord_key_i64_distinguish_coordinates() {
+    let sweep: Vec<i64> = vec![
+        0,
+        1,
+        -1,
+        1_000_000,
+        -1_000_000,
+        10_000_000,
+        -10_000_000,
+        i64::MAX,
+        i64::MIN,
+        i64::MAX - 1,
+        i64::MIN + 1,
+    ];
+
+    // coord_key_i64 injective over the sweep (it's a bit-reinterpret cast,
+    // so this must hold for every i64, but checking the sweep is the honest
+    // ordeal-style spot-check rather than an unfalsifiable "trust me").
+    let mut keys: Vec<u64> = sweep.iter().map(|&v| coord_key_i64(v)).collect();
+    let key_count_before_dedup = keys.len();
+    keys.sort_unstable();
+    keys.dedup();
+    assert_eq!(
+        keys.len(),
+        key_count_before_dedup,
+        "coord_key_i64 collided within the sweep"
+    );
+
+    // tile_seed distinguishes every tile pair built from the sweep (a small
+    // grid of it, not the full cross product, to keep this fast).
+    let world_seed = Seed::new(0x7117_5EED);
+    let mut tile_seeds: Vec<(i64, i64, u64)> = Vec::new();
+    for &x in &sweep {
+        for y in [0i64, 1, -1] {
+            let tile = TerrainTile::new(x, y);
+            let s = tile_seed(world_seed, tile);
+            tile_seeds.push((x, y, s.0));
+        }
+    }
+    let mut seed_values: Vec<u64> = tile_seeds.iter().map(|&(_, _, s)| s).collect();
+    let seed_count_before_dedup = seed_values.len();
+    seed_values.sort_unstable();
+    seed_values.dedup();
+    assert_eq!(
+        seed_values.len(),
+        seed_count_before_dedup,
+        "tile_seed collided across the sweep"
+    );
+
+    // Determinism: recomputing the same tile's seed gives the same value.
+    let repeat = tile_seed(world_seed, TerrainTile::new(10_000_000, -3_000_000));
+    let repeat_again = tile_seed(world_seed, TerrainTile::new(10_000_000, -3_000_000));
+    assert_eq!(repeat.0, repeat_again.0);
+
+    println!(
+        "ORDEAL tile-seed/coord-key: sweep_len={} coord_keys_distinct={} tile_seeds_checked={} tile_seeds_distinct={} deterministic={}",
+        sweep.len(),
+        keys.len(),
+        seed_count_before_dedup,
+        seed_values.len(),
+        repeat.0 == repeat_again.0
+    );
 }
