@@ -7,3 +7,12 @@ license = "MIT"
 
 [dependencies]
 glam = "0.30.9"
+# RITE VII "THE PLANET-WALKER" VII-0: seed produces the terrain patch, then
+# hands it to transmute (seed -> transmute -> jormungandr -> embodiment, per
+# docs/proposals/RITE-VII-THE-PLANET-WALKER.md "The chain"). No cycle: as of
+# this writing `transmutation`'s own Cargo.toml depends only on meshopt,
+# metis, bytemuck, serde, bincode — nothing in the workspace, so seed ->
+# transmutation is a plain forward edge. `default-features = false` skips the
+# optional METIS native build (vendored C partitioner); seed only needs the
+# Mesh/Vertex struct shapes from mesh.rs, which are unconditional either way.
+transmutation = { path = "../transmute", default-features = false }
