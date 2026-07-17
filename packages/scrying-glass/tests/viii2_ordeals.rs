@@ -15,6 +15,25 @@
 //!       contains no temporal vocabulary (the same fixed list VIII-0/1 scan);
 //!       `denoiser_gpu.rs` is caught by the `denoiser*.rs` glob and already
 //!       scanned by the VIII-0 gate — here we re-witness the shader directly.
+//!   (e) weights hash-pin, GPU-scoped: the committed bytes `GpuDenoiser::new`
+//!       consumes hash to the pinned provenance sha256 (viii1's `a4` already
+//!       pins this for the CPU path; re-witnessed here because it is what
+//!       the GPU upload actually reads), AND the flat payload the upload
+//!       derives from those bytes (`Mlp::flat_weights()`) is a stable,
+//!       deterministic transcription — two independent deserializations of
+//!       the SAME committed bytes produce a bit-identical flat payload, and
+//!       its length matches the layer geometry independently re-derived
+//!       from `layer_dims()` (not trusting `GpuDenoiser::new`'s own internal
+//!       assert).
+//!   (f) THE BAN, signature half: every `pub fn` in `denoiser_gpu.rs` takes
+//!       current-frame inputs only — no frame-index/history parameter
+//!       anywhere (adversary A1 precedent from VIII-1/VIII-3: a second entry
+//!       point cannot slip past unexamined).
+//!
+//! (a) cold×2, (e), and (f) port patterns from the unmerged reference branch
+//! `rite8-viii2-ari` @ b97a9a0 (`packages/scrying-glass/tests/viii2_ordeals.rs`
+//! there), adapted to this port's actual API (`GpuDenoiser`, `layer_dims()` —
+//! no `layer_views()`/free `denoise_image_gpu`/`flatten_weights` here).
 //!
 //! All GPU ordeals print + return early (never a false green) on a host
 //! without an adapter, matching `viii0_ordeals.rs` / `viii1_ordeals.rs`.
@@ -25,7 +44,7 @@ use std::path::Path;
 use glam::Vec3 as GVec3;
 
 use scrying_glass::bvh::{Bvh, BvhParams};
-use scrying_glass::denoiser::{Mlp, denoise_image, deserialize_weights};
+use scrying_glass::denoiser::{Mlp, denoise_image, deserialize_weights, sha256_hex};
 use scrying_glass::denoiser_dataset::{
     DATASET_HEIGHT, DATASET_REF_FRAMES, DATASET_WIDTH, VALIDATION_POSE_NAMES, law_poses,
     naruko_params,
@@ -41,10 +60,18 @@ fn weights_dir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("data")
 }
 
+fn read_committed_weights_bytes() -> Vec<u8> {
+    fs::read(weights_dir().join("denoiser-weights-v1.bin")).expect("read committed denoiser-weights-v1.bin")
+}
+
 fn load_committed_weights() -> Mlp {
-    let bytes = fs::read(weights_dir().join("denoiser-weights-v1.bin"))
-        .expect("read committed denoiser-weights-v1.bin");
-    deserialize_weights(&bytes).expect("deserialize committed weights artifact")
+    deserialize_weights(&read_committed_weights_bytes()).expect("deserialize committed weights artifact")
+}
+
+fn load_provenance() -> serde_json::Value {
+    let text = fs::read_to_string(weights_dir().join("denoiser-weights-v1.provenance.json"))
+        .expect("read committed provenance sidecar");
+    serde_json::from_str(&text).expect("parse provenance JSON")
 }
 
 /// The same small fixed pose the VIII-0/1 ordeals use — fast, non-vacuous.
@@ -234,5 +261,107 @@ fn d_ban_no_temporal_vocabulary_in_the_gpu_shader() {
             !gpu_src.to_lowercase().contains(word),
             "forbidden temporal vocabulary '{word}' found in src/denoiser_gpu.rs"
         );
+    }
+}
+
+/// (e) weights hash-pin, GPU-scoped (ported from `rite8-viii2-ari` @ b97a9a0
+/// `d_gpu_uses_hash_pinned_committed_weights`, adapted — this port has no
+/// free `flatten_weights` fn; `GpuDenoiser::new` derives its upload payload
+/// from `Mlp::flat_weights()` inline, so the witness re-derives the same
+/// invariant from public API instead of a helper that does not exist here).
+/// The bytes `GpuDenoiser::new` loads are the pinned artifact (viii1's `a4`
+/// pins this for the CPU path already; re-witnessed here because it is what
+/// the GPU upload actually reads), and the flat payload derived from those
+/// bytes is a stable, deterministic transcription whose length matches the
+/// layer geometry — never re-derived, never silently reshaped.
+#[test]
+fn e_gpu_uploads_weights_matching_the_hash_pinned_committed_artifact() {
+    let bytes = read_committed_weights_bytes();
+    let provenance = load_provenance();
+    let expected_hash = provenance["weights_sha256"]
+        .as_str()
+        .expect("weights_sha256 string in provenance JSON");
+    let actual_hash = sha256_hex(&bytes);
+    assert_eq!(
+        actual_hash, expected_hash,
+        "committed denoiser-weights-v1.bin does not hash to the pinned provenance sha256 — \
+         GpuDenoiser::new would upload weights that drifted from their provenance"
+    );
+
+    // Two independent deserializations of the SAME committed bytes produce a
+    // bit-identical flat weight payload (exact bit-pattern compare —
+    // stricter than `==`, distinguishes +0/-0).
+    let mlp_a = deserialize_weights(&bytes).expect("deserialize committed weights (a)");
+    let mlp_b = deserialize_weights(&bytes).expect("deserialize committed weights (b)");
+    let flat_a = mlp_a.flat_weights();
+    let flat_b = mlp_b.flat_weights();
+    let bits = |v: &[f32]| -> Vec<u32> { v.iter().map(|x| x.to_bits()).collect() };
+    assert_eq!(
+        bits(&flat_a),
+        bits(&flat_b),
+        "flat_weights() is not a deterministic transcription of the committed bytes — GpuDenoiser \
+         could upload a different payload across two loads of the same artifact"
+    );
+
+    // The flat payload length matches the layer geometry, independently
+    // re-derived here from `layer_dims()` (per layer: in*out weights + out
+    // biases) — not trusting `GpuDenoiser::new`'s own internal assert.
+    let dims = mlp_a.layer_dims();
+    let expected_len: u32 = dims.iter().map(|&(i, o)| i * o + o).sum();
+    assert_eq!(
+        flat_a.len() as u32,
+        expected_len,
+        "flat_weights() length disagrees with the layer geometry GpuDenoiser::new uses to compute \
+         per-layer upload offsets"
+    );
+}
+
+/// Every `pub fn NAME(...) -> ... {` signature found in `text`, as
+/// (name, full signature text INCLUDING the return-type arrow, EXCLUDING the
+/// opening `{`). Plain textual scan (same as VIII-1/VIII-3's) — sufficient
+/// for `denoiser_gpu.rs`'s simple signatures.
+fn public_fn_signatures(text: &str) -> Vec<(String, String)> {
+    let mut sigs = Vec::new();
+    let mut search_from = 0usize;
+    while let Some(rel) = text[search_from..].find("pub fn ") {
+        let start = search_from + rel;
+        let name_start = start + "pub fn ".len();
+        let name_end = text[name_start..].find('(').map(|e| name_start + e).unwrap_or(name_start);
+        let name = text[name_start..name_end].trim().to_string();
+        let body_start = text[start..].find('{').map(|e| start + e).unwrap_or(text.len());
+        sigs.push((name, text[start..body_start].to_string()));
+        search_from = (body_start + 1).max(start + 1);
+    }
+    sigs
+}
+
+/// (f) THE BAN, signature half (ported from `rite8-viii2-ari` @ b97a9a0
+/// `e_ban_every_public_fn_signature_in_gpu_module_is_current_frame_only`,
+/// matching the convention `viii1_ordeals.rs`'s `d_ban_every_public_fn_...`
+/// and `viii3_ordeals.rs`'s `f_ban_every_public_fn_...` already use — 
+/// adversary finding A1: extended from the primary entry point to EVERY
+/// `pub fn`, so a second entry point (e.g. the timing helper) cannot slip
+/// past unexamined). Every public function's signature (grepped directly)
+/// takes current-frame buffers only — no frame-index/history parameter
+/// anywhere, checked against the same fixed forbidden-substring list.
+#[test]
+fn f_ban_every_public_fn_signature_in_denoiser_gpu_takes_current_frame_inputs_only() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let text = fs::read_to_string(root.join("src/denoiser_gpu.rs")).expect("read denoiser_gpu.rs");
+    let sigs = public_fn_signatures(&text);
+    assert!(
+        sigs.len() >= 3,
+        "expected at least 3 `pub fn`s in src/denoiser_gpu.rs (found {}) — the textual scan may be broken",
+        sigs.len()
+    );
+    let forbidden_params = ["frames", "frame_index", "prev", "history", "samples_before", "last_"];
+    for (name, signature) in &sigs {
+        for forbidden in forbidden_params {
+            assert!(
+                !signature.to_lowercase().contains(forbidden),
+                "denoiser_gpu.rs `pub fn {name}` signature contains '{forbidden}' — every public entry \
+                 point must take current-frame inputs only"
+            );
+        }
     }
 }

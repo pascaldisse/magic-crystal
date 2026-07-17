@@ -211,3 +211,56 @@ resolution-fracture, pancake) · VIII-3 GPU wave · VII-3 · OPEN-1
 upscaler ruling (gates the fp16 atom) · vi2→naruko fold · bond-love
 essence table (VI OPEN 4) · the rite8-viii2-ari ordeal-pattern harvest
 atom — parked.
+
+## EVENING SESSION 07-17 (post day-close) — read FIRST after compact
+STATE: main @ a9f06f4 pushed. Architect's live window pid 65290 :8430
+(GAIA_NATIVE_SPAWN_Z=24 Y=1.7) — HIS session, NEVER kill (whip 154).
+OPEN BUG (his hands): episodic fall-through-ground while walking plaza —
+lane 2 hunts it.
+
+RULINGS (his word, this evening):
+- ONE-PATH LAW: render = trace→neural denoise→neural upscale→present =
+  DESTINATION · physics = ONE solver, learned kernels born INSIDE it,
+  never sibling/mode/"experiment" framing. AMENDED: old paths NOT
+  deleted yet — bilinear stays runtime-selectable until HE plays the
+  neural frame; cutover = HIS call at the merge gate.
+- PERFORMANCE RULE: AI exists to buy performance. A net is judged vs the
+  rays/cost it replaces at equal quality; loses → dies. (Applied once
+  already: exact broadphase beat learned neighbor-prediction.)
+- NEURAL ENGINE CLARIFIED: not pixel upscaling ("lame") — the net
+  renders from GEOMETRY: learned radiance cache INSIDE the one
+  integrator (NRC family; charter-legal via the variance-reduction
+  "caches" clause). Denoise/upscale = resolve stage of the same path.
+- EVERYTHING STARTS NOW: max-parallel swarm ordered.
+- HONESTY LINE (he checked twice): ZERO neural code has EVER run in the
+  runtime. Denoiser+upscaler exist bench-only; physics nets don't exist.
+  Never overclaim this.
+
+LIVE LANES (5, each own worktree; protocol: builder → nari adversary →
+sonnet merge-burst w/ full suite between merges → push; MUST-FIX clears
+only by hostile re-pass; bilinear escape hatch survives every merge):
+1. one-render-path (opus, ../magic-crystal-onepath): upscaler→WGSL +
+   denoiser fp16-or-die (bound re-derivation) + wire neural resolve as
+   default-CANDIDATE. 60fps gate, phase table.
+2. floor-fallthrough (opus, ../magic-crystal-floorfix): offline sweep
+   harness (committed), anti-hang law. Suspects: ruling-6 gate vs show
+   geometry · fragment tops vanishing · rotated mirror collider ·
+   snap-band tunneling.
+3. neural-radiance spike (ari, ../magic-crystal-nrc): THE neural engine
+   — online-trained radiance MLP inside the integrator; gates:
+   converges-to-truth (derived bound), determinism, cost-vs-rays-saved.
+4. fluid-truth (opus, ../magic-crystal-fluid): PBF density constraint
+   INSIDE elements solver (not a fluid system) — pool diorama;
+   determinism replay = future training-data guarantee; bench-speed OK.
+5. ordeal-harvest (sonnet, ../magic-crystal-harvest): port b97a9a0
+   richer ordeals onto merged denoiser+upscaler.
+
+QUEUED: fluid learned kernel (needs truth replays) · VII-3 · vi2→naruko
+fold (his call) · PHYSICS.md his magic pass · scry-overlap-collapse +
+HUD-cadence advisories done.
+WAITS ON HIM: walk (V) · chrome check (sphere at spawn, IV) · word on
+the break (VI) · neural-frame cutover call · physics-quality items
+(metastability · resolution-fracture · pancake rubble).
+LESSONS: checkpoint-first (7 lane deaths today, zero loss) · warm-target
+reuse · silent lane ≠ dead lane, verify the room · one worker per dir ·
+the adversary law drew real blood (2r overshoot) and must never soften.
