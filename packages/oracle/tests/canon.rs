@@ -124,6 +124,41 @@
 //!     r 1.6, speed 0.9). Canon bounds are the AUTHORED bind pose — the orbit at
 //!     angle 0 — the crate precedent: the senses read the static scene, the kami
 //!     only moves it at runtime. center [-1, 2.2, 18.1]
+//!   ── REALM SHINE (the Architect's spawn-sightline show, 07-17): five vessels
+//!   dressing the terra 12-18 m DEAD AHEAD of the spawn eye so the ray tracer's
+//!   hand is visible where his eyes open. All authored at z in [26,32] — AHEAD
+//!   of the spawn eye (z 44) yet BEHIND every denoiser pose eye (front z 22,
+//!   orbit_-20/+40 z 17-21) so the pinned RMSE bounds never see them, and behind
+//!   the pier eye (z 15) so CANON #6 is untouched. ──
+//!   naruko_show_chrome    x[2.4,6.6]  y[0,5.7]    z[27.4,31.6]
+//!     — the Rite IV L2 CLOSE OBJECT: a chrome sphere (metallic 1.0, roughness
+//!     0.02 = the perfect-mirror delta lobe) r 2.1 at part [0,3.6,0] on a dark
+//!     pedestal cylinder (r 0.6, h 2.4) at [0,1.2,0]; transform [4.5,0,29.5].
+//!     Union AABB: the sphere owns x/y-max/z, the pedestal owns y-min 0 ⇒
+//!     center [4.5, 2.85, 29.5]. range = √(4.5²+4.15²+14.5²) = √247.7225 = 15.7392.
+//!   naruko_show_mirror    x[-7.5858,-5.4142] y[0.15,6.65] z[26.1139,29.8861]
+//!     — a polished panel (metallic 1.0, roughness 0.03) box size [0.18,6.5,4.2]
+//!     at part [0,3.4,0], ROTATED [0,-0.5,0] (Euler y); transform [-6.5,0,28].
+//!     The part center rides the entity Y-axis, so the Y-rotation leaves the
+//!     center at [-6.5,3.4,28]; the world-AABB half-extents spread by the
+//!     rotation (signal-ring rotated-AABB precedent): X_half = |hx·cosβ| +
+//!     |hz·sinβ| = |0.09·0.877583| + |2.1·(-0.479426)| = 1.08578, Z_half =
+//!     |hx·sinβ| + |hz·cosβ| = 0.043148 + 1.842924 = 1.88607 (hy 3.25 unaffected).
+//!     range = √(6.5²+3.6²+16²) = √311.21 = 17.6411.
+//!   naruko_show_light_a   x[1.05,1.95]  y[1.55,2.45]  z[28.55,29.45]
+//!     — violet #b98aff emissive sphere r 0.45 on a kami orbit (center
+//!     [-1.5,2.0,29], r 3.0, speed 0.5, phase 0); AUTHORED bind (angle 0) =
+//!     transform [1.5,2.0,29] (kami_orb precedent: senses read the static bind,
+//!     the orbit moves it only at runtime). range = √(1.5²+5²+15²) = √252.25 =
+//!     15.8824.
+//!   naruko_show_light_b   x[-4.45,-3.55] y[3.15,4.05] z[28.55,29.45]
+//!     — cyan #37e0ff emissive sphere r 0.45, orbit (center [-1.5,3.6,29], r 2.5,
+//!     speed -0.55, phase π); bind (angle π ⇒ cos -1) = transform [-4.0,3.6,29].
+//!     range = √(4²+3.4²+15²) = √252.56 = 15.8921.
+//!   naruko_show_light_c   x[-1.95,-1.05] y[4.75,5.65] z[31.35,32.25]
+//!     — pink #ff6bb0 emissive sphere r 0.45, orbit (center [-1.5,5.2,29], r 2.8,
+//!     speed 0.8, phase π/2 ⇒ sin 1) = transform [-1.5,5.2,31.8].
+//!     range = √(1.5²+1.8²+12.2²) = √154.33 = 12.4230.
 //!   naruko_first_ground   x[0,64]  y[-9.6,9.6]  z[128,192]
 //!     — RITE VII · VII-0b (THE FIRST GROUND, the render weld), the 25th
 //!     vessel: a GENERATED terrain patch, authored ONLY as a sigil
@@ -231,6 +266,14 @@ fn range_of(g: &Glance, id: &str) -> f32 {
 /// tan30·31 = 17.898 ⇒ inside both side planes; y_off ∈
 /// [1.475−7, 3.175−7] = [−5.525,−3.825], well inside the same half-width
 /// vertically (aspect 1, same cone) ⇒ in-frustum. entity_count = 24.
+///
+/// REALM SHINE grows it to TWENTY-NINE: the five spawn-sightline vessels
+/// (naruko_show_chrome center [4.5,2.85,29.5], _mirror [-6.5,3.4,28],
+/// _light_a [1.5,2,29], _light_b [-4,3.6,29], _light_c [-1.5,5.2,31.8]), all
+/// z in [27,32] DEAD AHEAD of the spawn eye. Each |x_off| and |y_off| (from
+/// eye y=7) sits well inside its cone half-width tan30·z_view (chrome 4.5/4.15
+/// < 8.37, mirror 6.5/3.6 < 9.24, light_a 1.5/5.0 < 8.66, light_b 4.0/3.4 <
+/// 8.66, light_c 1.5/1.8 < 7.04) ⇒ all five in-frustum. entity_count = 29.
 #[test]
 fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
     let world = canon();
@@ -275,8 +318,8 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
     // (naruko_kami_orb, bind center [-1,2.2,18.1], |x_off|=1 < tan30·25.9 =
     // 14.95) — the 19th–21st meshed vessels, dead ahead.
     assert_eq!(
-        g.entity_count, 24,
-        "exactly the twenty-four meshed vessels are in-frustum (Rite V: + nari, + cat; P3: + crate; rings: + a/b/c; Mirror Proof: + mirror, + minor, + orb; VI-1: + stack_crate_0/1/2)"
+        g.entity_count, 29,
+        "exactly the twenty-nine meshed vessels are in-frustum (Rite V: + nari, + cat; P3: + crate; rings: + a/b/c; Mirror Proof: + mirror, + minor, + orb; VI-1: + stack_crate_0/1/2; Realm Shine: + show_chrome, + show_mirror, + show_light_a/b/c)"
     );
     let caps = caption_ids(&g);
     for id in [
@@ -304,6 +347,11 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
         "naruko_stack_crate_0",
         "naruko_stack_crate_1",
         "naruko_stack_crate_2",
+        "naruko_show_chrome",
+        "naruko_show_mirror",
+        "naruko_show_light_a",
+        "naruko_show_light_b",
+        "naruko_show_light_c",
     ] {
         assert!(caps.contains(&id.to_string()), "{id} must be in-frustum");
     }
@@ -379,18 +427,24 @@ fn canon_nearest_ordering_and_ranges_are_derived() {
     let world = canon();
     let eye = world.spawn_pose().unwrap();
 
-    // Default nearest_n=5, support demoted.
+    // Default nearest_n=5, support demoted. REALM SHINE's five vessels are all
+    // nearer than the old nearest non-support caption (stall 19.6037), so the
+    // top-5 is now ENTIRELY the show, ordered by range from [0,7,44]:
+    //   light_c 12.4230 < chrome 15.7392 < light_a 15.8824 < light_b 15.8921
+    //   < mirror 17.6411   (then stall 19.6037, cat 22.4292, … pushed down).
+    // terra (9.4108, nearer than light_c) stays SUPPORT-demoted; light_a vs
+    // light_b are 9.7 mm apart (≈10× RANGE_TOL) — a real, derived ordering.
     let g = look(&world, eye, LookParams::default()).unwrap();
     assert_eq!(
         caption_ids(&g),
         vec![
-            "naruko_stall_massing",
-            "naruko_cat",
-            "naruko_lantern",
-            "naruko_kami_orb",
-            "nari",
+            "naruko_show_light_c",
+            "naruko_show_chrome",
+            "naruko_show_light_a",
+            "naruko_show_light_b",
+            "naruko_show_mirror",
         ],
-        "default nearest-5 caption order (Mirror Proof: kami orb 26.3600 slots 4th, pushes chain_posts to 7th)"
+        "default nearest-5 caption order (Realm Shine: the spawn-sightline show is the nearest cluster)"
     );
 
     // Support surfaces never eat a caption slot.
@@ -430,6 +484,12 @@ fn canon_nearest_ordering_and_ranges_are_derived() {
         ("signal_ring_c", 168.4377),
         ("naruko_terra", 9.4108),
         ("naruko_sea", 604.0593),
+        // REALM SHINE (derived above; the spawn-sightline show).
+        ("naruko_show_light_c", 12.4230),
+        ("naruko_show_chrome", 15.7392),
+        ("naruko_show_light_a", 15.8824),
+        ("naruko_show_light_b", 15.8921),
+        ("naruko_show_mirror", 17.6411),
     ] {
         let r = range_of(&wide, id);
         assert!(
