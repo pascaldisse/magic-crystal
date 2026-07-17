@@ -168,3 +168,20 @@ design center). Three waves, review between each (wave law).
 
 Acceptance: Guardian per wave; the Rite closes when the Architect meets
 her — HIS WALK, now with a body in the world. Full suite between merges.
+
+## GUARDIAN RULINGS UNDER DELEGATION (07-17 ~02:20, his word: "you decide,
+## as long as it runs at sixty FPS. And no LODs — we have Nanite-class.")
+1. Destruction = BOND-FRACTURE (Empedocles; elements substrate; voxel
+   model REJECTED — no second geometry system beside the Chain).
+2. Rite VI PROCEEDS on elements-as-is; his PHYSICS.md pass may re-slice.
+3. Gravity = RADIAL, always; flat ground = the infinite-radius limit of
+   the same up(r) parameter. One system, no special case.
+4. 64-bit/camera-relative coords: PAID AT VII-0.
+5. F6: senses read SOLVER TRUTH — the world as it is, not as authored.
+6. Walkable floor = surface holds the body's contact patch (derived
+   min-area parameter; mirror-edge climbing dies).
+7. 60 FPS path: exact levers (BVH refit-not-rebuild · CPU/GPU overlap)
+   + SKINNED BODIES THROUGH THE CLUSTER PIPELINE (the Nanite answer —
+   cost ∝ pixels; "traced LOD" suggestion STRUCK, off-charter) + the
+   neural denoise/upscale rite (interpolation stays banned forever).
+   spp/bounces untouched. LODs remain forbidden vocabulary.
