@@ -5,6 +5,7 @@ pub mod input;
 pub mod integrator;
 pub mod physics;
 pub mod player;
+pub mod presence;
 pub mod scene;
 
 pub const PACKAGE_NAME: &str = "scrying-glass";

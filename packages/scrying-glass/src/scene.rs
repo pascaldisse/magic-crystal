@@ -399,6 +399,87 @@ impl BodyInstance {
     pub fn skin_current(&self) -> Vec<LeafTriangle> {
         skin_body(&self.body, &self.pose, self.model, &self.albedo)
     }
+
+    /// Compose a fresh body from a NAMED preset at an authored world pose — the
+    /// GENERIC remote/presence constructor (no ECS, no realm `body` sigil). A
+    /// wired presence (id + interpolated position/yaw) drives one of these so it
+    /// renders as a real body in the traced world (Wired N2). `floor` grounds the
+    /// y (lowest contact vertex rests on the surface under `(x, z)`); `None`
+    /// keeps the authored y. Starts at SAMA's idle pose (commanded speed 0). An
+    /// unknown preset is an error — nothing is invented.
+    pub fn from_preset(
+        gaia_id: impl Into<String>,
+        preset_name: &str,
+        position: [f64; 3],
+        yaw: f64,
+        floor: Option<&Ground>,
+    ) -> Result<Self, String> {
+        let preset = vessel::Preset::by_name(preset_name)
+            .ok_or_else(|| format!("unknown preset {preset_name:?}"))?;
+        let composed = vessel::Body::from_preset(&preset);
+        let idle = composed.idle_pose.clone();
+        let albedo = composed.vertex_albedo();
+        let pos = Vec3::new(position[0] as f32, position[1] as f32, position[2] as f32);
+        let model = ground_model(&composed, pos, yaw as f32, floor);
+        let world_tris = skin_body(&composed, &idle, model, &albedo);
+        Ok(Self {
+            gaia_id: gaia_id.into(),
+            preset: preset_name.to_string(),
+            world_tris,
+            body: composed,
+            albedo,
+            model,
+            locomotion: Locomotion::new(LocomotionParams::default()),
+            pose: idle,
+            commanded_speed: 0.0,
+        })
+    }
+
+    /// Drive a presence body to a NEW world pose this tick: re-place the model
+    /// (re-grounded on `floor`), step SAMA against `commanded_speed` (the
+    /// presence's derived ground speed), and re-skin. The SINGLE presence-drive
+    /// path — the position tracks the interp buffer, the gait animates from the
+    /// derived speed. Deterministic in the (pose, speed, floor) stream.
+    pub fn drive(
+        &mut self,
+        position: [f64; 3],
+        yaw: f64,
+        commanded_speed: f32,
+        floor: Option<&Ground>,
+    ) {
+        let pos = Vec3::new(position[0] as f32, position[1] as f32, position[2] as f32);
+        self.model = ground_model(&self.body, pos, yaw as f32, floor);
+        self.commanded_speed = commanded_speed;
+        self.pose = self.locomotion.step(&self.body.skeleton, commanded_speed);
+        self.world_tris = skin_body(&self.body, &self.pose, self.model, &self.albedo);
+    }
+
+    /// The current grounded world model (rotation/scale/translation) — exposed so
+    /// an ordeal can read the body's world transform directly.
+    pub fn model(&self) -> Mat4 {
+        self.model
+    }
+}
+
+/// The GROUNDED world model for a composed body at `(position, yaw)`: yaw about
+/// +Y, unit scale, and the y derived so the lowest CONTACT vertex rests on
+/// `floor` under `(x, z)`. `None` floor (body over the void) keeps the authored
+/// y verbatim. The SINGLE grounding path shared by the presence constructor and
+/// per-tick drive — the y is derived, never eye-nudged (Guardian finding 1).
+fn ground_model(body: &vessel::Body, position: Vec3, yaw: f32, floor: Option<&Ground>) -> Mat4 {
+    let rotation = Vec3::new(0.0, yaw, 0.0);
+    let mesh = body.vessel.posed(&body.skeleton, &body.idle_pose);
+    let orient = transform_matrix(Vec3::ZERO, rotation, Vec3::ONE);
+    let contact_local = lowest_contact_y(body, &mesh, orient);
+    let grounded_y = floor
+        .and_then(|f| f.height_at(position.x, position.z, f32::INFINITY))
+        .map(|g| g - contact_local)
+        .unwrap_or(position.y);
+    transform_matrix(
+        Vec3::new(position.x, grounded_y, position.z),
+        rotation,
+        Vec3::ONE,
+    )
 }
 
 /// Skin a composed body at `pose` into world-space [`LeafTriangle`]s. Pure: the
