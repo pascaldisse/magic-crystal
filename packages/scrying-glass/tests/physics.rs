@@ -252,11 +252,26 @@ fn stack_settles_at_derived_chained_heights() {
         (binding.half_height, binding.contact_radius)
     };
     // Chained derivation — mirrors how the realm authored each position.
+    //
+    // Crate 0 rests on the STATIC pier (particle-vs-triangle pass), whose
+    // true rest gap is `contact_radius + contact_margin` — this expected
+    // value omits the `contact_margin` term (a pre-existing ~1mm
+    // approximation, well under REST_TOL, untouched by F2/F3 below).
+    //
+    // Crates 1 and 2 rest on the crate BELOW them — a body-vs-body contact.
+    // F2/F3 derived that pass's rest gap as `mean(r_i, r_j) + contact_margin`
+    // (reducing to `r + contact_margin` for the equal radii used here),
+    // matching the static pass' `radius + contact_margin` convention instead
+    // of the bare-radius gap the pre-fix solver used. Each successive crate
+    // therefore sits `contact_margin` (~1mm) higher than the pre-F2/F3 chain;
+    // over 2 body-body contacts that's ~2mm total, still within REST_TOL
+    // (5mm) — no JSON position change needed.
+    let contact_margin = elements::ContactMaterial::default().contact_margin;
     let mut expected = Vec::with_capacity(3);
     let mut y = pier_top + half_height + contact_radius;
     for _ in 0..3 {
         expected.push(y);
-        y += 2.0 * half_height + contact_radius;
+        y += 2.0 * half_height + contact_radius + contact_margin;
     }
 
     // The stack was authored already AT its rest positions — a short march

@@ -339,11 +339,21 @@ impl Solver {
     /// handful of low-resolution lattices); a spatial broad-phase is future
     /// work once a scene needs many more bodies than a small stack.
     ///
-    /// The resting gap follows the SAME single-radius convention the static
-    /// collision pass (and every realm author) uses: two particles rest with
-    /// centres `(r_i + r_j) / 2` apart — for equal radii that's exactly `r`,
-    /// matching `rest_height = below_top + half_extent + contact_radius`
-    /// (one radius, not two) used throughout this crate and the realm data.
+    /// The resting gap is DERIVED from the static (particle-vs-triangle) pass'
+    /// convention, not asserted independently. The static pass rests a
+    /// particle at `radius + contact_margin` from a face (`solve_collision_
+    /// normal`, above): a SINGLE radius, because a triangle has none of its
+    /// own. Body-vs-body has TWO radii (`r_i`, `r_j`), possibly unequal, and
+    /// the generalization must reduce EXACTLY to the static gap when
+    /// `r_i == r_j == r` (a same-radius body resting on a same-radius body
+    /// should feel the same skin as that body resting on the static world).
+    /// The SUM `r_i + r_j` fails that reduction (`r + r = 2r ≠ r`); the MEAN
+    /// `(r_i + r_j) / 2` reduces correctly (`(r + r) / 2 = r`). So:
+    /// `gap = mean(r_i, r_j) + contact_margin`. `contact_margin` is read from
+    /// the SAME `ContactMaterial` field the static pass reads (falling back
+    /// to the crate's documented default when no static collider is
+    /// installed at all, e.g. two bodies colliding in free space) — never a
+    /// second hardcoded margin.
     fn solve_body_collisions(&mut self, particle_rigid: &[Option<usize>]) -> Vec<Contact> {
         let mut contacts = Vec::new();
         // Fewer than two rigids ⇒ no body-vs-body pair can exist; free
@@ -363,6 +373,15 @@ impl Solver {
             Some(c) => c.material.restitution,
             None => 0.0,
         };
+        // F2/F3: the SAME contact_margin the static pass reads (see the
+        // doc-comment above) — falls back to the crate's documented default
+        // ContactMaterial when no static collider exists at all (two bodies
+        // colliding in free space still get the same surface skin a
+        // resting contact needs, not zero).
+        let contact_margin = match &self.collider {
+            Some(c) => c.material.contact_margin,
+            None => ContactMaterial::default().contact_margin,
+        };
         let p = &mut self.particles;
         for (a, &i) in rigid_particles.iter().enumerate() {
             let wi = p.inv_mass[i];
@@ -377,7 +396,9 @@ impl Solver {
                 }
                 let delta = p.pos[i] - p.pos[j];
                 let dist = delta.length();
-                let min_dist = (p.radius[i] + p.radius[j]) * 0.5;
+                // mean(r_i, r_j) + contact_margin — see the doc-comment above
+                // for the derivation from the static single-radius convention.
+                let min_dist = (p.radius[i] + p.radius[j]) * 0.5 + contact_margin;
                 if dist >= min_dist || dist <= 0.0 {
                     continue;
                 }
