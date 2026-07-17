@@ -844,9 +844,46 @@ impl Solver {
         let Some(body) = self.rigids.get(rigid_index) else {
             return;
         };
-        for &i in &body.indices {
+        self.apply_impulse_to_particles(&body.indices.clone(), delta_velocity);
+    }
+
+    /// Apply an instantaneous velocity change to an explicit particle set —
+    /// the generalization `apply_impulse` (rigid-only) delegates to. VI-2's
+    /// bonded lattices have no `RigidBody` (see `spawn_bonded_box`'s doc), so
+    /// a bonded body's impulse (e.g. an authored drop's lateral/angular
+    /// component — the "op is the hand" seam, never solver-invented) is
+    /// applied here directly by particle index instead. Same law as the
+    /// rigid path: anchors (`inv_mass == 0`) are left untouched.
+    pub fn apply_impulse_to_particles(&mut self, particles: &[usize], delta_velocity: Vec3) {
+        for &i in particles {
             if self.particles.inv_mass[i] != 0.0 {
                 self.particles.vel[i] = self.particles.vel[i] + delta_velocity;
+            }
+        }
+    }
+
+    /// Apply a RIGID-BODY-style spin (uniform angular velocity `ω` about
+    /// `center`) as an instantaneous per-particle velocity change:
+    /// `v += ω × (pos - center)`, the standard rigid-rotation velocity
+    /// field. VI-2 uses this to give an authored bonded lattice a tumble
+    /// before it falls — unlike a uniform `apply_impulse_to_particles` delta
+    /// (which moves every particle the same way and so cannot, by itself,
+    /// stress any bond), a spin puts particles on OPPOSITE sides of `center`
+    /// moving in OPPOSITE directions, which is exactly what makes the
+    /// lattice's own bonds carry real internal strife even before any
+    /// external contact — an honest way to make a drop's impact (and its
+    /// resulting fracture) asymmetric, driven by physics the solver already
+    /// has, not a second staged effect.
+    pub fn apply_spin_to_particles(
+        &mut self,
+        particles: &[usize],
+        center: Vec3,
+        angular_velocity: Vec3,
+    ) {
+        for &i in particles {
+            if self.particles.inv_mass[i] != 0.0 {
+                let r = self.particles.pos[i] - center;
+                self.particles.vel[i] = self.particles.vel[i] + angular_velocity.cross(r);
             }
         }
     }

@@ -87,6 +87,21 @@ pub struct Body {
     /// `bonded` is false.
     #[serde(default = "default_bond_compliance")]
     pub compliance: f64,
+    /// VI-2 — a bonded body's AUTHORED initial angular velocity (rad/s about
+    /// its own spawn centroid), applied once at spawn via
+    /// [`elements::Solver::apply_spin_to_particles`] — never a solver-
+    /// invented magnitude (the "op is the hand" law: the scene author
+    /// chooses it, same footing as an `Op::Impulse`'s `delta_velocity`, just
+    /// applied at t=0 instead of mid-run since a spin needs a per-particle
+    /// velocity FIELD, not a single delta an `Op::Impulse` can carry). A
+    /// tumbling drop hits its target corner-first, which is what actually
+    /// stresses a lattice's bonds ASYMMETRICALLY — see
+    /// `apply_spin_to_particles`'s doc for why a uniform impulse alone
+    /// cannot do this. Default `[0, 0, 0]` (no spin — every EXISTING bonded
+    /// declaration keeps falling exactly as before). Ignored when `bonded`
+    /// is false.
+    #[serde(default)]
+    pub spin: [f64; 3],
 }
 
 fn default_shape() -> String {
@@ -211,6 +226,19 @@ impl Physics {
                     body.contact_radius,
                 );
                 let cube_size = fracture::lattice_cube_size(dims, counts);
+                if body.spin != [0.0, 0.0, 0.0] {
+                    // Applied ONCE, at spawn, about the same authored
+                    // centroid spawn_bonded_box just built the lattice
+                    // around — see the `spin` field's doc for why this
+                    // needs the per-particle rotational field
+                    // (`apply_spin_to_particles`), not a uniform impulse.
+                    let spin = Vec3::new(body.spin[0], body.spin[1], body.spin[2]);
+                    solver.apply_spin_to_particles(
+                        &whole,
+                        Vec3::new(center[0], center[1], center[2]),
+                        spin,
+                    );
+                }
                 bonded.push(BondedBinding {
                     gaia_id,
                     whole,
