@@ -37,7 +37,7 @@ use aether::{DensityGrid, HomogeneousMedium, SteamColumn};
 use crystal::{Core, load_world_dir};
 use glam::Vec3 as GVec3;
 use sama::GaitParams;
-use scrying_glass::bvh::{Bvh, BvhParams};
+use scrying_glass::bvh::{Bvh, BvhParams, DynamicSplice, RefitParams, SpliceKind};
 use scrying_glass::integrator::{
     Integrator, IntegratorParams, IntegratorUniform, MediumGpu, MediumLightGpu, headless_device,
 };
@@ -393,19 +393,37 @@ fn main() {
 
     let mut summaries: Vec<(String, f64, f64, f64)> = Vec::new();
 
+    // LEVER 1: refit-not-rebuild, driven through the persistent DynamicSplice
+    // exactly as the player render loop drives it. GAIA_AUDIT_REBUILD=1 forces a
+    // full per-tick rebuild (the pre-lever baseline) for a like-for-like ledger.
+    let refit_params = if env_u32("GAIA_AUDIT_REBUILD", 0) != 0 {
+        RefitParams {
+            degrade_ratio: 0.0,
+            max_refits: 1,
+        }
+    } else {
+        RefitParams::default()
+    };
+
     for (pose_name, camera) in &poses {
         // ── Segment A: DYN-ON — the living world, steam bound. ──────────────
-        let dyn_bvh = Bvh::build(&scene.dynamic_leaf_triangles(), &bvh_params.dynamic());
-        let merged = Bvh::merge(&static_bvh, &dyn_bvh);
+        let mut splice = DynamicSplice::build(
+            &static_bvh,
+            &scene.dynamic_leaf_triangles(),
+            &bvh_params.dynamic(),
+            refit_params,
+        );
         let mut integrator = Integrator::new(
             &device,
             wgpu::TextureFormat::Rgba8UnormSrgb,
-            &merged,
+            &splice.merged,
             Some(&medium),
         );
         let accum = integrator.make_accum(&device, w, h);
         let readback = make_readback();
         let mut rec = Recorder::default();
+        let mut refits = 0u32;
+        let mut rebuilds = 0u32;
         for frame in 0..(warmup + frames) {
             let measured = frame >= warmup;
             let t = Instant::now();
@@ -417,12 +435,15 @@ fn main() {
             let tick_ms = t.elapsed().as_secs_f64() * 1e3;
 
             let t = Instant::now();
-            let dyn_bvh = Bvh::build(&scene.dynamic_leaf_triangles(), &bvh_params.dynamic());
-            let merged = Bvh::merge(&static_bvh, &dyn_bvh);
+            let kind = splice.update(&static_bvh, &scene.dynamic_leaf_triangles());
             let splice_ms = t.elapsed().as_secs_f64() * 1e3;
+            match kind {
+                SpliceKind::Refit => refits += 1,
+                SpliceKind::Rebuilt => rebuilds += 1,
+            }
 
             let t = Instant::now();
-            integrator.update_bvh(&device, &merged);
+            integrator.update_bvh(&device, &splice.merged);
             let compute_bg = integrator.compute_bind_group(&device, &accum);
             let upload_ms = t.elapsed().as_secs_f64() * 1e3;
 
@@ -448,12 +469,16 @@ fn main() {
             if measured {
                 rec.push("skin (command_bodies)", skin_ms);
                 rec.push("tick (physics+kami)", tick_ms);
-                rec.push("splice (dyn build+merge)", splice_ms);
+                rec.push("splice (refit/rebuild+merge)", splice_ms);
                 rec.push("upload (update_bvh+bg)", upload_ms);
                 rec.push("trace+medium (fused GPU)", trace_ms);
                 rec.push("readback", read_ms);
             }
         }
+        eprintln!(
+            "[audit] {pose_name} DYN-ON splice: {refits} refits, {rebuilds} rebuilds over {} frames",
+            warmup + frames
+        );
         print_table(pose_name, "DYN-ON", &rec, budget_ms);
         let on_total = rec.total_mean();
         let on_trace = rec.stats(4).0;
