@@ -28,6 +28,8 @@
 //!   E→L'  crosses at (y 2.75, z 17.75) — inside
 //!   E→A'  crosses at (y 2.13, z 18.24) — inside
 //!   E→B'  crosses at (y 2.12, z 17.05) — inside (5 cm from the edge)
+//! HERO shot re-derived (her reflection must read unambiguously): eye
+//! [-3, 1.9, 16.2] look-at [3, 2.7, 17.4] fov 45 — see `cam_hero` below.
 //! Occlusion: every image sight-line passes nari's AABB z[17.92,18.08] at
 //! z ≤ 17.46 when x = 0 — her body never covers her own reflection. The
 //! lantern itself sits ~73° off the view axis: only its REFLECTION is in frame.
@@ -205,6 +207,13 @@ fn main() {
     // The derived camera (see module note): below the image line, off the
     // seawall on the sea side, nari left of frame, the glass right.
     let cam_main = camera_at([-7.5, 2.0, 15.5], [1.5, 2.7, 18.0], 55.0);
+    // The HERO pose, derived by mirror math (plane x=3, image map (x,y,z)→(6−x,y,z)):
+    // eye E=[-3,1.9,16.2] BELOW nari's image line ⇒ her silhouette reads against the
+    // reflected pink sky INSIDE the glass; E→N' ([6,2.47,18]) crosses the panel at
+    // (y 2.28, z 17.4), her full image spans crossings y 1.63→3.03 — all inside
+    // y[1.4,4.4] z[17,19]; the ray never reaches her AABB z-slab [17.92,18.08]
+    // before the glass; her real body stands ~20° off-axis at frame left.
+    let cam_hero = camera_at([-3.0, 1.9, 16.2], [3.0, 2.7, 17.4], 45.0);
     // The corridor shot: between the facing panels, nari in the frame, the
     // recursion behind her front image.
     let cam_corridor = camera_at([-5.5, 2.7, 17.5], [3.0, 2.7, 18.3], 50.0);
@@ -269,7 +278,7 @@ fn main() {
 
     // Tick 0 — the hero relic: her body, her image, the lantern's bulb and the
     // pink band in the glass, the orb at angle 0.
-    let img_hero = render(&scene, &cam_main);
+    let img_hero = render(&scene, &cam_hero);
     write_png(&img_hero, w, h, exposure, &proof.join("mirror-nari.png"));
 
     // Tick 105 (angle ≈ π/2) — dynamic A.
