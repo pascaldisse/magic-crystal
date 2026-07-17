@@ -2715,14 +2715,16 @@ mod tests {
     /// carries the lantern (bob) + beacon (pulse) + the three SIGNAL RINGS
     /// (pulse — the lighthouse broadcasts) + the Mirror Proof's kami orb
     /// (orbit) + RITE VI · VI-1's four `body` vessels (naruko_crate + the
-    /// three stack crates).
+    /// three stack crates) + REALM SHINE's three orbiting emitters
+    /// (naruko_show_light_a/b/c — orbit; the show_chrome sphere and show_mirror
+    /// panel carry NO behavior/body ⇒ they stay STATIC).
     #[test]
     fn dynamic_split_leaf_parity_holds() {
         let scene = naruko_scene();
         assert_eq!(
             scene.dynamics.entities().len(),
-            10,
-            "the realm breath: lantern + beacon + ring_a/b/c + kami orb (behaviors) + crate + stack_crate_0/1/2 (bodies) are dynamic"
+            13,
+            "the realm breath: lantern + beacon + ring_a/b/c + kami orb + show_light_a/b/c (behaviors) + crate + stack_crate_0/1/2 (bodies) are dynamic"
         );
 
         // STATIC BVH triangles (built once) and the DYNAMIC partition triangles.

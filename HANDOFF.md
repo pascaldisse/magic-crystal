@@ -5,7 +5,21 @@
 DreamForge = the workshop (Sidia's name). Seal b3ae3e0.
 
 ## Where the Work stands (day of 07-17, conductor nyari — see NIGHTLOG.md for the night ledger)
-main @ b6ee51b — GREEN, PUSHED, suite 368/0 (75 binaries).
+main @ 34d58dc — GREEN, PUSHED, suite 380/0.
+REALM SHINE landed (merge 181c7f6 + adversary advisory 34d58dc): a chrome
+sphere (r 2.1, metallic 1.0/roughness 0.02) at [4.5, 3.6, 29.5] — the Rite
+IV close object — now stands IN THE SPAWN SIGHTLINE (not staged off to a
+side camera); an angled mirror panel at [-6.5, 3.4, 28]; three orbiting
+emitters (naruko_show_light_a/b/c — violet/cyan/pink), each its OWN new
+`orbit` behavior with its own center [-1.5, y, 29] (NOT riders on any
+existing kami ring — adversary wording correction). Canon re-derived by
+hand (packages/oracle/tests/canon.rs, 29 vessels). Two-tick motion proof:
+proof/realm-shine-a.png (t=1.0s) / -b.png (t=3.5s).
+NOTE — the live window still runs PRE-SHINE world data from the
+window-playable worktree; the show reaches the Architect's eyes only at
+the window-lane convergence (audit → adversary → merge → relaunch from
+main). Do not expect it visible in the live session until that lands.
+Prior: main @ b6ee51b — GREEN, PUSHED, suite 368/0 (75 binaries).
 Day merges: 5c819dd+8f2b752 fragcol interpenetration ordeal +
 adversary advisories (VI-2 gap closed — fragment-vs-fragment collision
 was ALREADY live via ce91da3/fbb2a5e; the missing piece was the
@@ -88,8 +102,10 @@ VIII (THE DREAM-DENOISER) — waves (a)+(b) DONE: VIII-0 truth baseline
 port (91a6263+89e351c). VIII-2 BUDGET NOTE: present-resolution cost
 27ms exceeds the 16.67ms frame — whether that matters = OPEN 1 (the
 upscaler's cost∝pixels reading): low-res denoise + upscale would make
-1.3ms the real cost; the fp16 atom is GATED on that ruling. VIII-3
-upscaler + temporal accumulation still await rulings.
+1.3ms the real cost; the fp16 atom is GATED on that ruling. Wave (c)
+VIII-3 CPU reference MERGED (a2d293b, adversary faaa2c3: beats-bilinear
+held-out margins 0.0246/0.0096, weights hash-pinned); remaining: GPU
+port + live blit_fs wiring + temporal ruling.
 IX (THE CHAIN TAKES FLESH) — stays a proposal; NOT required: the 60 FPS
 law passes without it.
 

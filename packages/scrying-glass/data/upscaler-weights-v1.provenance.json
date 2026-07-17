@@ -1,0 +1,87 @@
+{
+  "architecture": {
+    "hidden_layers": 4,
+    "hidden_width": 64,
+    "input_features": 21,
+    "kind": "per-pixel residual-over-bilinear MLP (current-frame only)",
+    "output_channels": 3
+  },
+  "artifact": "upscaler-weights-v1.bin",
+  "dataset": {
+    "low_resolution": [
+      48,
+      32
+    ],
+    "poses_all": [
+      "front",
+      "wide",
+      "orbit_+20",
+      "orbit_-20",
+      "orbit_+40"
+    ],
+    "poses_train": [
+      "front",
+      "wide",
+      "orbit_+20"
+    ],
+    "poses_validation": [
+      "orbit_-20",
+      "orbit_+40"
+    ],
+    "realm": "naruko",
+    "reference_frames": 128,
+    "target_resolution": [
+      96,
+      64
+    ],
+    "training_pairs_sha256": "ec39e49598e33e850fb6aca2d440dd645819b10a45c4b38c1affb28bb806284d"
+  },
+  "metrics": {
+    "train_per_frame_rmse": [
+      {
+        "bilinear_rmse": 0.0684874671153276,
+        "neural_rmse": 0.02094258833435203,
+        "pose": "front"
+      },
+      {
+        "bilinear_rmse": 0.06842279181914401,
+        "neural_rmse": 0.047791093794498585,
+        "pose": "wide"
+      },
+      {
+        "bilinear_rmse": 0.06254077453121178,
+        "neural_rmse": 0.029081260041220292,
+        "pose": "orbit_+20"
+      }
+    ],
+    "validation_per_frame_rmse": [
+      {
+        "beats_bilinear_margin": 0.024599146643328133,
+        "bilinear_rmse": 0.05409809289897635,
+        "neural_beats_bilinear": true,
+        "neural_rmse": 0.02949894625564822,
+        "pose": "orbit_-20"
+      },
+      {
+        "beats_bilinear_margin": 0.009629770393708693,
+        "bilinear_rmse": 0.042725909378112596,
+        "neural_beats_bilinear": true,
+        "neural_rmse": 0.0330961389844039,
+        "pose": "orbit_+40"
+      }
+    ]
+  },
+  "pinned_bound": {
+    "description": "worst validation-frame NEURAL RMSE (neural upscale vs truth reference), derived at train time, never chosen in the ordeal",
+    "value": 0.0330961389844039
+  },
+  "scale": 2,
+  "training": {
+    "batch_size": 128,
+    "epochs": 300,
+    "init_seed": 379422,
+    "learning_rate": 0.0010000000474974513,
+    "optimizer": "adam"
+  },
+  "weights_sha256": "8757668cee413e126b50f33a723b9147d10506580405d5812151b7db1b65e8a0"
+}
