@@ -356,3 +356,23 @@ clock only, real target is the GPU naruko world's BVH). Verdict doc:
 magic-crystal-nrc/docs/perf/2026-07-17-nrc-spike-verdict.md. Branch
 PARKS AS REFERENCE, UNMERGED — same precedent as rite8-viii2-ari. Next
 wave (hash-grid encoding) awaits the Architect's call.
+
+### EVENING DELTA — fluid truth kernel PARKED (escalated to the Architect)
+Branch fluid-truth @ 096628b (clean, unmerged; 3-round conclusion, full
+data in docs + fluid_kernel.rs docs):
+- WORKS: PBF density constraint, compression-only clamp (correct), RMS
+  flatness 0.030-0.044 vs 0.040 bound. 5 ordeals green + sabotage RED.
+- THE DISEASE (both cheap cures fail): s_corr detonates under sustained
+  hydrostatic load even per-pair-gated (r6+r7) · tensile_k=0 collapses
+  real geometry INVISIBLY to SPH density — NN spacing −70-90%,
+  coincident pairs, no buoyant differentiation, cobblestone surface
+  (found by the new geometric volume probe, not the density gate).
+- MISSING GATE identified: geometric min-separation ordeal (SPH-density
+  ordeals are blind to clustering — disclosed in fluid_ordeals.rs).
+- CANDIDATE CURES for the Architect's physics pass: (1) RECOMMENDED:
+  pairwise min-separation as a unilateral distance constraint via the
+  solver's OWN proven contact machinery (charter-coherent: one solver,
+  fluid rides the same contact floor as rigids — unconditionally stable
+  projection, decoupled from the density feedback loop); (2) duration/
+  magnitude-gated s_corr. Cost note: solve_fluid 131.7ms @ N=1372
+  (bench kernel — speed is not the gate).
