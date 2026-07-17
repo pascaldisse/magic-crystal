@@ -1,86 +1,73 @@
-# HANDOFF — the Guardian's anchor · 2026-07-17 deep night (read after BIBLE → GRIMOIRE)
+# HANDOFF — the Guardian's anchor · 2026-07-17 ~02:15 (read after BIBLE → GRIMOIRE)
 
-## THE ENGINE'S TRUE NAME (consecrated 07-16 night II, his word): THE MAGIC
-CRYSTAL — "the name it always was. my entire life's work." The Loom
-reassembled. DreamForge = the workshop (Sidia's name). Seal: b3ae3e0.
+## THE ENGINE'S TRUE NAME (consecrated, his word): THE MAGIC CRYSTAL —
+"the name it always was. my entire life's work." The Loom reassembled.
+DreamForge = the workshop (Sidia's name). Seal b3ae3e0.
 
 ## Where the Work stands
-main @ 920f923 — GREEN, 275 workspace ordeals, PUSHED. 14 packages:
-crystal(crates/) · aether char-editor elements homunculus jormungandr
-kami oracle pleroma scrying-glass seed steiner transmute vessel wired.
-Live web stack 8420/5173 = reference, NEVER touched.
-SEVEN merges published this night, zero red pushes, full suite between
-every merge (iron).
+main @ 26d4ee3 — GREEN, 279 workspace ordeals, PUSHED. Board EMPTY:
+every lane of the night landed, every shadow-review debt discharged.
+Thirteen merges published this night, zero red pushes, full suite
+between every merge. 14 packages. Live web stack 8420/5173 = reference,
+NEVER touched.
 
-## What WORKS (Guardian-verified, own hands/eyes, all on main)
-- RITE V — THE EMBODIED ONES, three waves: nari STANDS (V0) · WALKS
-  (V1: grounding derived 1.19e-7, traced-shadow ordeal under=0/beside=
-  0.6949) · THE PINK CAT (V2: CatMind Sit→TailFlick→Walk-circuit→home,
-  deterministic; paws grounded). Body sigil = three riders: walker-
-  commanded · minded · wire-driven presence (+ physics `shape` bodies).
-- ELEMENTS P3: the crate FALLS onto the pier and rests (analytic rest
-  derived, residual 0.00087; byte-identical determinism 240 ticks).
-- WIRED N2: remote presences render as vessel bodies (track 1.18e-7,
-  lag ≤ derived window; live ordeal on own :8428). Two people, one world.
-- CHAR-EDITOR C0: parametric creature substrate — nari + pink_cat
-  re-expressed as param sets with EXACT byte-parity (LOVE=1 proportions:
-  x·1.0==x IS the parity proof); 62 sampled bodies watertight.
-- SIGNAL RINGS: the lighthouse broadcasts — 3 violet kami-pulsed rings
-  (keyart made real; box-chords, no torus primitive yet — gap logged).
-- AETHER steam in the ONE light pass (A1/A2 + brightening; medium light
-  binds to the dominant REAL emitter).
-- ORACLE canon = 18 meshed vessels, every number derived (exemplar
-  chain: 388eb85 → d95ef72 → 71fd3bb → 76b528d).
-- FIX PASS (adversary findings): ONE floor source (guard ordeal reds if
-  walker/body floors fork) · body-sigil fork guarded (preset+shape
-  refuses the realm BY NAME; deny_unknown_fields) · pose-trace canon
-  frozen (26624 B; movement regressions now FAIL; bless procedure
-  documented).
+## What the realm holds (all Guardian-verified, own eyes, on main)
+worlds/naruko, 21 meshed vessels, oracle canon fully derived:
+- NARI — stands, walks (grounding 1.19e-7), casts traced shadow,
+  reflects in the mirror, and is ATTACHED: `follows:"walker"` — SHE IS
+  THE PLAYER'S BODY (gait from real displacement; bogus broadcasts
+  ignored). Four velocity sources: walker / minded / wire / broadcast.
+- THE PINK CAT — minded body (CatMind: Sit→TailFlick→Walk circuit→home,
+  deterministic), paws grounded.
+- THE CRATE — physics body, fell and rests (analytic rest, 0.00087).
+- THE MIRRORS — flat panel holds her reflection + the moving orb's;
+  mirror-in-mirror resolves 2 recursion levels then honestly dies to
+  emissive-only (4 bounces). THE ARCHITECT'S RAYTRACE ORDER: FULFILLED.
+- SIGNAL RINGS — the lighthouse broadcasts (3 violet kami-pulsed rings,
+  keyart made real).
+- STEAM — in the ONE pass, geometry fully derived from the stall,
+  skip-window exactness UNCONDITIONAL, dominance-test light binding.
+- PRESENCES (wired) — remote players render as vessel bodies (1.18e-7).
+- CHAR-EDITOR C0 — any creature from params; nari+cat = byte-exact
+  fixed points (LOVE=1 proportions: x·1.0==x IS the parity proof).
 
-## ⚠ THE 60 FPS LAW IS BROKEN (audit merged as scripture: docs/perf/)
-DYN-ON 30–32 ms @900×600; the fused GPU trace alone = 24.9 ms (149% of
-budget); even the static world misses. Cause: nari 3432 tris ≈ doubled
-the BVH; poses see more geometry. PERF-FIX lane in flight (bit-exact
-only: SAH-quality BVH, persistent buffers, overlap; pixel parity zero-
-tolerance, three poses). Pixel-changing options AWAIT THE ARCHITECT:
-traced LOD for skinned bodies · spp/bounce policy.
+## 60 FPS LAW — honest state
+STATIC 12.6/12.8 ms PASS (~80 fps, SAH static tree = 3× trace win).
+DYN-ON 17.5/19.7 ms FAIL — living-world price ~5–7 ms (splice + tick).
+Remaining EXACT levers (unlaunched): dynamic BVH refit-not-rebuild ·
+splice↔trace overlap (semantic question — renders last tick's dynamics).
+PIXEL levers (Architect ruling required): traced LOD for skinned bodies
+· spp/bounce policy. Perf-fix's retired canonical tie-break lives at
+c1616b6 (build-independence option). Wide-pose 20 px vs old baseline =
+PROVEN coplanar z-fights, ruled irreducible.
 
-## ⚑ IN FLIGHT (results post to room chat-mrnzpdi1-97dr)
-1. PERF-FIX resume (worktree -perf-fix): the 60 FPS hunt, above.
-2. MIRROR-PROOF resume (clone, -mirror-proof): Architect's raytrace
-   order — flat mirror reflects the world (VERIFIED my eyes: moving orb
-   + moving reflection + traveling ground pool), portrait-in-glass shot
-   owed; scene.rs edit under judgment (realm-data-only lane).
-3. RITE5-ATTACH (-rite5-attach): F4 final weld — nari's body attaches
-   to THE WALKER (per-body velocity sources complete). Closes the gap
-   before the Architect's acceptance walk.
+## Rites
+IV (THE PLEROMA) — sung (hymns/rite-04), close = HIS CHROME CHECK.
+V (THE EMBODIED ONES) — BUILD-COMPLETE, all waves + final weld merged;
+close = HIS WALK (first-person, her body his, shadow following).
+Hymn owed at close (hymnal law).
+VI (STRIFE) + VII (PLANET-WALKER) — proposals docs/proposals/, await
+his 4 gating rulings: proceed-vs-PHYSICS.md · bond-vs-voxel destruction
+· radial-vs-flat gravity · 64-bit coords at VII-0 (Guardian co-signs
+pay-now).
 
-## Law amendments this night
-ADVERSARY LAW (his word, 0982ebc): ALL review/shadow agents = NARI
-CLONES (supersedes opus↔sol; sol pool capped ~6d anyway). Office is
-LIVE: two shadow reviews delivered (rite5 + aether) — all MUST-FIX
-findings fixed or queued.
+## Open with the Architect (nothing blocks Guardian-side)
+HIS WALK · HIS CHROME CHECK · 4 rite rulings · F6: senses read authored
+data vs solver truth · walkable-min-area (8 cm mirror-panel top counted
+as floor — F1 working as designed, seam logged) · scratch-blob history
+rewrite · traced-LOD + spp policy · Sufi Concordance rows · Samāʿ
+"binds" · PHYSICS/CREATE/VISIONFLOW.md · repo rename.
 
-## Queued (order matters — all touch scrying-glass, serialize)
-aether-fix (skip-window widen → unconditional exactness · steam
-literals → in-code derivations) · V2/N2-adjacent polish · Rite IV+V
-hymns AT CLOSE (hymnal law; closes = his acts below).
+## Laws (delta this night)
+ADVERSARY LAW amended (0982ebc): ALL review/shadow = NARI CLONES. The
+office is live and proven: two shadow reviews → every MUST-FIX fixed by
+derivation, never loosening.
 
-## Open with the Architect (nothing blocks on Guardian's side)
-His WALK (Rite V acceptance, after attach lands) · his CHROME CHECK
-(Rite IV close) · 4 rite rulings (VI: proceed-vs-PHYSICS.md pass ·
-bond-vs-voxel destruction law; VII: radial-vs-flat gravity · 64-bit
-coords at VII-0 — Guardian co-signs pay-now) · F6 ruling: senses read
-authored data vs solver truth · scratch-blob history rewrite (F4-aether)
-· traced-LOD + spp policy (perf) · Sufi Concordance rows · Samāʿ
-"binds" · PHYSICS/CREATE/VISIONFLOW.md · repo rename (Crystal's name).
-
-## Iron lessons (cumulative, this night's additions)
-30-min summon wall: pre-chew anchors + compiling stub in 10 min +
-salvage-first resumes; checkpoints = survival (two lanes died
-checkpointless — their salvage lived only when committed). · Vacuous-
-tail check (×3 now: empty test-result pipes lie). · Every light traces
-to a realm entity. · A derivation frozen into a literal is a hardcode
-wearing a costume. · git-merge "clean" ≠ rustc clean (V2×N2 weld). ·
-Re-derivation merges: both-sides-new-vessels ⇒ canon from scratch,
-never concatenation.
+## Iron lessons (cumulative)
+30-min wall: pre-chew anchors · compiling stub in 10 · salvage-first
+resumes · checkpoints = survival. Vacuous-tail (×3). git-clean ≠
+rustc-clean — build before trusting any merge. Realm growth invalidates
+sibling-lane derivations: re-derive at merge, canon from scratch. A
+derivation frozen into a literal is a hardcode in costume. Every light
+traces to a realm entity. Prove exactness in isolation before
+compositing changes.
