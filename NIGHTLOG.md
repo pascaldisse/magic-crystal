@@ -93,6 +93,24 @@
 - **Proofs read**: viii0-truth.png (grainy 1 spp beside clean converged, same
   scene), three AOV scryings (coherent G-buffer) — conductor's own eyes.
 
+### 7. rite7-vii0a → main (queue item 4, atom VII-0a) — GROUND FROM COORDINATES ALONE
+- **What**: the terrain tile sampler. seed grows terrain: i64 tile keys,
+  height = fBm over hash(seed, coords) with NO tile key (seams exact by
+  construction), tile_mesh → transmutation::Mesh (the Chain is the sole
+  geometry path). RULING 4 PAID IN FULL after adversary MUST-FIX: the first
+  cut routed vertex positions through a world-origin f32 — whole tiles
+  collapsed past 2^24 m (probe: degenerate at tile_x=1e7) and the seam ordeal
+  was structurally blind to it. Fixed: local positions from LOCAL integer
+  indices; the noise lattice keyed on EXACT i64 global grid indices
+  (div_euclid per octave — no large-magnitude float anywhere in the default
+  path); large-coordinate ordeals added (spacing + 4-direction seam at
+  tile ±10,000,000).
+- **Merge**: 978de05, PUSHED. Suite on main post-merge: 317 passed / 0 failed.
+- **Adversary**: 2 MUST-FIX (the f32-origin trap + the blind gate) fixed by
+  derivation; 4 ADVISORY discharged (feature-unification comment honest;
+  slope claim softened; dead scaffolding exercised; Nyquist wording).
+- **Proofs**: numbers lane — 9 terrain ordeals, byte-digest determinism.
+
 ## In flight
 - **rite6-vi1** (queue item 3, wave VI-1 THE STACK TOPPLES): built @ d642551 —
   impulse plumbing (Solver::apply_impulse → Physics → Op::Impulse →
