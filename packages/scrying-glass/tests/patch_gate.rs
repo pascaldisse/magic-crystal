@@ -258,6 +258,40 @@ fn patch_radius_gate_discriminates_both_directions() {
     );
 }
 
+/// ORDEAL (b, continued) — PIER PLANKS STAY WALKABLE. One more legitimate,
+/// real-world-authored surface the Architect actually stands on: a
+/// `naruko_pier` plank (1.5m wide × 36m long — the deck he walks out on),
+/// dwarfing `2 * DEFAULT_CONTACT_RADIUS` ≈ 0.18m. Must keep returning its
+/// authored top height after the contact-patch gate, same as the
+/// seawall/terra check above.
+///
+/// (`naruko_crate` is NOT covered here: it carries a `body` component, so
+/// `RenderScene::from_ecs` splits it into the DYNAMIC/living layer and
+/// [`RenderScene::leaf_positions`] — the static floor soup `Ground` is built
+/// from in this file's `naruko_ground()` — never includes it. Querying it as
+/// static floor would silently test nothing; the Elements' rigid solver, not
+/// this static contact-patch gate, is what will one day decide whether a
+/// body can stand on a crate.)
+#[test]
+fn pier_plank_is_unchanged() {
+    let ground = naruko_ground();
+    let world = load_naruko().world;
+
+    // Pier transform is at [-12, 0, -2]; the four planks share part y=0.95,
+    // at local x offsets -2.55/-0.85/0.85/2.55, spanning local z ±18. Query
+    // the plank at local x=0.85 (world x=-11.15), mid-span (world z=-2).
+    let pier_top = top_flat_surface_y(&world, "naruko_pier")
+        .expect("pier query")
+        .expect("pier planks are flat slabs");
+    let pier_y = ground
+        .height_at(-11.15, -2.0, f32::INFINITY)
+        .expect("pier plank floor");
+    assert!(
+        (pier_y - pier_top).abs() < 0.05,
+        "pier plank height changed: expected {pier_top}, got {pier_y}"
+    );
+}
+
 /// ORDEAL (d) — DETERMINISM. The same query, twice, over the real naruko
 /// floor (mirror included), returns the byte-identical answer — the K-probe
 /// pattern is a fixed compass sweep, never anything time- or order-dependent.
