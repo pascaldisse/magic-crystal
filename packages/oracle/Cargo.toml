@@ -19,3 +19,10 @@ serde = { version = "1", features = ["derive"] }
 vessel = { path = "../vessel" }
 glam = "0.30.9"
 serde_json = "1"
+
+[dev-dependencies]
+# VI-2 same-wave canon ordeal only (dev-only: the oracle crate proper stays
+# physics/geometry-agnostic). `fracture` depends on `elements` + `transmutation`
+# + `crystal`, never on `oracle` or `scrying-glass` — no cycle either way.
+elements = { path = "../elements" }
+fracture = { path = "../fracture" }

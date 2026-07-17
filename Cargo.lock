@@ -2443,6 +2443,8 @@ name = "oracle"
 version = "0.1.0"
 dependencies = [
  "crystal",
+ "elements",
+ "fracture",
  "glam",
  "serde",
  "serde_json",
