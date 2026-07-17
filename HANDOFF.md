@@ -279,3 +279,57 @@ controller) → now guarded wall+catch-shelf, 15/15 rim walks caught
 atom (not blocking). Suite: 396 passed, 0 failed, workspace --release.
 ARCHITECT'S FALL-THROUGH COMPLAINT (evening OPEN BUG, above) — CLOSED
 pending his own walk of the guarded rims.
+
+## EVENING DELTA — one-render-path MERGED (merge-conductor burst #11)
+main @ 8b47f7e (merge, no-ff) + fc95c82 (adversary advisory). Lane 1
+(one-render-path, @ e9a48f2, adversary HOLDS) landed clean — branch
+contained main via earlier merges, no conflicts.
+WHAT LANDED: the neural frame EXISTS on main as a selectable candidate,
+scry-side only — upscaler ported to WGSL compute (`upscaler.wgsl` +
+`upscaler_gpu.rs`, house pattern), denoiser fp16 MODE A cleared (viable,
+razor-thin beats-noisy margin survives), neural resolve selectable via
+`GAIA_NATIVE_UPSCALE=neural` for /scry A/B capture. The LIVE surface
+loop is UNTOUCHED: bilinear stays the runtime default per the
+Architect's escape-hatch order; the selector is structurally unreachable
+from `run_render_loop` (neural only ever writes /scry, never the
+surface) — hash-identity confirms both selections produce identical
+surface bytes, 24/24 frames.
+ADVISORY (fc95c82, docs/derivation only, no functional change): MODE B
+fp16's rejection bound had quoted `macs·u16` (total 3488 MACs) as the
+Higham compounding term — corrected to the per-dot-product CHAIN length
+(this net's max in_dim, ≤64), honest worst case ≈0.03–0.12 rel, not the
+1.703e0 previously cited (don't quote 1.703 as tight). REJECTION VERDICT
+UNCHANGED — even corrected, MODE B's bound dwarfs the MODE A margin.
+MODE A's own bound noted conservative vs the rigorous per-layer L·2u16
+term (~4.9e-3, still far above measured parity). Hash-identity claim
+reworded: the run hashes the SURFACE frame (upstream of the resolve
+selector) — it shows both env-var runs match, it does not itself
+exercise neural resolve executing; the live-surface invariance is a
+STRUCTURAL property of the wiring, not something that run demonstrates
+alone. onepath_fp16_verdict.rs: noted — promote to an asserting ordeal
+if fp16 ever becomes a runtime path (currently a printing example).
+HONEST WALL (unchanged by the merge, still open): combined neural
+best-true ~334ms memory-shaped (upscaler naive fp32 the wall-breaker,
+not the denoiser) — 26× over 16.67ms/60fps at 1280×960. Kernel atom
+target 19–26ms (memory-shaped diagnosis: per-layer threadgroup tiles,
+subgroup broadcast, f16 storage — the naive full-net f16 threadgroup
+cache lever was TRIED and REJECTED, 7.6× slower, occupancy collapse).
+Even a PERFECT kernel at that target still needs the Architect's
+pixel/net ruling for 60fps neural — denoise+upscale together still
+exceed 16.67ms at production res without a smaller net or lower neural
+present-res.
+SUITE: cargo test --workspace --release — 400 passed, 0 failed (real
+run, this burst). viii3b_ordeals run explicitly: 4/4 green
+(byte-identical determinism, GPU-vs-CPU parity+beats-bilinear both
+held-out orbits, BAN, full neural path deterministic end-to-end).
+PUSHED: origin/main c7189a5..fc95c82 (2 commits: 8b47f7e merge,
+fc95c82 advisory).
+ARCHITECT RULING REQUIRED (new open item): 60fps neural needs a call —
+(a) smaller/shallower/separable net (retrain, quality ruling), (b) lower
+neural present-res / scale (pixel ruling), or (c) neural stays scry-only
+until a real kernel campaign (subgroup-tiled MLP, multi-day, not this
+burst) or ANE offload lands. Nothing about the LIVE surface changes
+until he rules — bilinear remains default, his window at 8420/5173 was
+not touched by this merge.
+NO SURPRISES: clean merge, suite green first try, no MUST-FIX from this
+conductor pass (adversary already HELD e9a48f2 before this burst).
