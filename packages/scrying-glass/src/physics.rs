@@ -21,7 +21,14 @@ use serde::Deserialize;
 /// The `body` sigil — realm data declaring a vessel as physical matter the
 /// world tick simulates. Every field is plain English with a documented
 /// default; only `shape` selects the discretization, the rest are solver dials.
+///
+/// F2 — `deny_unknown_fields`: a rigid-body sigil (`shape` + solver dials) only.
+/// A `preset` (skinned vessel) is NOT a Body field — it never reaches this parse
+/// (the `from_ecs` weld routes preset bodies to the RITE V skinned path and
+/// refuses `{preset, shape}` outright), and an unknown key (typo'd dial) is a
+/// LOUD error, never a silently-defaulted body.
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Body {
     /// The matter's shape. `"box"` (the only P3 shape) fills a lattice box.
     #[serde(default = "default_shape")]
