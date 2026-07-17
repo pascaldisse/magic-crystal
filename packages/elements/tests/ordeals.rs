@@ -954,85 +954,283 @@ fn ordeal_stack_topple_replay_is_byte_identical() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// ORDEAL VI-1b — momentum drift, DERIVED. The floor is measured on the SAME
-// stack at rest (no impulse, no net external force — gravity is exactly
-// balanced by the ground contact, so any tick-to-tick momentum change is
-// pure numerical noise). The topple then starts and ends at rest (momentum
-// ~0 both ends, by construction — the read-back velocity of an unmoving
-// particle is exactly zero): the ground is an infinite-mass anchor, so the
-// applied impulse's momentum, and every contact/friction force the topple
-// rides through, is absorbed into it and never carried by the tracked
-// system once it re-settles. The honest "total drift" is therefore just the
-// system's net momentum change from before-impulse to after-resettle — it
-// should itself be ~0, gated at ~10x the resting floor times the tick count
-// (the floor scaled up for the many more ticks, and the substantially larger
-// transient forces, the topple's contact solve rides through).
+// ORDEAL VI-1b — F1 REWRITE. The prior version of this ordeal compared two
+// at-rest endpoints (both bit-exact zero momentum, by construction) against
+// a gate built from a plucked literal (`f64::EPSILON * 1.0e3`) — it never
+// bounded any PER-TICK change during actual motion, so a real momentum leak
+// in `solve_body_collisions` that still damped to rest via ground friction
+// would have passed undetected.
+//
+// This version isolates `solve_body_collisions` on TWO RIGID BODIES IN FREE
+// SPACE — gravity zeroed, NO static collider — because a ground plane is an
+// infinite-mass anchor with friction that would happily absorb a real
+// momentum leak and mask it, exactly the vacuity F1 flags.
+//
+// FLOOR: measured on the SAME two bodies on a NON-CONTACT course (launched
+// apart, distance only grows, `solve_body_collisions` never fires) — zero
+// physical momentum exchange is expected on this course, so any per-tick
+// momentum change is pure numerical noise: the honest floor for "nothing
+// happened." `momentum_drift_gate` (below) derives the gate from this floor,
+// falling back to an `f64::EPSILON`-scaled derivation if the measured floor
+// is bit-exact 0.0 (which zero gravity + zero contacts can legitimately
+// produce).
+//
+// GATE: 10x the floor, checked EVERY TICK during the collision run — the
+// primary, non-vacuous assertion (not an endpoint comparison).
+//
+// TEST BODY: the same two bodies on a COLLISION course — launched toward
+// each other, contact, and separate; total momentum must stay within the
+// gate at every tick of the run.
+//
+// DISCRIMINATION PROOF: `ordeal_momentum_gate_catches_injected_leak`,
+// immediately below, proves this gate is not vacuous — it FAILS on a
+// hand-injected 0.1%-scale momentum leak run through the identical
+// per-tick check.
 // ─────────────────────────────────────────────────────────────────────────
-#[test]
-fn ordeal_stack_topple_momentum_drift_bounded() {
-    let (mut s, rigids) = build_stack(topple_cfg(), 3, 0.4, 500.0, 1.0, 0.05);
-    let settle_ticks = 300u64;
-    for _ in 0..settle_ticks {
-        s.step();
+
+/// F1 test config: gravity ZEROED (isolates body-vs-body collision from
+/// gravity/ground bookkeeping) and no static collider is installed by the
+/// caller — the two bodies below never touch a Collider at all.
+fn momentum_free_cfg() -> SolverConfig {
+    SolverConfig {
+        dt: 1.0 / 60.0,
+        gravity: Vec3::ZERO,
+        seed: 778,
+        ..SolverConfig::default()
     }
-    // FLOOR — measured at rest, no impulse: the per-tick momentum-change
-    // magnitude with zero net external force.
+}
+
+/// F1 test bodies: two single-particle rigid bodies (point masses carrying a
+/// collision radius) — the minimal shape that exercises `solve_body_
+/// collisions` without shape-matching, friction, or restitution complexity.
+/// A 1-particle body's shape-match goal is always its own current position
+/// (`RigidBody::solve`: covariance frame is the outer product of a
+/// zero-length rest offset, so the goal correction is exactly zero) — a
+/// proven no-op, so any momentum change this pair exhibits comes from
+/// `solve_body_collisions` alone.
+fn momentum_pair(cfg: SolverConfig, ax: f64, ay: f64, bx: f64, by: f64) -> (Solver, usize, usize) {
+    let mut s = Solver::new(cfg);
+    let density = 500.0; // same crate density used throughout this suite
+    let sphere_radius = 0.1; // mass-bearing volume radius
+    let particle_radius = 0.05; // collision (contact) radius
+    let a = s.spawn_rigid_sphere(
+        Vec3::new(ax, ay, 0.0),
+        sphere_radius,
+        1,
+        density,
+        1.0,
+        particle_radius,
+    );
+    let b = s.spawn_rigid_sphere(
+        Vec3::new(bx, by, 0.0),
+        sphere_radius,
+        1,
+        density,
+        1.0,
+        particle_radius,
+    );
+    (s, a, b)
+}
+
+/// F1(b)(c): measure the per-tick momentum-drift FLOOR on a NON-CONTACT
+/// course, then derive the GATE (10x that floor). If the measured floor is
+/// bit-exact 0.0 — legitimate here: zero gravity plus zero contacts means no
+/// force ever touches velocity on this course, so there is no rounding
+/// source to measure — derive it instead from `f64::EPSILON *
+/// typical_momentum_magnitude * operations_per_tick`: an upper bound on the
+/// rounding noise the momentum summation and the position/velocity
+/// read-back COULD introduce, scaled to this system's actual momentum and
+/// per-tick operation count (never a bare plucked literal).
+fn momentum_drift_gate(cfg: SolverConfig) -> f64 {
+    let launch_speed = 2.0_f64; // m/s — op data, this derivation's own choice
+    let (mut s, a, b) = momentum_pair(cfg, -1.0, 0.0, 1.0, 0.0);
+    s.apply_impulse(a, Vec3::new(-launch_speed, 0.0, 0.0));
+    s.apply_impulse(b, Vec3::new(launch_speed, 0.0, 0.0));
+
     let floor_ticks = 60u64; // 1 s
-    let mut floor = 0.0_f64;
+    let mut measured_floor = 0.0_f64;
     let mut prev = total_momentum(&s);
-    for _ in 0..floor_ticks {
+    let contact_margin = ContactMaterial::default().contact_margin; // no collider — the crate default, same fallback F2/F3 uses
+    for t in 0..floor_ticks {
         s.step();
         let now = total_momentum(&s);
-        floor = floor.max((now - prev).length());
+        measured_floor = measured_floor.max((now - prev).length());
         prev = now;
+        let dist = (s.particles.pos[s.rigids[a].indices[0]]
+            - s.particles.pos[s.rigids[b].indices[0]])
+            .length();
+        assert!(
+            dist > 2.0 * (0.05 + contact_margin),
+            "floor course tick {t}: bodies got close enough to risk contact (dist {dist:.4}) — \
+             the floor course must never contact, or the 'floor' would include real physical \
+             momentum exchange, not just noise"
+        );
     }
-    // A fully-settled stack's read-back velocity lands on bit-exact 0.0 (the
-    // friction bleed clamps to the residual, XPBD read-back is exact
-    // subtraction) — the measured floor can legitimately BE zero. Floor it at
-    // the f64 unit-in-last-place scaled to this system's momentum magnitude
-    // (~10^2-10^3 kg*m/s, from the stack's ~50 kg total mass and the m/s-scale
-    // impulse below) so the derived gate is never vacuously zero.
-    let floor = floor.max(f64::EPSILON * 1.0e3);
-    let momentum_before = total_momentum(&s);
 
-    // THE IMPULSE — op data, the test's choice.
-    let top = *rigids.last().unwrap();
-    let delta_velocity = Vec3::new(3.0, 0.0, 0.0);
-    s.apply_impulse(top, delta_velocity);
+    let mass = s.rigids[a].total_mass;
+    let n_particles = s.particles.pos.len() as f64;
+    let operations_per_tick = n_particles * cfg.substeps as f64;
+    let typical_momentum = mass * launch_speed;
+    let derived_floor = f64::EPSILON * typical_momentum * operations_per_tick;
 
-    let topple_ticks = 600u64; // 10 s — the stack topples and re-settles well inside this
-    for _ in 0..topple_ticks {
-        s.step();
-    }
-    let momentum_after = total_momentum(&s);
-
-    // Confirm the episode actually ends at rest (the "starts and ends at
-    // rest" premise the drift derivation leans on).
-    let end_speed = rigids
-        .iter()
-        .map(|&r| max_body_speed(&s, &s.rigids[r]))
-        .fold(0.0_f64, f64::max);
-    assert!(
-        end_speed < 1.0e-2,
-        "stack did not re-settle within {topple_ticks} ticks: max speed {end_speed:.4}"
-    );
-
-    let unexplained = momentum_after - momentum_before;
-    let total_drift = unexplained.length();
-    let gate = 10.0 * floor * topple_ticks as f64;
+    let floor = if measured_floor > 0.0 {
+        measured_floor
+    } else {
+        println!(
+            "[F1 floor] measured per-tick momentum drift is bit-exact 0.0 over {floor_ticks} ticks \
+             on the non-contact course (zero gravity + no contact ⇒ nothing ever perturbs velocity, \
+             so there is no rounding source to measure). Deriving instead: f64::EPSILON({:.3e}) x \
+             typical_momentum({typical_momentum:.3e} kg*m/s = mass {mass:.3e} kg x launch speed \
+             {launch_speed} m/s) x operations_per_tick({operations_per_tick:.0} = {n_particles:.0} \
+             particles x {} substeps/tick) = {derived_floor:.3e} kg*m/s/tick",
+            f64::EPSILON,
+            cfg.substeps
+        );
+        derived_floor
+    };
+    let gate = 10.0 * floor;
     println!(
-        "ORDEAL stack-topple momentum: resting floor={floor:.3e} kg*m/s/tick over {floor_ticks} ticks; \
-         topple={topple_ticks} ticks; gate=10x floor x ticks={gate:.3e}; \
-         momentum before={:?} after={:?} (impulse applied={:?} kg*m/s, absorbed by the ground on re-settle); \
-         unexplained drift={total_drift:.3e} kg*m/s (< gate: {})",
-        momentum_before, momentum_after, delta_velocity.scale(s.rigids[top].total_mass),
-        total_drift < gate
+        "[F1 gate] per-tick momentum-drift gate = 10 x floor({floor:.3e}) = {gate:.3e} kg*m/s/tick"
+    );
+    gate
+}
+
+#[test]
+fn ordeal_stack_topple_momentum_drift_bounded() {
+    let cfg = momentum_free_cfg();
+    let gate = momentum_drift_gate(cfg);
+
+    // TEST BODY — a real collision course: launched toward each other with a
+    // small y-offset (a glancing, not head-on, hit) so they contact AND
+    // separate afterward. A purely head-on, fully-inelastic hit (restitution
+    // is 0.0 here — no collider installed to carry any other value) would
+    // leave the pair co-moving at rest in contact, never separating again;
+    // the offset preserves enough tangential (unaffected by the normal-only
+    // inelastic correction, and there is no friction pass without a
+    // collider) velocity that the pair scatters apart post-contact.
+    let (mut s, a, b) = momentum_pair(cfg, -0.5, 0.02, 0.5, -0.02);
+    let launch_speed = 2.0_f64;
+    s.apply_impulse(a, Vec3::new(launch_speed, 0.0, 0.0));
+    s.apply_impulse(b, Vec3::new(-launch_speed, 0.0, 0.0));
+
+    let contact_margin = ContactMaterial::default().contact_margin; // no collider — F2/F3's fallback
+    let particle_radius = 0.05;
+    let expected_gap = particle_radius + contact_margin; // mean(r,r) + margin, equal radii (F2/F3)
+
+    let run_ticks = 120u64; // 2 s — plenty of runway to approach, contact, and separate
+    let mut prev_momentum = total_momentum(&s);
+    let mut min_sep = f64::INFINITY;
+    for t in 0..run_ticks {
+        s.step();
+        let now_momentum = total_momentum(&s);
+        let drift = (now_momentum - prev_momentum).length();
+        // THE PRIMARY ASSERTION — per tick, not just at endpoints.
+        assert!(
+            drift < gate,
+            "tick {t}: per-tick momentum drift {drift:.3e} exceeds gate {gate:.3e}"
+        );
+        prev_momentum = now_momentum;
+        let sep = (s.particles.pos[s.rigids[a].indices[0]]
+            - s.particles.pos[s.rigids[b].indices[0]])
+            .length();
+        min_sep = min_sep.min(sep);
+    }
+    let final_sep = (s.particles.pos[s.rigids[a].indices[0]]
+        - s.particles.pos[s.rigids[b].indices[0]])
+        .length();
+
+    println!(
+        "ORDEAL stack-topple momentum (F1): {run_ticks} ticks, per-tick gate={gate:.3e} kg*m/s/tick; \
+         min separation={min_sep:.4} m (expected contact gap {expected_gap:.4} m); final \
+         separation={final_sep:.4} m — the pair contacted and separated"
+    );
+    // Secondary sanity checks: the run must actually BE a collision course
+    // (else the per-tick assertion above would be as vacuous as the ordeal
+    // this replaces) — the pair must get close enough to register contact,
+    // and must be moving apart again by the run's end.
+    assert!(
+        min_sep < expected_gap * 1.5,
+        "the pair never got close enough to actually contact (min separation {min_sep:.4}, expected \
+         gap {expected_gap:.4}) — this ordeal would be vacuous unless a real collision happens"
     );
     assert!(
-        total_drift < gate,
-        "unexplained momentum drift {total_drift:.4} kg*m/s exceeds derived gate {gate:.4} \
-         (floor {floor:.3e} x 10 x {topple_ticks} ticks)"
+        final_sep > min_sep + expected_gap * 0.1,
+        "the pair contacted but never separated afterward (min separation {min_sep:.4}, final \
+         {final_sep:.4})"
     );
+}
+
+/// F1(e) DISCRIMINATION PROOF — a hand-rolled, test-local reimplementation of
+/// the core position-correction `solve_body_collisions` performs for this
+/// point-mass pair (no shape-matching, friction, or restitution to
+/// duplicate — see `momentum_pair`'s doc-comment for why those are provably
+/// no-ops/absent here), but with body A's share of the correction inflated
+/// by `1.0 + 1e-3` — a 0.1% momentum leak — while body B's share is left
+/// honest. This breaks the equal-and-opposite correction that makes the real
+/// pass momentum-conserving (`Δmomentum_a = -Δmomentum_b` exactly, since
+/// `m_a * (1/m_a) = m_b * (1/m_b) = 1` cancels in the correction split) and
+/// MUST fail the identical per-tick gate `ordeal_stack_topple_momentum_
+/// drift_bounded` passes — proof the gate actually bites on a real leak of
+/// this shape, not just a hypothetical one.
+#[test]
+#[should_panic(expected = "LEAK")]
+fn ordeal_momentum_gate_catches_injected_leak() {
+    let cfg = momentum_free_cfg();
+    let gate = momentum_drift_gate(cfg);
+
+    let density = 500.0_f64;
+    let sphere_radius = 0.1_f64;
+    let particle_radius = 0.05_f64;
+    let contact_margin = ContactMaterial::default().contact_margin;
+    let gap = particle_radius + contact_margin; // F2/F3 formula, equal radii
+
+    let volume = 4.0 / 3.0 * std::f64::consts::PI * sphere_radius.powi(3);
+    let mass = density * volume;
+    let inv_mass = 1.0 / mass;
+    let dt_sub = cfg.dt / cfg.substeps as f64;
+    let leak_scale = 1.0 + 1.0e-3; // the injected 0.1% leak
+
+    let mut pos = [Vec3::new(-0.5, 0.02, 0.0), Vec3::new(0.5, -0.02, 0.0)];
+    let mut vel = [Vec3::new(2.0, 0.0, 0.0), Vec3::new(-2.0, 0.0, 0.0)];
+    let mut prev_momentum = vel[0].scale(mass) + vel[1].scale(mass);
+    let total_substeps = cfg.substeps as u64 * 120; // same 120-tick runway as the honest ordeal
+    for t in 0..total_substeps {
+        let prev_pos = pos;
+        // Integrate — gravity is zero, same as `Solver::integrate` on this course.
+        pos[0] = pos[0] + vel[0].scale(dt_sub);
+        pos[1] = pos[1] + vel[1].scale(dt_sub);
+        // The core of `solve_body_collisions`' position correction, adapted
+        // to two fixed point masses — WITH the injected asymmetry.
+        let delta = pos[0] - pos[1];
+        let dist = delta.length();
+        if dist < gap && dist > 0.0 {
+            let normal = delta.scale(1.0 / dist);
+            let depth = gap - dist;
+            let w = inv_mass + inv_mass;
+            // LEAK: body 0's fraction is inflated by `leak_scale`, body 1's
+            // is not — the real solver applies the SAME (unscaled) split to
+            // both sides (see `solve_body_collisions` in solver.rs).
+            pos[0] = pos[0] + normal.scale(depth * (inv_mass / w) * leak_scale);
+            pos[1] = pos[1] - normal.scale(depth * (inv_mass / w));
+        }
+        // Read back velocity — same PBD covenant `v = (x - x_prev) / dt`.
+        vel[0] = (pos[0] - prev_pos[0]).scale(1.0 / dt_sub);
+        vel[1] = (pos[1] - prev_pos[1]).scale(1.0 / dt_sub);
+
+        // Check momentum drift at TICK granularity (every `substeps` substeps),
+        // the exact same per-tick check the honest ordeal runs.
+        if (t + 1) % cfg.substeps as u64 == 0 {
+            let now_momentum = vel[0].scale(mass) + vel[1].scale(mass);
+            let drift = (now_momentum - prev_momentum).length();
+            assert!(
+                drift < gate,
+                "LEAK: per-tick momentum drift {drift:.3e} exceeds the honest gate {gate:.3e} \
+                 (tick {}, injected 0.1% asymmetric correction) — the gate correctly caught it",
+                (t + 1) / cfg.substeps as u64
+            );
+            prev_momentum = now_momentum;
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────
