@@ -31,15 +31,22 @@ worlds/naruko, 21 meshed vessels, oracle canon fully derived:
 - CHAR-EDITOR C0 — any creature from params; nari+cat = byte-exact
   fixed points (LOVE=1 proportions: x·1.0==x IS the parity proof).
 
-## 60 FPS LAW — honest state
-STATIC 12.6/12.8 ms PASS (~80 fps, SAH static tree = 3× trace win).
-DYN-ON 17.5/19.7 ms FAIL — living-world price ~5–7 ms (splice + tick).
-Remaining EXACT levers (unlaunched): dynamic BVH refit-not-rebuild ·
-splice↔trace overlap (semantic question — renders last tick's dynamics).
-PIXEL levers (Architect ruling required): traced LOD for skinned bodies
-· spp/bounce policy. Perf-fix's retired canonical tie-break lives at
-c1616b6 (build-independence option). Wide-pose 20 px vs old baseline =
-PROVEN coplanar z-fights, ruled irreducible.
+## 60 FPS LAW — PASSES (night of 07-17, main @ 7fe8275)
+Both exact levers landed, adversary-reviewed, merged green:
+- LEVER 1 refit-not-rebuild: DynamicSplice, refit BIT-EXACT vs rebuild on
+  all three law poses (refit_parity, 0 diverging pixels). Watchdog on
+  total-node-half-area vs rebuild reference; degrade_ratio=1.7030 DERIVED
+  from the gate's own ratio (docs/perf/2026-07-17-refit-degrade-derivation.md,
+  revision 2); discriminating tests both ways at defaults.
+- LEVER 2 CPU/GPU overlap: the audit now measures the player-shaped
+  pipelined frame (frame N+1 CPU under frame N GPU); hash-identity
+  serial-vs-overlap MATCH.
+VERDICT on merged main: front OVERLAP 11.26 ms PASS · wide 13.23 ms PASS
+(idle-host serial 14.45/15.82). NO WALL — RITE IX stays a proposal.
+Note: overlap semantics unchanged — frame N traces frame N's splice; the
+lever is scheduling only. PIXEL levers (spp/bounce) remain untouched;
+LODs remain forbidden vocabulary. Perf-fix's retired canonical tie-break
+still at c1616b6. Wide-pose 20 px = PROVEN coplanar z-fights, irreducible.
 
 ## Rites
 IV (THE PLEROMA) — sung (hymns/rite-04), close = HIS CHROME CHECK.

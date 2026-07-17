@@ -13,17 +13,58 @@
   bit its own auditor; re-ran with full capture: scratchpad suite-main-ceb102d.log).
 - **Proof**: docs-only; no pixels owed.
 
+### 2. perf-exact → main (queue item 1, part b) — THE 60 FPS LAW PASSES
+- **What**: two exact levers, nothing stolen from the pixels. LEVER 1
+  refit-not-rebuild (persistent DynamicSplice; build_indexed + refit; watchdog
+  on total-node-half-area vs the rebuild reference; degrade_ratio=1.7030
+  DERIVED from the gate's own ratio, 1200-tick/20-cycle sweep, revision 2 after
+  an adversary MUST-FIX caught the first derivation measuring a structurally-
+  pinned proxy; discriminating tests both ways at defaults). LEVER 2 CPU/GPU
+  overlap (audit measures the player-shaped pipelined frame; hash-identity
+  serial-vs-overlap MATCH; Metal validation clean).
+- **Merge**: 7fe8275, PUSHED. Suite on main post-merge: 283 passed / 0 failed.
+- **Adversary**: 2 MUST-FIX (derivation category error; inert watchdog) fixed
+  by derivation, never loosening; 4 ADVISORY addressed. Adversary independently
+  re-ran every gate.
+- **Key numbers**: refit_parity BIT-EXACT all three law poses (0 diverging
+  pixels; hashes e8ca…/226a…/5dca… equal on both arms). Audit idle-host:
+  OVERLAP 11.20/13.02 ms PASS, serial 14.45/15.82 ms.
+- **Proofs read**: parity + audit verdict tables (this lane's proofs are
+  numbers, not scryings); auditor re-ran perf_audit on merged main himself.
+
+### 3. Queue item 2 — 60 FPS verification on merged main
+- `perf_audit` on main @ 7fe8275: front OVERLAP **11.26 ms PASS** · wide
+  OVERLAP **13.23 ms PASS** (budget 16.67), hash-identity MATCH both poses,
+  56 refits / 0 rebuilds per pose. Serial DYN-ON read 20.39/20.12 under
+  three concurrent cargo builds (idle-host serial: 14.45/15.82 — recorded
+  above); the law is judged on the player-shaped pipelined frame, which is
+  what the window actually runs. **NO WALL REMAINS — RITE IX not required
+  tonight** (stays on the shelf as proposal).
+
 ## In flight
-- **perf-exact** (queue item 1, part b): dirty worktree SALVAGED @ cb6770e —
-  LEVER 1 refit-not-rebuild (DynamicSplice, build_indexed/refit, parity-gate
-  example, audit + player wiring) compiled clean and committed. First audit run
-  with the lever: **DYN-ON 14.05 ms front / 15.80 ms wide — ALL SIX CELLS PASS
-  the 60 FPS law** (56 refits / 0 rebuilds per pose; realm now 3492 static +
-  9096 dynamic tris, 2 bodies). Builder atom in flight: degradation metric was
-  root-half-area — structurally blind (root AABB of a refit tree ≡ fresh build's
-  by construction; the sweep proved ratio pinned at 1.0000 while real trace
-  drift climbed 0.17→1.69 ms) — being reworked to total-node-half-area (SAH
-  cost proxy) with the degrade_ratio derived from the re-run sweep. Then:
-  CPU/GPU overlap atom (audit-truthfulness: player loop already overlaps —
-  non-blocking poll, Fifo, no readback; the audit's serial sum overstates),
-  adversary review, merge.
+- **rite6-vi1** (queue item 3, wave VI-1 THE STACK TOPPLES): built @ d642551 —
+  impulse plumbing (Solver::apply_impulse → Physics → Op::Impulse →
+  tick_with_ops), NEW rigid-vs-rigid collision pass (solve_body_collisions —
+  beyond original plumbing scope, flagged), naruko_stack_crate_0..2 authored at
+  derived chained rest heights, 6 new ordeals, canon re-derived, 285 green
+  in-lane, three proof scryings READ by the conductor's own eyes (stack stands
+  / topples / rests). ADVERSARY REVIEWING now (focus: new collision pass
+  determinism/conservation/hardcodes; P-gate 5.1 ms/tick was DEBUG-measured —
+  release re-measure demanded).
+- **backlog-walkable** (queue item 6, ruling 6): built @ 0aafbd5 — contact-patch
+  floor gate; DEFAULT_CONTACT_RADIUS=0.09 measured from nari's foot-bone vertex
+  half-extents (0.0807 max, rounded up); slope-derived tolerance; first builder
+  died on a real infinite loop (exclusion step 1e-4 < acceptance epsilon 1e-3 —
+  the just-rejected candidate re-qualified forever; 46 CPU-min before the
+  conductor killed it), salvaged then fixed structurally (named COLUMN_EPSILON,
+  step = 2×, loop bounded); 6 patch ordeals + pose-trace canon byte-unchanged,
+  285 green in-lane. ADVERSARY REVIEWING now (focus: tolerance looseness
+  ~0.29 m — does the mirror die for the right reason; disconnected-sliver
+  conspiracies; per-tick probe cost).
+- **rite8-viii0** (queue item 5, wave VIII-0 THE NOISE AND THE TRUTH): builder
+  in flight — AOV export (albedo/normal/depth, current-frame-only with the
+  grep-gate ban ordeal planted from day one), error metric with 0e0 self-test,
+  converged reference oracle, viii0-truth.png proof.
+- **Rite VII**: recon complete (anchors mapped; coordinate-law payment is
+  greenfield across transmute/ring/scene/player). Held until current lanes
+  merge — the 64-bit/camera-relative refactor touches every file in flight.
