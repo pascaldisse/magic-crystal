@@ -229,7 +229,7 @@ fn octave_wavelength_in_grid_cells(params: &TerrainParams, octave_index: u32) ->
 /// For each octave, `global_i`/`global_j` (exact `i64`, e.g.
 /// `tile.tile_x * grid_resolution + i`) are split into a lattice cell and an
 /// in-cell fraction by plain `i64` Euclidean division against that octave's
-/// [`octave_wavelength_in_grid_cells`] — `div_euclid`/`rem_euclid` are exact
+/// `octave_wavelength_in_grid_cells` — `div_euclid`/`rem_euclid` are exact
 /// for any `i64` operand, so there is no large-magnitude float
 /// multiplication anywhere in the split (the earlier, fixed bug: casting
 /// `global_index as f64 * cell_size` to `f32` loses precision once the
@@ -302,7 +302,12 @@ pub fn tile_origin_m(tile: TerrainTile, params: &TerrainParams) -> (f64, f64) {
 /// coarse). `step_m = cell_size_m` converts the resulting per-grid-step
 /// slope to per-meter; `cell_size_m` doesn't scale with the tile coordinate,
 /// so this multiplication is exact-enough regardless of tile magnitude.
-fn normal_at_global(world_seed: Seed, params: &TerrainParams, global_i: i64, global_j: i64) -> [f32; 3] {
+fn normal_at_global(
+    world_seed: Seed,
+    params: &TerrainParams,
+    global_i: i64,
+    global_j: i64,
+) -> [f32; 3] {
     let h_neg_x = height_at_global(world_seed, params, global_i - 1, global_j);
     let h_pos_x = height_at_global(world_seed, params, global_i + 1, global_j);
     let h_neg_z = height_at_global(world_seed, params, global_i, global_j - 1);

@@ -244,7 +244,8 @@ fn ordeal_seam_all_four_directions_byte_identical() {
     let params = small_params();
     let center = TerrainTile::new(-2, 5);
 
-    let checked_vertices = assert_seam_all_four_directions(world_seed, &params, center, "near-origin");
+    let checked_vertices =
+        assert_seam_all_four_directions(world_seed, &params, center, "near-origin");
 
     println!(
         "ORDEAL(c) seam: directions=4 checked_vertices={} height_bit_exact=true world_xz_within_tolerance=true",
