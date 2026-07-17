@@ -2077,14 +2077,15 @@ mod tests {
     /// DYNAMIC SPLIT correctness + leaf parity through the TRACED path: entities
     /// carrying a `behavior` are excluded from the static BVH triangles and kept
     /// as the dynamic partition, with NO triangle lost or duplicated. Naruko
-    /// carries the lantern (bob) + beacon (pulse).
+    /// carries the lantern (bob) + beacon (pulse) + the three SIGNAL RINGS
+    /// (pulse — the lighthouse broadcasts).
     #[test]
     fn dynamic_split_leaf_parity_holds() {
         let scene = naruko_scene();
         assert_eq!(
             scene.dynamics.entities().len(),
-            3,
-            "the realm breath: lantern + beacon (behaviors) + crate (body) are dynamic"
+            6,
+            "the realm breath: lantern + beacon + ring_a/b/c (behaviors) + crate (body) are dynamic"
         );
 
         // STATIC BVH triangles (built once) and the DYNAMIC partition triangles.

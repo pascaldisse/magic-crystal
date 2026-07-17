@@ -9,8 +9,12 @@
 //! comments, and every tolerance is DERIVED from the f64-analytic-vs-live-f32
 //! discrepancy actually measured on this geometry — never plucked.
 //!
-//! CANON GEOMETRY (no rotations/scales anywhere in `worlds/naruko`, so a world
-//! AABB is the closed form `entityPos + partPos ± halfExtent`, unioned over the
+//! CANON GEOMETRY (no entity rotations/scales in `worlds/naruko`; parts were
+//! rotation-free until the SIGNAL RINGS, whose box chords carry z-rotations —
+//! the oracle honors part Euler XYZ exactly (`model.rs`,
+//! `rotation_rotates_the_world_aabb`), and the rings' union AABB has its own
+//! closed form, derived below). For unrotated parts a world AABB is the closed
+//! form `entityPos + partPos ± halfExtent`, unioned over the
 //! visible parts; half = size/2 (box), [r,h/2,r] (cylinder widest ring / cone),
 //! [r,r,r] (sphere)). The vessels and their derived world AABBs:
 //!   env, world_spawn      — no mesh ⇒ no bounds (never renderable/captioned)
@@ -40,6 +44,22 @@
 //!                         it at runtime; the senses read the STATIC scene, so its
 //!                         canon bounds are the authored drop pose) center
 //!                         [-11.15, 4.5, 13]
+//!   signal_ring_a         x[-6.275,6.275]   y[50.225,62.775] z[-118.175,-117.825]
+//!   signal_ring_b         x[-10.275,10.275] y[46.225,66.775] z[-117.675,-117.325]
+//!   signal_ring_c         x[-14.275,14.275] y[42.225,70.775] z[-117.175,-116.825]
+//!     — THE SIGNAL RINGS (keyart: the lighthouse broadcasts). Each ring = 24
+//!     box chords (size [2R·sin(π/24), 0.55, 0.35]) centered on a radius-R
+//!     circle in the x-y plane about the beacon axis [0, 56.5], rotated
+//!     [0,0,θ+π/2] (length tangent, 0.55 radial, 0.35 deep); R = 6/10/14, ring
+//!     planes z = −118/−117.5/−117. UNION AABB CLOSED FORM: 24 ≡ 0 (mod 4)
+//!     puts chords at θ = 0/90/180/270 whose corners reach exactly ±(R + 0.275)
+//!     on the axes; every off-axis chord stays inside — worst case R=14, k=1
+//!     (θ=15°): corner radius √((R+0.275)² + (chord/2 = 1.82735)²) = 14.3915 at
+//!     angle 15° − atan(1.82735/14.275) = 7.706° → x = 14.3915·cos(7.706°) =
+//!     14.2616 < 14.275 ⇒ the axis chords own the extents. So x,y ∈ ±(R+0.275)
+//!     about [0, 56.5], z = ring plane ± 0.175; center = the entity position
+//!     exactly (full symmetry). The `pulse` behavior scales only the RUNTIME
+//!     pose — the senses read the STATIC scene (authored bind, crate precedent).
 //! Eye basis at yaw 0: fwd=(0,0,-1), right=(1,0,0), up=(0,1,0); FOV 60 vertical
 //! (aspect 1) ⇒ tan_half = tan(30°) = 0.5773502692.
 
@@ -93,6 +113,12 @@ fn range_of(g: &Glance, id: &str) -> f32 {
 /// FOURTEEN: `naruko_crate` (a wooden `body`) hung above the pier, world AABB
 /// center [-11.15, 4.5, 13] — z_view=31 ahead, |x_off|=11.15 < tan30·31 = 17.898
 /// ⇒ inside the left plane ⇒ in-frustum. So entity_count = 14.
+///
+/// THE SIGNAL RINGS grow it to SEVENTEEN: three meshed ring vessels dead ahead
+/// on the beacon axis (centers [0, 56.5, −118/−117.5/−117], z_view = 162/161.5/
+/// 161), |x| ≤ 14.275 ≪ tan30·161 = 92.95 and y_off = 49.5 ± 14.275 ≪ the same
+/// half-height ⇒ all three deep inside the 60° cone ⇒ in-frustum.
+/// So entity_count = 17.
 #[test]
 fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
     let world = canon();
@@ -125,9 +151,12 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
     // 33.0390 from spawn) — the FOURTEENTH meshed vessel. z_view = 44−13 = 31
     // ahead; |x_off| = 11.15 < the half-width tan30·31 = 17.898, INSIDE the left
     // plane ⇒ in-frustum.
+    // + the three SIGNAL RINGS (centers [0,56.5,−118/−117.5/−117], ranges
+    // 169.3938/168.9157/168.4377 from spawn — derivation in CANON #2), the
+    // 15th–17th meshed vessels, dead ahead on the beacon axis ⇒ in-frustum.
     assert_eq!(
-        g.entity_count, 14,
-        "exactly the fourteen meshed vessels are in-frustum (Rite V: + nari; P3: + crate)"
+        g.entity_count, 17,
+        "exactly the seventeen meshed vessels are in-frustum (Rite V: + nari; P3: + crate; rings: + a/b/c)"
     );
     let caps = caption_ids(&g);
     for id in [
@@ -145,6 +174,9 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
         "naruko_chrome_orb",
         "nari",
         "naruko_crate",
+        "signal_ring_a",
+        "signal_ring_b",
+        "signal_ring_c",
     ] {
         assert!(caps.contains(&id.to_string()), "{id} must be in-frustum");
     }
@@ -169,7 +201,12 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
 ///   city_massing   center [54, 27, -37.5]     → √(2916+400+6642.25) = 99.7910
 ///   lighthouse_rock center[0, 8.5, -120]      → √(0+2.25+26896)     = 164.0069
 ///   lighthouse_tower center[0, 41, -120]      → √(1156+26896)       = 167.4873
+///   signal_ring_a  center [0, 56.5, -118]     → √(0+2450.25+26244)  = 169.3938
+///   signal_ring_b  center [0, 56.5, -117.5]   → √(0+2450.25+26082.25)= 168.9157
+///   signal_ring_c  center [0, 56.5, -117]     → √(0+2450.25+25921)  = 168.4377
 ///   (sea 604.06, terra 9.41 are SUPPORT — demoted.)
+/// The SIGNAL RINGS at 168.4–169.4 m sit far beyond the top-5 band (seawall
+/// 26.7524 closes it) ⇒ the default caption order is UNCHANGED by the rings.
 /// So the default nearest_n=5 captions, in order. RITE V inserts `nari` at
 /// 26.3911 — between lantern (25.6320) and chain_posts (26.5613). The P3 crate
 /// (33.0390) and the chrome orb (34.5227) both sit BEYOND seawall (26.7524),
@@ -178,7 +215,7 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
 /// (crate 6th at 33.0390, chrome orb 7th at 34.5227, pier 8th at 48.1812).
 /// TOLERANCE (DERIVED): each range is the live f32 √(Σ(center−eye)²) vs the f64
 /// reference above quoted to 4 decimals. The measured live-vs-reference
-/// discrepancy across all thirteen ranges peaks at 6.1e-5 m (at the 604 m sea
+/// discrepancy across all sixteen ranges peaks at 6.1e-5 m (at the 604 m sea
 /// center) — that budget is the 4-decimal reference rounding (≤5e-5) plus the
 /// f32 center/sub/sqrt round-off (≈1e-5). RANGE_TOL = 1e-3 m is ≈16× that
 /// measured max — tight enough that a wrong center (±0.1 m) or a wrong AABB
@@ -231,6 +268,9 @@ fn canon_nearest_ordering_and_ranges_are_derived() {
         ("naruko_city_massing", 99.7910),
         ("lighthouse_rock", 164.0069),
         ("lighthouse_tower", 167.4873),
+        ("signal_ring_a", 169.3938),
+        ("signal_ring_b", 168.9157),
+        ("signal_ring_c", 168.4377),
         ("naruko_terra", 9.4108),
         ("naruko_sea", 604.0593),
     ] {
@@ -321,6 +361,12 @@ fn canon_tower_owns_no_grid8_cell() {
 /// longest path; row 13 base = flattest = shortest). These reference depths are
 /// the f64 analytic 158.5·L, matched to ≤5.7e-14 m by an independent f64
 /// ray/AABB slab probe.
+///
+/// THE SIGNAL RINGS change NOTHING here: their planes sit BEHIND the tower's
+/// front face (ring z_view = 161–162 > 158.5), so along every shared cell ray
+/// the tower's front-face hit is nearer and keeps the cell; at the rock's row
+/// 14 a ring-depth ray passes y = 7 + 162·0.09375·0.5774 ≈ 15.8 ≪ the rings'
+/// min y 42.225 ⇒ miss. No owned cell moves.
 ///
 /// TOLERANCE (DERIVED): the live result is the same geometry through
 /// `camera_basis`/`normalize`/`ray_aabb` in f32. The measured analytic-vs-live
@@ -447,8 +493,18 @@ fn canon_depth_band_column_16_is_front_face_path_length() {
 /// chrome orb (center [-12,2.12,12]) sits just ahead of the pier eye: − eye
 /// [-13,2.7,15] = [1,-0.58,-3], within the z_view=3 cone (half-width
 /// tan30·3 = 1.732 > |x_off|=1 and > |y_off|=0.58) ⇒ in-frustum. So
-/// entity_count = 7 (with lighthouse_beacon); the non-support captions are
-///   [chrome_orb, pier, lighthouse_rock, lighthouse_tower, beacon, sea].
+/// entity_count = 7 (with lighthouse_beacon); with the three SIGNAL RINGS
+/// (in-frustum: centers dead ahead, e.g. ring_a − eye = [13, 53.8, −133], all
+/// inside the 60° cone; against the crate-culling right side-plane the ring
+/// AABBs' max projection ≈ 70.9 ≫ offset 3.7583 ⇒ inside) it is TEN; the
+/// non-support captions are
+///   [chrome_orb, pier, rock, tower, ring_c, ring_b, ring_a, beacon, sea].
+/// Ring ranges from the pier eye [-13, 2.7, 15]:
+///   ring_a center [0,56.5,-118]   → √(169+2894.44+17689)    = 144.0571
+///   ring_b center [0,56.5,-117.5] → √(169+2894.44+17556.25) = 143.5956
+///   ring_c center [0,56.5,-117]   → √(169+2894.44+17424)    = 143.1343
+/// — all three between tower (140.93) and beacon (145.9056), nearest last-
+/// authored plane first (ring_c, the widest, has the smallest z_view).
 /// Chrome-orb range: [1,-0.58,-3] → √(1 + 0.3364 + 9) = 3.2150 m — nearer
 /// than the pier, so it leads the caption order.
 /// The ELEMENTS-P3 crate sits near this eye too (AABB center [-11.15,4.5,13],
@@ -480,10 +536,11 @@ fn canon_moved_eye_pier_glance() {
         },
     )
     .unwrap();
-    // + lighthouse_beacon (range 145.9056) since the Living World merge, and
+    // + lighthouse_beacon (range 145.9056) since the Living World merge,
     // + naruko_chrome_orb (range 3.2150, right beside the pier eye) since
-    // PLEROMA L2 — seven meshed vessels in this frustum.
-    assert_eq!(g.entity_count, 7, "moved-eye in-frustum count");
+    // PLEROMA L2, and + the three SIGNAL RINGS (144.0571/143.5956/143.1343,
+    // derived above) — ten meshed vessels in this frustum.
+    assert_eq!(g.entity_count, 10, "moved-eye in-frustum count");
 
     // Non-support caption set (default demotes terra & sea).
     let plain = look(
@@ -502,10 +559,13 @@ fn canon_moved_eye_pier_glance() {
             "naruko_pier",
             "lighthouse_rock",
             "lighthouse_tower",
+            "signal_ring_c",
+            "signal_ring_b",
+            "signal_ring_a",
             "lighthouse_beacon",
             "naruko_sea",
         ],
-        "moved-eye non-support caption set/order (chrome orb 3.2150 leads; beacon 145.9056 between tower 140.93 and sea)"
+        "moved-eye non-support caption set/order (chrome orb 3.2150 leads; rings 143.13/143.60/144.06 between tower 140.93 and beacon 145.9056)"
     );
 
     // Lighthouse pair still in-frustum.
