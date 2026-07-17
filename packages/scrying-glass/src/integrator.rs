@@ -52,6 +52,13 @@ pub struct IntegratorUniform {
     /// rgb = the light's colour tint (multiplied outside the scalar scatter);
     /// w = light KIND (0 = directional sun/moon, 1 = point emitter glow).
     pub med_light_color: [f32; 4],
+    /// RESOLUTION OF GOD — the window surface being drawn: surface_w,
+    /// surface_h, upscale_mode (0 = bilinear, 1 = nearest), unused. `params`
+    /// carries the (smaller) internal traced resolution; the blit upscales
+    /// `params.xy` → `surface.xy`. `build` defaults it to the trace dims
+    /// (identity upscale) so every non-window caller is unchanged; the window
+    /// render loop overrides it with the true surface + mode.
+    pub surface: [u32; 4],
 }
 
 /// A participating medium uploaded to the GPU: the density volume (Aether's
@@ -222,6 +229,9 @@ impl IntegratorUniform {
                 }
                 None => [0.0; 4],
             },
+            // Default: surface == trace resolution (identity upscale). The
+            // window loop overrides this after building.
+            surface: [width, height, 0, 0],
         }
     }
 }

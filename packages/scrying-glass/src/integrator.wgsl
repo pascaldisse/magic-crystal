@@ -26,6 +26,9 @@ struct Uniform {
   med_dims: vec4<u32>,     // grid dims xyz, w unused
   med_light: vec4<f32>,    // bound light: xyz = unit dir TOWARD it (directional) or world position (point); w = intensity
   med_light_color: vec4<f32>, // rgb = light colour tint; w = kind (0 directional, 1 point)
+  // ── RESOLUTION OF GOD: the window surface being drawn. params.xy is the
+  // internal traced resolution; the blit upscales params.xy → surface.xy.
+  surface: vec4<u32>,      // surface_w, surface_h, upscale_mode (0 bilinear, 1 nearest), _
 };
 
 struct Node {
@@ -638,14 +641,47 @@ fn blit_vs(@builtin(vertex_index) index: u32) -> BlitOut {
   return out;
 }
 
+// Resolve one trace-resolution accum cell to linear radiance (sum / samples).
+fn accum_radiance(tx: u32, ty: u32, tw: u32, th: u32) -> vec3<f32> {
+  let x = min(tx, tw - 1u);
+  let y = min(ty, th - 1u);
+  let cell = accum[y * tw + x];
+  return cell.xyz / max(cell.w, 1.0);
+}
+
 @fragment
 fn blit_fs(in: BlitOut) -> @location(0) vec4<f32> {
-  let w = u.params.x;
-  let h = u.params.y;
-  let x = min(u32(in.position.x), w - 1u);
-  let y = min(u32(in.position.y), h - 1u);
-  let cell = accum[y * w + x];
-  let samples = max(cell.w, 1.0);
+  // params.xy = the internal traced resolution (accum dimensions);
+  // surface.xy = the window surface being drawn. The two are decoupled
+  // (RESOLUTION OF GOD): the trace runs small, this blit upscales it.
+  let tw = u.params.x;
+  let th = u.params.y;
+  let sw = max(u.surface.x, 1u);
+  let sh = max(u.surface.y, 1u);
+  // Fragment centre → trace-space continuous coordinate.
+  let fx = (in.position.x / f32(sw)) * f32(tw) - 0.5;
+  let fy = (in.position.y / f32(sh)) * f32(th) - 0.5;
+  var rgb: vec3<f32>;
+  if (u.surface.z == 1u) {
+    // Nearest — the honest cheapest interim upscale.
+    rgb = accum_radiance(u32(max(fx + 0.5, 0.0)), u32(max(fy + 0.5, 0.0)), tw, th);
+  } else {
+    // Bilinear — the default interim upscale (a clean seam for the neural
+    // upscaler: replace this branch with the learned resolve, same in/out).
+    let x0f = floor(fx);
+    let y0f = floor(fy);
+    let x0 = u32(max(x0f, 0.0));
+    let y0 = u32(max(y0f, 0.0));
+    let x1 = min(x0 + 1u, tw - 1u);
+    let y1 = min(y0 + 1u, th - 1u);
+    let ax = clamp(fx - x0f, 0.0, 1.0);
+    let ay = clamp(fy - y0f, 0.0, 1.0);
+    let c00 = accum_radiance(x0, y0, tw, th);
+    let c10 = accum_radiance(x1, y0, tw, th);
+    let c01 = accum_radiance(x0, y1, tw, th);
+    let c11 = accum_radiance(x1, y1, tw, th);
+    rgb = mix(mix(c00, c10, ax), mix(c01, c11, ax), ay);
+  }
   // Linear radiance out; the *Srgb target encodes to display space.
-  return vec4<f32>(cell.xyz / samples, 1.0);
+  return vec4<f32>(rgb, 1.0);
 }

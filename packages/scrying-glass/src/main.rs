@@ -46,6 +46,14 @@ struct ScryingGlassConfig {
     refit: RefitParams,
     /// Accumulation frames a /scry moving-eye capture integrates for a crisp shot.
     capture_frames: u32,
+    /// RESOLUTION OF GOD — the internal traced resolution (the whole path trace
+    /// runs at exactly this size), independent of the window surface. The blit
+    /// upscales this to the surface each frame.
+    render_width: u32,
+    render_height: u32,
+    /// Interim upscale mode uploaded to the blit: 0 = bilinear (default),
+    /// 1 = nearest. The clean seam for the neural upscaler (VIII-3).
+    upscale_mode: u32,
 }
 
 impl ScryingGlassConfig {
@@ -145,7 +153,26 @@ impl ScryingGlassConfig {
                 max_refits: integer("GAIA_NATIVE_BVH_REFIT_MAX", 0)?,
             },
             capture_frames: integer("GAIA_NATIVE_CAPTURE_FRAMES", 48)?,
+            // The trace runs small (~8× fewer rays than a 1920×1280 surface),
+            // then upscales to the window. Both dims are explicit params.
+            render_width: integer("GAIA_NATIVE_RENDER_W", 640)?,
+            render_height: integer("GAIA_NATIVE_RENDER_H", 480)?,
+            upscale_mode: match std::env::var("GAIA_NATIVE_UPSCALE") {
+                Ok(value) => match value.trim().to_ascii_lowercase().as_str() {
+                    "bilinear" => 0,
+                    "nearest" => 1,
+                    other => {
+                        return Err(format!(
+                            "GAIA_NATIVE_UPSCALE must be bilinear or nearest, got {other:?}"
+                        ));
+                    }
+                },
+                Err(_) => 0,
+            },
         };
+        if config.render_width == 0 || config.render_height == 0 {
+            return Err("GAIA_NATIVE_RENDER_W and GAIA_NATIVE_RENDER_H must be positive".into());
+        }
         if config.window_width <= 0.0
             || config.window_height <= 0.0
             || config.panel_width <= 0.0
@@ -736,8 +763,14 @@ struct Renderer {
     int_params: IntegratorParams,
     /// Accumulation frames a /scry moving-eye capture integrates.
     capture_frames: u32,
-    /// Persistent window accumulation: progressive while the eye is still,
-    /// reset the instant it moves or the surface resizes.
+    /// RESOLUTION OF GOD — the internal traced resolution. The path trace and
+    /// the accumulation buffer live at this size; the blit upscales to surface.
+    render_width: u32,
+    render_height: u32,
+    /// Upscale mode uploaded to the blit (0 bilinear, 1 nearest).
+    upscale_mode: u32,
+    /// Persistent window accumulation at the TRACE resolution: progressive
+    /// while the eye is still, reset the instant it moves or the surface resizes.
     surface_accum: wgpu::Buffer,
     surface_compute_bg: wgpu::BindGroup,
     surface_blit_bg: wgpu::BindGroup,
@@ -758,6 +791,9 @@ impl Renderer {
         bvh_params: &BvhParams,
         refit_params: RefitParams,
         capture_frames: u32,
+        render_width: u32,
+        render_height: u32,
+        upscale_mode: u32,
     ) -> Result<Self, String> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let target = unsafe {
@@ -845,13 +881,18 @@ impl Renderer {
         let sky_top = scene.sky_top;
         let sky_horizon = scene.sky_horizon;
 
-        let surface_accum = integrator.make_accum(&device, config.width, config.height);
+        // The accumulation buffer is sized to the INTERNAL trace resolution
+        // (RESOLUTION OF GOD) — the offscreen readback target stays at the
+        // surface resolution (it captures the upscaled window image).
+        let surface_accum = integrator.make_accum(&device, render_width, render_height);
         let surface_compute_bg = integrator.compute_bind_group(&device, &surface_accum);
         let surface_blit_bg = integrator.blit_bind_group(&device, &surface_accum);
         let offscreen = OffscreenTarget::new(&device, format, config.width, config.height);
         eprintln!(
-            "[wgpu] traced surface + offscreen framebuffer: {format:?} {}x{}",
-            config.width, config.height
+            "[wgpu] traced {render_width}x{render_height} → upscale → surface {}x{} ({}); {format:?}",
+            config.width,
+            config.height,
+            if upscale_mode == 1 { "nearest" } else { "bilinear" },
         );
         Ok(Self {
             surface,
@@ -869,6 +910,9 @@ impl Renderer {
             sky_horizon,
             int_params,
             capture_frames,
+            render_width,
+            render_height,
+            upscale_mode,
             surface_accum,
             surface_compute_bg,
             surface_blit_bg,
@@ -883,13 +927,58 @@ impl Renderer {
     /// Rebuild the window accumulation buffer (zeroed) for the current surface
     /// size and drop the accumulated samples — the reset gesture on move/resize.
     fn reset_surface_accum(&mut self) {
-        let accum = self
-            .integrator
-            .make_accum(&self.device, self.config.width, self.config.height);
+        let accum =
+            self.integrator
+                .make_accum(&self.device, self.render_width, self.render_height);
         self.surface_compute_bg = self.integrator.compute_bind_group(&self.device, &accum);
         self.surface_blit_bg = self.integrator.blit_bind_group(&self.device, &accum);
         self.surface_accum = accum;
         self.samples_before = 0;
+    }
+
+    /// MEASURE (RESOLUTION OF GOD, ordeal item 3): the honest per-frame GPU cost
+    /// of the path trace at the CURRENT internal resolution. Dispatches `frames`
+    /// accumulation passes into a throwaway accum from the live spawn camera,
+    /// force-flushing the GPU (`poll(wait)`) after each so the timing is real
+    /// GPU work, not an async submit. Returns (median_ms, mean_ms). Runs once at
+    /// startup off the frame loop, so it never perturbs live frames.
+    fn measure_trace_ms(&mut self, frames: u32) -> (f64, f64) {
+        let (width, height) = (self.render_width, self.render_height);
+        let accum = self.integrator.make_accum(&self.device, width, height);
+        let compute_bg = self.integrator.compute_bind_group(&self.device, &accum);
+        let mut samples_before = 0u32;
+        let mut times = Vec::with_capacity(frames as usize);
+        for _ in 0..frames.max(1) {
+            let uniform = IntegratorUniform::build(
+                &self.camera,
+                &self.sun,
+                self.sky_top,
+                self.sky_horizon,
+                width,
+                height,
+                self.integrator.node_count,
+                self.integrator.tri_count,
+                samples_before,
+                &self.int_params,
+                None,
+            );
+            let start = Instant::now();
+            let mut encoder =
+                self.device
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("trace timing"),
+                    });
+            self.integrator
+                .dispatch(&self.queue, &mut encoder, &uniform, &compute_bg, width, height);
+            self.queue.submit(Some(encoder.finish()));
+            let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+            times.push(start.elapsed().as_secs_f64() * 1e3);
+            samples_before += self.int_params.spp;
+        }
+        let mean = times.iter().sum::<f64>() / times.len() as f64;
+        times.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let median = times[times.len() / 2];
+        (median, mean)
     }
 
     /// Advance the world clock one tick and, when the living layer actually
@@ -977,8 +1066,12 @@ impl Renderer {
             self.last_view = Some(key);
         }
 
-        let (width, height) = (self.config.width, self.config.height);
-        let uniform = IntegratorUniform::build(
+        // RESOLUTION OF GOD: the path trace runs at the INTERNAL resolution;
+        // the blit upscales it to the surface. `width`/`height` here are the
+        // trace dims (accum + dispatch); the surface is a separate size.
+        let (width, height) = (self.render_width, self.render_height);
+        let (surface_w, surface_h) = (self.config.width, self.config.height);
+        let mut uniform = IntegratorUniform::build(
             &self.camera,
             &self.sun,
             self.sky_top,
@@ -991,6 +1084,19 @@ impl Renderer {
             &self.int_params,
             None,
         );
+        // Aspect must track the SURFACE, not the (possibly differently-shaped)
+        // trace buffer — otherwise the upscale would stretch the image. The
+        // low-res buffer then holds a surface-aspect image (anisotropic pixels),
+        // which the upscale restores to the window's true aspect.
+        let (right, up, _forward) = self.camera.basis();
+        let surface_aspect = surface_w as f32 / surface_h.max(1) as f32;
+        let half = (self.camera.fov_y_radians * 0.5).tan();
+        let right = right * (half * surface_aspect);
+        let up = up * half;
+        uniform.right = [right.x, right.y, right.z, 0.0];
+        uniform.up = [up.x, up.y, up.z, 0.0];
+        // Tell the blit the true surface + upscale mode (params.xy stays trace dims).
+        uniform.surface = [surface_w, surface_h, self.upscale_mode, 0];
 
         let surface_frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
@@ -1446,71 +1552,60 @@ fn main() {
                 &config.bvh,
                 config.refit,
                 config.capture_frames,
+                config.render_width,
+                config.render_height,
+                config.upscale_mode,
             )
             .map_err(std::io::Error::other)?;
-            let (scry_tx, scry_rx) = mpsc::channel::<ScryRequest>();
-            start_screenshot_server(
-                native_port,
-                HttpContext {
-                    latest,
-                    scry: scry_tx,
-                    player: player.clone(),
-                    ground: ground.clone(),
-                    tick_dt,
-                },
-            )
-            .map_err(std::io::Error::other)?;
-            let running = Arc::new(AtomicBool::new(true));
-            app.manage(RuntimeState {
-                running: running.clone(),
-            });
-            let render_player = player.clone();
-            let render_ground = ground.clone();
-            thread::Builder::new()
-                .name("gaia-render".into())
-                .spawn(move || {
-                    let mut renderer = renderer;
-                    let mut deadline = Instant::now();
-                    while running.load(Ordering::Acquire) {
-                        // Service moving-eye requests off the frame loop's hot path.
-                        while let Ok(request) = scry_rx.try_recv() {
-                            let frame = renderer.capture_pose(&request.params);
-                            let _ = request.reply.send(frame);
-                        }
-                        // Step the body one fixed tick and aim the window camera
-                        // at its eye.
-                        let mut body_speed = 0.0f32;
-                        let mut walker_pose = None;
-                        if let Ok(mut body) = render_player.lock() {
-                            body.step(tick_dt, &render_ground);
-                            let pose = body.pose();
-                            // The walker's horizontal velocity drives sama.
-                            body_speed = body.velocity.length();
-                            // RITE V FINAL WELD — the walker's world pose drives
-                            // walker-ATTACHED bodies (they track the player).
-                            walker_pose = Some(WalkerPose {
-                                position: pose.position,
-                                yaw: pose.yaw,
-                            });
-                            drop(body);
-                            renderer.set_view_pose(pose.position, pose.yaw, pose.pitch);
-                        }
-                        // Tick the world clock, drive the embodied bodies from
-                        // the walker velocity + pose, and re-splice the living layer.
-                        renderer.advance_world(body_speed, walker_pose);
-                        if let Ok(size) = window.inner_size() {
-                            renderer.render(size);
-                        }
-                        deadline += render_interval;
-                        let now = Instant::now();
-                        if deadline > now {
-                            thread::sleep(deadline - now);
-                        } else {
-                            deadline = now;
-                        }
-                    }
-                })
+            {
+                // MEASURE (item 3): print the honest GPU trace cost at the
+                // configured internal resolution before the frame loop starts.
+                let mut renderer = renderer;
+                let (median, mean) = renderer.measure_trace_ms(60);
+                eprintln!(
+                    "[frame] trace {}x{} → surface {}x{}: median {median:.2}ms mean {mean:.2}ms/frame (spp={}, 60-frame sample)",
+                    config.render_width,
+                    config.render_height,
+                    config.window_width as u32,
+                    config.window_height as u32,
+                    config.integrator.spp,
+                );
+                let renderer_moved = renderer;
+                let (scry_tx, scry_rx) = mpsc::channel::<ScryRequest>();
+                start_screenshot_server(
+                    native_port,
+                    HttpContext {
+                        latest,
+                        scry: scry_tx,
+                        player: player.clone(),
+                        ground: ground.clone(),
+                        tick_dt,
+                    },
+                )
                 .map_err(std::io::Error::other)?;
+                let running = Arc::new(AtomicBool::new(true));
+                app.manage(RuntimeState {
+                    running: running.clone(),
+                });
+                let render_player = player.clone();
+                let render_ground = ground.clone();
+                thread::Builder::new()
+                    .name("gaia-render".into())
+                    .spawn(move || {
+                        let mut renderer = renderer_moved;
+                        run_render_loop(
+                            &mut renderer,
+                            &window,
+                            &render_player,
+                            &render_ground,
+                            tick_dt,
+                            render_interval,
+                            &scry_rx,
+                            &running,
+                        );
+                    })
+                    .map_err(std::io::Error::other)?;
+            }
             eprintln!(
                 "[scrying-glass] child webview overlay created; render, capture, PNG, and HTTP run off the main thread"
             );
@@ -1525,4 +1620,50 @@ fn main() {
                     .store(false, Ordering::Release);
             }
         });
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_render_loop(
+    renderer: &mut Renderer,
+    window: &tauri::Window,
+    render_player: &Arc<Mutex<Player>>,
+    render_ground: &Arc<Ground>,
+    tick_dt: f32,
+    render_interval: Duration,
+    scry_rx: &mpsc::Receiver<ScryRequest>,
+    running: &Arc<AtomicBool>,
+) {
+    let mut deadline = Instant::now();
+    while running.load(Ordering::Acquire) {
+        // Service moving-eye requests off the frame loop's hot path.
+        while let Ok(request) = scry_rx.try_recv() {
+            let frame = renderer.capture_pose(&request.params);
+            let _ = request.reply.send(frame);
+        }
+        // Step the body one fixed tick and aim the window camera at its eye.
+        let mut body_speed = 0.0f32;
+        let mut walker_pose = None;
+        if let Ok(mut body) = render_player.lock() {
+            body.step(tick_dt, render_ground);
+            let pose = body.pose();
+            body_speed = body.velocity.length();
+            walker_pose = Some(WalkerPose {
+                position: pose.position,
+                yaw: pose.yaw,
+            });
+            drop(body);
+            renderer.set_view_pose(pose.position, pose.yaw, pose.pitch);
+        }
+        renderer.advance_world(body_speed, walker_pose);
+        if let Ok(size) = window.inner_size() {
+            renderer.render(size);
+        }
+        deadline += render_interval;
+        let now = Instant::now();
+        if deadline > now {
+            thread::sleep(deadline - now);
+        } else {
+            deadline = now;
+        }
+    }
 }
