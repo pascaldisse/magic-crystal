@@ -38,6 +38,27 @@ const WALL_NORMAL_Y_COS_CUTOFF: f32 = 0.3;
 /// for why every triangle is NOT patch-tested).
 const CONTACT_PROBE_COUNT: usize = 8;
 
+/// Acceptance epsilon [`Ground::raw_height_at`] uses to decide whether a
+/// candidate height `y` still qualifies under a given `ceiling`: `y <=
+/// ceiling + COLUMN_EPSILON`. Named so [`Ground::height_at_gated`]'s retry
+/// step can be DERIVED from it (see [`GATED_EXCLUSION_STEP`]) instead of
+/// living as a second, independently-chosen literal that could silently
+/// drift smaller than this one.
+const COLUMN_EPSILON: f32 = 1e-3;
+
+/// Retry-exclusion step [`Ground::height_at_gated`] subtracts from a
+/// rejected candidate's height before re-scanning. MUST strictly exceed
+/// [`COLUMN_EPSILON`]: the next scan accepts any `y' <= new_ceiling +
+/// COLUMN_EPSILON`, i.e. any `y' <= y - GATED_EXCLUSION_STEP +
+/// COLUMN_EPSILON`. If the step were `<= COLUMN_EPSILON`, that bound would
+/// be `>= y`, so the just-rejected candidate `y' == y` would re-qualify on
+/// the very next iteration and the fallthrough loop would never terminate
+/// (this was the exact bug: a 1e-4 step against a 1e-3 acceptance epsilon).
+/// Doubling the epsilon keeps the derivation in one place, expressed in
+/// code, while staying well inside float noise for any realistic scene
+/// scale.
+const GATED_EXCLUSION_STEP: f32 = 2.0 * COLUMN_EPSILON;
+
 /// GUARDIAN RULING 6 contact-patch radius default, m
 /// (`GAIA_PLAYER_CONTACT_RADIUS`). MEASURED, not invented: nari (the "nari"
 /// vessel preset, `vessel::Preset::nari()`) is composed and posed at SAMA's
@@ -285,7 +306,7 @@ impl Ground {
                 continue;
             }
             if let Some(y) = triangle.height_at(x, z)
-                && y <= ceiling + 1e-3
+                && y <= ceiling + COLUMN_EPSILON
             {
                 best = Some(best.map_or(y, |current| current.max(y)));
             }
@@ -338,15 +359,33 @@ impl Ground {
     /// per triangle.
     pub fn height_at_gated(&self, x: f32, z: f32, ceiling: f32, radius: f32, tol: f32) -> Option<f32> {
         let mut ceiling = ceiling;
-        loop {
+        // Belt-and-braces bound: each iteration must strictly exclude at
+        // least the current winning candidate (via GATED_EXCLUSION_STEP >
+        // COLUMN_EPSILON, see that constant's doc comment), so the number of
+        // fallthrough steps can never exceed the number of walkable
+        // triangles in the floor set — there is no way to reject more
+        // distinct candidates than there are triangles to reject. Any
+        // overrun therefore means the exclusion invariant broke (a logic
+        // bug, not an expected runtime condition), so debug builds assert
+        // loudly and release builds fail safe by returning `None` rather
+        // than looping forever or panicking in the field.
+        let max_iterations = self.triangles.len();
+        for _ in 0..=max_iterations {
             let y = self.raw_height_at(x, z, ceiling)?;
             if self.patch_supported(x, z, y, radius, tol) {
                 return Some(y);
             }
             // Exclude this candidate (and anything within float noise of it)
             // and retry with the next-highest raw floor below it.
-            ceiling = y - 1e-4;
+            ceiling = y - GATED_EXCLUSION_STEP;
         }
+        debug_assert!(
+            false,
+            "height_at_gated exceeded {max_iterations} fallthrough iterations (bounded by the \
+             triangle count) — the exclusion-step invariant must have broken; this is a logic \
+             bug, not a runtime hang, so release builds fail safe with None instead of looping"
+        );
+        None
     }
 
     /// Highest floor height in column `(x, z)` that sits at or below
