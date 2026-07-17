@@ -37,7 +37,7 @@ use aether::{DensityGrid, HomogeneousMedium, SteamColumn};
 use crystal::{Core, load_world_dir};
 use glam::Vec3 as GVec3;
 use sama::GaitParams;
-use scrying_glass::bvh::{Bvh, BvhParams};
+use scrying_glass::bvh::{Bvh, BvhParams, DynamicSplice, RefitParams, SpliceKind};
 use scrying_glass::integrator::{
     Integrator, IntegratorParams, IntegratorUniform, MediumGpu, MediumLightGpu, headless_device,
 };
@@ -278,6 +278,45 @@ fn readback_frame(
     readback.unmap();
 }
 
+/// Same as `readback_frame` but returns the raw bytes — used once per segment
+/// (not per frame, so it never pollutes the timed loop) to FNV-hash a frame's
+/// accum for the serial-vs-overlap identity check (LEVER 2).
+fn readback_bytes(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    accum: &wgpu::Buffer,
+    readback: &wgpu::Buffer,
+    bytes: u64,
+) -> Vec<u8> {
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("audit hash readback"),
+    });
+    encoder.copy_buffer_to_buffer(accum, 0, readback, 0, bytes);
+    let (tx, rx) = std::sync::mpsc::channel();
+    encoder.map_buffer_on_submit(readback, wgpu::MapMode::Read, .., move |r| {
+        let _ = tx.send(r.map(|_| ()));
+    });
+    queue.submit(Some(encoder.finish()));
+    let _ = device.poll(wgpu::PollType::wait_indefinitely());
+    rx.recv().expect("readback channel").expect("map readback");
+    let mapped = readback.get_mapped_range(..).expect("mapped readback");
+    let out = mapped.to_vec();
+    drop(mapped);
+    readback.unmap();
+    out
+}
+
+/// 64-bit FNV-1a — mirrors `refit_parity.rs`'s hash (duplicated per the
+/// examples-don't-share-code precedent already established there).
+fn fnv(bytes: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &b in bytes {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
 fn print_table(pose: &str, config: &str, rec: &Recorder, budget_ms: f64) {
     for i in 0..rec.names.len() {
         let (mean, std, min, max) = rec.stats(i);
@@ -391,21 +430,47 @@ fn main() {
     println!("| pose | config | phase | mean ms | std | min | max |");
     println!("|------|--------|-------|---------|-----|-----|-----|");
 
-    let mut summaries: Vec<(String, f64, f64, f64)> = Vec::new();
+    let mut summaries: Vec<(String, f64, f64, f64, f64)> = Vec::new();
+
+    // LEVER 1: refit-not-rebuild, driven through the persistent DynamicSplice
+    // exactly as the player render loop drives it. GAIA_AUDIT_REBUILD=1 forces a
+    // full per-tick rebuild (the pre-lever baseline) for a like-for-like ledger.
+    let refit_params = if env_u32("GAIA_AUDIT_REBUILD", 0) != 0 {
+        RefitParams {
+            degrade_ratio: 0.0,
+            max_refits: 1,
+        }
+    } else {
+        RefitParams::default()
+    };
+
+    // Cumulative tick count the shared `scene` has been driven to — tracked so
+    // the LEVER 2 overlap segment (below) can replay a FRESH scene to the exact
+    // SAME starting tick serial's DYN-ON segment began this pose at, making the
+    // two segments' frame content directly comparable (same tick sequence, same
+    // camera, same medium — overlap changes scheduling only, never content).
+    let mut ticks_so_far = target;
 
     for (pose_name, camera) in &poses {
+        let pose_start_tick = ticks_so_far;
         // ── Segment A: DYN-ON — the living world, steam bound. ──────────────
-        let dyn_bvh = Bvh::build(&scene.dynamic_leaf_triangles(), &bvh_params.dynamic());
-        let merged = Bvh::merge(&static_bvh, &dyn_bvh);
+        let mut splice = DynamicSplice::build(
+            &static_bvh,
+            &scene.dynamic_leaf_triangles(),
+            &bvh_params.dynamic(),
+            refit_params,
+        );
         let mut integrator = Integrator::new(
             &device,
             wgpu::TextureFormat::Rgba8UnormSrgb,
-            &merged,
+            &splice.merged,
             Some(&medium),
         );
         let accum = integrator.make_accum(&device, w, h);
         let readback = make_readback();
         let mut rec = Recorder::default();
+        let mut refits = 0u32;
+        let mut rebuilds = 0u32;
         for frame in 0..(warmup + frames) {
             let measured = frame >= warmup;
             let t = Instant::now();
@@ -417,12 +482,15 @@ fn main() {
             let tick_ms = t.elapsed().as_secs_f64() * 1e3;
 
             let t = Instant::now();
-            let dyn_bvh = Bvh::build(&scene.dynamic_leaf_triangles(), &bvh_params.dynamic());
-            let merged = Bvh::merge(&static_bvh, &dyn_bvh);
+            let kind = splice.update(&static_bvh, &scene.dynamic_leaf_triangles());
             let splice_ms = t.elapsed().as_secs_f64() * 1e3;
+            match kind {
+                SpliceKind::Refit => refits += 1,
+                SpliceKind::Rebuilt => rebuilds += 1,
+            }
 
             let t = Instant::now();
-            integrator.update_bvh(&device, &merged);
+            integrator.update_bvh(&device, &splice.merged);
             let compute_bg = integrator.compute_bind_group(&device, &accum);
             let upload_ms = t.elapsed().as_secs_f64() * 1e3;
 
@@ -448,15 +516,177 @@ fn main() {
             if measured {
                 rec.push("skin (command_bodies)", skin_ms);
                 rec.push("tick (physics+kami)", tick_ms);
-                rec.push("splice (dyn build+merge)", splice_ms);
+                rec.push("splice (refit/rebuild+merge)", splice_ms);
                 rec.push("upload (update_bvh+bg)", upload_ms);
                 rec.push("trace+medium (fused GPU)", trace_ms);
                 rec.push("readback", read_ms);
             }
         }
+        eprintln!(
+            "[audit] {pose_name} DYN-ON splice: {refits} refits, {rebuilds} rebuilds over {} frames",
+            warmup + frames
+        );
         print_table(pose_name, "DYN-ON", &rec, budget_ms);
         let on_total = rec.total_mean();
         let on_trace = rec.stats(4).0;
+        ticks_so_far += (warmup + frames) as u64;
+
+        // ── Segment D: DYN-ON OVERLAP (LEVER 2) — the player-shaped pipelined
+        // frame: submit frame i's trace WITHOUT waiting, run frame i+1's CPU
+        // stages (skin/tick/splice/upload) while the GPU works, THEN complete
+        // the PREVIOUS submission (explicit `SubmissionIndex` wait — not
+        // `wait_indefinitely`, which would also wait for the frame just
+        // submitted and collapse the overlap). Runs on a FRESH scene replayed
+        // to `pose_start_tick` (deterministic — same command_bodies/tick
+        // sequence the shared `scene` took to reach that tick), so its frame
+        // content is directly comparable to serial's: same tick sequence, same
+        // camera, same medium. Only the SCHEDULING differs.
+        let mut ov_core = Core::default();
+        load_world_dir(&world_path, &mut ov_core.world).expect("load naruko (overlap replay)");
+        let mut ov_scene = RenderScene::from_ecs(std::mem::take(&mut ov_core.world), &params)
+            .expect("render scene (overlap replay)");
+        for _ in 0..pose_start_tick {
+            ov_scene.command_bodies(6.0);
+            ov_scene.tick();
+        }
+        let mut ov_splice = DynamicSplice::build(
+            &static_bvh,
+            &ov_scene.dynamic_leaf_triangles(),
+            &bvh_params.dynamic(),
+            refit_params,
+        );
+        let mut ov_integrator = Integrator::new(
+            &device,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            &ov_splice.merged,
+            Some(&medium),
+        );
+        let ov_accum = ov_integrator.make_accum(&device, w, h);
+        let ov_readback = make_readback();
+
+        let mut rec_ov_phases = Recorder::default();
+        let mut rec_ov_wall = Recorder::default();
+        let mut ov_refits = 0u32;
+        let mut ov_rebuilds = 0u32;
+        let mut pending: Option<wgpu::SubmissionIndex> = None;
+        let mut frame_start = Instant::now();
+        for frame in 0..(warmup + frames) {
+            let measured = frame >= warmup;
+            let this_frame_start = frame_start;
+
+            let t = Instant::now();
+            ov_scene.command_bodies(6.0);
+            let skin_ms = t.elapsed().as_secs_f64() * 1e3;
+
+            let t = Instant::now();
+            ov_scene.tick();
+            let tick_ms = t.elapsed().as_secs_f64() * 1e3;
+
+            let t = Instant::now();
+            let kind = ov_splice.update(&static_bvh, &ov_scene.dynamic_leaf_triangles());
+            let splice_ms = t.elapsed().as_secs_f64() * 1e3;
+            match kind {
+                SpliceKind::Refit => ov_refits += 1,
+                SpliceKind::Rebuilt => ov_rebuilds += 1,
+            }
+
+            let t = Instant::now();
+            ov_integrator.update_bvh(&device, &ov_splice.merged);
+            let ov_compute_bg = ov_integrator.compute_bind_group(&device, &ov_accum);
+            let upload_ms = t.elapsed().as_secs_f64() * 1e3;
+
+            // Submit THIS frame's trace without waiting for it.
+            let uniform = IntegratorUniform::build(
+                camera,
+                &ov_scene.sun,
+                ov_scene.sky_top,
+                ov_scene.sky_horizon,
+                w,
+                h,
+                ov_integrator.node_count,
+                ov_integrator.tri_count,
+                0,
+                &int_params,
+                Some(&medium),
+            );
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("audit overlap integrate"),
+            });
+            ov_integrator.dispatch(&queue, &mut encoder, &uniform, &ov_compute_bg, w, h);
+            let idx = queue.submit(Some(encoder.finish()));
+
+            // Complete the PREVIOUS frame: its GPU work has been running since
+            // last iteration's submit, overlapped with THIS frame's CPU stages
+            // above — by now it should already be done or nearly so. wgpu queue
+            // ordering makes buffer writes/submissions ordered, and dropping a
+            // stale `BindGroup`/`Buffer` handle after its submission doesn't
+            // free the underlying resource early — wgpu tracks GPU-side
+            // resource lifetime by the in-flight command buffer, not by our
+            // Rust-side handles, so `update_bvh` recreating node/tri buffers
+            // one frame ahead of a still-in-flight previous submission is
+            // sound (verified with `MTL_DEBUG_LAYER=1` — see the report).
+            if let Some(prev_idx) = pending.take() {
+                let _ = device.poll(wgpu::PollType::Wait {
+                    submission_index: Some(prev_idx),
+                    timeout: None,
+                });
+            }
+            pending = Some(idx);
+
+            let next_frame_start = Instant::now();
+            if measured {
+                rec_ov_phases.push("skin (command_bodies)", skin_ms);
+                rec_ov_phases.push("tick (physics+kami)", tick_ms);
+                rec_ov_phases.push("splice (refit/rebuild+merge)", splice_ms);
+                rec_ov_phases.push("upload (update_bvh+bg)", upload_ms);
+                rec_ov_wall.push(
+                    "frame (wall, pipelined boundary-to-boundary)",
+                    next_frame_start
+                        .duration_since(this_frame_start)
+                        .as_secs_f64()
+                        * 1e3,
+                );
+            }
+            frame_start = next_frame_start;
+        }
+        // Drain the final in-flight frame before the single end-of-segment
+        // readback (readback is headless-audit cost, excluded from the
+        // per-frame wall times above — the player blits instead).
+        if let Some(prev_idx) = pending.take() {
+            let _ = device.poll(wgpu::PollType::Wait {
+                submission_index: Some(prev_idx),
+                timeout: None,
+            });
+        }
+        eprintln!(
+            "[audit] {pose_name} DYN-ON OVERLAP splice: {ov_refits} refits, {ov_rebuilds} rebuilds over {} frames",
+            warmup + frames
+        );
+        print_table(
+            pose_name,
+            "DYN-ON OVERLAP (cpu phases)",
+            &rec_ov_phases,
+            budget_ms,
+        );
+        print_table(pose_name, "DYN-ON OVERLAP (wall)", &rec_ov_wall, budget_ms);
+        let overlap_wall_mean = rec_ov_wall.total_mean();
+
+        // Hash-identity check: same tick sequence from the same warmed tick,
+        // same camera/medium ⇒ serial's and overlap's FINAL frame should match
+        // bit-for-bit (scheduling changed, content did not). One readback each
+        // — not per-frame — keeps this out of the timed segments.
+        let serial_hash_bytes = readback_bytes(&device, &queue, &accum, &readback, bytes);
+        let overlap_hash_bytes = readback_bytes(&device, &queue, &ov_accum, &ov_readback, bytes);
+        let serial_hash = fnv(&serial_hash_bytes);
+        let overlap_hash = fnv(&overlap_hash_bytes);
+        println!(
+            "[audit] {pose_name} hash-identity: serial={serial_hash:016x} overlap={overlap_hash:016x} {}",
+            if serial_hash == overlap_hash {
+                "MATCH"
+            } else {
+                "DIFFER"
+            }
+        );
 
         // Frozen splice for the static segments: the world as statue at the
         // last measured tick — same geometry, zero dynamics.
@@ -545,6 +775,7 @@ fn main() {
         summaries.push((
             pose_name.to_string(),
             on_total,
+            overlap_wall_mean,
             off_total,
             med_trace - off_trace,
         ));
@@ -552,10 +783,18 @@ fn main() {
     }
 
     println!("[audit] ── VERDICT (budget {budget_ms:.2} ms) ──");
-    for (pose, on, off, med) in &summaries {
+    // The law is judged on the player-shaped number — OVERLAP, the pipelined
+    // wall-clock mean — not the serial sum, which overstates the player-shaped
+    // frame time by summing phases a real frame overlaps. Serial is kept for
+    // per-phase attribution above, not as the 60 FPS verdict.
+    for (pose, on, overlap, off, med) in &summaries {
         println!(
-            "[audit]   {pose}: DYN-ON {on:.2} ms ({}) · STATIC {off:.2} ms ({}) · medium march ≈ {med:.2} ms · living-world price ≈ {:.2} ms",
-            if *on <= budget_ms { "PASS" } else { "FAIL" },
+            "[audit]   {pose}: DYN-ON serial {on:.2} ms · DYN-ON OVERLAP {overlap:.2} ms ({}, budget {budget_ms:.2} ms) · STATIC {off:.2} ms ({}) · medium march ≈ {med:.2} ms · living-world price ≈ {:.2} ms",
+            if *overlap <= budget_ms {
+                "PASS"
+            } else {
+                "FAIL"
+            },
             if *off <= budget_ms { "PASS" } else { "FAIL" },
             on - off,
         );

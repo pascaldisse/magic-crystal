@@ -17,7 +17,7 @@ use scrying_glass::{input, player};
 use crystal::{Core, GaiaPackage, load_world_dir};
 use glam::Vec3;
 use scrying_glass::ScryingGlassPackage;
-use scrying_glass::bvh::{Bvh, BvhParams};
+use scrying_glass::bvh::{Bvh, BvhParams, DEFAULT_DEGRADE_RATIO, DynamicSplice, RefitParams};
 use scrying_glass::integrator::{Integrator, IntegratorParams, IntegratorUniform};
 use scrying_glass::scene::{
     Camera, RenderScene, SceneParameters, SunDefaults, SunLight, WalkerPose,
@@ -43,6 +43,7 @@ struct ScryingGlassConfig {
     scene: SceneParameters,
     integrator: IntegratorParams,
     bvh: BvhParams,
+    refit: RefitParams,
     /// Accumulation frames a /scry moving-eye capture integrates for a crisp shot.
     capture_frames: u32,
 }
@@ -135,6 +136,13 @@ impl ScryingGlassConfig {
                 leaf_max: integer("GAIA_NATIVE_BVH_LEAF", 4)? as usize,
                 max_depth: integer("GAIA_NATIVE_BVH_DEPTH", 64)? as usize,
                 sah_bins: integer("GAIA_NATIVE_BVH_SAH_BINS", 16)? as usize,
+            },
+            refit: RefitParams {
+                degrade_ratio: number(
+                    "GAIA_NATIVE_BVH_REFIT_DEGRADE",
+                    DEFAULT_DEGRADE_RATIO as f64,
+                )? as f32,
+                max_refits: integer("GAIA_NATIVE_BVH_REFIT_MAX", 0)?,
             },
             capture_frames: integer("GAIA_NATIVE_CAPTURE_FRAMES", 48)?,
         };
@@ -711,9 +719,12 @@ struct Renderer {
     /// and re-splice the living layer each frame (Rite IV dynamics).
     scene: RenderScene,
     /// The STATIC BVH — built once over the non-behavior leaf triangles and
-    /// cached; only the dynamic partition rebuilds per tick, merged onto this.
+    /// cached; only the dynamic partition changes per tick, spliced onto this.
     static_bvh: Bvh,
-    bvh_params: BvhParams,
+    /// The persistent two-level splice (LEVER 1): refits the dynamic partition
+    /// per tick when the set is unchanged, rebuilds only on set change / bound
+    /// degradation. Its `merged` tree is what gets uploaded.
+    splice: DynamicSplice,
     /// The dynamic model transforms uploaded last frame; when they change the
     /// BVH is re-spliced and accumulation resets (the honest 2spp-live tradeoff).
     last_models: Vec<[f32; 16]>,
@@ -745,6 +756,7 @@ impl Renderer {
         scene: RenderScene,
         int_params: IntegratorParams,
         bvh_params: &BvhParams,
+        refit_params: RefitParams,
         capture_frames: u32,
     ) -> Result<Self, String> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
@@ -806,10 +818,14 @@ impl Renderer {
         let build_start = Instant::now();
         let static_bvh = Bvh::build(&scene.leaf_triangles(), bvh_params);
         let dynamic_tris = scene.dynamic_leaf_triangles();
-        let dyn_bvh = Bvh::build(&dynamic_tris, &bvh_params.dynamic());
-        let bvh = Bvh::merge(&static_bvh, &dyn_bvh);
+        let splice = DynamicSplice::build(
+            &static_bvh,
+            &dynamic_tris,
+            &bvh_params.dynamic(),
+            refit_params,
+        );
         let build_millis = build_start.elapsed().as_secs_f64() * 1e3;
-        let integrator = Integrator::new(&device, format, &bvh, None);
+        let integrator = Integrator::new(&device, format, &splice.merged, None);
         let last_models = scene.dynamics.model_matrices();
         eprintln!(
             "[pleroma] BVH nodes={} triangles={} (static {} + dynamic {}) build={build_millis:.1}ms; {} dynamic entit(ies) — living layer",
@@ -845,7 +861,7 @@ impl Renderer {
             integrator,
             scene,
             static_bvh,
-            bvh_params: *bvh_params,
+            splice,
             last_models,
             camera,
             sun,
@@ -903,12 +919,10 @@ impl Renderer {
         if models == self.last_models && !bodies_animating {
             return; // nothing moved — keep accumulating
         }
-        let dyn_bvh = Bvh::build(
-            &self.scene.dynamic_leaf_triangles(),
-            &self.bvh_params.dynamic(),
-        );
-        let merged = Bvh::merge(&self.static_bvh, &dyn_bvh);
-        self.integrator.update_bvh(&self.device, &merged);
+        self.splice
+            .update(&self.static_bvh, &self.scene.dynamic_leaf_triangles());
+        self.integrator
+            .update_bvh(&self.device, &self.splice.merged);
         // The node/tri buffers changed — rebuild the bind groups (they bind them)
         // and drop the stale samples (moved geometry invalidates the mean).
         self.reset_surface_accum();
@@ -1430,6 +1444,7 @@ fn main() {
                 render_scene,
                 config.integrator,
                 &config.bvh,
+                config.refit,
                 config.capture_frames,
             )
             .map_err(std::io::Error::other)?;
