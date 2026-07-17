@@ -30,8 +30,17 @@ use scrying_glass::integrator::{
 };
 use scrying_glass::scene::{
     Camera, EmissiveSource, RenderScene, SceneParameters, SunDefaults, SunLight, emissive_sources,
-    top_flat_surface_y,
+    top_flat_surface_center,
 };
+
+// Plume geometry dials (documented look choices; only the LIGHT and the GROUND
+// bind to the realm). Height and radius drive BOTH the density column AND the
+// grid that bounds it (see `steam_medium`), so the box can never be hand-fitted
+// out of sync with the column it wraps.
+const PLUME_HEIGHT: f64 = 4.2;
+const PLUME_RADIUS: f64 = 0.85;
+const PLUME_PEAK: f64 = 1.0;
+const PLUME_TURBULENCE: f64 = 0.7;
 
 /// Naruko scene parameters (mirrors the window defaults in `main.rs` — the same
 /// realm a player boots). Nothing here is hardcoded into the engine; these are
@@ -64,7 +73,7 @@ fn naruko_params() -> SceneParameters {
 /// LIGHT are derived from the realm, never invented (A2 true binding + clip):
 ///
 /// - `counter_top_y` is the world-space top of the stall's serving surface
-///   (`top_flat_surface_y`) — the plume's y-min sits exactly there, so the
+///   (`top_flat_surface_center`) — the plume's y-min sits exactly there, so the
 ///   column rises FROM the counter instead of clipping down through it.
 /// - `light` is a real emitter read from the realm (`emissive_sources`): its
 ///   world position and colour bind the medium's in-scatter light, and its
@@ -91,41 +100,50 @@ struct BoundLight {
 /// read from the world; nothing is invented. The nearest emitter is bound
 /// because it is the light that actually sits with the stall and back-lights
 /// its steam toward a viewer (forward scatter), the way a night stall reads.
-/// `fallback_reach` (world units) is how near an emitter must be to be chosen
-/// over the sun — a documented dial, not a hidden constant.
+///
+/// The choice is a per-candidate PHYSICAL dominance test, not a tuned distance:
+/// a point emitter of radiant intensity `I` (its emission radiance × projected
+/// area πr²) delivers irradiance `I / d²` at the plume, while the sun delivers
+/// `sun.intensity`. The emitter out-lights the sun — and therefore owns the
+/// steam — exactly inside `d² < I / sun.intensity`. Both quantities are already
+/// in scope (`emission_intensity·π·r²` per candidate, `sun.intensity`); there is
+/// no frozen reach literal.
 fn select_medium_light(
     sources: &[EmissiveSource],
     sun: &SunLight,
     emission_intensity: f32,
     plume_center: [f32; 3],
-    fallback_reach: f32,
 ) -> BoundLight {
     let nearest = sources.iter().min_by(|a, b| {
         let da = dist2(a.position, plume_center);
         let db = dist2(b.position, plume_center);
         da.total_cmp(&db)
     });
-    match nearest {
-        Some(source) if dist2(source.position, plume_center).sqrt() <= fallback_reach => {
-            BoundLight {
+    if let Some(source) = nearest {
+        // Radiant intensity DERIVED from the real emitter: the world's
+        // emission-radiance dial × the emitter's emitting area (πr²).
+        let emitter_intensity = emission_intensity * PI * source.radius * source.radius;
+        let d2 = dist2(source.position, plume_center);
+        // Point-source irradiance I/d² beats the sun's irradiance iff
+        // d² < I / sun.intensity — the exact dominance boundary, per candidate.
+        if d2 < emitter_intensity / sun.intensity {
+            return BoundLight {
                 light: MediumLightGpu::Point {
                     position: source.position,
                 },
                 color: source.color,
-                // Radiant intensity DERIVED from the real emitter: the world's
-                // emission-radiance dial × the emitter's emitting area (πr²).
-                intensity: emission_intensity * PI * source.radius * source.radius,
+                intensity: emitter_intensity,
                 label: source.id.clone(),
-            }
+            };
         }
-        _ => BoundLight {
-            light: MediumLightGpu::Directional {
-                to_light: sun.direction,
-            },
-            color: sun.color,
-            intensity: sun.intensity,
-            label: "sun".into(),
+    }
+    BoundLight {
+        light: MediumLightGpu::Directional {
+            to_light: sun.direction,
         },
+        color: sun.color,
+        intensity: sun.intensity,
+        label: "sun".into(),
     }
 }
 
@@ -133,36 +151,56 @@ fn dist2(a: [f32; 3], b: [f32; 3]) -> f32 {
     (a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)
 }
 
-fn steam_medium(bound: &BoundLight, counter_top_y: f32) -> MediumGpu {
-    // The plume is grounded ON the counter surface (derived), rising over a
-    // documented height. Base radius and turbulence are steam dials.
-    let plume_height = 4.2_f64;
+fn steam_medium(bound: &BoundLight, base: [f32; 3]) -> MediumGpu {
+    // The plume is grounded ON the stall's serving surface: `base` is
+    // [surface_center_x, surface_top_y, surface_center_z], all derived from the
+    // realm's geometry (`top_flat_surface_center`) — the column rises from the
+    // real footprint, not an invented x/z. Height/radius/turbulence are dials.
+    let plume_height = PLUME_HEIGHT;
     let column = SteamColumn {
-        base: aether::vec3(-1.0, counter_top_y as f64, 25.6),
+        base: aether::vec3(base[0] as f64, base[1] as f64, base[2] as f64),
         height: plume_height,
-        radius: 0.85,
-        peak: 1.0,
-        turbulence: 0.7,
+        radius: PLUME_RADIUS,
+        peak: PLUME_PEAK,
+        turbulence: PLUME_TURBULENCE,
         ..SteamColumn::default()
     };
     // Rasterize into the grid the GPU uploads (the SAME artifact the CPU marches).
-    // The grid's y-MIN is the counter surface — nothing exists below it (clip).
+    // The grid's y-MIN is the serving surface — nothing exists below it (clip).
+    // Grid dims/origin are DERIVED from the column's own reach, never hand-fit:
+    // SteamColumn::density widens to r*(0.6+0.8)=1.4*radius at the top and is
+    // EXACTLY zero beyond that radius and above `height`, so the box need only
+    // wrap [±1.4*radius, height] plus a few-voxel empty rim. The rim keeps the
+    // boundary voxels at density 0, which is also what makes the shader's
+    // empty-space skip-window trivially exact at the faces.
     let vsize = 0.12;
-    let dims = [26usize, 36, 26];
-    let origin = aether::vec3(-2.5, counter_top_y as f64, 24.1);
+    let half_reach = 1.4 * PLUME_RADIUS; // max lateral density radius (at the top)
+    let margin = 3.0 * vsize; // three empty voxels of rim on every open face
+    let span_xz = 2.0 * (half_reach + margin);
+    let span_y = plume_height + margin; // y-min clips at the surface (no bottom rim)
+    let nx = (span_xz / vsize).ceil() as usize;
+    let ny = (span_y / vsize).ceil() as usize;
+    let dims = [nx, ny, nx];
+    let origin = aether::vec3(
+        base[0] as f64 - half_reach - margin,
+        base[1] as f64,
+        base[2] as f64 - half_reach - margin,
+    );
     let grid = DensityGrid::rasterize(dims, vsize, origin, &column);
 
     // Optics: a THIN translucent veil, near-pure scattering (water droplets
-    // absorb almost nothing: albedo ≈ 0.999). Base-center optical depth ≈ 0.5
-    // (T ≈ 0.6) — the dusk sky shows THROUGH the wisp as a mauve dimming
-    // instead of a black smokestack, which is what real stall steam at 9 m
-    // from a modest lantern is: in-scatter (intensity/d² ≈ 0.03) can never
-    // outshine the sky it occludes, so readability comes from translucency,
-    // wispy structure, and a warm tint near the base. g = 0.4 is the EFFECTIVE
-    // phase: droplet HG g ≈ 0.8 isotropized by multiple scattering (similarity
-    // theory, g' < g), which a single-scatter march must fold in — and it
-    // hands the side-lit orbit view its share of the lantern. Never a boosted
-    // light; the veil is as bright as the physics allows.
+    // absorb almost nothing: albedo σ_s/σ_t = 1.5/1.501 ≈ 0.999). Base-center
+    // optical depth ≈ 0.5 ⇒ transmittance T = exp(-0.5) ≈ 0.61 — the dusk sky
+    // shows THROUGH the wisp as a mauve dimming instead of a black smokestack,
+    // which is what real stall steam at ~9 m from a modest lantern is:
+    // in-scatter (intensity/d² ≈ 0.03) can never outshine the sky it occludes,
+    // so readability comes from translucency, wispy structure, and a warm tint
+    // near the base. g = 0.4 is a forward-scatter LOOK DIAL, not a derived
+    // value: real water-droplet HG g ≈ 0.8, dialed down by hand as a stand-in
+    // for the forward-bias softening that multiple scattering produces — a
+    // single-scatter march cannot reproduce that, so this is an honest artistic
+    // choice (it also hands the side-lit orbit view its share of the lantern).
+    // Never a boosted light; the veil is as bright as the physics allows.
     let optics = HomogeneousMedium::new(0.001, 1.5, 0.4);
     let d = grid.dims();
     let o = grid.world_origin();
@@ -276,34 +314,44 @@ fn main() {
     // A2 binding + clip: read the real emitters + the stall's serving surface
     // from the realm BEFORE the render scene consumes the world.
     let sources = emissive_sources(&core.world).expect("emissive sources");
-    let counter_top_y = top_flat_surface_y(&core.world, "naruko_stall_massing")
+    // The stall's serving surface, wholly derived: [center_x, top_y, center_z].
+    // The plume grounds on top_y at the surface's real footprint (center_x/z) —
+    // no invented horizontal coordinates.
+    let surface = top_flat_surface_center(&core.world, "naruko_stall_massing")
         .expect("stall surface")
         .expect("the stall has a flat serving surface");
+    let counter_top_y = surface[1];
+    let plume_base = [surface[0], counter_top_y, surface[2]];
 
     let scene =
         RenderScene::from_ecs(std::mem::take(&mut core.world), &params).expect("render scene");
 
-    // The plume centre (its base is grounded on the counter; the light selection
-    // uses the mid-column point).
-    let plume_center = [-1.0, counter_top_y + 1.7, 25.6];
-    // An emitter owns the steam only where it OUT-LIGHTS the sun: a point
-    // source of intensity I beats the sun's irradiance (sun_intensity) inside
-    // d < sqrt(I / sun_intensity). Derived for the stall lantern (I = 2.376,
-    // sun 1.1): sqrt(2.376 / 1.1) = 1.47 m. The lantern sits ~9 m from the
-    // plume, where its irradiance is I/d² ≈ 0.03 — 3% of the sun's — so the
-    // honest dominant illuminant for this open-air plume is the SUN (derived,
-    // not chosen); the lantern would own steam rising from its own sphere.
-    let fallback_reach = 1.47;
+    // The plume's MID-COLUMN point (light selection samples here): its base is
+    // grounded on the surface, so the mid is base.y + height/2 — derived from
+    // the SAME height dial the column uses, never a stale offset.
+    let plume_mid_y = counter_top_y + (PLUME_HEIGHT / 2.0) as f32;
+    let plume_center = [plume_base[0], plume_mid_y, plume_base[2]];
+    // An emitter owns the steam only where it OUT-LIGHTS the sun (per-candidate
+    // d² < I / sun.intensity, evaluated in select_medium_light). For the stall
+    // lantern (I = emission·πr² ≈ 2.4, sun 1.1) the threshold is d² ≈ 2.2 while
+    // the lantern sits ~9 m off (d² ≈ 81), so its irradiance I/d² ≈ 0.03 is 3%
+    // of the sun's — the honest dominant illuminant for this open-air plume is
+    // the SUN (derived, not chosen); the lantern would own steam from its own
+    // sphere. Asserted below so a realm change that flips the binding is loud.
     let bound = select_medium_light(
         &sources,
         &scene.sun,
         params.emission_intensity,
         plume_center,
-        fallback_reach,
     );
     eprintln!(
-        "[a2] bound light = {:?}  colour {:?}  intensity {:.3}  |  counter top y = {:.2}",
-        bound.label, bound.color, bound.intensity, counter_top_y
+        "[a2] bound light = {:?}  colour {:?}  intensity {:.3}  |  surface center = [{:.2}, {:.2}, {:.2}]",
+        bound.label, bound.color, bound.intensity, surface[0], surface[1], surface[2]
+    );
+    assert_eq!(
+        bound.label, "sun",
+        "the open-air Naruko plume is sun-dominated (lantern I/d² ≈ 3% of the sun); \
+         the binding must be the SUN unless the realm's emitters/geometry changed"
     );
 
     // Static + dynamic geometry into one BVH (as the window does).
@@ -312,7 +360,7 @@ fn main() {
     let bvh = Bvh::build(&tris, &BvhParams::default());
     eprintln!("[a2] naruko: {} leaf triangles", tris.len());
 
-    let medium = steam_medium(&bound, counter_top_y);
+    let medium = steam_medium(&bound, plume_base);
 
     let (w, h) = (900u32, 600u32);
     let frames = 40u32;
@@ -326,7 +374,9 @@ fn main() {
     let exposure = 1.0;
 
     // Front three-quarter view: the stall with the plume rising above its roof
-    // against the night sky and distant city.
+    // against the night sky and distant city. The look target is an authored
+    // FRAMING choice (eye + aim), not a physical derivation — it composes the
+    // shot over the stall, independent of the plume's derived base.
     let cam_front = camera_at([3.5, 3.4, 33.0], [-1.0, 4.2, 25.6], 55.0);
     // Orbit: the other shoulder, same plume.
     let cam_orbit = camera_at([-6.5, 3.6, 32.0], [-1.0, 4.2, 25.6], 55.0);
@@ -373,7 +423,7 @@ fn main() {
     // march cost; (no_shadow - off) ≈ primary march cost. Honest numbers, not feel.
     let medium_noshadow = MediumGpu {
         shadow_steps: 1,
-        ..steam_medium(&bound, counter_top_y)
+        ..steam_medium(&bound, plume_base)
     };
     let (_img_ns, ms_noshadow) = render(
         &device,

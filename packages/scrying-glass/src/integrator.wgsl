@@ -181,7 +181,15 @@ fn hg_phase(cos_theta: f32) -> f32 {
 fn medium_box_range(o: vec3<f32>, d: vec3<f32>) -> vec2<f32> {
   let lo = u.med_origin.xyz;
   let hi = lo + vec3<f32>(u.med_dims.xyz) * u.med_origin.w;
-  let inv = 1.0 / d;
+  // NaN guard: an axis-parallel ray (d.k == 0) lying ON a slab face gives
+  // (face - o).k == 0 and inv.k == ±inf, so (0 * inf) = NaN would leak into
+  // min/max — and WGSL's min/max NaN result is implementation-defined. Nudge
+  // any exactly-zero component to a tiny magnitude: inv becomes a huge FINITE
+  // number, the slab's t-bounds become ±1e30 with the correct sign (no
+  // constraint when the origin is inside the slab, a clean miss when outside),
+  // and no NaN ever reaches the reductions.
+  let safe_d = select(d, vec3<f32>(1e-30, 1e-30, 1e-30), abs(d) < vec3<f32>(1e-30, 1e-30, 1e-30));
+  let inv = 1.0 / safe_d;
   let ta = (lo - o) * inv;
   let tb = (hi - o) * inv;
   let tmin = min(ta, tb);
@@ -195,6 +203,14 @@ fn medium_box_range(o: vec3<f32>, d: vec3<f32>) -> vec2<f32> {
 // Aether optical_depth). d must be unit length. EMPTY-SPACE SKIP: only the
 // step centers inside the density box are evaluated; every skipped sample has
 // density 0, so the sum is bit-identical to the full march (x + 0.0 == x).
+// The window [s_lo, s_hi] is widened by one step on each side (clamped to
+// [0, n-1]): the exact window from ceil/floor of (t-t0)/ds can, under fp
+// rounding, exclude a step CENTER that truly lies inside the density box
+// (harmless only when the boundary voxels happen to be empty — a
+// scene-dependent accident). Widening by one step guarantees every excluded
+// center sits more than half a step outside the box, beyond any ulp, so the
+// bit-identity to the full march is UNCONDITIONAL (the two extra samples per
+// side carry density 0 when the box truly ends there — x + 0.0 == x).
 fn medium_optical_depth(o: vec3<f32>, d: vec3<f32>, t0: f32, t1: f32, steps: u32) -> f32 {
   let n = max(steps, 1u);
   let ds = (t1 - t0) / f32(n);
@@ -204,8 +220,8 @@ fn medium_optical_depth(o: vec3<f32>, d: vec3<f32>, t0: f32, t1: f32, steps: u32
   let b = min(t1, box_range.y);
   var tau = 0.0;
   if (b > a) {
-    let s_lo = max(i32(ceil((a - t0) / ds - 0.5)), 0);
-    let s_hi = min(i32(floor((b - t0) / ds - 0.5)), i32(n) - 1);
+    let s_lo = max(i32(ceil((a - t0) / ds - 0.5)) - 1, 0);
+    let s_hi = min(i32(floor((b - t0) / ds - 0.5)) + 1, i32(n) - 1);
     var s = s_lo;
     loop {
       if (s > s_hi) { break; }
@@ -228,7 +244,10 @@ fn medium_optical_depth(o: vec3<f32>, d: vec3<f32>, t0: f32, t1: f32, steps: u32
 //
 // EMPTY-SPACE SKIP: only step centers inside the density box are evaluated;
 // every skipped sample has density 0, so both the accumulation and the returned
-// optical depth are bit-identical to the full march (x + 0.0 == x).
+// optical depth are bit-identical to the full march (x + 0.0 == x). As in
+// medium_optical_depth, the window is widened one step on each side (clamped)
+// so a fp-rounded window can never drop a step center truly inside the box —
+// the bit-identity is UNCONDITIONAL, not a boundary-voxel accident.
 fn medium_single_scatter(o: vec3<f32>, d: vec3<f32>, t0: f32, t1: f32) -> vec2<f32> {
   let steps = max(u32(u.med_march.x), 1u);
   let shadow_steps = max(u32(u.med_march.y), 1u);
@@ -244,8 +263,8 @@ fn medium_single_scatter(o: vec3<f32>, d: vec3<f32>, t0: f32, t1: f32) -> vec2<f
   var tau_before = 0.0;
   var acc = 0.0;
   if (b > a) {
-    let s_lo = max(i32(ceil((a - t0) / ds - 0.5)), 0);
-    let s_hi = min(i32(floor((b - t0) / ds - 0.5)), i32(steps) - 1);
+    let s_lo = max(i32(ceil((a - t0) / ds - 0.5)) - 1, 0);
+    let s_hi = min(i32(floor((b - t0) / ds - 0.5)) + 1, i32(steps) - 1);
     var s = s_lo;
     loop {
       if (s > s_hi) { break; }

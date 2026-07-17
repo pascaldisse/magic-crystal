@@ -1305,6 +1305,50 @@ pub fn top_flat_surface_y(world: &EcsWorld, gaia_id: &str) -> Result<Option<f32>
     Ok(best)
 }
 
+/// The world-space CENTRE of the entity's highest flat serving surface, as
+/// `[center_x, top_y, center_z]` — the same part [`top_flat_surface_y`] selects
+/// (max top), but returning its horizontal centre too so a caller can GROUND
+/// something on the surface (its `top_y`) at the surface's real footprint
+/// (`center_x`/`center_z`) instead of inventing horizontal coordinates.
+pub fn top_flat_surface_center(
+    world: &EcsWorld,
+    gaia_id: &str,
+) -> Result<Option<[f32; 3]>, String> {
+    let (Some(transform_id), Some(mesh_id)) =
+        (world.component_id("transform"), world.component_id("mesh"))
+    else {
+        return Ok(None);
+    };
+    let Some(entity) = world.entity_for_gaia(gaia_id) else {
+        return Ok(None);
+    };
+    let transform: Transform = serde_json::from_value(world.get_component(entity, transform_id)?)
+        .map_err(|error| format!("entity {gaia_id:?} transform: {error}"))?;
+    let mesh: Mesh = serde_json::from_value(world.get_component(entity, mesh_id)?)
+        .map_err(|error| format!("entity {gaia_id:?} mesh: {error}"))?;
+    let parts = parts_of(mesh).map_err(|error| format!("entity {gaia_id:?} mesh: {error}"))?;
+    let entity_pos = vec3(transform.position.as_ref()).unwrap_or(Vec3::ZERO);
+    let mut best: Option<(f32, [f32; 3])> = None;
+    for part in &parts {
+        if part.shape.as_deref().unwrap_or("box") != "box" {
+            continue;
+        }
+        let Some(size) = vec3(part.size.as_ref()) else {
+            continue;
+        };
+        if size.y > size.x.min(size.z) {
+            continue;
+        }
+        let part_pos = vec3(part.position.as_ref()).unwrap_or(Vec3::ZERO);
+        let top = entity_pos.y + part_pos.y + size.y * 0.5;
+        let center = [entity_pos.x + part_pos.x, top, entity_pos.z + part_pos.z];
+        if best.is_none_or(|(b, _)| top > b) {
+            best = Some((top, center));
+        }
+    }
+    Ok(best.map(|(_, center)| center))
+}
+
 /// Project a cluster's LOD error through its group's SHARED bounds sphere to a
 /// screen-space error (~pixels). Error 0 (leaves) stays 0. Distance metric
 /// (Rite III); hardware visibility lands later.
