@@ -76,6 +76,34 @@ lever is scheduling only. PIXEL levers (spp/bounce) remain untouched;
 LODs remain forbidden vocabulary. Perf-fix's retired canonical tie-break
 still at c1616b6. Wide-pose 20 px = PROVEN coplanar z-fights, irreducible.
 
+## Physics (delta 07-17, merge-conductor burst #7)
+BROADPHASE MERGED to main (90f5676, P-SCALE + EXACT BROADPHASE): fixpoint
+re-query grid broadphase, exact by construction — MUST-FIX→fix→re-pass
+HOLDS across TWO adversary passes (the two-sided-shell adv_margin ordeal,
+then the chain-class adv_chain_three_walls ordeal, adopted 029cc13).
+real-naruko collision tick 18.7ms → 3.94ms; projected serial frame
+16.70ms = 59.9fps, a knife-edge pass — the overlap lever (60 FPS LAW,
+above) is in flight on the window lane to give it margin.
+P-SCALE building collapse landed same merge: the building falls
+measured, collision floor cut 26.7×/4.8× (grid vs brute, two scales
+measured). Neural-vs-exact verdict from the P-SCALE measure suite:
+exact broadphase beats learned/approximate everything tried at this
+scale — no case where a learned shortcut won on cost or correctness.
+Termination bound for the fixpoint loop now recorded IN CODE at
+solver.rs (0eb05d4, advisory): reach strictly grows each failed pass,
+candidate set monotone in reach, an unchanged dmax across a pass is the
+fixed point and exits; bounded by N_triangles + 1 passes (previously
+commit-prose only, c58cf54/ee2e8cd). Parked in the same comment: a
+sub-ulp hardening option `reach = (dmax + radius) * (1.0 + f64::EPSILON)`
+was considered and NOT applied — solver semantics stay builder-domain —
+recorded for the next physics wave to revisit if a rounding-edge case
+ever surfaces.
+OPEN physics-quality items for the Architect's pass (not blocking, not
+this burst's scope): metastability, resolution-fracture, pancake —
+named but unaddressed; carried forward.
+Suite: 392/0 on main after this land (392 = 380 prior + physics-scale's
+own tests/ordeals + adv_chain).
+
 ## Rites
 IV (THE PLEROMA) — sung (hymns/rite-04), close = HIS CHROME CHECK.
 V (THE EMBODIED ONES) — BUILD-COMPLETE; close = HIS WALK. Hymn owed at
