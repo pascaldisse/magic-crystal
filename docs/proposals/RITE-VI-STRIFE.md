@@ -87,7 +87,12 @@ the Architect SEES something break. Hymn owed at close (hymnal law).
    unnamed). Candidates: `matter`, `body`, `corpus` — Grimoire rules.
 4. Bond-love source: per-essence default table (stone > wood > glass)
    vs per-vessel param only. Essence-derived proposed; needs ruling
-   (materials/essences spec territory).
+   (materials/essences spec territory). STATUS NOTE (night-of-07-17):
+   proxy default shipped in elements (`default_bond_love`, density
+   ratio to `STONE_DENSITY`, floored at `BOND_LOVE_FLOOR` = balsa/stone
+   ratio), standing in for VI-2's proof-of-mechanism. This item REMAINS
+   OPEN — the proxy is not a ruling, and a real essence/materials table
+   may replace its density-only heuristic outright.
 5. Fragment granularity params (min fragment mass, max fragment count
    per event) — defaults proposed derived from particle count; ruling
    on ceilings.

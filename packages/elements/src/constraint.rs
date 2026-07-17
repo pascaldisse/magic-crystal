@@ -91,6 +91,16 @@ pub const BOND_LOVE_FLOOR: f64 = BALSA_DENSITY / STONE_DENSITY;
 /// example, an ordeal) may author an explicit `love` instead; this function
 /// only supplies the number when the caller wants "derive it from what the
 /// crate is made of" rather than pick one.
+///
+/// STATUS (adversary A3, night-of-07-17): this is a documented PROXY
+/// DEFAULT — a density-ratio heuristic standing in until the Architect
+/// rules on materials/essences (`docs/proposals/RITE-VI-STRIFE.md`'s "OPEN
+/// W/ ARCHITECT" item 4, which REMAINS OPEN as of this note). It is not a
+/// physically-grounded bond-strength model (real material toughness does
+/// not track density linearly, or even monotonically — glass is denser
+/// than balsa yet far more brittle), and a real essence/materials ruling
+/// may replace this function's body entirely, not just retune its
+/// constants. Treat every number this function returns as provisional.
 pub fn default_bond_love(density: f64) -> f64 {
     (density / STONE_DENSITY).clamp(BOND_LOVE_FLOOR, LOVE)
 }
