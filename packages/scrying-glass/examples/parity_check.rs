@@ -253,7 +253,7 @@ fn main() {
         scene.tick();
     }
 
-    let dyn_bvh = Bvh::build(&scene.dynamic_leaf_triangles(), &bvh_params);
+    let dyn_bvh = Bvh::build(&scene.dynamic_leaf_triangles(), &bvh_params.dynamic());
     let merged = Bvh::merge(&static_bvh, &dyn_bvh);
 
     // Depth probe (stack-overflow guard is 64 nodes deep).

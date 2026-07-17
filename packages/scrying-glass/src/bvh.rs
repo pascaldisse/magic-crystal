@@ -81,6 +81,22 @@ impl Default for BvhParams {
     }
 }
 
+impl BvhParams {
+    /// Params for the PER-TICK dynamic partition: identical to `self` but with
+    /// `sah_bins = 0`, selecting the cheap widest-axis median split. SAH pays for
+    /// itself on the large static tree (built once, traversed millions of times);
+    /// on the small dynamic partition (rebuilt EVERY tick) the binned search
+    /// costs ~3 ms/tick for negligible traversal gain, so median wins the frame
+    /// budget. Pure build-strategy choice — the triangle set and every
+    /// unambiguous nearest hit are unchanged.
+    pub fn dynamic(&self) -> Self {
+        Self {
+            sah_bins: 0,
+            ..*self
+        }
+    }
+}
+
 /// The built hierarchy: a flat node array (root at index 0) + the triangles in
 /// leaf-visitation order (both uploaded verbatim as storage buffers).
 #[derive(Clone, Debug, Default)]
@@ -330,7 +346,16 @@ fn subdivide(
     }
 
     let slice = &mut build[start..start + count];
-    let mid = match sah_split(slice, cmn, extent, params.sah_bins) {
+    // `sah_bins < 2` selects the cheap widest-axis median (baseline behaviour) —
+    // the per-tick DYNAMIC partition uses it: nari's body is a compact skinned
+    // cluster where SAH tree quality buys almost no traversal but the binned
+    // search costs ~3 ms/tick. The static tree (built once) keeps full SAH.
+    let sah = if params.sah_bins >= 2 {
+        sah_split(slice, cmn, extent, params.sah_bins)
+    } else {
+        None
+    };
+    let mid = match sah {
         Some((axis, plane, scale)) => {
             // Stable partition: bins ≤ plane go left. Sorting by bin index keeps
             // the build deterministic (topology is free — pixels never see it).

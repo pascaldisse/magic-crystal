@@ -804,7 +804,7 @@ impl Renderer {
         let build_start = Instant::now();
         let static_bvh = Bvh::build(&scene.leaf_triangles(), bvh_params);
         let dynamic_tris = scene.dynamic_leaf_triangles();
-        let dyn_bvh = Bvh::build(&dynamic_tris, bvh_params);
+        let dyn_bvh = Bvh::build(&dynamic_tris, &bvh_params.dynamic());
         let bvh = Bvh::merge(&static_bvh, &dyn_bvh);
         let build_millis = build_start.elapsed().as_secs_f64() * 1e3;
         let integrator = Integrator::new(&device, format, &bvh, None);
@@ -898,7 +898,10 @@ impl Renderer {
         if models == self.last_models && !bodies_animating {
             return; // nothing moved — keep accumulating
         }
-        let dyn_bvh = Bvh::build(&self.scene.dynamic_leaf_triangles(), &self.bvh_params);
+        let dyn_bvh = Bvh::build(
+            &self.scene.dynamic_leaf_triangles(),
+            &self.bvh_params.dynamic(),
+        );
         let merged = Bvh::merge(&self.static_bvh, &dyn_bvh);
         self.integrator.update_bvh(&self.device, &merged);
         // The node/tri buffers changed — rebuild the bind groups (they bind them)
