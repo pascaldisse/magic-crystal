@@ -26,9 +26,10 @@
 //!                          eye it visibly reflects the chrome sphere + the orbs
 //!                          (metallic 1.0, roughness 0.03).
 //!   naruko_show_light_a/b/c — three orbiting emitters (violet #b98aff, cyan
-//!                          #37e0ff, pink #ff6bb0) on kami `orbit` rings
-//!                          centered [-1.5, y, 29] between the mirror and the
-//!                          sphere. As they orbit, their reflections in the
+//!                          #37e0ff, pink #ff6bb0), each a NEW `orbit`
+//!                          behavior with its own center [-1.5, y, 29] (not
+//!                          riders on any existing kami ring), between the
+//!                          mirror and the sphere. As they orbit, their reflections in the
 //!                          chrome + mirror MOVE and their colored pools crawl
 //!                          across the terra — bounce light, traced.
 //!
