@@ -80,6 +80,32 @@ pub struct FluidConfig {
     /// ≤6% peak compression. Not a physical constant — a numerical relaxation,
     /// hence a dial.
     pub relax: f64,
+    /// DENSITY-SOLVER ITERATIONS per substep (Macklin §Algorithm 1: the
+    /// neighbour set is found ONCE per substep, then the density constraint is
+    /// projected `solver_iterations` times, each pass recomputing λ and Δp
+    /// from the CURRENT positions). One SOR-relaxed Jacobi projection barely
+    /// nudges a stiff many-neighbour column, so a lone pass leaves the surface
+    /// domed (reads as jelly); iterating the projection lets hydrostatic
+    /// pressure equalise and the free surface settle FLAT (reads as water).
+    /// The paper uses `2..=4`. Default `4` — with `relax = 0.1` the effective
+    /// per-substep correction (`1 − (1 − relax)^iters ≈ 0.34`) stays inside the
+    /// contractive regime (measured: no divergence) while flattening the dome
+    /// an order of magnitude versus one pass. Not a physical constant — a
+    /// convergence dial, hence a dial. `0` clamps to `1`.
+    pub solver_iterations: usize,
+    /// UNILATERAL (compression-only) density constraint. A LIQUID free surface
+    /// resists being COMPRESSED (`ρ > ρ₀`, `C > 0`) but exerts no cohesion when
+    /// stretched (`ρ < ρ₀`, `C < 0`) — water is not a solid membrane. Because
+    /// `ρ₀` is calibrated to the FULLEST (interior) packing, nearly every
+    /// particle sits at `C < 0`; letting the bilateral constraint pull those
+    /// together makes the whole pool cohere into a rounded heap (jelly/dome).
+    /// With this `true` (default) the correction clamps `C_i → max(0, C_i)`, so
+    /// the solver only ever pushes apart an over-dense region — gravity then
+    /// settles the column to a FLAT hydrostatic surface (reads as water).
+    /// `false` recovers Macklin's bilateral constraint (cohesive surface
+    /// tension, needs the artificial-pressure term to avoid clustering). Not a
+    /// magnitude — a constraint-sidedness law, hence a bool dial.
+    pub compression_only: bool,
 }
 
 impl Default for FluidConfig {
@@ -93,6 +119,8 @@ impl Default for FluidConfig {
             tensile_n: 4.0,
             tensile_dq_frac: 0.2,
             relax: 0.1,
+            solver_iterations: 4,
+            compression_only: true,
         }
     }
 }

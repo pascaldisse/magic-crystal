@@ -666,59 +666,72 @@ impl Solver {
             }
         };
 
-        // HALF-STEP 1 — λ per fluid particle.
-        let mut lambda = vec![0.0_f64; fp.len()];
-        for (a, &i) in fp.iter().enumerate() {
-            let pi = self.particles.pos[i];
-            let mut density = 0.0_f64;
-            let mut grad_i = Vec3::ZERO;
-            let mut sum_grad_j2 = 0.0_f64;
-            for &j in &neighbours[a] {
-                let mj = mass(&self.particles, j);
-                let r_vec = pi - self.particles.pos[j];
-                density += mj * poly6(r_vec.length(), h);
-                if j != i {
-                    let g = spiky_grad(r_vec, h).scale(mj * inv_rho0);
-                    grad_i = grad_i + g;
-                    sum_grad_j2 += g.dot(g);
-                }
-            }
-            let c_i = density * inv_rho0 - 1.0;
-            let denom = grad_i.dot(grad_i) + sum_grad_j2 + eps;
-            lambda[a] = if denom > 0.0 { -c_i / denom } else { 0.0 };
-        }
         // Map fluid index -> its slot in `fp`, for λ_j lookup (fp ascending).
         let slot = |j: usize| -> Option<usize> { fp.binary_search(&j).ok() };
 
-        // HALF-STEP 2 — Δp per fluid particle, applied after all are computed
-        // (Jacobi: every Δp reads the SAME pre-move positions/λ).
+        // Macklin §Algorithm 1: neighbours found ONCE (above), the density
+        // constraint projected `solver_iterations` times, each pass recomputing
+        // λ and Δp from the CURRENT positions. One SOR-relaxed Jacobi pass only
+        // nudges a stiff column (domed surface = jelly); iterating lets the
+        // hydrostatic pressure equalise and the free surface settle FLAT.
+        let iters = cfg.solver_iterations.max(1);
+        let mut lambda = vec![0.0_f64; fp.len()];
         let mut dp = vec![Vec3::ZERO; fp.len()];
-        for (a, &i) in fp.iter().enumerate() {
-            let pi = self.particles.pos[i];
-            let li = lambda[a];
-            let mut acc = Vec3::ZERO;
-            for &j in &neighbours[a] {
-                if j == i {
-                    continue;
+        for _pass in 0..iters {
+            // HALF-STEP 1 — λ per fluid particle (from current positions).
+            for (a, &i) in fp.iter().enumerate() {
+                let pi = self.particles.pos[i];
+                let mut density = 0.0_f64;
+                let mut grad_i = Vec3::ZERO;
+                let mut sum_grad_j2 = 0.0_f64;
+                for &j in &neighbours[a] {
+                    let mj = mass(&self.particles, j);
+                    let r_vec = pi - self.particles.pos[j];
+                    density += mj * poly6(r_vec.length(), h);
+                    if j != i {
+                        let g = spiky_grad(r_vec, h).scale(mj * inv_rho0);
+                        grad_i = grad_i + g;
+                        sum_grad_j2 += g.dot(g);
+                    }
                 }
-                let mj = mass(&self.particles, j);
-                let r_vec = pi - self.particles.pos[j];
-                let lj = slot(j).map(|s| lambda[s]).unwrap_or(0.0);
-                // Artificial pressure (tensile instability corrector).
-                let s_corr = if cfg.tensile_k != 0.0 {
-                    let ratio = poly6(r_vec.length(), h) / w_dq;
-                    -cfg.tensile_k * ratio.powf(cfg.tensile_n)
-                } else {
-                    0.0
-                };
-                acc = acc + spiky_grad(r_vec, h).scale(mj * (li + lj + s_corr));
+                let mut c_i = density * inv_rho0 - 1.0;
+                // Unilateral liquid constraint: resist compression only, no
+                // cohesion when stretched (else the pool coheres into a dome).
+                if cfg.compression_only {
+                    c_i = c_i.max(0.0);
+                }
+                let denom = grad_i.dot(grad_i) + sum_grad_j2 + eps;
+                lambda[a] = if denom > 0.0 { -c_i / denom } else { 0.0 };
             }
-            dp[a] = acc.scale(inv_rho0 * cfg.relax);
-        }
-        // Apply. Anchored fluid particles (none by default) stay put.
-        for (a, &i) in fp.iter().enumerate() {
-            if self.particles.inv_mass[i] != 0.0 {
-                self.particles.pos[i] = self.particles.pos[i] + dp[a];
+            // HALF-STEP 2 — Δp per fluid particle, applied after all are
+            // computed (Jacobi: every Δp reads the SAME pre-move positions/λ).
+            for (a, &i) in fp.iter().enumerate() {
+                let pi = self.particles.pos[i];
+                let li = lambda[a];
+                let mut acc = Vec3::ZERO;
+                for &j in &neighbours[a] {
+                    if j == i {
+                        continue;
+                    }
+                    let mj = mass(&self.particles, j);
+                    let r_vec = pi - self.particles.pos[j];
+                    let lj = slot(j).map(|s| lambda[s]).unwrap_or(0.0);
+                    // Artificial pressure (tensile instability corrector).
+                    let s_corr = if cfg.tensile_k != 0.0 {
+                        let ratio = poly6(r_vec.length(), h) / w_dq;
+                        -cfg.tensile_k * ratio.powf(cfg.tensile_n)
+                    } else {
+                        0.0
+                    };
+                    acc = acc + spiky_grad(r_vec, h).scale(mj * (li + lj + s_corr));
+                }
+                dp[a] = acc.scale(inv_rho0 * cfg.relax);
+            }
+            // Apply. Anchored fluid particles (none by default) stay put.
+            for (a, &i) in fp.iter().enumerate() {
+                if self.particles.inv_mass[i] != 0.0 {
+                    self.particles.pos[i] = self.particles.pos[i] + dp[a];
+                }
             }
         }
         fp.len()
