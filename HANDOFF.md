@@ -5,7 +5,21 @@
 DreamForge = the workshop (Sidia's name). Seal b3ae3e0.
 
 ## Where the Work stands (day of 07-17, conductor nyari — see NIGHTLOG.md for the night ledger)
-main @ b6ee51b — GREEN, PUSHED, suite 368/0 (75 binaries).
+main @ 34d58dc — GREEN, PUSHED, suite 380/0.
+REALM SHINE landed (merge 181c7f6 + adversary advisory 34d58dc): a chrome
+sphere (r 2.1, metallic 1.0/roughness 0.02) at [4.5, 3.6, 29.5] — the Rite
+IV close object — now stands IN THE SPAWN SIGHTLINE (not staged off to a
+side camera); an angled mirror panel at [-6.5, 3.4, 28]; three orbiting
+emitters (naruko_show_light_a/b/c — violet/cyan/pink), each its OWN new
+`orbit` behavior with its own center [-1.5, y, 29] (NOT riders on any
+existing kami ring — adversary wording correction). Canon re-derived by
+hand (packages/oracle/tests/canon.rs, 29 vessels). Two-tick motion proof:
+proof/realm-shine-a.png (t=1.0s) / -b.png (t=3.5s).
+NOTE — the live window still runs PRE-SHINE world data from the
+window-playable worktree; the show reaches the Architect's eyes only at
+the window-lane convergence (audit → adversary → merge → relaunch from
+main). Do not expect it visible in the live session until that lands.
+Prior: main @ b6ee51b — GREEN, PUSHED, suite 368/0 (75 binaries).
 Day merges: 5c819dd+8f2b752 fragcol interpenetration ordeal +
 adversary advisories (VI-2 gap closed — fragment-vs-fragment collision
 was ALREADY live via ce91da3/fbb2a5e; the missing piece was the
