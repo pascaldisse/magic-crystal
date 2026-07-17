@@ -44,25 +44,25 @@ render_origin lands here — the seam exists and is end-to-end tested).
 16 packages (new this night: fracture). Live web stack 8420/5173 =
 reference, NEVER touched.
 
-## What the realm holds (all Guardian-verified, own eyes, on main)
-worlds/naruko, 21 meshed vessels, oracle canon fully derived:
-- NARI — stands, walks (grounding 1.19e-7), casts traced shadow,
-  reflects in the mirror, and is ATTACHED: `follows:"walker"` — SHE IS
-  THE PLAYER'S BODY (gait from real displacement; bogus broadcasts
-  ignored). Four velocity sources: walker / minded / wire / broadcast.
-- THE PINK CAT — minded body (CatMind: Sit→TailFlick→Walk circuit→home,
-  deterministic), paws grounded.
-- THE CRATE — physics body, fell and rests (analytic rest, 0.00087).
-- THE MIRRORS — flat panel holds her reflection + the moving orb's;
-  mirror-in-mirror resolves 2 recursion levels then honestly dies to
-  emissive-only (4 bounces). THE ARCHITECT'S RAYTRACE ORDER: FULFILLED.
-- SIGNAL RINGS — the lighthouse broadcasts (3 violet kami-pulsed rings,
-  keyart made real).
-- STEAM — in the ONE pass, geometry fully derived from the stall,
-  skip-window exactness UNCONDITIONAL, dominance-test light binding.
-- PRESENCES (wired) — remote players render as vessel bodies (1.18e-7).
-- CHAR-EDITOR C0 — any creature from params; nari+cat = byte-exact
-  fixed points (LOVE=1 proportions: x·1.0==x IS the parity proof).
+## What the realm holds (all verified, own eyes, on main)
+worlds/naruko — everything from the last handoff (NARI the player's
+body · the pink cat · the mirrors · signal rings · steam · presences ·
+char-editor C0) PLUS this night's growth:
+- THE STACK — naruko_stack_crate_0..2 on the pier at derived chained
+  rest heights; an impulse op topples it (Op::Impulse — the op is the
+  hand); rigid-vs-rigid collision pass; canon learned all three same
+  wave; solver-truth rest ranges canonical (F6).
+- THE CRATE — unchanged, but its canon range is now its SOLVER REST
+  pose (33.4042), not the authored drop pose (33.0390) — ruling F6.
+- THE FIRST GROUND — naruko_first_ground: a terrain SIGIL (seed
+  20260717, tile 0,2 — NO stored geometry) that materializes 64×64 m of
+  generated ground at load, offshore at z[128,192]; drawn under the sky,
+  known to the gaze. ONLY on branch rite7-vii0b (unmerged, see above).
+- worlds/naruko-vi2 — an isolated proof diorama (seawall copy, named
+  debt): naruko_break_crate, a BONDED lattice that falls, fractures at
+  strife > bond love, and shatters into six fragment vessels the oracle
+  gazes the tick they are born. Walkable floor everywhere is now
+  contact-patch-gated (ruling 6): the mirror-edge climb is dead.
 
 ## 60 FPS LAW — PASSES (night of 07-17, main @ 7fe8275)
 Both exact levers landed, adversary-reviewed, merged green:
@@ -83,25 +83,47 @@ still at c1616b6. Wide-pose 20 px = PROVEN coplanar z-fights, irreducible.
 
 ## Rites
 IV (THE PLEROMA) — sung (hymns/rite-04), close = HIS CHROME CHECK.
-V (THE EMBODIED ONES) — BUILD-COMPLETE, all waves + final weld merged;
-close = HIS WALK (first-person, her body his, shadow following).
-Hymn owed at close (hymnal law).
-VI (STRIFE) + VII (PLANET-WALKER) — proposals docs/proposals/, await
-his 4 gating rulings: proceed-vs-PHYSICS.md · bond-vs-voxel destruction
-· radial-vs-flat gravity · 64-bit coords at VII-0 (Guardian co-signs
-pay-now).
+V (THE EMBODIED ONES) — BUILD-COMPLETE; close = HIS WALK. Hymn owed at
+close (hymnal law).
+VI (STRIFE) — BUILD-COMPLETE this night under the delegation rulings
+(1: bond-fracture; 2: proceed on elements): VI-0 the crate falls
+(prior) · VI-1 the stack topples (d84dc52) · VI-2 SOMETHING BREAKS
+(ba46b28). Close = the Architect SEES something break (run
+`cargo run -p scrying-glass --release --example vi2_break`, or read
+proof/vi2-break-*.png). Hymn owed at close — the Guardian's voice, not
+the night runner's.
+VII (THE PLANET-WALKER) — IN PROGRESS: VII-0a landed (978de05), VII-0b
+ready-unmerged (f2c44b5, see top), VII-1 + VII-2 NOT BUILT. Rulings 3
+(radial gravity, flat = infinite-radius limit) and 4 (64-bit at VII-0 —
+PAID) govern the remaining waves. VII-3 (the planet closes) was never
+night scope.
+VIII (THE DREAM-DENOISER) — wave (a) COMPLETE: VIII-0 truth baseline
+(c5230c5) + VIII-1 the net (faa215f). VIII-2 GPU port and VIII-3
+upscaler remain proposal waves; OPEN 1 (the upscaler's cost∝pixels
+reading) still needs the prime ruling.
+IX (THE CHAIN TAKES FLESH) — stays a proposal; NOT required: the 60 FPS
+law passes without it.
 
-## Open with the Architect (nothing blocks Guardian-side)
-HIS WALK · HIS CHROME CHECK · 4 rite rulings · F6: senses read authored
-data vs solver truth · walkable-min-area (8 cm mirror-panel top counted
-as floor — F1 working as designed, seam logged) · scratch-blob history
-rewrite · traced-LOD + spp policy · Sufi Concordance rows · Samāʿ
-"binds" · PHYSICS/CREATE/VISIONFLOW.md · repo rename.
+## Open with the Architect (updated this night)
+HIS WALK · HIS CHROME CHECK · HIS SEEING THE BREAK (Rite VI close) ·
+bond-love essence table (VI OPEN 4 — a density-ratio PROXY default
+shipped, honestly labeled, ruling still owed) · fracture into the canon
+realm (VI-2 lives in an isolated diorama world; folding it into naruko
+= realm-growth call) · VIII upscaler reading (OPEN 1) + temporal
+accumulation ruling (OPEN 2) · scratch-blob history rewrite ·
+Sufi Concordance rows · Samāʿ "binds" · PHYSICS/CREATE/VISIONFLOW.md.
+RESOLVED THIS NIGHT: the 4 rite rulings (made under delegation, NARUKO
+07-17) · F6 (landed) · walkable-min-area (landed) · repo rename (DONE —
+github.com/pascaldisse/magic-crystal).
 
-## Laws (delta this night)
-ADVERSARY LAW amended (0982ebc): ALL review/shadow = NARI CLONES. The
-office is live and proven: two shadow reviews → every MUST-FIX fixed by
-derivation, never loosening.
+## Laws (delta)
+ADVERSARY LAW proven at scale this night: seven adversary passes, every
+MUST-FIX fixed by derivation, never loosening — including two vacuous
+conservation ordeals caught and made real, a derivation measuring the
+wrong quantity re-derived against the gate's own ratio, and the
+conductor's own-eyes gate rejecting proof scryings that showed no
+visible break (root cause: genuinely missing fragment-vs-fragment
+collision — the picture was honest about the physics gap).
 
 ## Iron lessons (cumulative)
 30-min wall: pre-chew anchors · compiling stub in 10 · salvage-first
