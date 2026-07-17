@@ -836,3 +836,246 @@ fn ordeal_rigid_energy_honest() {
         frac * 100.0
     );
 }
+
+// ═════════════════════════════════════════════════════════════════════════
+// VI-1 ORDEALS — THE STACK TOPPLES. N rigid boxes stacked on a ground plane;
+// an impulse (op data, chosen by the test, never a hardcoded engine constant)
+// pushes the top box; the stack topples and settles.
+// ═════════════════════════════════════════════════════════════════════════
+
+/// Build a stack of `n` rigid boxes resting on the ground plane at `y=0`,
+/// each box directly atop the one below (SAME derivation the realm authors
+/// use — `tests/physics.rs:86` / `worlds/naruko/scenes/main.json`):
+/// `rest_y[0] = ground + half_extent + radius`,
+/// `rest_y[k] = rest_y[k-1] + 2*half_extent + radius`. Returns the solver and
+/// the rigid indices, bottom to top.
+fn build_stack(
+    cfg: SolverConfig,
+    n: usize,
+    half_extent: f64,
+    density: f64,
+    stiffness: f64,
+    radius: f64,
+) -> (Solver, Vec<usize>) {
+    let mut s = Solver::new(cfg);
+    let mat = ContactMaterial {
+        restitution: 0.0,
+        ..ContactMaterial::default()
+    };
+    s.collider = Some(Collider::ground_plane(0.0, 50.0, mat));
+    let dims = Vec3::new(2.0 * half_extent, 2.0 * half_extent, 2.0 * half_extent);
+    let mut rigids = Vec::with_capacity(n);
+    let mut y = radius + half_extent;
+    for _ in 0..n {
+        let idx = s.spawn_rigid_box(
+            Vec3::new(0.0, y, 0.0),
+            dims,
+            (3, 3, 3),
+            density,
+            stiffness,
+            radius,
+        );
+        rigids.push(idx);
+        y += 2.0 * half_extent + radius;
+    }
+    (s, rigids)
+}
+
+/// Total linear momentum of the system: `Σ mass_i · vel_i` over every free
+/// (non-anchor) particle.
+fn total_momentum(s: &Solver) -> Vec3 {
+    let mut p = Vec3::ZERO;
+    for i in 0..s.particles.pos.len() {
+        let inv_m = s.particles.inv_mass[i];
+        if inv_m == 0.0 {
+            continue; // anchors carry no momentum (infinite mass)
+        }
+        p = p + s.particles.vel[i].scale(1.0 / inv_m);
+    }
+    p
+}
+
+/// The stack-topple test config: matches the realm's tick rate (`worlds/
+/// naruko` authors `tick_dt = 1/60`) with the solver default substep count.
+fn topple_cfg() -> SolverConfig {
+    SolverConfig {
+        dt: 1.0 / 60.0,
+        seed: 777,
+        ..SolverConfig::default()
+    }
+}
+
+/// Drive a fresh 3-box stack through settle → impulse → re-settle, returning
+/// the per-tick state hashes and (for the caller to inspect) the momentum
+/// trace. Shared by the replay and momentum ordeals so both trials watch the
+/// exact same choreography.
+fn run_topple(settle_ticks: u64, topple_ticks: u64, impulse: Vec3) -> (Solver, Vec<u64>) {
+    let (mut s, rigids) = build_stack(topple_cfg(), 3, 0.4, 500.0, 1.0, 0.05);
+    let mut hashes = Vec::with_capacity((settle_ticks + topple_ticks) as usize);
+    for _ in 0..settle_ticks {
+        s.step();
+        hashes.push(s.state_hash());
+    }
+    let top = *rigids.last().unwrap();
+    s.apply_impulse(top, impulse);
+    for _ in 0..topple_ticks {
+        s.step();
+        hashes.push(s.state_hash());
+    }
+    (s, hashes)
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ORDEAL VI-1a — replay determinism: two full topples from the same seed
+// fold to byte-identical state hashes at EVERY tick (settle + impulse +
+// re-settle, not just the end state).
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn ordeal_stack_topple_replay_is_byte_identical() {
+    let settle_ticks = 300u64; // 5 s — the stack is at rest well before this
+    let topple_ticks = 600u64; // 10 s — settles again well before this
+    let impulse = Vec3::new(3.0, 0.0, 0.0); // op data: the test's pick, not an engine constant
+    let (_, hashes_a) = run_topple(settle_ticks, topple_ticks, impulse);
+    let (_, hashes_b) = run_topple(settle_ticks, topple_ticks, impulse);
+    assert_eq!(
+        hashes_a.len(),
+        (settle_ticks + topple_ticks) as usize,
+        "ticked the full topple"
+    );
+    assert_eq!(
+        hashes_a, hashes_b,
+        "two identical topples must fold to identical state hashes at every tick"
+    );
+    println!(
+        "ORDEAL stack-topple replay: {} ticks x 2 runs, byte-identical every tick, final hash {:#018x}",
+        hashes_a.len(),
+        hashes_a.last().unwrap()
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ORDEAL VI-1b — momentum drift, DERIVED. The floor is measured on the SAME
+// stack at rest (no impulse, no net external force — gravity is exactly
+// balanced by the ground contact, so any tick-to-tick momentum change is
+// pure numerical noise). The topple then starts and ends at rest (momentum
+// ~0 both ends, by construction — the read-back velocity of an unmoving
+// particle is exactly zero): the ground is an infinite-mass anchor, so the
+// applied impulse's momentum, and every contact/friction force the topple
+// rides through, is absorbed into it and never carried by the tracked
+// system once it re-settles. The honest "total drift" is therefore just the
+// system's net momentum change from before-impulse to after-resettle — it
+// should itself be ~0, gated at ~10x the resting floor times the tick count
+// (the floor scaled up for the many more ticks, and the substantially larger
+// transient forces, the topple's contact solve rides through).
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn ordeal_stack_topple_momentum_drift_bounded() {
+    let (mut s, rigids) = build_stack(topple_cfg(), 3, 0.4, 500.0, 1.0, 0.05);
+    let settle_ticks = 300u64;
+    for _ in 0..settle_ticks {
+        s.step();
+    }
+    // FLOOR — measured at rest, no impulse: the per-tick momentum-change
+    // magnitude with zero net external force.
+    let floor_ticks = 60u64; // 1 s
+    let mut floor = 0.0_f64;
+    let mut prev = total_momentum(&s);
+    for _ in 0..floor_ticks {
+        s.step();
+        let now = total_momentum(&s);
+        floor = floor.max((now - prev).length());
+        prev = now;
+    }
+    // A fully-settled stack's read-back velocity lands on bit-exact 0.0 (the
+    // friction bleed clamps to the residual, XPBD read-back is exact
+    // subtraction) — the measured floor can legitimately BE zero. Floor it at
+    // the f64 unit-in-last-place scaled to this system's momentum magnitude
+    // (~10^2-10^3 kg*m/s, from the stack's ~50 kg total mass and the m/s-scale
+    // impulse below) so the derived gate is never vacuously zero.
+    let floor = floor.max(f64::EPSILON * 1.0e3);
+    let momentum_before = total_momentum(&s);
+
+    // THE IMPULSE — op data, the test's choice.
+    let top = *rigids.last().unwrap();
+    let delta_velocity = Vec3::new(3.0, 0.0, 0.0);
+    s.apply_impulse(top, delta_velocity);
+
+    let topple_ticks = 600u64; // 10 s — the stack topples and re-settles well inside this
+    for _ in 0..topple_ticks {
+        s.step();
+    }
+    let momentum_after = total_momentum(&s);
+
+    // Confirm the episode actually ends at rest (the "starts and ends at
+    // rest" premise the drift derivation leans on).
+    let end_speed = rigids
+        .iter()
+        .map(|&r| max_body_speed(&s, &s.rigids[r]))
+        .fold(0.0_f64, f64::max);
+    assert!(
+        end_speed < 1.0e-2,
+        "stack did not re-settle within {topple_ticks} ticks: max speed {end_speed:.4}"
+    );
+
+    let unexplained = momentum_after - momentum_before;
+    let total_drift = unexplained.length();
+    let gate = 10.0 * floor * topple_ticks as f64;
+    println!(
+        "ORDEAL stack-topple momentum: resting floor={floor:.3e} kg*m/s/tick over {floor_ticks} ticks; \
+         topple={topple_ticks} ticks; gate=10x floor x ticks={gate:.3e}; \
+         momentum before={:?} after={:?} (impulse applied={:?} kg*m/s, absorbed by the ground on re-settle); \
+         unexplained drift={total_drift:.3e} kg*m/s (< gate: {})",
+        momentum_before, momentum_after, delta_velocity.scale(s.rigids[top].total_mass),
+        total_drift < gate
+    );
+    assert!(
+        total_drift < gate,
+        "unexplained momentum drift {total_drift:.4} kg*m/s exceeds derived gate {gate:.4} \
+         (floor {floor:.3e} x 10 x {topple_ticks} ticks)"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ORDEAL VI-1c — stack-at-rest stability: once the topple settles, M
+// consecutive ticks (M = round(1/dt), one second's worth) show every body's
+// max particle speed below the SAME rest floor `ordeal_box_drop_settles_
+// level_and_still` uses (1.0e-3 m/s — residual XPBD read-back tremor on a
+// plastic contact) — no jitter, no reinvented tolerance.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+fn ordeal_stack_at_rest_stability_after_topple() {
+    const REST_SPEED_FLOOR: f64 = 1.0e-3; // ordeal_box_drop_settles_level_and_still's floor
+    let cfg = topple_cfg();
+    let (mut s, rigids) = build_stack(cfg, 3, 0.4, 500.0, 1.0, 0.05);
+    let settle_ticks = 300u64;
+    for _ in 0..settle_ticks {
+        s.step();
+    }
+    let top = *rigids.last().unwrap();
+    s.apply_impulse(top, Vec3::new(3.0, 0.0, 0.0));
+    let topple_ticks = 600u64;
+    for _ in 0..topple_ticks {
+        s.step();
+    }
+    // M ticks derived from the tick rate — one second's worth.
+    let m = (1.0 / cfg.dt).round() as u64;
+    let mut max_speed_over_window = 0.0_f64;
+    for _ in 0..m {
+        s.step();
+        let speed = rigids
+            .iter()
+            .map(|&r| max_body_speed(&s, &s.rigids[r]))
+            .fold(0.0_f64, f64::max);
+        max_speed_over_window = max_speed_over_window.max(speed);
+    }
+    println!(
+        "ORDEAL stack-at-rest: M={m} ticks (1/dt={:.4}) post-topple, max particle speed \
+         {max_speed_over_window:.3e} m/s (< floor {REST_SPEED_FLOOR:.1e})",
+        1.0 / cfg.dt
+    );
+    assert!(
+        max_speed_over_window < REST_SPEED_FLOOR,
+        "stack still jittering {m} ticks after the topple: max speed {max_speed_over_window:.3e} \
+         m/s (>= floor {REST_SPEED_FLOOR:.1e})"
+    );
+}
