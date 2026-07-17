@@ -79,6 +79,53 @@ fn probe(ground: &Ground, pp: &PlayerParams, x: f32, z: f32) -> (Option<f32>, Op
     (raw, gated)
 }
 
+/// The GATED floor the player ACTUALLY stands on at a column (contact-patch),
+/// looked for under `ceiling`.
+fn gated_floor(ground: &Ground, pp: &PlayerParams, x: f32, z: f32, ceiling: f32) -> Option<f32> {
+    let tol = scrying_glass::player::contact_tolerance(pp.contact_radius);
+    ground.height_at_gated(x, z, ceiling, pp.contact_radius, tol)
+}
+
+/// What a below-plaza tick actually is, decided by RELEASING the keys and
+/// letting the body settle — the only honest way to tell a legitimate
+/// step-down from a tunnel, because the trigger fires mid-drop.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Fall {
+    /// The body landed grounded on a real lower floor (naruko's sea plate at
+    /// y≈-1.35 north of the terra rim). Expected ledge behaviour, not a bug.
+    StepDown,
+    /// The body left the terra plate over its TRUE authored edge (z>68 south /
+    /// |x|>200 / any column with no floor under it) and fell to void_y. The
+    /// realm boundary, not a floor-query fall-through.
+    OffWorld,
+    /// The body ended below a GATED floor that still exists ABOVE it at its own
+    /// column — it passed THROUGH walkable floor it should be standing on. THE
+    /// bug this hunt exists to catch. Carries the floor-above y.
+    Tunnel(f32),
+}
+
+/// Classify a fall in progress: stop walking, settle up to `SETTLE` ticks, then
+/// read the resting state. Grounded → StepDown. Still airborne with a gated
+/// floor above the feet at this column → Tunnel. Otherwise → OffWorld.
+fn classify_fall(ground: &Ground, pp: &PlayerParams, player: &mut Player) -> Fall {
+    const SETTLE: u32 = 120;
+    player.keys.clear();
+    for _ in 0..SETTLE {
+        player.step(DT, ground);
+        if player.grounded {
+            return Fall::StepDown;
+        }
+    }
+    let feet = player.position.y - player.eye_height;
+    // Look for ANY gated floor above the fallen body at its column (ceiling well
+    // above the plaza). A floor found > ground_snap above the feet is floor the
+    // body should be resting on but is beneath — a genuine tunnel.
+    match gated_floor(ground, pp, player.position.x, player.position.z, 50.0) {
+        Some(gy) if gy > feet + pp.ground_snap => Fall::Tunnel(gy),
+        _ => Fall::OffWorld,
+    }
+}
+
 fn height_field(ground: &Ground, pp: &PlayerParams) {
     println!("\n== GATED FLOOR HEIGHT FIELD over walk box (each cell = gated floor y) ==");
     let tol = scrying_glass::player::contact_tolerance(pp.contact_radius);
@@ -111,6 +158,7 @@ fn static_map(ground: &Ground, pp: &PlayerParams) {
     // a spot where the RAW query finds solid floor but the patch-gate rejects
     // it — exactly the ruling-6 fall-through mechanism, if it exists.
     let mut holes = 0usize;
+    let mut interior_holes = 0usize; // holes NOT on the terra rim (z in (8,68))
     let mut worst: Vec<(f32, f32, f32, String)> = Vec::new();
     let (mut x0, x1, mut z0, z1, step) = (-40.0f32, 40.0f32, 8.0f32, 68.0f32, 0.5f32);
     let _ = (&mut x0, &mut z0);
@@ -125,6 +173,14 @@ fn static_map(ground: &Ground, pp: &PlayerParams) {
                 let g_ok = gated.map(|g| (g - PLAZA_Y).abs() <= FALL_EPS).unwrap_or(false);
                 if !g_ok {
                     holes += 1;
+                    // The terra plate top spans z in [8,68]; a hole strictly
+                    // inside that band (not on the z=8 / z=68 rim line) would be
+                    // a genuine interior patch-gate hole. Rim holes are the
+                    // designed plate edge (step-down to the sea plate / world
+                    // boundary), not fall-throughs.
+                    if z > 8.0 + 1e-3 && z < 68.0 - 1e-3 {
+                        interior_holes += 1;
+                    }
                     let desc = match gated {
                         None => "gated=NONE".to_string(),
                         Some(g) => format!("gated={g:.3}"),
@@ -139,7 +195,8 @@ fn static_map(ground: &Ground, pp: &PlayerParams) {
         x += step;
     }
     println!(
-        "grid {}x{} step {step}: {holes} patch-gate hole cells (raw plaza, gated not)",
+        "grid {}x{} step {step}: {holes} patch-gate hole cells (raw plaza, gated not) — \
+         {interior_holes} INTERIOR (z in (8,68)), rest on the terra rim (z=8 step-down / z=68 edge)",
         ((x1 - x0) / step) as i32 + 1,
         ((z1 - z0) / step) as i32 + 1
     );
@@ -156,7 +213,7 @@ struct Walk {
     ticks: u32,
 }
 
-fn run_walk(ground: &Ground, pp: &PlayerParams, w: &Walk) -> Option<(f32, f32, f32, f32)> {
+fn run_walk(ground: &Ground, pp: &PlayerParams, w: &Walk) -> Option<(f32, f32, f32, Fall)> {
     // Spawn a little above the plaza and settle grounded.
     let eye = Vec3::new(w.start.0, PLAZA_Y + pp.eye_stand + 0.3, w.start.1);
     let mut player = Player::new(*pp, eye, w.yaw);
@@ -173,21 +230,21 @@ fn run_walk(ground: &Ground, pp: &PlayerParams, w: &Walk) -> Option<(f32, f32, f
         );
     }
     player.keys.insert(w.key);
-    let mut worst: Option<(f32, f32, f32, f32)> = None; // x,z,feetY,vy
     // Every 40 ticks, tap jump to exercise the run+jump landing snap band (d).
     for t in 0..w.ticks {
         if t % 40 == 20 { player.keys.insert(Key::Jump); } else { player.keys.remove(&Key::Jump); }
         player.step(DT, ground);
         let feet = player.position.y - player.eye_height;
-        // A genuine fall-through: feet well below the plaza slab. No plaza_here
-        // gate — once tunneled the plaza still exists at (x,z), the body is just
-        // under it. Also catches deep falls that will trip void_y respawn.
-        if feet < PLAZA_Y - FALL_EPS
-            && worst.map(|(_, _, f, _)| feet < f).unwrap_or(true) {
-            worst = Some((player.position.x, player.position.z, feet, player.vy));
+        // Trigger on the FIRST tick below the plaza slab, then classify by
+        // settling: step-down onto the sea plate vs true off-world edge vs a
+        // genuine tunnel through supported floor.
+        if feet < PLAZA_Y - FALL_EPS {
+            let (fx, fz) = (player.position.x, player.position.z);
+            let fall = classify_fall(ground, pp, &mut player);
+            return Some((fx, fz, feet, fall));
         }
     }
-    worst
+    None
 }
 
 /// Grid-start coverage: from every start cell, settle grounded then walk each
@@ -251,21 +308,20 @@ fn coverage_sweep(ground: &Ground, pp: &PlayerParams) {
                         let feet = player.position.y - player.eye_height;
                         // CHEAP trigger (no query): feet under the plaza slab, or
                         // a runaway downward velocity not yet caught by a floor.
-                        // Only THEN pay a probe to classify TUNNEL vs EDGE.
+                        // Only THEN pay the settle-classify to name it.
                         if feet < PLAZA_Y - FALL_EPS || player.vy < -8.0 {
-                            let (raw, _g2) = probe(ground, pp, player.position.x, player.position.z);
-                            match raw {
-                                Some(r) if feet < r - 0.3 => {
-                                    // Solid floor well above the feet: TUNNEL.
+                            let (fx, fz) = (player.position.x, player.position.z);
+                            match classify_fall(ground, pp, &mut player) {
+                                Fall::Tunnel(gy) => {
                                     tunnels += 1;
                                     if tunnel_hits.len() < 30 {
-                                        tunnel_hits.push((player.position.x, player.position.z, feet, r, mn));
+                                        tunnel_hits.push((fx, fz, feet, gy, mn));
                                     }
                                 }
-                                _ => {
+                                Fall::StepDown | Fall::OffWorld => {
                                     edges += 1;
                                     if edge_hits.len() < 40 {
-                                        edge_hits.push((sx, sz, player.position.z));
+                                        edge_hits.push((sx, sz, fz));
                                     }
                                 }
                             }
@@ -329,12 +385,15 @@ fn walk_sweep(ground: &Ground, pp: &PlayerParams) {
     // (Run key held alongside travel.)
 
     let mut fell = 0usize;
+    let mut tunnels = 0usize;
     for w in &walks {
-        if let Some((x, z, feet, vy)) = run_walk(ground, pp, w) {
+        if let Some((x, z, feet, fall)) = run_walk(ground, pp, w) {
             fell += 1;
+            if matches!(fall, Fall::Tunnel(_)) { tunnels += 1; }
             println!(
-                "  FALL [{}] start({:.1},{:.1}) -> ({:.2},{:.2}) feetY={:.3} vy={:.2}",
-                w.name, w.start.0, w.start.1, x, z, feet, vy
+                "  {} [{}] start({:.1},{:.1}) -> ({:.2},{:.2}) feetY={:.3} {:?}",
+                if matches!(fall, Fall::Tunnel(_)) { "TUNNEL" } else { "edge" },
+                w.name, w.start.0, w.start.1, x, z, feet, fall
             );
         }
     }
@@ -349,23 +408,27 @@ fn walk_sweep(ground: &Ground, pp: &PlayerParams) {
         for _ in 0..120 { player.step(DT, ground); }
         player.keys.insert(w.key);
         player.keys.insert(Key::Run);
-        let mut worst: Option<(f32, f32, f32, f32)> = None;
         for _ in 0..w.ticks {
             player.step(DT, ground);
             let feet = player.position.y - player.eye_height;
-            // Cheap trigger: feet below the plaza slab. run_walk-style, no
-            // per-tick probe — once under the plaza the body has fallen through.
-            if feet < PLAZA_Y - FALL_EPS
-                && worst.map(|(_, _, f, _)| feet < f).unwrap_or(true) {
-                worst = Some((player.position.x, player.position.z, feet, player.vy));
+            // Cheap trigger: feet below the plaza slab, then settle-classify.
+            if feet < PLAZA_Y - FALL_EPS {
+                let (fx, fz) = (player.position.x, player.position.z);
+                let fall = classify_fall(ground, pp, &mut player);
+                fell += 1;
+                if matches!(fall, Fall::Tunnel(_)) { tunnels += 1; }
+                println!(
+                    "  {} [{}] -> ({fx:.2},{fz:.2}) feetY={feet:.3} {fall:?}",
+                    if matches!(fall, Fall::Tunnel(_)) { "TUNNEL" } else { "edge" }, w.name
+                );
+                break;
             }
         }
-        if let Some((x, z, feet, vy)) = worst {
-            fell += 1;
-            println!("  FALL [{}] -> ({x:.2},{z:.2}) feetY={feet:.3} vy={vy:.2}", w.name);
-        }
     }
-    println!("walks: {} lanes, {fell} fall-through events", walks.len() + 3);
+    println!(
+        "walks: {} lanes, {fell} below-plaza events ({tunnels} genuine TUNNELS, rest edge/step-down)",
+        walks.len() + 3
+    );
 }
 
 fn main() {
