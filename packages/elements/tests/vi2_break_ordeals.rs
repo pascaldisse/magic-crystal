@@ -104,7 +104,10 @@ fn ordeal_fracture_threshold_reads_bond_love_not_a_hardcoded_break() {
 
     let (mut soft, whole_soft) = drop_scenario(DROP_HEIGHT);
     let (broke_soft, _) = run_until_break_or(&mut soft, RUN_TICKS);
-    assert!(broke_soft.is_some(), "the soft (low-love) crate must break under this drop");
+    assert!(
+        broke_soft.is_some(),
+        "the soft (low-love) crate must break under this drop"
+    );
     assert!(!soft.fractures.is_empty());
 
     // A near-STONE_DENSITY crate under the IDENTICAL drop + IDENTICAL global
@@ -119,7 +122,10 @@ fn ordeal_fracture_threshold_reads_bond_love_not_a_hardcoded_break() {
     hard.collider = Some(Collider::ground_plane(0.0, 5.0, ContactMaterial::default()));
     let density = STONE_DENSITY;
     let love = default_bond_love(density);
-    assert_eq!(love, LOVE, "a crate at STONE_DENSITY must derive an unbreakable bond love");
+    assert_eq!(
+        love, LOVE,
+        "a crate at STONE_DENSITY must derive an unbreakable bond love"
+    );
     let _whole_hard = hard.spawn_bonded_box(
         Vec3::new(0.0, DROP_HEIGHT, 0.0),
         Vec3::new(1.0, 1.0, 1.0),
@@ -156,10 +162,16 @@ fn ordeal_fracture_threshold_reads_bond_love_not_a_hardcoded_break() {
 fn ordeal_equivalent_exchange_mass_exact() {
     let (mut s, whole) = drop_scenario(DROP_HEIGHT);
     let (broke_at, _) = run_until_break_or(&mut s, RUN_TICKS);
-    assert!(broke_at.is_some(), "setup must actually break, or this ordeal is vacuous");
+    assert!(
+        broke_at.is_some(),
+        "setup must actually break, or this ordeal is vacuous"
+    );
 
     let fragments = s.fragment_components(&whole);
-    assert!(fragments.len() >= 2, "a real break must yield at least two fragments");
+    assert!(
+        fragments.len() >= 2,
+        "a real break must yield at least two fragments"
+    );
 
     // Reduce to one canonical ascending order (proves partition completeness
     // AND makes the two sums literally the same addition sequence).
@@ -253,7 +265,10 @@ fn ordeal_momentum_through_fracture_bounded() {
     let (mut s, _whole) = drop_scenario(DROP_HEIGHT);
     let gate = momentum_drift_gate(&s);
     let (broke_at, trace) = run_until_break_or(&mut s, RUN_TICKS);
-    assert!(broke_at.is_some(), "setup must actually break, or this ordeal is vacuous");
+    assert!(
+        broke_at.is_some(),
+        "setup must actually break, or this ordeal is vacuous"
+    );
 
     // Momentum changes hugely at ground impact (that's real physics — the
     // ground removes normal momentum, and bond tension/friction/restitution
@@ -306,7 +321,10 @@ fn ordeal_momentum_through_fracture_bounded() {
         broke_at,
         trace.len()
     );
-    assert!(checked > 0, "the momentum gate must have actually measured something (non-vacuous)");
+    assert!(
+        checked > 0,
+        "the momentum gate must have actually measured something (non-vacuous)"
+    );
 }
 
 /// (f) replay determinism — the FULL drop+break+settle sequence, including
@@ -332,7 +350,10 @@ fn ordeal_replay_determinism_drop_break_settle_including_fragments() {
     let (hashes_a, fragments_a) = run();
     let (hashes_b, fragments_b) = run();
 
-    assert_eq!(hashes_a, hashes_b, "per-tick state hashes diverged between two identical runs");
+    assert_eq!(
+        hashes_a, hashes_b,
+        "per-tick state hashes diverged between two identical runs"
+    );
     assert_eq!(
         fragments_a, fragments_b,
         "fragment partition diverged between two identical runs"
@@ -354,7 +375,10 @@ fn ordeal_replay_determinism_drop_break_settle_including_fragments() {
     };
     let fold_a = fold(&fragments_a);
     let fold_b = fold(&fragments_b);
-    assert_eq!(fold_a, fold_b, "fragment-structure fold diverged between two identical runs");
+    assert_eq!(
+        fold_a, fold_b,
+        "fragment-structure fold diverged between two identical runs"
+    );
 
     println!(
         "ORDEAL replay-determinism: {} ticks, {} fragments, fragment-structure fold {:016x} == \

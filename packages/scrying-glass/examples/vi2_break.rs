@@ -26,7 +26,7 @@ use scrying_glass::bvh::{Bvh, BvhParams};
 use scrying_glass::integrator::{IntegratorParams, headless_device, resolve, trace_headless};
 use scrying_glass::scene::{Camera, RenderScene, SceneParameters, SunDefaults};
 
-use crystal::{load_world_dir, EcsWorld};
+use crystal::{EcsWorld, load_world_dir};
 
 const BREAK_CRATE_ID: &str = "naruko_break_crate";
 const SETTLE_TICKS: u64 = 300; // enough for shards to come to rest after breaking
@@ -114,7 +114,9 @@ fn break_crate_authored_position() -> [f32; 3] {
     let world_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../worlds/naruko");
     let mut world = EcsWorld::default();
     load_world_dir(&world_path, &mut world).expect("load naruko");
-    let transform_id = world.component_id("transform").expect("transform component");
+    let transform_id = world
+        .component_id("transform")
+        .expect("transform component");
     let entity = world
         .entity_for_gaia(BREAK_CRATE_ID)
         .expect("break crate entity");

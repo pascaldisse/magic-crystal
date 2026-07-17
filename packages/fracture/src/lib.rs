@@ -106,10 +106,17 @@ pub fn compute_fragments(solver: &Solver, whole: &[usize]) -> Vec<Fragment> {
 /// literally the same sequence of additions and compare bit-exact by
 /// construction. This is the exactness strategy `ordeal_equivalent_
 /// exchange_mass_exact` documents and relies on.
-pub fn fragment_masses_exact(solver: &Solver, whole: &[usize], fragments: &[Fragment]) -> (f64, f64) {
+pub fn fragment_masses_exact(
+    solver: &Solver,
+    whole: &[usize],
+    fragments: &[Fragment],
+) -> (f64, f64) {
     let mut whole_sorted: Vec<usize> = whole.to_vec();
     whole_sorted.sort_unstable();
-    let mut frag_particles: Vec<usize> = fragments.iter().flat_map(|f| f.particles.iter().copied()).collect();
+    let mut frag_particles: Vec<usize> = fragments
+        .iter()
+        .flat_map(|f| f.particles.iter().copied())
+        .collect();
     frag_particles.sort_unstable();
     assert_eq!(
         whole_sorted, frag_particles,
@@ -139,7 +146,13 @@ pub fn fragment_masses_exact(solver: &Solver, whole: &[usize], fragments: &[Frag
 /// overlapping past their shared face. `counts` uses the same "1 if only one
 /// particle on that axis" convention `spawn_bonded_box` does.
 pub fn lattice_cube_size(dims: Vec3, counts: (usize, usize, usize)) -> f64 {
-    let step = |extent: f64, n: usize| if n > 1 { extent / (n - 1) as f64 } else { extent };
+    let step = |extent: f64, n: usize| {
+        if n > 1 {
+            extent / (n - 1) as f64
+        } else {
+            extent
+        }
+    };
     let sx = step(dims.x, counts.0.max(1));
     let sy = step(dims.y, counts.1.max(1));
     let sz = step(dims.z, counts.2.max(1));
@@ -186,7 +199,10 @@ fn indices_offset(vertices: &[transmutation::mesh::Vertex]) -> u32 {
 
 /// Transmute a fragment's per-particle-cube union into its Great Chain —
 /// the one geometry pipeline, no exceptions.
-pub fn fragment_dag(mesh: &Mesh, params: &TransmuteParams) -> Result<Dag, transmutation::TransmuteError> {
+pub fn fragment_dag(
+    mesh: &Mesh,
+    params: &TransmuteParams,
+) -> Result<Dag, transmutation::TransmuteError> {
     transmute_default(mesh, params)
 }
 
@@ -210,7 +226,10 @@ pub fn ensure_component(world: &mut crystal::EcsWorld, name: &str) -> crystal::C
         return id;
     }
     world
-        .register_component_json(&format!(r#"{{"name":{},"fields":{{"v":"object"}}}}"#, json!(name)))
+        .register_component_json(&format!(
+            r#"{{"name":{},"fields":{{"v":"object"}}}}"#,
+            json!(name)
+        ))
         .expect("register fragment component")
 }
 
@@ -281,12 +300,20 @@ mod tests {
         let mut idx = Vec::new();
         idx.push(s.particles.add(Vec3::new(0.0, 5.0, 0.0), 0.0)); // anchor
         for i in 1..4 {
-            idx.push(s.particles.add_mass(Vec3::new(0.0, 5.0 - seg * i as f64, 0.0), mass));
+            idx.push(
+                s.particles
+                    .add_mass(Vec3::new(0.0, 5.0 - seg * i as f64, 0.0), mass),
+            );
         }
         for i in 1..4 {
             let love = if i == 2 { 0.05 } else { LOVE };
-            s.constraints
-                .push(DistanceConstraint::new(idx[i - 1], idx[i], seg, 1.0e-6, love));
+            s.constraints.push(DistanceConstraint::new(
+                idx[i - 1],
+                idx[i],
+                seg,
+                1.0e-6,
+                love,
+            ));
         }
         for _ in 0..600 {
             s.step();
@@ -301,7 +328,11 @@ mod tests {
     fn fragments_split_the_chain_in_two() {
         let (s, whole) = broken_lattice();
         let fragments = compute_fragments(&s, &whole);
-        assert_eq!(fragments.len(), 2, "expected exactly two fragments after the weak link tore");
+        assert_eq!(
+            fragments.len(),
+            2,
+            "expected exactly two fragments after the weak link tore"
+        );
     }
 
     #[test]
@@ -312,7 +343,8 @@ mod tests {
         for f in &fragments {
             let mesh = fragment_mesh(&s, f, cube);
             assert!(!mesh.indices.is_empty());
-            let dag = fragment_dag(&mesh, &TransmuteParams::default()).expect("transmute a fragment");
+            let dag =
+                fragment_dag(&mesh, &TransmuteParams::default()).expect("transmute a fragment");
             assert_eq!(dag.leaf_tri_sum(), mesh.tri_count());
         }
     }
@@ -331,7 +363,8 @@ mod tests {
         let build_serialized_chains = || -> (Vec<Vec<usize>>, Vec<Vec<u8>>) {
             let (s, whole) = broken_lattice();
             let fragments = compute_fragments(&s, &whole);
-            let partitions: Vec<Vec<usize>> = fragments.iter().map(|f| f.particles.clone()).collect();
+            let partitions: Vec<Vec<usize>> =
+                fragments.iter().map(|f| f.particles.clone()).collect();
             let bytes: Vec<Vec<u8>> = fragments
                 .iter()
                 .map(|f| {

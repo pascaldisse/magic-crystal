@@ -314,7 +314,8 @@ impl Solver {
         let members: BTreeSet<usize> = particles.iter().copied().collect();
         // Adjacency restricted to `members`, built once (index-ordered by
         // constraint list order — deterministic).
-        let mut adjacency: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
+        let mut adjacency: std::collections::BTreeMap<usize, Vec<usize>> =
+            std::collections::BTreeMap::new();
         for &p in &members {
             adjacency.entry(p).or_default();
         }

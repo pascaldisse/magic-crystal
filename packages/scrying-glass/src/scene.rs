@@ -1741,7 +1741,8 @@ impl Dynamics {
                 // by its fragments (no double-draw of the same matter).
                 self.entities.retain(|de| de.gaia_id != parent_id);
 
-                let fragment_ids = fracture::birth_fragment_entities(&mut self.world, &parent_id, &fragments);
+                let fragment_ids =
+                    fracture::birth_fragment_entities(&mut self.world, &parent_id, &fragments);
                 let params = TransmuteParams::default();
                 for (frag_id, fragment) in fragment_ids.iter().zip(fragments.iter()) {
                     let mesh = fracture::fragment_mesh(physics.solver(), fragment, cube_size);
@@ -1769,7 +1770,8 @@ impl Dynamics {
                         bind_model,
                         model: Mat4::IDENTITY,
                     });
-                    self.fragment_particles.push((frag_id.clone(), fragment.particles.clone()));
+                    self.fragment_particles
+                        .push((frag_id.clone(), fragment.particles.clone()));
                 }
             }
             // Fragments already born keep settling (translation-only

@@ -190,7 +190,9 @@ impl Physics {
                 // VI-2 — SOMETHING BREAKS: a nearest-neighbor bonded lattice,
                 // never shape-matched. Love defaults from essence (density)
                 // when not explicitly authored.
-                let love = body.love.unwrap_or_else(|| elements::default_bond_love(body.density));
+                let love = body
+                    .love
+                    .unwrap_or_else(|| elements::default_bond_love(body.density));
                 let whole = solver.spawn_bonded_box(
                     Vec3::new(center[0], center[1], center[2]),
                     dims,
@@ -256,7 +258,10 @@ impl Physics {
     ///   reported again).
     pub fn poll_bonded(
         &mut self,
-    ) -> (Vec<(String, [f64; 3])>, Vec<(String, Vec<fracture::Fragment>, f64)>) {
+    ) -> (
+        Vec<(String, [f64; 3])>,
+        Vec<(String, Vec<fracture::Fragment>, f64)>,
+    ) {
         let mut still_whole = Vec::new();
         let mut newly_broken = Vec::new();
         for binding in &mut self.bonded {

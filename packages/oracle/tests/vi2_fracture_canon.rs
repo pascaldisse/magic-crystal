@@ -65,7 +65,10 @@ fn broken_crate() -> (Solver, Vec<usize>) {
 fn build_world_with_fragments() -> (World, String, Vec<String>, Solver, Vec<usize>) {
     let (solver, whole) = broken_crate();
     let fragments = compute_fragments(&solver, &whole);
-    assert!(fragments.len() >= 2, "setup must actually break, or this ordeal is vacuous");
+    assert!(
+        fragments.len() >= 2,
+        "setup must actually break, or this ordeal is vacuous"
+    );
 
     let mut core = Core::default();
     // The authored parent vessel: a `transform` + `mesh` (box) entity, the
@@ -85,13 +88,19 @@ fn build_world_with_fragments() -> (World, String, Vec<String>, Solver, Vec<usiz
         ])
         .expect("create parent vessel");
     let parent_id = "vi2.crate".to_string();
-    core.world.bind_gaia_id(parent_id.clone(), parent_entity).unwrap();
+    core.world
+        .bind_gaia_id(parent_id.clone(), parent_entity)
+        .unwrap();
 
     // Birth the fragments THE SAME WAVE — no separate tick, same Core.
     let fragment_ids = birth_fragment_entities(&mut core.world, &parent_id, &fragments);
 
     let mut world = World::from_core(core, "vi2-ordeal-no-disk");
-    world.register(parent_id.clone(), parent_entity, vec!["transform".into(), "mesh".into()]);
+    world.register(
+        parent_id.clone(),
+        parent_entity,
+        vec!["transform".into(), "mesh".into()],
+    );
     for id in &fragment_ids {
         let entity = world.core.world.entity_for_gaia(id).unwrap();
         world.register(
@@ -113,12 +122,21 @@ fn ordeal_oracle_learns_fragments_same_wave() {
     assert_eq!(fragment_ids.len(), fragments.len());
 
     let parent_geom = world.geometry(&parent_id).expect("parent vessel must gaze");
-    assert!(parent_geom.bounds.is_some(), "the parent crate must still have bounds pre-break geometry");
+    assert!(
+        parent_geom.bounds.is_some(),
+        "the parent crate must still have bounds pre-break geometry"
+    );
 
     for (id, fragment) in fragment_ids.iter().zip(fragments.iter()) {
-        let geom = world.geometry(id).unwrap_or_else(|| panic!("no gaze reached fragment {id}"));
-        let bounds = geom.bounds.unwrap_or_else(|| panic!("fragment {id} has no bounds — the gaze \
-            must derive bounds from the fragment's OWN live mesh, not fall through to nothing"));
+        let geom = world
+            .geometry(id)
+            .unwrap_or_else(|| panic!("no gaze reached fragment {id}"));
+        let bounds = geom.bounds.unwrap_or_else(|| {
+            panic!(
+                "fragment {id} has no bounds — the gaze \
+            must derive bounds from the fragment's OWN live mesh, not fall through to nothing"
+            )
+        });
         // The fragment's own centroid must be the transform origin (its OWN
         // pose, not the parent's) — proves same-wave (no stale parent pose)
         // and no-lag (available immediately, this same Core object).
@@ -164,13 +182,15 @@ fn ordeal_no_orphan_matter_every_fragment_traces_to_its_parent() {
     assert!(!fragment_ids.is_empty());
 
     for id in &fragment_ids {
-        let parent_value = world
-            .component_value(id, "fragment_of")
-            .unwrap_or_else(|| panic!("fragment {id} carries no fragment_of component — orphan matter"));
+        let parent_value = world.component_value(id, "fragment_of").unwrap_or_else(|| {
+            panic!("fragment {id} carries no fragment_of component — orphan matter")
+        });
         let traced_parent = parent_value
             .get("parent")
             .and_then(|v| v.as_str())
-            .unwrap_or_else(|| panic!("fragment {id}'s fragment_of.parent is missing or not a string"));
+            .unwrap_or_else(|| {
+                panic!("fragment {id}'s fragment_of.parent is missing or not a string")
+            });
         assert_eq!(
             traced_parent, parent_id,
             "fragment {id} traces to {traced_parent:?}, not the authored crate vessel {parent_id:?} \
