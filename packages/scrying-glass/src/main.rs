@@ -138,7 +138,7 @@ impl ScryingGlassConfig {
                 sah_bins: integer("GAIA_NATIVE_BVH_SAH_BINS", 16)? as usize,
             },
             refit: RefitParams {
-                degrade_ratio: number("GAIA_NATIVE_BVH_REFIT_DEGRADE", 10.0)? as f32,
+                degrade_ratio: number("GAIA_NATIVE_BVH_REFIT_DEGRADE", 10.0964)? as f32,
                 max_refits: integer("GAIA_NATIVE_BVH_REFIT_MAX", 0)?,
             },
             capture_frames: integer("GAIA_NATIVE_CAPTURE_FRAMES", 48)?,

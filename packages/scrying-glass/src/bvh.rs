@@ -225,10 +225,7 @@ impl Bvh {
     /// total boxed volume ⇒ more wasted GPU traversal, the SAH cost proxy).
     /// `0.0` for the empty tree.
     pub fn total_node_half_area(&self) -> f32 {
-        self.nodes
-            .iter()
-            .map(|n| half_area(n.min, n.max))
-            .sum()
+        self.nodes.iter().map(|n| half_area(n.min, n.max)).sum()
     }
 
     /// REFIT: keep this tree's topology and triangle→slot assignment, but pull
@@ -456,7 +453,7 @@ impl Default for RefitParams {
 /// derivation. The sweep's own gate never bit across 300 ticks of a real walk
 /// cycle, so this is the sweep's "never bit" fallback: observed max benign
 /// node-half-area-sum ratio x the 10x tolerance-law headroom.
-const DEFAULT_DEGRADE_RATIO: f32 = 33.4433;
+const DEFAULT_DEGRADE_RATIO: f32 = 10.0964;
 
 /// The persistent two-level splice (LEVER 1: refit-not-rebuild). Holds the
 /// cached STATIC tree, a PERSISTENT dynamic tree, its build permutation, and the

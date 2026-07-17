@@ -163,7 +163,6 @@ fn steam_medium(bound: &BoundLight, counter_top_y: f32) -> MediumGpu {
     }
 }
 
-
 /// One trace frame (uniform + dispatch + GPU wait) — perf_audit's trace_frame,
 /// verbatim structure. Player-path reset semantics: moving geometry resets
 /// accumulation every frame, so `samples_before = 0` each frame.
