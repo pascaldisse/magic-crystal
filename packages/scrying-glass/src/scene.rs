@@ -432,6 +432,12 @@ impl BodyInstance {
             locomotion: Locomotion::new(LocomotionParams::default()),
             pose: idle,
             commanded_speed: 0.0,
+            // A presence body is MINDLESS — the wire drives it, not the clock.
+            mind: None,
+            // The grounded y ground_model just derived (model translation y).
+            ground_y: model.w_axis.y,
+            // No authored scale on a wire-composed body.
+            base_scale: Vec3::ONE,
         })
     }
 
