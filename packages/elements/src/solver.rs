@@ -9,9 +9,11 @@
 use crate::broadphase::TriangleGrid;
 use crate::collision::{Collider, Contact, ContactMaterial};
 use crate::constraint::{DistanceConstraint, FractureEvent};
+use crate::fluid_kernel::{poly6, spiky_grad, FluidConfig};
 use crate::mat3::PolarConfig;
 use crate::math::Vec3;
 use crate::particles::Particles;
+use crate::pointgrid::PointGrid;
 use crate::rigid::RigidBody;
 use std::time::{Duration, Instant};
 
@@ -35,6 +37,12 @@ pub struct PhaseProfile {
     pub solve_distance: Duration,
     /// Rigid shape-matching (`solve_shape_matching`) — ~0 for a pure bonded building.
     pub shape_matching: Duration,
+    /// FLUID — the Position-Based-Fluids density-constraint pass
+    /// (`solve_fluid`): neighbour grid build + λ solve + Δp apply, per substep.
+    /// ~0 for a world with no fluid.
+    pub solve_fluid: Duration,
+    /// FLUID — the number of fluid particles processed this tick.
+    pub fluid_particles: usize,
     /// Particle-vs-static-world-triangle collision (`solve_collision_normal`)
     /// — the "collision broad/narrow" pass against the ground/anchors.
     pub collision_static: Duration,
@@ -151,6 +159,18 @@ pub struct Solver {
     /// never drops a real contact. Off in production (adds an O(tris) audit).
     /// Flip with [`Solver::set_broadphase_audit`].
     broadphase_audit: bool,
+    /// FLUID — the Position-Based-Fluids dials, `Some` once a fluid pool has
+    /// been spawned ([`Solver::spawn_fluid_box`]) and its rest density
+    /// calibrated. `None` = no fluid (the density pass costs exactly zero,
+    /// `solve_fluid` returns immediately). One shared config for every fluid
+    /// particle in the world (one substance per world, for now).
+    pub fluid: Option<FluidConfig>,
+    /// FLUID — the indices of the fluid particles, ASCENDING (spawn order).
+    /// They carry a real mass and radius like any other, fall under gravity,
+    /// and strike the static collider (pool walls) — but belong to no
+    /// rigid/bonded cluster; their mutual incompressibility is the density
+    /// constraint, not pairwise collision. Empty = no fluid.
+    pub fluid_particles: Vec<usize>,
 }
 
 /// A collision cluster: particles in the SAME cluster never collide with
@@ -167,6 +187,13 @@ pub struct Solver {
 enum ClusterId {
     Rigid(usize),
     Bonded(usize),
+    /// FLUID — ALL fluid particles share this one id. In `solve_body_collisions`
+    /// two fluid particles are therefore SAME-cluster and skip the pairwise
+    /// contact (their incompressibility is the density constraint, not a
+    /// collision), while a fluid particle vs a rigid/bonded particle is a
+    /// DIFFERENT-cluster pair and DOES contact — that pairwise push is the
+    /// two-way fluid↔solid coupling (buoyancy, splash displacement).
+    Fluid,
 }
 
 impl Solver {
@@ -183,6 +210,8 @@ impl Solver {
             collision_grid: None,
             broadphase_enabled: true,
             broadphase_audit: false,
+            fluid: None,
+            fluid_particles: Vec::new(),
         }
     }
 
@@ -465,6 +494,236 @@ impl Solver {
         indices
     }
 
+    /// FLUID — spawn a box of FLUID particles on a cubic lattice of edge
+    /// `spacing`, filling full extents `dims` centred at `center`. Each
+    /// particle owns one lattice cell of fluid: its mass is DERIVED,
+    /// `rest_density × spacing³` (the physical water mass of that cell), never
+    /// authored — so a denser fluid is heavier per particle and a lighter one
+    /// lighter, and the crate's float/sink follows the true mass ratio. `radius`
+    /// is each particle's contact thickness against the pool walls and the
+    /// crate. Installs (or reuses) the world's [`FluidConfig`] with the
+    /// smoothing radius `h = h_factor × spacing` (default caller: `3×`, enough
+    /// neighbours for a smooth density estimate). Returns the new particle
+    /// indices (ascending). Call [`Solver::calibrate_fluid_rest_density`] ONCE
+    /// after all fluid is spawned to fix the SPH rest density from the packing.
+    pub fn spawn_fluid_box(
+        &mut self,
+        center: Vec3,
+        dims: Vec3,
+        spacing: f64,
+        rest_density: f64,
+        h_factor: f64,
+        radius: f64,
+    ) -> Vec<usize> {
+        let spacing = spacing.max(f64::EPSILON);
+        let nx = ((dims.x / spacing).floor() as i64 + 1).max(1) as usize;
+        let ny = ((dims.y / spacing).floor() as i64 + 1).max(1) as usize;
+        let nz = ((dims.z / spacing).floor() as i64 + 1).max(1) as usize;
+        // Centre the actual lattice span (which may be < dims by up to one
+        // spacing) about `center`.
+        let span = Vec3::new(
+            (nx - 1) as f64 * spacing,
+            (ny - 1) as f64 * spacing,
+            (nz - 1) as f64 * spacing,
+        );
+        let origin = center - span.scale(0.5);
+        let particle_mass = rest_density * spacing * spacing * spacing;
+        let inv_mass = 1.0 / particle_mass;
+        let mut indices = Vec::with_capacity(nx * ny * nz);
+        for ix in 0..nx {
+            for iy in 0..ny {
+                for iz in 0..nz {
+                    let pos = origin
+                        + Vec3::new(
+                            spacing * ix as f64,
+                            spacing * iy as f64,
+                            spacing * iz as f64,
+                        );
+                    let idx = self.particles.add_with_radius(pos, inv_mass, radius);
+                    indices.push(idx);
+                }
+            }
+        }
+        if self.fluid.is_none() {
+            self.fluid = Some(FluidConfig {
+                h: h_factor * spacing,
+                ..FluidConfig::default()
+            });
+        }
+        self.fluid_particles.extend_from_slice(&indices);
+        self.fluid_particles.sort_unstable();
+        indices
+    }
+
+    /// FLUID — DERIVE the SPH rest density `ρ₀` (and the absolute CFM `ε`) from
+    /// the CURRENT fluid packing, so an interior particle reports `C_i = 0` at
+    /// rest by construction rather than against a plucked number. `ρ₀` is taken
+    /// as the MAX density over the fluid particles at their present positions
+    /// — the fullest (most interior) neighbourhood, i.e. the density of the
+    /// spawn lattice at full packing. Every surface particle then reports
+    /// `ρ_i < ρ₀` (`C_i < 0`, mild cohesion, balanced by the artificial
+    /// pressure), interior `ρ_i ≈ ρ₀` (`C_i ≈ 0`), and only a compressed region
+    /// (the crate pressing in, the hydrostatic base) reports `ρ_i > ρ₀` and
+    /// pushes back — the incompressibility. The CFM `ε = cfm_relax × (interior
+    /// Σ|∇C|²)` is derived from that same fullest particle. Call once, after
+    /// all fluid is spawned and before stepping. No-op without fluid.
+    pub fn calibrate_fluid_rest_density(&mut self) {
+        let Some(mut cfg) = self.fluid else {
+            return;
+        };
+        if self.fluid_particles.is_empty() {
+            return;
+        }
+        let h = cfg.h;
+        let cell = PointGrid::cell_size(h);
+        let grid = PointGrid::build(&self.particles.pos, &self.fluid_particles, cell);
+        let mut cand: Vec<u32> = Vec::new();
+        let mut best_density = 0.0_f64;
+        let mut best_sum_grad2 = 0.0_f64;
+        for &i in &self.fluid_particles {
+            let pi = self.particles.pos[i];
+            grid.query_ball(pi, h, &mut cand);
+            // ρ_i = Σ_j m_j W(r_ij) ; also the constraint denominator terms.
+            let mut density = 0.0_f64;
+            let mut grad_i = Vec3::ZERO; // Σ_j m_j ∇W_ij  (the k=i gradient, ×ρ₀ later)
+            let mut sum_grad_j2 = 0.0_f64; // Σ_j |m_j ∇W_ij|²
+            for &jc in &cand {
+                let j = jc as usize;
+                let mj = if self.particles.inv_mass[j] > 0.0 {
+                    1.0 / self.particles.inv_mass[j]
+                } else {
+                    0.0
+                };
+                let r_vec = pi - self.particles.pos[j];
+                density += mj * poly6(r_vec.length(), h);
+                if j != i {
+                    let g = spiky_grad(r_vec, h).scale(mj);
+                    grad_i = grad_i + g;
+                    sum_grad_j2 += g.dot(g);
+                }
+            }
+            if density > best_density {
+                best_density = density;
+                // Σ_k|∇C_k|² with ρ₀ folded out (=1 here, scaled below): the
+                // shape of the denominator at the fullest neighbourhood.
+                best_sum_grad2 = grad_i.dot(grad_i) + sum_grad_j2;
+            }
+        }
+        cfg.rest_density = best_density.max(f64::EPSILON);
+        // ∇C = (1/ρ₀)×(mass-weighted ∇W); |∇C|² carries 1/ρ₀². The reference
+        // denominator for ε is that full-neighbourhood Σ|∇C|².
+        let ref_denom = best_sum_grad2 / (cfg.rest_density * cfg.rest_density);
+        cfg.cfm_epsilon = cfg.cfm_relax * ref_denom;
+        self.fluid = Some(cfg);
+    }
+
+    /// FLUID — the Position-Based-Fluids density-constraint pass (Macklin &
+    /// Müller 2013): one positional projection per fluid particle that drives
+    /// its SPH density to the rest density. Runs INSIDE the substep iteration
+    /// loop like every other constraint solve — same particle arrays, same
+    /// positional-correction covenant (velocity is read back from the position
+    /// change afterwards). Two half-steps, each order-stable (ascending fluid
+    /// index, ascending neighbour index) for byte-identical replay:
+    ///
+    ///   1. λ_i = −C_i / (Σ_k|∇_pk C_i|² + ε)  for every fluid particle, where
+    ///      C_i = ρ_i/ρ₀ − 1 and ρ_i = Σ_j m_j W_poly6(r_ij, h).
+    ///   2. Δp_i = (1/ρ₀) Σ_j (λ_i + λ_j + s_corr_ij) m_j ∇W_spiky(r_ij, h),
+    ///      s_corr_ij = −k (W_poly6(r_ij)/W_poly6(Δq))ⁿ (artificial pressure).
+    ///
+    /// The neighbour set comes from the conservative [`PointGrid`] (cell = h),
+    /// a byte-identical superset of the brute all-pairs scan. Returns the
+    /// number of fluid particles processed (0 = no fluid, immediate return).
+    fn solve_fluid(&mut self) -> usize {
+        let Some(cfg) = self.fluid else {
+            return 0;
+        };
+        if self.fluid_particles.is_empty() || cfg.rest_density <= 0.0 {
+            return 0;
+        }
+        let h = cfg.h;
+        let rho0 = cfg.rest_density;
+        let inv_rho0 = 1.0 / rho0;
+        let eps = cfg.cfm_epsilon;
+        let w_dq = poly6(cfg.tensile_dq_frac * h, h).max(f64::EPSILON);
+        let cell = PointGrid::cell_size(h);
+        let grid = PointGrid::build(&self.particles.pos, &self.fluid_particles, cell);
+
+        // Per-particle neighbour lists (ascending) captured once so both
+        // half-steps read the SAME neighbours from the SAME positions.
+        let fp = &self.fluid_particles;
+        let mut neighbours: Vec<Vec<usize>> = Vec::with_capacity(fp.len());
+        let mut cand: Vec<u32> = Vec::new();
+        for &i in fp {
+            grid.query_ball(self.particles.pos[i], h, &mut cand);
+            neighbours.push(cand.iter().map(|&c| c as usize).collect());
+        }
+
+        let mass = |p: &Particles, j: usize| -> f64 {
+            if p.inv_mass[j] > 0.0 {
+                1.0 / p.inv_mass[j]
+            } else {
+                0.0
+            }
+        };
+
+        // HALF-STEP 1 — λ per fluid particle.
+        let mut lambda = vec![0.0_f64; fp.len()];
+        for (a, &i) in fp.iter().enumerate() {
+            let pi = self.particles.pos[i];
+            let mut density = 0.0_f64;
+            let mut grad_i = Vec3::ZERO;
+            let mut sum_grad_j2 = 0.0_f64;
+            for &j in &neighbours[a] {
+                let mj = mass(&self.particles, j);
+                let r_vec = pi - self.particles.pos[j];
+                density += mj * poly6(r_vec.length(), h);
+                if j != i {
+                    let g = spiky_grad(r_vec, h).scale(mj * inv_rho0);
+                    grad_i = grad_i + g;
+                    sum_grad_j2 += g.dot(g);
+                }
+            }
+            let c_i = density * inv_rho0 - 1.0;
+            let denom = grad_i.dot(grad_i) + sum_grad_j2 + eps;
+            lambda[a] = if denom > 0.0 { -c_i / denom } else { 0.0 };
+        }
+        // Map fluid index -> its slot in `fp`, for λ_j lookup (fp ascending).
+        let slot = |j: usize| -> Option<usize> { fp.binary_search(&j).ok() };
+
+        // HALF-STEP 2 — Δp per fluid particle, applied after all are computed
+        // (Jacobi: every Δp reads the SAME pre-move positions/λ).
+        let mut dp = vec![Vec3::ZERO; fp.len()];
+        for (a, &i) in fp.iter().enumerate() {
+            let pi = self.particles.pos[i];
+            let li = lambda[a];
+            let mut acc = Vec3::ZERO;
+            for &j in &neighbours[a] {
+                if j == i {
+                    continue;
+                }
+                let mj = mass(&self.particles, j);
+                let r_vec = pi - self.particles.pos[j];
+                let lj = slot(j).map(|s| lambda[s]).unwrap_or(0.0);
+                // Artificial pressure (tensile instability corrector).
+                let s_corr = if cfg.tensile_k != 0.0 {
+                    let ratio = poly6(r_vec.length(), h) / w_dq;
+                    -cfg.tensile_k * ratio.powf(cfg.tensile_n)
+                } else {
+                    0.0
+                };
+                acc = acc + spiky_grad(r_vec, h).scale(mj * (li + lj + s_corr));
+            }
+            dp[a] = acc.scale(inv_rho0);
+        }
+        // Apply. Anchored fluid particles (none by default) stay put.
+        for (a, &i) in fp.iter().enumerate() {
+            if self.particles.inv_mass[i] != 0.0 {
+                self.particles.pos[i] = self.particles.pos[i] + dp[a];
+            }
+        }
+        fp.len()
+    }
+
     /// Flood-fill connected components of `particles` over the SURVIVING bond
     /// graph (i.e. call this AFTER `fracture_pass` has removed torn bonds —
     /// `Solver::step` already does, so this reads `self.constraints` as it
@@ -565,6 +824,7 @@ impl Solver {
             for _it in 0..cfg.iterations.max(1) {
                 self.solve_distance(dt_sub);
                 self.solve_shape_matching();
+                self.solve_fluid();
                 contacts = self.solve_collision_normal();
                 contacts.extend(self.solve_body_collisions(&particle_cluster));
             }
@@ -639,6 +899,9 @@ impl Solver {
                 self.solve_shape_matching();
                 prof.shape_matching += t.elapsed();
                 let t = Instant::now();
+                self.solve_fluid();
+                prof.solve_fluid += t.elapsed();
+                let t = Instant::now();
                 contacts = self.solve_collision_normal();
                 prof.collision_static += t.elapsed();
                 let t = Instant::now();
@@ -663,6 +926,7 @@ impl Solver {
 
         prof.particles = self.particles.pos.len();
         prof.bonds = self.constraints.len();
+        prof.fluid_particles = self.fluid_particles.len();
         prof.total = tick_start.elapsed();
         prof
     }
@@ -937,6 +1201,13 @@ impl Solver {
                 }
                 next_bonded_id += 1;
             }
+        }
+        // FLUID — every fluid particle shares the single `Fluid` cluster, so
+        // fluid–fluid pairs SKIP the O(k²) contact (density constraint owns
+        // them) while fluid–solid pairs collide (the coupling). Assigned last
+        // so a particle is never both fluid and a rigid/bonded member.
+        for &i in &self.fluid_particles {
+            lookup[i] = Some(ClusterId::Fluid);
         }
         lookup
     }
