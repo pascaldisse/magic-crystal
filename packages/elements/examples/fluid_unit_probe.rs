@@ -104,7 +104,19 @@ fn main() {
     run("A. COMPRESS 0.9, compression_only, s_corr OFF", 0.9, true, 0.0, 60);
     run("B. STRETCH 1.1, compression_only, s_corr OFF", 1.1, true, 0.0, 60);
     run("C. REST 1.0, compression_only, s_corr OFF", 1.0, true, 0.0, 60);
-    // s_corr ON to expose the tick-1 kick.
+    // s_corr ON, but STRETCH/REST under compression_only clamp C to 0
+    // everywhere (C<=0 -> lambda=0 on every particle), so BOTH the old
+    // global-disable gate (`!compression_only`) and the current per-pair
+    // gate (`li!=0 || lj!=0`) leave s_corr at exactly zero here -- no tick-1
+    // kick to expose under either semantics. These two only prove s_corr
+    // stays inert when nothing is compressed; the pair-gate itself (some
+    // pairs live, some not, in the SAME run) is exercised by F below.
     run("D. STRETCH 1.1, compression_only, s_corr ON (0.1)", 1.1, true, 0.1, 30);
     run("E. REST 1.0, compression_only, s_corr ON (0.1)", 1.0, true, 0.1, 30);
+    // Pair-gate exercise: compression_only WITH s_corr ON. Some particles
+    // overdense (lambda>0, s_corr active on their pairs), others rest/under-
+    // dense (lambda=0, s_corr must stay gated OFF on those pairs). Must NOT
+    // explode -- settles like case A, s_corr only adds anti-clustering push
+    // in the still-compressed neighbourhoods.
+    run("F. COMPRESS 0.9, compression_only, s_corr ON (0.1) -- pair-gate exercise", 0.9, true, 0.1, 60);
 }

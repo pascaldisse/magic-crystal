@@ -58,7 +58,7 @@ fn surface_flatness(s: &Solver, spec: &FluidPoolSpec) -> (f64, f64, f64, usize) 
     (mean, rms, peak, n)
 }
 
-fn run(label: &str, restitution: f64, viscosity_c: f64, rho0_scale: f64) {
+fn run(label: &str, restitution: f64, viscosity_c: f64, rho0_scale: f64, compression_only: bool, ticks: u64) {
     let spec = FluidPoolSpec { spacing: 0.08, ..FluidPoolSpec::default() };
     let sp = spec.spacing;
     let mut pool = fill(spec);
@@ -69,9 +69,11 @@ fn run(label: &str, restitution: f64, viscosity_c: f64, rho0_scale: f64) {
         let cfg = pool.solver.fluid.as_mut().unwrap();
         cfg.viscosity_c = viscosity_c;
         cfg.rest_density *= rho0_scale; // <1 -> more particles read C>0 at rest
+        cfg.compression_only = compression_only;
     }
-    println!("\n== {label} ==  restitution={restitution} viscosity_c={viscosity_c} rho0_scale={rho0_scale}");
-    for t in 0..500 {
+    println!("\n== {label} ==  restitution={restitution} viscosity_c={viscosity_c} rho0_scale={rho0_scale} compression_only={compression_only}");
+    let t0 = std::time::Instant::now();
+    for t in 0..ticks {
         pool.solver.step();
         if t % 100 == 99 {
             let (mean, rms, peak, n) = surface_flatness(&pool.solver, &spec);
@@ -81,18 +83,37 @@ fn run(label: &str, restitution: f64, viscosity_c: f64, rho0_scale: f64) {
             );
         }
     }
+    let per_tick = t0.elapsed().as_secs_f64() * 1000.0 / ticks as f64;
     let (mean, rms, peak, n) = surface_flatness(&pool.solver, &spec);
-    println!("  REST: mean {mean:.4} m over {n} cols | RMS {rms:.4} (bound {:.4} {}) | peak {peak:.4} (bound {:.4} {}) | speed {:.4}",
+    println!("  REST: mean {mean:.4} m over {n} cols | RMS {rms:.4} (bound {:.4} {}) | peak {peak:.4} (bound {:.4} {}) | speed {:.4} | {:.2} ms/tick",
         0.5 * sp, if rms <= 0.5 * sp { "OK" } else { "OVER" },
-        sp, if peak <= sp { "OK" } else { "OVER" }, max_speed(&pool.solver));
+        sp, if peak <= sp { "OK" } else { "OVER" }, max_speed(&pool.solver), per_tick);
 }
 
 fn main() {
     let sp = 0.08;
     println!("FLUID FLATNESS — default pool, spacing {sp} m");
     println!("Derived bound: RMS <= 0.5*spacing = {:.4} m ; peak <= 1.0*spacing = {:.4} m", 0.5 * sp, sp);
-    run("C. restitution 0.0, viscosity 0.20, rho0x1.00 (baseline)", 0.0, 0.20, 1.00);
-    run("E. restitution 0.0, viscosity 0.20, rho0x0.95", 0.0, 0.20, 0.95);
-    run("F. restitution 0.0, viscosity 0.20, rho0x0.90", 0.0, 0.20, 0.90);
-    run("G. restitution 0.0, viscosity 0.20, rho0x0.85", 0.0, 0.20, 0.85);
+    // Select a single case via argv[1] (index) so each can run under its own
+    // `timeout 300` wall clock; no arg -> run everything (slow, may exceed a
+    // single 300s budget at 500 ticks x 5 cases).
+    let cases: Vec<(&str, f64, f64, f64, bool, u64)> = vec![
+        ("C. restitution 0.0, viscosity 0.20, rho0x1.00 (baseline, compression_only)", 0.0, 0.20, 1.00, true, 500),
+        ("E. restitution 0.0, viscosity 0.20, rho0x0.95, compression_only", 0.0, 0.20, 0.95, true, 500),
+        ("F. restitution 0.0, viscosity 0.20, rho0x0.90, compression_only", 0.0, 0.20, 0.90, true, 500),
+        ("G. restitution 0.0, viscosity 0.20, rho0x0.85, compression_only", 0.0, 0.20, 0.85, true, 500),
+        ("H. restitution 0.0, viscosity 0.20, rho0x1.00, BILATERAL (compression_only=false) -- comparison", 0.0, 0.20, 1.00, false, 500),
+    ];
+    let arg: Option<usize> = std::env::args().nth(1).and_then(|s| s.parse().ok());
+    match arg {
+        Some(i) => {
+            let (label, r, v, rho, co, ticks) = cases[i];
+            run(label, r, v, rho, co, ticks);
+        }
+        None => {
+            for (label, r, v, rho, co, ticks) in cases {
+                run(label, r, v, rho, co, ticks);
+            }
+        }
+    }
 }

@@ -716,18 +716,26 @@ impl Solver {
                     let mj = mass(&self.particles, j);
                     let r_vec = pi - self.particles.pos[j];
                     let lj = slot(j).map(|s| lambda[s]).unwrap_or(0.0);
-                    // Artificial pressure (tensile instability corrector).
-                    // MUST be gated by the compression-only clamp: s_corr < 0
-                    // ALWAYS (pure pair repulsion), so applying it where the
-                    // density constraint is inactive (λ=0 on every underdense/
-                    // rest particle, the overwhelming majority under a
-                    // calibrated ρ₀=MAX) is an unbalanced repulsion with nothing
-                    // to counter it — the pool detonates on tick 1 (measured).
-                    // The tensile instability it corrects only EXISTS under the
-                    // bilateral (cohesive, λ>0) constraint; compression-only has
-                    // no negative-pressure clustering, so s_corr is both
-                    // unnecessary and destabilising there — disable it.
-                    let s_corr = if cfg.tensile_k != 0.0 && !cfg.compression_only {
+                    // Artificial pressure (tensile instability corrector),
+                    // Macklin/Müller §4: s_corr rides INSIDE the position-
+                    // correction sum alongside the pair's own constraint terms
+                    // — Δp_i ∝ Σ_j (λ_i + λ_j + s_corr)·∇W — so it MUST be
+                    // inert whenever the pair's constraint is inert. s_corr is
+                    // always <0 (pure pair repulsion); the earlier bug applied
+                    // it to EVERY neighbour pair unconditionally, including
+                    // λ_i=λ_j=0 pairs (every underdense/rest particle under
+                    // compression_only, the overwhelming majority once ρ₀ is
+                    // calibrated to MAX density) — an unbalanced repulsion
+                    // with nothing to counter it, detonating the pool on tick
+                    // 1 (measured: 15 m by tick 120). Gate it on the SAME
+                    // pair-local signal that already carries the constraint:
+                    // zero unless at least one side is actively constrained.
+                    // Under compression_only this naturally limits s_corr to
+                    // compressed neighbourhoods (li or lj > 0) and leaves
+                    // rest/underdense pairs (li=lj=0) at exactly zero
+                    // contribution; under the bilateral mode it behaves as
+                    // the original PBF term wherever a constraint is live.
+                    let s_corr = if cfg.tensile_k != 0.0 && (li != 0.0 || lj != 0.0) {
                         let ratio = poly6(r_vec.length(), h) / w_dq;
                         -cfg.tensile_k * ratio.powf(cfg.tensile_n)
                     } else {
