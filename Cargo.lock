@@ -2447,6 +2447,7 @@ dependencies = [
  "fracture",
  "glam",
  "scrying-glass",
+ "seed",
  "serde",
  "serde_json",
  "vessel",
@@ -3065,6 +3066,7 @@ dependencies = [
  "pollster",
  "raw-window-handle",
  "sama",
+ "seed",
  "serde",
  "serde_json",
  "tauri",
@@ -3081,6 +3083,8 @@ name = "seed"
 version = "0.1.0"
 dependencies = [
  "glam",
+ "serde",
+ "serde_json",
  "transmutation",
 ]
 

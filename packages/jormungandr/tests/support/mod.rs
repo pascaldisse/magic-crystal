@@ -4,6 +4,7 @@
 //! cargo's `CARGO_TARGET_TMPDIR` — NEVER `/tmp`.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use transmutation::{
     read_directory, read_page, serialize, subdivided_cube, transmute_default, uv_sphere, Mesh,
@@ -89,13 +90,32 @@ fn forge_mesh() -> Mesh {
     Mesh::new(verts, inds)
 }
 
-/// Forge the large artifact and write it to `dir/serpent.cbdg`. Returns the
-/// path. Deterministic: identical every run (finding 8 byte-identity holds).
+/// Suite-reliability fix (adversary review, VII-0b): `ordeals.rs` calls
+/// `generate_artifact` from THREE tests (`ordeals_flight`,
+/// `ordeal_eviction_order_honors_distance`, `ordeal_unknown_page_is_typed_error`)
+/// that all share the SAME `dir` (`CARGO_TARGET_TMPDIR`, one directory for the
+/// whole test binary). `cargo test` runs a binary's tests in parallel threads
+/// by default, so three threads writing the SAME fixed filename
+/// (`serpent.cbdg`) concurrently is a real torn-write/torn-read race — the
+/// root cause of the observed flake. Fixed at the source: a unique filename
+/// per call (process id + a monotonic in-process counter — the same "make
+/// the shared name unique" pattern `packages/scrying-glass/tests/
+/// vii0b_terrain.rs`'s temp-world helpers already use for the same reason).
+/// Every caller uses the RETURNED path, never a hardcoded name, so this is a
+/// pure implementation-detail fix — no call site changes needed.
+static ARTIFACT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// Forge the large artifact and write it to a per-call-unique
+/// `dir/serpent_<pid>_<n>.cbdg`. Returns the path. Deterministic: the
+/// artifact BYTES are identical every run (finding 8 byte-identity holds);
+/// only the filename varies, to keep concurrent test threads from tearing
+/// each other's writes.
 pub fn generate_artifact(dir: &Path) -> PathBuf {
     let mesh = forge_mesh();
     let dag = transmute_default(&mesh, &TransmuteParams::default()).expect("transmute");
     let bytes = serialize(&dag).expect("serialize");
-    let path = dir.join("serpent.cbdg");
+    let unique = ARTIFACT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let path = dir.join(format!("serpent_{}_{unique}.cbdg", std::process::id()));
     std::fs::write(&path, &bytes).expect("write artifact");
     path
 }

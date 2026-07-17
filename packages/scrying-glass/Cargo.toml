@@ -18,6 +18,7 @@ kami = { path = "../kami" }
 png = "0.17.16"
 pollster = "0.4.0"
 raw-window-handle = "0.6.2"
+seed = { path = "../seed" }
 serde = "1"
 serde_json = "1"
 transmutation = { path = "../transmute" }
@@ -40,6 +41,10 @@ path = "examples/n2_presence.rs"
 [[example]]
 name = "vi2_break"
 path = "examples/vi2_break.rs"
+
+[[example]]
+name = "vii0_ground"
+path = "examples/vii0_ground.rs"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6.2"

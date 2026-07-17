@@ -132,7 +132,18 @@ pub const DEFAULT_SLOPE_FRACTION: f32 = 0.15;
 
 impl Default for TerrainParams {
     fn default() -> Self {
-        let tile_size_m = 64.0_f32;
+        Self::derive(64.0)
+    }
+}
+
+impl TerrainParams {
+    /// Derive every dial from `tile_size_m` alone — the SAME formula
+    /// [`Default::default`] uses (factored out here, VII-0b, so a `terrain`
+    /// sigil that overrides only `tile_size_m` still gets every OTHER dial's
+    /// honestly re-derived default against the OVERRIDDEN size, rather than
+    /// silently inheriting `Default`'s fixed 64 m baseline's grid/wavelength
+    /// numbers against a now-mismatched tile size).
+    pub fn derive(tile_size_m: f32) -> Self {
         let base_wavelength_m = tile_size_m / 2.0;
         let fbm = Fbm {
             frequency: 1.0 / base_wavelength_m,
@@ -156,9 +167,7 @@ impl Default for TerrainParams {
             warp_enabled: false,
         }
     }
-}
 
-impl TerrainParams {
     /// Grid cell edge length in meters (`tile_size_m / grid_resolution`).
     #[inline]
     pub fn cell_size_m(&self) -> f32 {

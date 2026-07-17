@@ -20,6 +20,7 @@ pub mod fields;
 pub mod hash;
 pub mod scatter;
 pub mod terrain;
+pub mod terrain_sigil;
 
 pub use fields::{Fbm, Noise};
 pub use hash::{
@@ -27,3 +28,4 @@ pub use hash::{
 };
 pub use scatter::{density_scatter, grid_jitter, poisson_disk, Region};
 pub use terrain::{height, tile_mesh, tile_origin_m, tile_seed, TerrainParams, TerrainTile};
+pub use terrain_sigil::TerrainSigil;

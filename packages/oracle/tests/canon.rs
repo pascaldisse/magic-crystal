@@ -124,6 +124,34 @@
 //!     r 1.6, speed 0.9). Canon bounds are the AUTHORED bind pose — the orbit at
 //!     angle 0 — the crate precedent: the senses read the static scene, the kami
 //!     only moves it at runtime. center [-1, 2.2, 18.1]
+//!   naruko_first_ground   x[0,64]  y[-9.6,9.6]  z[128,192]
+//!     — RITE VII · VII-0b (THE FIRST GROUND, the render weld), the 25th
+//!     vessel: a GENERATED terrain patch, authored ONLY as a sigil
+//!     `{seed:20260717, tile_x:0, tile_y:2}` — no mesh, no stored geometry.
+//!     Bounds are ANALYTIC, derived from the sigil alone (never a built
+//!     mesh): x/z span exactly the tile footprint (`tile_origin ..
+//!     tile_origin+tile_size_m`; tile_size_m defaults to 64, and
+//!     `tile_origin_m = (tile_x·grid_resolution, tile_y·grid_resolution) ×
+//!     cell_size_m` = `(0·64, 2·64) × 1.0` = `(0, 128)`, `packages/seed/src/
+//!     terrain.rs::tile_origin_m`); y spans `± height_amplitude`
+//!     (`tile_size_m × DEFAULT_SLOPE_FRACTION` = `64 × 0.15` = `9.6`) — the
+//!     fBm's normalized `[-1,1]` sum can never exceed its own peak amplitude
+//!     regardless of octave count (`height_at_grid_index`'s `sum / norm`
+//!     doc). center [32, 0, 160]. Placed clear of every other vessel: the
+//!     realm's nearest static geometry going +z is `naruko_terra`, which
+//!     ends at z=68 (see that row above) — 60 m of open ground short of the
+//!     patch's z=128 near edge, so nothing overlaps. Range from the canon
+//!     eye [0,7,44]: d = [32,-7,116], range = √(32²+7²+116²) = √14529 =
+//!     120.5363 m — see `canon_terrain_patch_bounds_and_range_are_derived`.
+//!     NOT in the default frustum: fwd=(0,0,-1) at yaw 0, and the patch's
+//!     forward-axis component `dot(d,fwd) = -116` is NEGATIVE (the whole
+//!     patch sits entirely BEHIND the eye's look direction, past the near
+//!     plane's back side) — the 6-plane frustum test excludes it outright,
+//!     so `canon_default_glance_frustum_set_is_the_ten_meshed_vessels`'s
+//!     entity_count (24) and caption set are UNCHANGED by this growth (shown
+//!     by that test still passing verbatim — the realm-growth law's other
+//!     branch: sometimes the honest re-derivation is "no change", and this
+//!     comment records why rather than silently relying on it).
 //! Eye basis at yaw 0: fwd=(0,0,-1), right=(1,0,0), up=(0,1,0); FOV 60 vertical
 //! (aspect 1) ⇒ tan_half = tan(30°) = 0.5773502692.
 
@@ -815,4 +843,76 @@ fn canon_glance_serialization_is_deterministic() {
     let world2 = canon();
     let c = serde_json::to_string(&look(&world2, eye, params).unwrap()).unwrap();
     assert_eq!(a, c, "canon glance must be load-invariant");
+}
+
+/// CANON #8 — VII-0b THE FIRST GROUND (the render weld). `naruko_first_ground`
+/// carries ONLY a `terrain` sigil — the oracle derives its world bounds
+/// ANALYTICALLY from that sigil (`terrain_world_aabb`, `model.rs`), never by
+/// building a mesh. Header derivation: tile_origin = (0,128)
+/// (`tile_x·grid_resolution·cell_size_m` with grid_resolution=64,
+/// cell_size_m=1.0 at the default tile_size_m=64), height_amplitude=9.6
+/// (`64 × DEFAULT_SLOPE_FRACTION(0.15)`) ⇒ x[0,64] y[-9.6,9.6] z[128,192],
+/// center [32,0,160], range from the canon eye [0,7,44] = √14529 = 120.5363.
+/// Also proves the patch stays OUT of the default frustum set (confirmed
+/// separately by CANON #1's unchanged entity_count=24), and that the oracle
+/// never needed a mesh: the entity carries no `mesh` component at all.
+#[test]
+fn canon_terrain_patch_bounds_and_range_are_derived() {
+    let world = canon();
+    let geom = world
+        .geometry("naruko_first_ground")
+        .expect("naruko_first_ground is a registered entity");
+    let bounds = geom
+        .bounds
+        .expect("a terrain sigil derives analytic bounds");
+
+    const AABB_TOL: f32 = 1e-4;
+    let want_min = [0.0_f32, -9.6, 128.0];
+    let want_max = [64.0_f32, 9.6, 192.0];
+    for axis in 0..3 {
+        assert!(
+            (bounds.min[axis] - want_min[axis]).abs() < AABB_TOL,
+            "terrain min axis {axis}: live {} != derived {} (tol {AABB_TOL})",
+            bounds.min[axis],
+            want_min[axis]
+        );
+        assert!(
+            (bounds.max[axis] - want_max[axis]).abs() < AABB_TOL,
+            "terrain max axis {axis}: live {} != derived {} (tol {AABB_TOL})",
+            bounds.max[axis],
+            want_max[axis]
+        );
+    }
+
+    let eye = world.spawn_pose().expect("canon spawn pose");
+    let center = bounds.center();
+    let d = [
+        center[0] - eye.position[0],
+        center[1] - eye.position[1],
+        center[2] - eye.position[2],
+    ];
+    let range = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+    // Same derived tolerance as CANON #2's RANGE_TOL (1e-3 m, ≈16× the
+    // measured live-f32-vs-4-decimal-reference discrepancy).
+    const RANGE_TOL: f32 = 1e-3;
+    assert!(
+        (range - 120.5363).abs() < RANGE_TOL,
+        "terrain patch range: live {range} != derived 120.5363 (tol {RANGE_TOL})"
+    );
+
+    // The sigil is the SOLE authored artifact: no `mesh` component travels
+    // with it (the NO-STORAGE law at the scene seam — the oracle's own
+    // confirmation that it derived from data, not geometry it happened to
+    // find).
+    assert!(
+        world
+            .entities
+            .iter()
+            .find(|e| e.id == "naruko_first_ground")
+            .expect("entity registered")
+            .components
+            .iter()
+            .all(|c| c != "mesh"),
+        "a terrain entity must carry no mesh component"
+    );
 }
