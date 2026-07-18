@@ -70,7 +70,7 @@ features = ["MPSCore", "MPSCoreTypes", "MPSNDArray"]
 
 [target.'cfg(target_os = "macos")'.dependencies.objc2-metal]
 version = "0.3.2"
-features = ["MTLDevice", "MTLCommandQueue", "MTLBuffer"]
+features = ["MTLDevice", "MTLCommandQueue", "MTLBuffer", "MTLResource"]
 
 [target.'cfg(target_os = "macos")'.dependencies.objc2]
 version = "0.6"

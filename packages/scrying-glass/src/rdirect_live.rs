@@ -51,7 +51,9 @@ mod imp {
     use objc2::runtime::ProtocolObject;
     use objc2::{AnyThread, Message};
     use objc2_foundation::{NSArray, NSData, NSNumber, NSString};
-    use objc2_metal::{MTLCommandQueue, MTLCreateSystemDefaultDevice, MTLDevice};
+    use objc2_metal::{
+        MTLBuffer, MTLCommandQueue, MTLCreateSystemDefaultDevice, MTLDevice, MTLResourceOptions,
+    };
     use objc2_metal_performance_shaders::MPSDataType;
     use objc2_metal_performance_shaders_graph::{
         MPSGraph, MPSGraphDevice, MPSGraphTensor, MPSGraphTensorData,
@@ -67,6 +69,22 @@ mod imp {
         is_last: bool,
     }
 
+    /// The zero-copy pool (N0.b): the feature input and net output as MTLBuffers
+    /// allocated ONCE, sized to a fixed `max_pixels` ceiling. `feature_buf` is
+    /// the SAME MTLBuffer wrapped as a wgpu STORAGE buffer, so the gather
+    /// compute pass writes it and the MPSGraph forward reads it with no copy and
+    /// no per-frame allocation (this is where the spike's 157 MB/frame churn
+    /// dies). Only present on the live wgpu path (`from_wgpu_queue`).
+    struct SharedPool {
+        /// wgpu view of `feature_mtl` (STORAGE): the gather's destination.
+        feature_buf: wgpu::Buffer,
+        /// Same MTLBuffer as `feature_buf`, fed to the graph zero-copy.
+        feature_mtl: Retained<ProtocolObject<dyn MTLBuffer>>,
+        /// The graph's output MTLBuffer (Shared storage → CPU-readable).
+        out_mtl: Retained<ProtocolObject<dyn MTLBuffer>>,
+        max_pixels: usize,
+    }
+
     /// The live net: an MPSGraph batched-GEMM forward built once at construction
     /// from the committed weights, plus the Metal device/queue it runs on.
     pub struct RdirectLive {
@@ -78,6 +96,7 @@ mod imp {
         cpu_ref: Mlp,
         in_features: usize,
         out_channels: usize,
+        pool: Option<SharedPool>,
     }
 
     impl RdirectLive {
@@ -170,6 +189,7 @@ mod imp {
                     cpu_ref,
                     in_features: INPUT_FEATURES,
                     out_channels: OUTPUT_CHANNELS,
+                    pool: None,
                 })
             }
         }
@@ -188,7 +208,16 @@ mod imp {
         /// THE LIVE PATH: reach the Metal device + queue wgpu itself drives,
         /// through the wgpu-hal Metal backdoor. Same device/queue as the trace
         /// — the net runs in the same command timeline.
-        pub fn from_wgpu_queue(queue: &wgpu::Queue, weights: &[u8]) -> Result<Self, String> {
+        ///
+        /// `max_pixels` sizes the zero-copy pool (feature input + net output
+        /// MTLBuffers, allocated once): the largest target-pixel count any frame
+        /// will forward. `feature_buffer()` returns the gather's destination.
+        pub fn from_wgpu_queue(
+            wgpu_device: &wgpu::Device,
+            queue: &wgpu::Queue,
+            weights: &[u8],
+            max_pixels: usize,
+        ) -> Result<Self, String> {
             // SAFETY: as_hal hands the live hal Queue; we retain the raw
             // MTLCommandQueue and derive its MTLDevice. Both outlive `self`.
             let (device, mtl_queue) = unsafe {
@@ -205,7 +234,119 @@ mod imp {
                         "rdirect_live: wgpu is not on the Metal backend".to_string()
                     })?
             };
-            Self::build(device, mtl_queue, weights)
+            let mut me = Self::build(device.clone(), mtl_queue, weights)?;
+            me.attach_pool(wgpu_device, &device, max_pixels)?;
+            Ok(me)
+        }
+
+        /// Allocate the once-only zero-copy pool on `mtl_device` and bridge the
+        /// feature MTLBuffer into a wgpu STORAGE buffer (so the gather writes it).
+        fn attach_pool(
+            &mut self,
+            wgpu_device: &wgpu::Device,
+            mtl_device: &Retained<ProtocolObject<dyn MTLDevice>>,
+            max_pixels: usize,
+        ) -> Result<(), String> {
+            let in_bytes = max_pixels * self.in_features * std::mem::size_of::<f32>();
+            let out_bytes = max_pixels * self.out_channels * std::mem::size_of::<f32>();
+            // SAFETY: objc2 message sends + the wgpu-hal Metal buffer bridge; the
+            // MTLBuffer we clone into wgpu outlives the wgpu buffer (both held in
+            // `SharedPool`).
+            unsafe {
+                let feature_mtl = mtl_device
+                    .newBufferWithLength_options(in_bytes, MTLResourceOptions::StorageModeShared)
+                    .ok_or_else(|| "rdirect_live: feature MTLBuffer alloc failed".to_string())?;
+                let out_mtl = mtl_device
+                    .newBufferWithLength_options(out_bytes, MTLResourceOptions::StorageModeShared)
+                    .ok_or_else(|| "rdirect_live: output MTLBuffer alloc failed".to_string())?;
+                let hal_buf = wgpu::hal::metal::Device::buffer_from_raw(
+                    feature_mtl.clone(),
+                    in_bytes as u64,
+                );
+                let feature_buf = wgpu_device.create_buffer_from_hal::<wgpu::hal::api::Metal>(
+                    hal_buf,
+                    &wgpu::BufferDescriptor {
+                        label: Some("rdirect feature (shared MTLBuffer)"),
+                        size: in_bytes as u64,
+                        // COPY_SRC so ordeals can read the gather output back for
+                        // parity (the live path never copies it — the graph reads
+                        // the same MTLBuffer in place).
+                        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                        mapped_at_creation: false,
+                    },
+                );
+                self.pool = Some(SharedPool {
+                    feature_buf,
+                    feature_mtl,
+                    out_mtl,
+                    max_pixels,
+                });
+            }
+            Ok(())
+        }
+
+        /// The gather's destination STORAGE buffer (the shared feature MTLBuffer
+        /// wrapped for wgpu). `None` unless built via `from_wgpu_queue`.
+        pub fn feature_buffer(&self) -> Option<&wgpu::Buffer> {
+            self.pool.as_ref().map(|p| &p.feature_buf)
+        }
+
+        /// Ceiling passed at construction (max target pixels per forward).
+        pub fn max_pixels(&self) -> usize {
+            self.pool.as_ref().map(|p| p.max_pixels).unwrap_or(0)
+        }
+
+        /// N0.b ZERO-COPY forward: read the `n`×23 features already written into
+        /// the pooled feature MTLBuffer (by the gather pass — caller must submit
+        /// & complete it first) and run the batched GEMM into the pooled output
+        /// MTLBuffer, returning `[n, out_channels]` demod-log radiance. No NSData
+        /// staging, no per-call allocation — both buffers are the pool's.
+        pub fn forward_shared(&self, n: usize) -> Result<Vec<f32>, String> {
+            let pool = self.pool.as_ref().ok_or_else(|| {
+                "rdirect_live: forward_shared needs the shared pool (from_wgpu_queue)".to_string()
+            })?;
+            if n == 0 || n > pool.max_pixels {
+                return Err(format!(
+                    "rdirect_live: n={n} outside [1, max_pixels={}]",
+                    pool.max_pixels
+                ));
+            }
+            // SAFETY: objc2 message sends; the MTLBuffers are sized to max_pixels
+            // ≥ n, shapes match the tensors, output is Shared storage.
+            unsafe {
+                let in_shape = shape(&[n, self.in_features]);
+                let in_td = MPSGraphTensorData::initWithMTLBuffer_shape_dataType(
+                    MPSGraphTensorData::alloc(),
+                    &pool.feature_mtl,
+                    &in_shape,
+                    MPSDataType::Float32,
+                );
+                let out_shape = shape(&[n, self.out_channels]);
+                let out_td = MPSGraphTensorData::initWithMTLBuffer_shape_dataType(
+                    MPSGraphTensorData::alloc(),
+                    &pool.out_mtl,
+                    &out_shape,
+                    MPSDataType::Float32,
+                );
+                let feeds = objc2_foundation::NSDictionary::<
+                    MPSGraphTensor,
+                    MPSGraphTensorData,
+                >::from_slices(&[&*self.input], &[&*in_td]);
+                let results = objc2_foundation::NSDictionary::<
+                    MPSGraphTensor,
+                    MPSGraphTensorData,
+                >::from_slices(&[&*self.output], &[&*out_td]);
+                self.graph
+                    .runWithMTLCommandQueue_feeds_targetOperations_resultsDictionary(
+                        &self.queue,
+                        &feeds,
+                        None,
+                        &results,
+                    );
+                let ptr = pool.out_mtl.contents().as_ptr() as *const f32;
+                let out = std::slice::from_raw_parts(ptr, n * self.out_channels).to_vec();
+                Ok(out)
+            }
         }
 
         pub fn in_features(&self) -> usize {
