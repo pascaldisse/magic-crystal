@@ -34,6 +34,16 @@ language mind INHABITS the engine: it enters through the same doors as any
 agent (senses in, ops out), no privileged backchannel — possession by
 invitation, dismissed without the engine noticing.
 
+★ THE REAL IMAGE BAR (Architect, 07-18 22:51, verbatim force: "NOTHING
+RENDERS UNTIL THE REAL IMAGE RENDERS. THERE IS NO POST PROCESSING, THERE IS
+NO PIXELS. IT TAKES THE RAYS AND DRAWS THE FINAL IMAGE"): an image with
+visible sampling residue (sparkle/dots/unconverged light) is a FALSE IMAGE
+= heresy on screen. The app presents BLACK until Pleroma's output passes
+the REAL-IMAGE ORDEAL: quantitative bar vs converged teacher truth on
+validation poses (still + pan), zero visible sparkle. There is no denoiser
+package, no post pass, no filter — Pleroma takes the rays and draws the
+final image, or nothing does. Quality is not a roadmap; it is the gate.
+
 ★ TESTING LAW — YOUR OWN EYES, THE ENGINE'S OWN DOORS (Architect, 07-18 18:44)
 The engine is AI-first: it carries its own debug organs — USE them before any
 claim, and BUILD the missing organ instead of working around it.
