@@ -14,7 +14,8 @@ use std::{
 use scrying_glass::player::{Ground, Key, Player, PlayerParams};
 use scrying_glass::{input, player};
 
-use crystal::{Core, GaiaPackage, ImpulseOp, Op, load_world_dir};
+use serde_json::json;
+use crystal::{Core, GaiaPackage, ImpulseOp, Op, OpBatch, load_world_dir};
 use glam::Vec3;
 use scrying_glass::ScryingGlassPackage;
 use scrying_glass::bloodbend::{self, Bend, Bloodbend, BloodbendParams};
@@ -31,6 +32,7 @@ use scrying_glass::scene::{
 };
 use scrying_glass::upscaler::deserialize_weights as deserialize_upscaler_weights;
 use scrying_glass::upscaler_gpu::GpuUpscaler;
+use steiner::{AppliedBatch, WorldCore, WorldCoreParams, parse_op_batch};
 use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewUrl};
 
 const DEFAULT_NATIVE_PORT: u16 = 8430;
@@ -78,6 +80,12 @@ struct ScryingGlassConfig {
     /// itself, a future third-person mode). Off is the normal weld: her body
     /// vanishes only from the exact eye it is attached to.
     draw_own_body: bool,
+    /// Native realm authority: Steiner seed, bounded event view, HTTP limits.
+    world_core: WorldCoreParams,
+    authority_timeout: Duration,
+    event_default_limit: usize,
+    event_limit_max: usize,
+    max_request_bytes: usize,
     /// WORKER WINDOW (`GAIA_NATIVE_WORKER_WINDOW`, default off/false — Nekromant
     /// case #1 fix): a worker instance's window is built non-activating/
     /// never-key (`focused(false)` + `focusable(false)`, which on macOS rides
@@ -265,6 +273,18 @@ impl ScryingGlassConfig {
                 })?,
                 Err(_) => false,
             },
+            world_core: WorldCoreParams {
+                seed: integer("GAIA_NATIVE_WORLD_SEED", 0x5eed)? as u64,
+                event_capacity: integer("GAIA_NATIVE_EVENT_CAPACITY", 2_000)? as usize,
+                ..WorldCoreParams::default()
+            },
+            authority_timeout: Duration::from_millis(u64::from(integer(
+                "GAIA_NATIVE_OP_TIMEOUT_MS",
+                5_000,
+            )?)),
+            event_default_limit: integer("GAIA_NATIVE_EVENT_DEFAULT_LIMIT", 200)? as usize,
+            event_limit_max: integer("GAIA_NATIVE_EVENT_LIMIT_MAX", 500)? as usize,
+            max_request_bytes: integer("GAIA_NATIVE_HTTP_MAX_BYTES", 1 << 20)? as usize,
             worker_window,
         };
         if config.render_width == 0 || config.render_height == 0 {
@@ -277,9 +297,14 @@ impl ScryingGlassConfig {
             || config.panel_margin < 0.0
             || config.fps <= 0.0
             || config.native_port == 0
+            || config.world_core.event_capacity == 0
+            || config.authority_timeout.is_zero()
+            || config.event_default_limit == 0
+            || config.event_limit_max == 0
+            || config.max_request_bytes == 0
         {
             return Err(
-                "window dimensions, FPS, and GAIA_NATIVE_PORT must be positive (margin may be zero)"
+                "window dimensions, FPS, port, authority/event/request limits must be positive (margin may be zero)"
                     .into(),
             );
         }
@@ -416,10 +441,35 @@ fn write_response(
 ) -> std::io::Result<()> {
     write!(
         stream,
-        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n{extra_headers}\r\n",
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: content-type\r\nCache-Control: no-store\r\nConnection: close\r\n{extra_headers}\r\n",
         body.len()
     )?;
     stream.write_all(body)
+}
+
+fn respond_json(stream: &mut TcpStream, status: &str, value: serde_json::Value) {
+    match serde_json::to_vec_pretty(&value) {
+        Ok(body) => {
+            let _ = write_response(
+                stream,
+                status,
+                "application/json; charset=utf-8",
+                &body,
+                "",
+            );
+        }
+        Err(error) => {
+            let _ = write_response(
+                stream,
+                "500 Internal Server Error",
+                "application/json; charset=utf-8",
+                json!({ "ok": false, "error": error.to_string() })
+                    .to_string()
+                    .as_bytes(),
+                "",
+            );
+        }
+    }
 }
 
 fn respond_frame(stream: &mut TcpStream, frame: &CapturedFrame) {
@@ -440,18 +490,37 @@ fn respond_frame(stream: &mut TcpStream, frame: &CapturedFrame) {
     }
 }
 
-/// Shared state the HTTP organs read: the live surface frame, the moving-eye
-/// render channel, and — for the Embodiment — the walking body + its floor.
+enum WorldRequest {
+    Apply {
+        batch: OpBatch,
+        reply: mpsc::Sender<Result<AppliedBatch, String>>,
+    },
+    Snapshot {
+        reply: mpsc::Sender<Result<serde_json::Value, String>>,
+    },
+    Events {
+        since: u64,
+        limit: usize,
+        reply: mpsc::Sender<serde_json::Value>,
+    },
+}
+
+/// HTTP ↔ render-authority channels + embodied debug state.
 struct HttpContext {
     latest: LatestFrame,
     scry: mpsc::Sender<ScryRequest>,
+    world: mpsc::Sender<WorldRequest>,
+    authority_timeout: Duration,
+    event_default_limit: usize,
+    event_limit_max: usize,
+    max_request_bytes: usize,
     player: Arc<Mutex<Player>>,
     ground: Arc<Ground>,
     tick_dt: f32,
 }
 
-/// Read a full HTTP request (headers + any body) honouring Content-Length.
-fn read_request(stream: &mut TcpStream) -> Option<(String, String)> {
+/// Read one bounded HTTP request, including its Content-Length body.
+fn read_request(stream: &mut TcpStream, max_bytes: usize) -> Option<(String, String)> {
     let mut buffer = Vec::with_capacity(4096);
     let mut chunk = [0_u8; 4096];
     let header_end = loop {
@@ -463,8 +532,8 @@ fn read_request(stream: &mut TcpStream) -> Option<(String, String)> {
         if let Some(index) = buffer.windows(4).position(|w| w == b"\r\n\r\n") {
             break index + 4;
         }
-        if buffer.len() > 1 << 20 {
-            return None; // 1 MiB header guard
+        if buffer.len() > max_bytes {
+            return None;
         }
     };
     let headers = String::from_utf8_lossy(&buffer[..header_end]).into_owned();
@@ -478,6 +547,9 @@ fn read_request(stream: &mut TcpStream) -> Option<(String, String)> {
                 .flatten()
         })
         .unwrap_or(0);
+    if header_end.checked_add(content_length)? > max_bytes {
+        return None;
+    }
     while buffer.len() < header_end + content_length {
         let read = stream.read(&mut chunk).ok()?;
         if read == 0 {
@@ -496,7 +568,7 @@ fn handle_http(mut stream: TcpStream, ctx: &HttpContext) {
     let latest = &ctx.latest;
     let scry = &ctx.scry;
     let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-    let Some((headers, body)) = read_request(&mut stream) else {
+    let Some((headers, body)) = read_request(&mut stream, ctx.max_request_bytes) else {
         return;
     };
     let first_line = headers.lines().next().unwrap_or_default().to_owned();
@@ -504,6 +576,143 @@ fn handle_http(mut stream: TcpStream, ctx: &HttpContext) {
     let method = tokens.next().unwrap_or_default();
     let target = tokens.next().unwrap_or_default();
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
+
+    if method == "OPTIONS" {
+        let _ = write_response(
+            &mut stream,
+            "204 No Content",
+            "text/plain; charset=utf-8",
+            b"",
+            "Allow: GET, POST, OPTIONS\r\n",
+        );
+        return;
+    }
+    if path == "/op" && method == "POST" {
+        let value = match serde_json::from_str::<serde_json::Value>(&body) {
+            Ok(value) => value,
+            Err(error) => {
+                respond_json(
+                    &mut stream,
+                    "400 Bad Request",
+                    json!({ "ok": false, "error": format!("op body must be JSON: {error}") }),
+                );
+                return;
+            }
+        };
+        let batch = match parse_op_batch(value) {
+            Ok(batch) => batch,
+            Err(error) => {
+                respond_json(
+                    &mut stream,
+                    "400 Bad Request",
+                    json!({ "ok": false, "error": error }),
+                );
+                return;
+            }
+        };
+        let (reply, receive) = mpsc::channel();
+        if ctx
+            .world
+            .send(WorldRequest::Apply { batch, reply })
+            .is_err()
+        {
+            respond_json(
+                &mut stream,
+                "503 Service Unavailable",
+                json!({ "ok": false, "error": "world authority unavailable" }),
+            );
+            return;
+        }
+        match receive.recv_timeout(ctx.authority_timeout) {
+            Ok(Ok(report)) => respond_json(
+                &mut stream,
+                "200 OK",
+                json!({
+                    "ok": true,
+                    "applied": report.applied,
+                    "entropy": report.entropy,
+                    "latest": report.latest,
+                }),
+            ),
+            Ok(Err(error)) => respond_json(
+                &mut stream,
+                "400 Bad Request",
+                json!({ "ok": false, "error": error }),
+            ),
+            Err(_) => respond_json(
+                &mut stream,
+                "504 Gateway Timeout",
+                json!({ "ok": false, "error": "world authority timed out" }),
+            ),
+        }
+        return;
+    }
+    if path == "/world" && method == "GET" {
+        let (reply, receive) = mpsc::channel();
+        if ctx.world.send(WorldRequest::Snapshot { reply }).is_err() {
+            respond_json(
+                &mut stream,
+                "503 Service Unavailable",
+                json!({ "ok": false, "error": "world authority unavailable" }),
+            );
+            return;
+        }
+        match receive.recv_timeout(ctx.authority_timeout) {
+            Ok(Ok(snapshot)) => respond_json(&mut stream, "200 OK", snapshot),
+            Ok(Err(error)) => respond_json(
+                &mut stream,
+                "500 Internal Server Error",
+                json!({ "ok": false, "error": error }),
+            ),
+            Err(_) => respond_json(
+                &mut stream,
+                "504 Gateway Timeout",
+                json!({ "ok": false, "error": "world authority timed out" }),
+            ),
+        }
+        return;
+    }
+    if path == "/events" && method == "GET" {
+        let query_value = |key: &str| {
+            query.split('&').find_map(|pair| {
+                let (name, value) = pair.split_once('=')?;
+                (name == key).then_some(value)
+            })
+        };
+        let since = query_value("since")
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(0);
+        let limit = query_value("limit")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(ctx.event_default_limit)
+            .min(ctx.event_limit_max);
+        let (reply, receive) = mpsc::channel();
+        if ctx
+            .world
+            .send(WorldRequest::Events {
+                since,
+                limit,
+                reply,
+            })
+            .is_err()
+        {
+            respond_json(
+                &mut stream,
+                "503 Service Unavailable",
+                json!({ "ok": false, "error": "world authority unavailable" }),
+            );
+            return;
+        }
+        match receive.recv_timeout(ctx.authority_timeout) {
+            Ok(events) => respond_json(&mut stream, "200 OK", events),
+            Err(_) => respond_json(
+                &mut stream,
+                "504 Gateway Timeout",
+                json!({ "ok": false, "error": "world authority timed out" }),
+            ),
+        }
+        return;
+    }
 
     // Embodiment debug organs (param-gated by their presence, no keyboard needed):
     // GET /pose returns the body's eye pose; POST /walk injects held keys for N ticks.
@@ -790,6 +999,9 @@ fn start_screenshot_server(port: u16, ctx: HttpContext) -> Result<(), String> {
         .map_err(|error| format!("spawn scrying HTTP server: {error}"))?;
     eprintln!(
         "[scry] GET http://127.0.0.1:{port}/scry (alias: /screenshot; optional pos/yaw/pitch/fov/w/h)"
+    );
+    eprintln!(
+        "[world-core] POST http://127.0.0.1:{port}/op · GET /world · GET /events"
     );
     eprintln!(
         "[embodiment] GET http://127.0.0.1:{port}/pose · POST http://127.0.0.1:{port}/walk {{keys,yaw?,pitch?,ticks?}}"
@@ -1240,6 +1452,21 @@ impl Renderer {
             bb.last_good = next;
         }
         bloodbend::bend_applied("scene", &diff.summary());
+    }
+
+    /// Re-project authoritative crystal state through the one render scene path.
+    fn rebuild_world_core(
+        &mut self,
+        world_core: &WorldCore,
+        scene_params: &SceneParameters,
+    ) -> Result<(), String> {
+        let mut core = Core::default();
+        ScryingGlassPackage.register(&mut core);
+        world_core.materialize_into(&mut core.world)?;
+        let scene = RenderScene::from_ecs(core.world, scene_params)
+            .map_err(|error| format!("materialize authority state: {error}"))?;
+        self.rebuild_scene(scene);
+        Ok(())
     }
 
     /// The scene tier of the blast-radius ladder (law 4): swap the render scene,
@@ -2282,8 +2509,17 @@ fn main() {
         core.package("scrying-glass").unwrap().name,
         core.package("scrying-glass").unwrap().version
     );
-    let loaded = load_world_dir(&config.world_path, &mut core.world)
-        .unwrap_or_else(|error| panic!("load GAIA_WORLD {}: {error}", config.world_path.display()));
+    let world_core = WorldCore::open(&config.world_path, config.world_core.clone())
+        .unwrap_or_else(|error| panic!("open GAIA_WORLD {}: {error}", config.world_path.display()));
+    world_core
+        .materialize_into(&mut core.world)
+        .unwrap_or_else(|error| panic!("materialize crystal authority: {error}"));
+    let scene_names: Vec<String> = world_core
+        .realm()
+        .scene_names()
+        .map(str::to_owned)
+        .collect();
+    let entity_count = world_core.realm().authored_entity_count();
     let chain_start = Instant::now();
     let render_scene = RenderScene::from_ecs(std::mem::take(&mut core.world), &config.scene)
         .unwrap_or_else(|error| panic!("materialize GAIA world render: {error}"));
@@ -2297,9 +2533,9 @@ fn main() {
     // (printed, never gated — Rite III ordeal item 5).
     eprintln!(
         "[world] {} scene(s)={:?} entities={} chains={} clusters={} transmute={chain_millis:.1}ms",
-        loaded.path.display(),
-        loaded.scenes,
-        loaded.entity_count,
+        config.world_path.display(),
+        scene_names,
+        entity_count,
         render_scene.chains.len(),
         cluster_count,
     );
@@ -2478,11 +2714,17 @@ fn main() {
                 );
                 let renderer_moved = renderer;
                 let (scry_tx, scry_rx) = mpsc::channel::<ScryRequest>();
+                let (world_tx, world_rx) = mpsc::channel::<WorldRequest>();
                 start_screenshot_server(
                     native_port,
                     HttpContext {
                         latest,
                         scry: scry_tx,
+                        world: world_tx,
+                        authority_timeout: config.authority_timeout,
+                        event_default_limit: config.event_default_limit,
+                        event_limit_max: config.event_limit_max,
+                        max_request_bytes: config.max_request_bytes,
                         player: player.clone(),
                         ground: ground.clone(),
                         tick_dt,
@@ -2498,12 +2740,17 @@ fn main() {
                 let hud_overlay = overlay.clone();
                 let hud_enabled = config.hud_enabled;
                 let hud_window = config.hud_window;
+                let authority_scene_params = config.scene.clone();
                 thread::Builder::new()
                     .name("gaia-render".into())
                     .spawn(move || {
                         let mut renderer = renderer_moved;
+                        let mut world_core = world_core;
                         run_render_loop(
                             &mut renderer,
+                            &mut world_core,
+                            &authority_scene_params,
+                            &world_rx,
                             &window,
                             &render_player,
                             &render_ground,
@@ -2558,6 +2805,9 @@ fn main() {
 #[allow(clippy::too_many_arguments)]
 fn run_render_loop(
     renderer: &mut Renderer,
+    world_core: &mut WorldCore,
+    authority_scene_params: &SceneParameters,
+    world_rx: &mpsc::Receiver<WorldRequest>,
     window: &tauri::Window,
     render_player: &Arc<Mutex<Player>>,
     render_ground: &Arc<Ground>,
@@ -2599,6 +2849,45 @@ fn run_render_loop(
         // Service the map callbacks of the frame completed last iteration
         // (non-blocking) — keeps the /scry capture ring draining.
         let _ = renderer.device.poll(wgpu::PollType::Poll);
+        // Incantations apply + journal on the render owner, then rebuild the
+        // derived scene before HTTP receives success.
+        while let Ok(request) = world_rx.try_recv() {
+            match request {
+                WorldRequest::Apply { batch, reply } => {
+                    let result = world_core.apply(batch).and_then(|report| {
+                        let rebuild = report.applied.iter().any(|op| match op {
+                            Op::Set(_) => true,
+                            Op::Other { op, .. } => {
+                                matches!(op.as_str(), "spawn" | "despawn" | "clear")
+                            }
+                            _ => false,
+                        });
+                        if rebuild {
+                            renderer.rebuild_world_core(world_core, authority_scene_params)?;
+                        }
+                        eprintln!(
+                            "[world-core] entropy={} latest={} applied={} Steiner frames={}",
+                            report.entropy,
+                            report.latest,
+                            report.applied.len(),
+                            world_core.journal_frame_count().unwrap_or(0),
+                        );
+                        Ok(report)
+                    });
+                    let _ = reply.send(result);
+                }
+                WorldRequest::Snapshot { reply } => {
+                    let _ = reply.send(world_core.snapshot_json());
+                }
+                WorldRequest::Events {
+                    since,
+                    limit,
+                    reply,
+                } => {
+                    let _ = reply.send(world_core.events_json(since, limit));
+                }
+            }
+        }
         // Service moving-eye requests off the frame loop's hot path.
         // /scry's wait_indefinitely also completes `pending` — each scry
         // momentarily collapses the overlap; harmless (verification organ).

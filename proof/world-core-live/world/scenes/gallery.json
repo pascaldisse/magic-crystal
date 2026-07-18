@@ -1,0 +1,6 @@
+{
+  "gallery_pillar": {
+    "transform": { "position": [7, 2, 0] },
+    "mesh": { "parts": [{ "shape": "cylinder", "radius": 1.2, "height": 4, "color": "#315cff", "emissive": "#102070" }] }
+  }
+}
