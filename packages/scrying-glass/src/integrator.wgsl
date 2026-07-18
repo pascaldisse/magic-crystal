@@ -26,9 +26,9 @@ struct Uniform {
   med_dims: vec4<u32>,     // grid dims xyz, w unused
   med_light: vec4<f32>,    // bound light: xyz = unit dir TOWARD it (directional) or world position (point); w = intensity
   med_light_color: vec4<f32>, // rgb = light colour tint; w = kind (0 directional, 1 point)
-  // Present target dimensions. Native present keeps params.xy == surface.xy
-  // and mode 1 (a 1:1 copy); differing dimensions/modes are lab-only.
-  surface: vec4<u32>,      // target_w, target_h, lab_filter (0 bilinear, 1 nearest), _
+  // Display target dimensions. Trace/accum/present are always params.xy;
+  // the surface receives only a nearest integer-scale display blit.
+  surface: vec4<u32>,      // target_w, target_h, nearest=1, _
   // ── LIGHT-NOT-DOTS: temporal accumulation with reprojection ──
   // The PREVIOUS frame's camera, so `temporal_resolve` can reproject this
   // frame's world points into last frame's screen and fetch their history.
@@ -868,36 +868,23 @@ fn accum_radiance(tx: u32, ty: u32, tw: u32, th: u32) -> vec3<f32> {
 
 @fragment
 fn blit_fs(in: BlitOut) -> @location(0) vec4<f32> {
-  // params.xy = source accum dimensions; surface.xy = target dimensions.
-  // Native present sets them equal. A differing pair is an explicit lab
-  // benchmark surface, never a configurable present path.
+  // God's canvas is never resampled. Centre it in the OS surface and repeat
+  // each canvas texel by an integer factor; unused surface pixels stay black.
   let tw = u.params.x;
   let th = u.params.y;
   let sw = max(u.surface.x, 1u);
   let sh = max(u.surface.y, 1u);
-  // Fragment centre → trace-space continuous coordinate.
-  let fx = (in.position.x / f32(sw)) * f32(tw) - 0.5;
-  let fy = (in.position.y / f32(sh)) * f32(th) - 0.5;
-  var rgb: vec3<f32>;
-  if (u.surface.z == 1u) {
-    // Nearest; native present uses this as a pixel-exact 1:1 copy.
-    rgb = accum_radiance(u32(max(fx + 0.5, 0.0)), u32(max(fy + 0.5, 0.0)), tw, th);
-  } else {
-    // Bilinear filtering for explicit lab comparisons only.
-    let x0f = floor(fx);
-    let y0f = floor(fy);
-    let x0 = u32(max(x0f, 0.0));
-    let y0 = u32(max(y0f, 0.0));
-    let x1 = min(x0 + 1u, tw - 1u);
-    let y1 = min(y0 + 1u, th - 1u);
-    let ax = clamp(fx - x0f, 0.0, 1.0);
-    let ay = clamp(fy - y0f, 0.0, 1.0);
-    let c00 = accum_radiance(x0, y0, tw, th);
-    let c10 = accum_radiance(x1, y0, tw, th);
-    let c01 = accum_radiance(x0, y1, tw, th);
-    let c11 = accum_radiance(x1, y1, tw, th);
-    rgb = mix(mix(c00, c10, ax), mix(c01, c11, ax), ay);
+  let scale = max(1u, min(sw / tw, sh / th));
+  let display_w = tw * scale;
+  let display_h = th * scale;
+  let origin_x = (i32(sw) - i32(display_w)) / 2;
+  let origin_y = (i32(sh) - i32(display_h)) / 2;
+  let pixel_x = i32(floor(in.position.x)) - origin_x;
+  let pixel_y = i32(floor(in.position.y)) - origin_y;
+  if (pixel_x < 0 || pixel_y < 0 || pixel_x >= i32(display_w) || pixel_y >= i32(display_h)) {
+    return vec4<f32>(0.0, 0.0, 0.0, 1.0);
   }
+  let rgb = accum_radiance(u32(pixel_x) / scale, u32(pixel_y) / scale, tw, th);
   // Linear radiance out; the *Srgb target encodes to display space.
   return vec4<f32>(rgb, 1.0);
 }

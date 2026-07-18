@@ -41,6 +41,10 @@ const CAPTURE_SLOT_COUNT: usize = 3;
 struct ScryingGlassConfig {
     window_width: f64,
     window_height: f64,
+    /// God's render canvas. Trace, accumulation, temporal, and offscreen
+    /// present resources are permanently this size; only the OS surface moves.
+    native_canvas_width: u32,
+    native_canvas_height: u32,
     panel_width: f64,
     panel_height: f64,
     panel_margin: f64,
@@ -136,6 +140,8 @@ impl ScryingGlassConfig {
         let config = Self {
             window_width: number("GAIA_NATIVE_WIDTH", default_window_width)?,
             window_height: number("GAIA_NATIVE_HEIGHT", default_window_height)?,
+            native_canvas_width: integer("GAIA_NATIVE_CANVAS_W", 640)?,
+            native_canvas_height: integer("GAIA_NATIVE_CANVAS_H", 480)?,
             panel_width: number("SPIKE_PANEL_WIDTH", 300.0)?,
             panel_height: number("SPIKE_PANEL_HEIGHT", 154.0)?,
             panel_margin: number("SPIKE_PANEL_MARGIN", 24.0)?,
@@ -241,9 +247,11 @@ impl ScryingGlassConfig {
             || config.panel_margin < 0.0
             || config.fps <= 0.0
             || config.native_port == 0
+            || config.native_canvas_width == 0
+            || config.native_canvas_height == 0
         {
             return Err(
-                "window dimensions, FPS, and GAIA_NATIVE_PORT must be positive (margin may be zero)"
+                "window dimensions, canvas dimensions, FPS, and GAIA_NATIVE_PORT must be positive (margin may be zero)"
                     .into(),
             );
         }
@@ -878,13 +886,11 @@ struct Renderer {
     int_params: IntegratorParams,
     /// Accumulation frames a /scry moving-eye capture integrates.
     capture_frames: u32,
-    /// Persistent window accumulation, ALWAYS sized to the live surface
-    /// (`self.config.width`/`.height`) — THE DESIGN IS THE LAW (Architect,
-    /// 07-18): nothing is traced small then enlarged, so there is no separate
-    /// internal trace resolution to track or drift out of sync. Progressive
-    /// while the eye is still, reset the instant it moves or the surface
-    /// resizes (`reset_surface_accum` always rebuilds at `self.config`'s
-    /// CURRENT dims).
+    /// God's fixed render canvas. Trace, accumulation, temporal buffers, and
+    /// offscreen present remain this size across every window resize.
+    canvas_width: u32,
+    canvas_height: u32,
+    /// Persistent accumulation at God's fixed canvas resolution.
     surface_accum: wgpu::Buffer,
     surface_compute_bg: wgpu::BindGroup,
     surface_blit_bg: wgpu::BindGroup,
@@ -904,8 +910,8 @@ struct Renderer {
     /// (None until the first temporal frame has run / after an invalidation).
     t_parity: usize,
     t_prev: Option<IntegratorUniform>,
-    /// (eye, yaw, pitch, width, height) the current accumulation belongs to.
-    last_view: Option<([f32; 3], f32, f32, u32, u32)>,
+    /// Eye pose the current fixed-canvas accumulation belongs to.
+    last_view: Option<([f32; 3], f32, f32)>,
     offscreen: OffscreenTarget,
     pixel_order: PixelOrder,
     capture_sender: mpsc::Sender<CaptureReady>,
@@ -927,6 +933,8 @@ impl Renderer {
         draw_own_body: bool,
         temporal_enabled: bool,
         temporal_params: TemporalParams,
+        canvas_width: u32,
+        canvas_height: u32,
     ) -> Result<Self, String> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let target = unsafe {
@@ -1018,25 +1026,18 @@ impl Renderer {
         let sky_top = scene.sky_top;
         let sky_horizon = scene.sky_horizon;
 
-        // ITEM 1 (present-path law conformance, 07-18): the internal trace
-        // resolution IS the surface resolution, always — `config.width`/
-        // `.height` (already the live window's surface dims). No separate
-        // internal-res buffer, no upscale: `nothing is made small then
-        // enlarged`.
-        let surface_accum = integrator.make_accum(&device, config.width, config.height);
+        // ★ THE RESOLUTION IS 640×480: all rendering resources live at the
+        // fixed IRON canvas. The window surface is display-only.
+        let surface_accum = integrator.make_accum(&device, canvas_width, canvas_height);
         let surface_compute_bg = integrator.compute_bind_group(&device, &surface_accum);
         let surface_blit_bg = integrator.blit_bind_group(&device, &surface_accum);
-        // LIGHT-NOT-DOTS temporal buffers (surface-resolution): one current-frame
-        // color buffer + ping-pong history/gbuffer, and the two parity bind
-        // groups. Built even when temporal is off (cheap; kept valid so the
-        // toggle needs no reallocation).
         let t_packed = [
-            integrator.make_temporal_packed(&device, config.width, config.height),
-            integrator.make_temporal_packed(&device, config.width, config.height),
+            integrator.make_temporal_packed(&device, canvas_width, canvas_height),
+            integrator.make_temporal_packed(&device, canvas_width, canvas_height),
         ];
         let t_hist = [
-            integrator.make_temporal_buffer(&device, config.width, config.height),
-            integrator.make_temporal_buffer(&device, config.width, config.height),
+            integrator.make_temporal_buffer(&device, canvas_width, canvas_height),
+            integrator.make_temporal_buffer(&device, canvas_width, canvas_height),
         ];
         let t_bind = [
             integrator.temporal_bind_group(
@@ -1054,9 +1055,9 @@ impl Renderer {
                 &t_hist[0],
             ),
         ];
-        let offscreen = OffscreenTarget::new(&device, format, config.width, config.height);
+        let offscreen = OffscreenTarget::new(&device, format, canvas_width, canvas_height);
         eprintln!(
-            "[wgpu] traced native {}x{} — no upscale, no internal-res selector ({format:?})",
+            "[wgpu] traced God's canvas {canvas_width}x{canvas_height}; surface {}x{} = nearest integer display scale ({format:?})",
             config.width, config.height,
         );
         Ok(Self {
@@ -1078,6 +1079,8 @@ impl Renderer {
             sky_horizon,
             int_params,
             capture_frames,
+            canvas_width,
+            canvas_height,
             surface_accum,
             surface_compute_bg,
             surface_blit_bg,
@@ -1274,81 +1277,25 @@ impl Renderer {
         }
     }
 
-    /// Rebuild the window accumulation buffer (zeroed) for the current surface
-    /// size and drop the accumulated samples — the reset gesture on move/resize.
-    /// ITEM 1: always sized to `self.config`'s CURRENT surface dims — there is
-    /// no separate internal resolution to resync, so a resize can never leave
-    /// the trace buffer and the surface out of step.
+    /// Rebuild the fixed-canvas accumulation buffer and drop its samples.
     fn reset_surface_accum(&mut self) {
         let accum = self
             .integrator
-            .make_accum(&self.device, self.config.width, self.config.height);
+            .make_accum(&self.device, self.canvas_width, self.canvas_height);
         self.surface_compute_bg = self.integrator.compute_bind_group(&self.device, &accum);
         self.surface_blit_bg = self.integrator.blit_bind_group(&self.device, &accum);
         self.surface_accum = accum;
         self.samples_before = 0;
     }
 
-    /// Rebuild every trace-sized resource after a surface resize. The temporal
-    /// buffers used to stay at the fixed internal trace size; now trace ==
-    /// surface, so they must follow the surface just like `surface_accum`.
-    fn resize_trace_resources(&mut self) {
-        self.reset_surface_accum();
-        let packed = [
-            self.integrator.make_temporal_packed(
-                &self.device,
-                self.config.width,
-                self.config.height,
-            ),
-            self.integrator.make_temporal_packed(
-                &self.device,
-                self.config.width,
-                self.config.height,
-            ),
-        ];
-        let history = [
-            self.integrator.make_temporal_buffer(
-                &self.device,
-                self.config.width,
-                self.config.height,
-            ),
-            self.integrator.make_temporal_buffer(
-                &self.device,
-                self.config.width,
-                self.config.height,
-            ),
-        ];
-        self.t_bind = [
-            self.integrator.temporal_bind_group(
-                &self.device,
-                &packed[0],
-                &packed[1],
-                &history[0],
-                &history[1],
-            ),
-            self.integrator.temporal_bind_group(
-                &self.device,
-                &packed[1],
-                &packed[0],
-                &history[1],
-                &history[0],
-            ),
-        ];
-        self.t_packed = packed;
-        self.t_hist = history;
-        self.t_prev = None;
-        self.t_parity = 0;
-    }
-
-    /// MEASURE (ordeal item 3): the honest per-frame GPU cost of the path
-    /// trace at the LIVE surface resolution (native — no internal-res
-    /// selector). Dispatches `frames` accumulation passes into a throwaway
+    /// MEASURE: honest per-frame GPU cost at God's fixed render canvas.
+    /// Dispatches `frames` accumulation passes into a throwaway
     /// accum from the live spawn camera, force-flushing the GPU
     /// (`poll(wait)`) after each so the timing is real GPU work, not an
     /// async submit. Returns (median_ms, mean_ms). Runs once at startup off
     /// the frame loop, so it never perturbs live frames.
     fn measure_trace_ms(&mut self, frames: u32) -> (f64, f64) {
-        let (width, height) = (self.config.width, self.config.height);
+        let (width, height) = (self.canvas_width, self.canvas_height);
         let accum = self.integrator.make_accum(&self.device, width, height);
         let compute_bg = self.integrator.compute_bind_group(&self.device, &accum);
         let mut samples_before = 0u32;
@@ -1519,14 +1466,8 @@ impl Renderer {
             self.config.width = size.width;
             self.config.height = size.height;
             self.surface.configure(&self.device, &self.config);
-            self.offscreen = OffscreenTarget::new(
-                &self.device,
-                self.config.format,
-                self.config.width,
-                self.config.height,
-            );
-            self.resize_trace_resources();
-            self.last_view = None;
+            // The surface alone changed. God's canvas, accumulation, and
+            // offscreen capture remain untouched.
         }
     }
 
@@ -1538,14 +1479,8 @@ impl Renderer {
         self.camera.pitch = pitch;
     }
 
-    fn view_key(&self) -> ([f32; 3], f32, f32, u32, u32) {
-        (
-            self.camera.eye.to_array(),
-            self.camera.yaw,
-            self.camera.pitch,
-            self.config.width,
-            self.config.height,
-        )
+    fn view_key(&self) -> ([f32; 3], f32, f32) {
+        (self.camera.eye.to_array(), self.camera.yaw, self.camera.pitch)
     }
 
     /// Submit ONE traced frame (dispatch → offscreen/surface blit → capture
@@ -1571,12 +1506,10 @@ impl Renderer {
         }
         self.last_view = Some(key);
 
-        // ITEM 1: the path trace runs AT the surface resolution, always —
-        // `width`/`height` (accum + dispatch dims) and `surface_w`/`surface_h`
-        // (the blit target) are the SAME pair by construction (no separate
-        // internal-res buffer exists to diverge from the surface).
-        let (width, height) = (self.config.width, self.config.height);
-        let (surface_w, surface_h) = (width, height);
+        // The canvas is God's fixed render resolution; the mutable surface is
+        // display-only and receives a nearest integer-scale blit.
+        let (width, height) = (self.canvas_width, self.canvas_height);
+        let (surface_w, surface_h) = (self.config.width, self.config.height);
         let mut uniform = IntegratorUniform::build(
             &self.camera,
             &self.sun,
@@ -1590,18 +1523,9 @@ impl Renderer {
             &self.int_params,
             None,
         );
-        // Aspect tracks the surface (== the trace buffer now, always).
-        let (right, up, _forward) = self.camera.basis();
-        let surface_aspect = surface_w as f32 / surface_h.max(1) as f32;
-        let half = (self.camera.fov_y_radians * 0.5).tan();
-        let right = right * (half * surface_aspect);
-        let up = up * half;
-        uniform.right = [right.x, right.y, right.z, 0.0];
-        uniform.up = [up.x, up.y, up.z, 0.0];
-        // ITEM 1: blit mode fixed to nearest (1) — trace dims == surface dims
-        // exactly, so this is a pixel-exact 1:1 copy (no bilinear blend can
-        // ever engage); nearest just makes that guarantee float-exact instead
-        // of relying on fragment-center alignment landing on integer texels.
+        // `IntegratorUniform::build` already derives camera aspect from the
+        // fixed canvas. The shader letterboxes/pillarboxes this result using
+        // nearest integer display scaling; it never re-renders for the window.
         uniform.surface = [surface_w, surface_h, 1, 0];
 
         // LIGHT-NOT-DOTS: hand the resolve the previous frame's camera + dials.
@@ -1751,8 +1675,8 @@ impl Renderer {
     /// arbitrary pose to a per-request offscreen target and read it back. Runs on
     /// the render thread; the surface loop's own accumulation is untouched.
     fn capture_pose(&mut self, params: &ScryParams) -> Result<CapturedFrame, String> {
-        let width = params.width.unwrap_or(self.config.width).max(1);
-        let height = params.height.unwrap_or(self.config.height).max(1);
+        let width = self.canvas_width;
+        let height = self.canvas_height;
         let fov = match params.fov {
             Some(degrees) => {
                 if !(degrees > 0.0 && degrees < 180.0) {
@@ -1777,7 +1701,7 @@ impl Renderer {
         if params.teacher_benchmark {
             return self.capture_pose_teacher_benchmark(&camera, width, height);
         }
-        let resolve = params.resolve.unwrap_or(0);
+        // Fixed canvas capture is the same nearest present path as the window.
 
         // OWN-EYE CULL — the persistent `self.integrator` buffers already carry
         // the OWN-eye-culled geometry (`advance_world` keeps them in lockstep
@@ -1807,7 +1731,7 @@ impl Renderer {
         // Whatever happens below (success or an early `?` error), put the
         // persistent own-eye-culled buffers back before this function returns
         // — the live window's next frame must never see the foreign geometry.
-        let result = self.capture_pose_bilinear(&camera, width, height, resolve);
+        let result = self.capture_pose_fixed(&camera, width, height);
         if foreign_splice.is_some() {
             self.integrator
                 .update_bvh(&self.device, &self.splice.merged);
@@ -1815,15 +1739,13 @@ impl Renderer {
         result
     }
 
-    /// The plain bilinear/nearest `/scry` dispatch + readback — split out of
-    /// [`Renderer::capture_pose`] so its OWN-EYE CULL restore (above) always
-    /// runs, on every exit path (including the `?`-propagated errors below).
-    fn capture_pose_bilinear(
+    /// Fixed-canvas `/scry` dispatch + readback — split out of
+    /// [`Renderer::capture_pose`] so its OWN-EYE CULL restore always runs.
+    fn capture_pose_fixed(
         &mut self,
         camera: &Camera,
         width: u32,
         height: u32,
-        filter: u32,
     ) -> Result<CapturedFrame, String> {
         let accum = self.integrator.make_accum(&self.device, width, height);
         let compute_bg = self.integrator.compute_bind_group(&self.device, &accum);
@@ -1862,9 +1784,7 @@ impl Renderer {
             samples_before += self.int_params.spp;
         }
 
-        // Present the converged mean to a fresh sRGB target, then read it back.
-        // Source and target dimensions are identical; the filter is retained
-        // only as an explicit plain-capture lab comparison.
+        // Present the converged mean to a fresh fixed-canvas sRGB target.
         let mut uniform = IntegratorUniform::build(
             camera,
             &self.sun,
@@ -1878,7 +1798,7 @@ impl Renderer {
             &self.int_params,
             None,
         );
-        uniform.surface = [width, height, filter, 0];
+        uniform.surface = [width, height, 1, 0];
         self.queue.write_buffer(
             &self.integrator.uniform_buf,
             0,
@@ -2170,11 +2090,6 @@ struct ScryParams {
     yaw: Option<f32>,
     pitch: Option<f32>,
     fov: Option<f32>,
-    width: Option<u32>,
-    height: Option<u32>,
-    /// Plain capture filter: 0 bilinear, 1 nearest. Absent = 0. This cannot
-    /// select the de-chartered chain.
-    resolve: Option<u32>,
     /// Explicit lab gate for the de-chartered teacher/benchmark chain.
     teacher_benchmark: bool,
 }
@@ -2216,41 +2131,12 @@ fn parse_scry_query(query: &str) -> Result<ScryParams, String> {
             "yaw" => params.yaw = Some(parse_finite_f32(value, "yaw")?),
             "pitch" => params.pitch = Some(parse_finite_f32(value, "pitch")?),
             "fov" => params.fov = Some(parse_finite_f32(value, "fov")?),
-            "resolve" => {
-                params.resolve = Some(match value.trim().to_ascii_lowercase().as_str() {
-                    "bilinear" => 0,
-                    "nearest" => 1,
-                    other => {
-                        return Err(format!(
-                            "resolve must be bilinear or nearest, got {other:?}; the historical chain is lab=teacher-benchmark"
-                        ));
-                    }
-                });
-            }
             "lab" => match value.trim().to_ascii_lowercase().as_str() {
                 "teacher-benchmark" => params.teacher_benchmark = true,
                 other => {
                     return Err(format!("lab must be teacher-benchmark, got {other:?}"));
                 }
             },
-            "w" => {
-                params.width = Some(
-                    value
-                        .parse::<u32>()
-                        .ok()
-                        .filter(|width| *width > 0)
-                        .ok_or_else(|| format!("w must be a positive integer, got {value:?}"))?,
-                )
-            }
-            "h" => {
-                params.height = Some(
-                    value
-                        .parse::<u32>()
-                        .ok()
-                        .filter(|height| *height > 0)
-                        .ok_or_else(|| format!("h must be a positive integer, got {value:?}"))?,
-                )
-            }
             other => return Err(format!("unknown scry parameter {other:?}")),
         }
     }
@@ -2479,6 +2365,8 @@ fn main() {
                 config.draw_own_body,
                 config.temporal_enabled,
                 config.temporal,
+                config.native_canvas_width,
+                config.native_canvas_height,
             )
             .map_err(std::io::Error::other)?;
             // DAS BLUTBÄNDIGEN — B0 DATA DOOR. Seed the live bend state from the
@@ -2501,16 +2389,14 @@ fn main() {
                 )
             });
             {
-                // MEASURE (item 3): print the honest GPU trace cost at the
-                // NATIVE surface resolution (ITEM 1 — trace == surface,
-                // always; no internal-res selector to report separately).
+                // MEASURE: print fixed God's-canvas trace cost.
                 let mut renderer = renderer;
                 renderer.bloodbend = bloodbend_state;
                 let (median, mean) = renderer.measure_trace_ms(60);
                 eprintln!(
-                    "[frame] trace {}x{} native (no upscale): median {median:.2}ms mean {mean:.2}ms/frame (spp={}, 60-frame sample)",
-                    renderer.config.width,
-                    renderer.config.height,
+                    "[frame] trace {}x{} God's canvas: median {median:.2}ms mean {mean:.2}ms/frame (spp={}, 60-frame sample)",
+                    renderer.canvas_width,
+                    renderer.canvas_height,
                     config.integrator.spp,
                 );
                 let renderer_moved = renderer;
