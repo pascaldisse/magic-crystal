@@ -1,0 +1,29 @@
+[build-lock] package-steiner acquired
+   Compiling steiner v0.1.0 (/Users/pascaldisse/projects/magic-crystal-play/packages/steiner)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.09s
+     Running unittests src/lib.rs (target/debug/deps/steiner-5aeb72254e82be25)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ordeals.rs (target/debug/deps/ordeals-f9710b76a16e0ee8)
+
+running 8 tests
+test ordeal_snapshot_journal_torn_tail ... ok
+test ordeal_v1_file_compatibility ... ok
+test ordeal_snapshot_prefix_replay ... ok
+test ordeal_torn_write ... ok
+test ordeal_any_point_reconstruction ... ok
+test ordeal_roundtrip ... ok
+test ordeal_determinism ... ok
+test ordeal_worldline_fork ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+   Doc-tests steiner
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

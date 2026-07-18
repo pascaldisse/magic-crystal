@@ -1,0 +1,10 @@
+[build-lock] scrying-glass-medium_parity acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.21s
+     Running tests/medium_parity.rs (target/debug/deps/medium_parity-5e6335918fa4061f)
+
+running 2 tests
+test medium_parity_gpu_matches_aether_reference ... ok
+test point_light_parity_gpu_matches_aether_reference ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+

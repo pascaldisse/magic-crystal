@@ -1,0 +1,42 @@
+[build-lock] package-kami acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/lib.rs (target/debug/deps/kami-4ed830bc9293d2eb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/cat.rs (target/debug/deps/cat-6894b431497cb1ea)
+
+running 3 tests
+test cat_walk_is_bounded_and_returns_home ... ok
+test cat_loop_visits_sit_then_flick_then_walk ... ok
+test cat_drive_stream_is_byte_identical ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ordeals.rs (target/debug/deps/ordeals-2c57896e0ae26eb5)
+
+running 13 tests
+test ordeal_orbit_formula_parity ... ok
+test ordeal_flicker_formula_parity ... ok
+test ordeal_bob_formula_parity ... ok
+test ordeal_path_formula_parity ... ok
+test ordeal_pulse_formula_parity ... ok
+test ordeal_spin_formula_parity ... ok
+test ordeal_emissive_is_always_a_color_string ... ok
+test ordeal_look_at_yaw_error_goes_to_zero ... ok
+test ordeal_patrol_visits_every_waypoint_and_loop_closes ... ok
+test ordeal_follow_converges_without_overshoot ... ok
+test ordeal_wander_stays_in_bounds_10k_ticks ... ok
+test ordeal_decorative_determinism_byte_identical ... ok
+test ordeal_determinism_byte_identical_over_1000_ticks ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+   Doc-tests kami
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

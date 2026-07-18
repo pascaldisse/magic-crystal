@@ -1,0 +1,10 @@
+[build-lock] oracle-vi2_fracture_canon acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.43s
+     Running tests/vi2_fracture_canon.rs (target/debug/deps/vi2_fracture_canon-6be7a5d3a4f264d9)
+
+running 2 tests
+test ordeal_no_orphan_matter_every_fragment_traces_to_its_parent ... ok
+test ordeal_oracle_learns_fragments_same_wave ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+

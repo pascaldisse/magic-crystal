@@ -1,0 +1,18 @@
+[build-lock] scrying-glass-physics acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.21s
+     Running tests/physics.rs (target/debug/deps/physics-2a2e916afcfecbc5)
+
+running 6 tests
+test no_body_declared_is_byte_unchanged ... ok
+test stack_settles_at_derived_chained_heights ... ok
+test crate_falls_and_rests_on_the_planks_at_derived_height has been running for over 60 seconds
+test stack_topple_never_falls_through_the_pier_deck has been running for over 60 seconds
+test stack_topple_via_impulse_replays_byte_identical has been running for over 60 seconds
+test two_runs_are_byte_identical_state_hashes has been running for over 60 seconds
+test two_runs_are_byte_identical_state_hashes ... ok
+test crate_falls_and_rests_on_the_planks_at_derived_height ... ok
+test stack_topple_never_falls_through_the_pier_deck ... ok
+test stack_topple_via_impulse_replays_byte_identical ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 250.26s
+

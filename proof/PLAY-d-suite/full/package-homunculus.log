@@ -1,0 +1,28 @@
+[build-lock] package-homunculus acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running unittests src/lib.rs (target/debug/deps/homunculus-42c9bcf1dcd4e7e3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ordeals.rs (target/debug/deps/ordeals-d6087ebc0b693e58)
+
+running 8 tests
+test ordeal_generator_counts_and_lengths ... ok
+test ordeal_socket_follows_elbow ... ok
+test ordeal_defaults_preserve_v0 ... ok
+test ordeal_bind_pose_roundtrip ... ok
+test ordeal_socket_bind_derivation ... ok
+test ordeal_socket_determinism ... ok
+test ordeal_morphology_continuity ... ok
+test ordeal_weights_normalized ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Doc-tests homunculus
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

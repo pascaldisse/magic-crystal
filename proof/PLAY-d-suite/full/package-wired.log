@@ -1,0 +1,46 @@
+[build-lock] package-wired acquired
+   Compiling syn v2.0.119
+   Compiling zerocopy v0.8.54
+   Compiling smallvec v1.15.2
+   Compiling parking_lot_core v0.9.12
+   Compiling ppv-lite86 v0.2.21
+   Compiling thiserror-impl v1.0.69
+   Compiling rand_chacha v0.3.1
+   Compiling rand v0.8.7
+   Compiling thiserror v1.0.69
+   Compiling parking_lot v0.12.5
+   Compiling tokio-macros v2.7.0
+   Compiling serde_derive v1.0.228
+   Compiling tungstenite v0.24.0
+   Compiling tokio v1.52.3
+   Compiling serde v1.0.228
+   Compiling crystal v0.1.0 (/Users/pascaldisse/projects/magic-crystal-play/crates/crystal)
+   Compiling tokio-tungstenite v0.24.0
+   Compiling wired v0.1.0 (/Users/pascaldisse/projects/magic-crystal-play/packages/wired)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.18s
+     Running unittests src/lib.rs (target/debug/deps/wired-147ecea654a33a29)
+
+running 13 tests
+test codec::tests::hello_and_ops_batch_roundtrip_wire_shape ... ok
+test codec::tests::move_presence_emits_position_and_yaw ... ok
+test interp::tests::delay_param_honored_exactly ... ok
+test interp::tests::extrapolation_cap_honored ... ok
+test interp::tests::observe_extracts_from_entity_map ... ok
+test interp::tests::own_presence_never_buffered ... ok
+test codec::tests::folds_snapshot_then_ops ... ok
+test codec::tests::despawn_and_event_and_clear ... ok
+test interp::tests::determinism_byte_identical ... ok
+test codec::tests::set_null_clears_component_and_unknown_components_survive ... ok
+test interp::tests::rejects_non_monotonic_arrivals ... ok
+test interp::tests::smooth_vs_slam_bound ... ok
+test interp::tests::yaw_slerps_shortest_arc ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests wired
+
+running 1 test
+test packages/wired/src/lib.rs - (line 9) - compile ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+

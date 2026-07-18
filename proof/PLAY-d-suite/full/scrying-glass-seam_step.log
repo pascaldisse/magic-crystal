@@ -1,0 +1,13 @@
+[build-lock] scrying-glass-seam_step acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.29s
+     Running tests/seam_step.rs (target/debug/deps/seam_step-72ea06214c89c481)
+
+running 5 tests
+test ruling6_contact_patch_gate_bites_generated_geometry ... ok
+test seam_height_mismatch_is_caught_by_the_guard ... ok
+test walker_crosses_seam_forward_and_back_is_pose_trace_continuous ... ok
+test rigid_body_rests_on_generated_terrain_at_planetary_render_origin ... ok
+test rigid_body_rests_on_generated_terrain_in_the_solver_collision_world ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.91s
+

@@ -1,0 +1,70 @@
+[build-lock] package-oracle acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.37s
+     Running unittests src/lib.rs (target/debug/deps/oracle-cd5d2dcf51394a8f)
+
+running 27 tests
+test tests::boomtown_loads_once_and_gazes_stay_cheap ... ok
+test model::aabb_tests::tube_default_radius_is_three_not_half ... ok
+test model::aabb_tests::cylinder_honors_radius_top_and_bottom ... ok
+test model::aabb_tests::tube_short_radii_clamp_last_not_point_five ... ok
+test model::aabb_tests::direct_mesh_is_one_implicit_part ... ok
+test model::aabb_tests::tube_absent_path_defaults_to_reference_segment ... ok
+test model::aabb_tests::rotation_rotates_the_world_aabb ... ok
+test model::aabb_tests::tube_bounds_cover_spline_sag_beyond_control_points ... ok
+test model::aabb_tests::visible_false_part_is_excluded ... ok
+test tests::from_core_live_path_constructs_a_world ... ok
+test tests::loads_naruko_scene_into_ecs ... ok
+test tests::invalid_params_are_typed_errors ... ok
+test tests::invalid_tie_eps_is_a_typed_error ... ok
+test tests::live_ecs_mutation_is_reflected_on_next_gaze ... ok
+test tests::default_naruko_excludes_ground_from_captions ... ok
+test tests::horizon_row_tracks_pitch ... ok
+test tests::look_is_pure_geometry_and_directional ... ok
+test tests::lazy_layers_are_proven_by_the_op_counter ... ok
+test tests::lighthouse_cells_and_depth_are_geometry_truth_at_grid_32 ... ok
+test tests::proprio_reports_pose_and_components ... ok
+test tests::oversized_grid_is_a_typed_error_not_oom ... ok
+test tests::yaw_west_rejects_the_lighthouse_entirely ... ok
+test tests::spawn_pose_faces_the_lighthouse ... ok
+test tests::serialized_channels_are_honest_no_null_no_unrequested_keys ... ok
+test tests::deeper_grid_levels_are_just_a_param ... ok
+test tests::stamped_cells_are_all_true_ray_hits_no_fabricated_depth ... ok
+test tests::byte_budget_is_enforced_before_allocation ... ok
+
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.12s
+
+     Running unittests src/bin/oracle_cli.rs (target/debug/deps/oracle_cli-a6074ad98622d555)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/canon.rs (target/debug/deps/canon-35b84ffe6f6f55fb)
+
+running 8 tests
+test canon_terrain_patch_bounds_and_range_are_derived ... ok
+test canon_depth_band_column_16_is_front_face_path_length ... ok
+test canon_tower_cells_and_depth_band_at_grid_32 ... ok
+test canon_default_glance_frustum_set_is_the_ten_meshed_vessels ... FAILED
+test canon_moved_eye_pier_glance ... ok
+test canon_tower_owns_no_grid8_cell ... ok
+test canon_glance_serialization_is_deterministic ... ok
+test canon_nearest_ordering_and_ranges_are_derived ... ok
+
+failures:
+
+---- canon_default_glance_frustum_set_is_the_ten_meshed_vessels stdout ----
+
+thread 'canon_default_glance_frustum_set_is_the_ten_meshed_vessels' (1396183) panicked at packages/oracle/tests/canon.rs:403:5:
+assertion `left == right` failed: exactly thirty-six meshed vessels are in-frustum (Rite V: + nari, + cat; P3: + crate; rings: + a/b/c; Mirror Proof: + mirror, + minor, + orb; VI-1: + stack_crate_0/1/2; Realm Shine: + show_chrome, + show_mirror, + show_light_a/b/c; Physics Playground: + stack_1/2/3/4, + pyramid_0/1/2)
+  left: 38
+ right: 36
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    canon_default_glance_frustum_set_is_the_ten_meshed_vessels
+
+test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.28s
+
+error: test failed, to rerun pass `-p oracle --test canon`

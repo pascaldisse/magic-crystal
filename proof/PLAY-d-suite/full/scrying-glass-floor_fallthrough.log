@@ -1,0 +1,10 @@
+[build-lock] scrying-glass-floor_fallthrough acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running tests/floor_fallthrough.rs (target/debug/deps/floor_fallthrough-3a546f763d6f0385)
+
+running 2 tests
+test terra_north_rim_steps_down_onto_sea_plate_grounded ... ok
+test walk_the_realm_has_no_interior_fallthrough ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.90s
+

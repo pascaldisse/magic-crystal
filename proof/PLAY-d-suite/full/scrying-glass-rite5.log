@@ -1,0 +1,27 @@
+[build-lock] scrying-glass-rite5 acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running tests/rite5.rs (target/debug/deps/rite5-3ababf15585fe34a)
+
+running 17 tests
+test v1_contact_and_passing_are_distinct_poses ... ok
+test v1_body_grounds_on_the_walker_floor_f1 ... ok
+test v0_body_composes_from_the_sigil ... ok
+test v2_cat_body_is_minded_nari_is_not ... ok
+test v1_derived_foot_ground_contact_no_hover ... ok
+test v0_body_enters_dynamic_partition_each_tick ... ok
+test v1_body_casts_a_traced_shadow_on_the_seawall ... ok
+test v0_body_render_is_deterministic ... ok
+test v1_sama_pose_is_the_skinning_input_each_tick ... ok
+test weld_attached_body_position_equals_walker_0e0 ... ok
+test weld_attachment_sigil_is_read ... ok
+test weld_own_eye_cull_excludes_attached_body_foreign_eye_includes_it ... ok
+test weld_gait_speed_is_derived_not_broadcast ... ok
+test v1_gait_is_deterministic_byte_identical ... ok
+test weld_shadow_follows_the_walked_body ... ok
+test v2_cat_animation_is_byte_identical has been running for over 60 seconds
+test v2_cat_walks_its_circuit_while_nari_holds has been running for over 60 seconds
+test v2_cat_animation_is_byte_identical ... ok
+test v2_cat_walks_its_circuit_while_nari_holds ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 188.63s
+
