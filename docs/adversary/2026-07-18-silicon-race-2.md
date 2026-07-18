@@ -17,6 +17,10 @@ VERDICT: HOLDS
 - Verdict → **BUILDER FOUND; PACKAGE NOT PRODUCIBLE LAWFULLY.** The converter is installed, but its prerequisite source package cannot be authored in this lane without breaking the banned-word law. [source: local builder help, 2026-07-18; https://developer.apple.com/videos/play/wwdc2025/262/]
 - Consequence → tiny `64–4096` package calls, `dispatchNetwork`, scheduler locus, and power residency stay **UNVERIFIED**; no timing or silicon claim inferred from the empty control. [source: proof/2026-07-18-silicon-race-2-metal4-door.txt]
 
+## GATE
+
+- `timeout 300 nice -n 19 cargo check --workspace -j 2` → PASS; dev profile completed in `1m 32s` under `/Users/pascaldisse/projects/magic-crystal/.build-lock`. [source: local command output, 2026-07-18]
+
 ## GAPS
 
 - Lawful source package absent → dispatch/path latency and locus **UNVERIFIED**.
