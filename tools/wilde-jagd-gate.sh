@@ -63,6 +63,13 @@ for commit in "${commits[@]}"; do
     continue
   fi
 
+  # BASELINE EXEMPTION: merges already in history at the tooth's birth are not
+  # policed retroactively (param GAIA_JAGD_BASELINE, default = the tooth commit).
+  baseline="${GAIA_JAGD_BASELINE:-bf2779a}"
+  if git merge-base --is-ancestor "$commit" "$baseline" 2>/dev/null; then
+    printf 'WILDE JAGD BASELINE — %s predates the tooth; exempt.\n' "$commit" >&2
+    continue
+  fi
   if (( $(git rev-list --parents -n 1 "$commit" | awk '{ print NF - 1 }') < 2 )); then
     printf 'WILDE JAGD REFUSED — %s is not a merge commit.\n' "$commit" >&2
     status=1
