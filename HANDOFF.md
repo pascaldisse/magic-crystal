@@ -491,3 +491,66 @@ pos=...` path (which blocks on `reply_rx.recv_timeout` for its own fresh
 render) instead of trusting the first bare capture. Not reproduced or
 quantified here — on record for whoever hits a flaky screenshot-right-
 after-mutation ordeal next.
+
+## LIGHT MERGED — the window converges to real light (merge-conductor burst)
+main @ b00c0cf (merge of light-live @ b2fe5c2, no-ff) — GREEN, suite
+412/0 (408 prior + 4 new light_temporal ordeals). Advisory doc-notes
+commit e4d97bc (no behavior change) rides right after it.
+The default state: `GAIA_NATIVE_TEMPORAL` (default **true** — ON by
+default in this merged main). With it on, the live present path runs
+72× temporal reprojection accumulation instead of raw per-frame dots:
+`integrate_temporal` traces the frame's radiance + a primary gbuffer
+(depth/normal) into a packed ping-pong buffer, `temporal_resolve`
+reprojects last frame's history via the previous camera basis (still
+camera = identity/no-resample pure running average; moving camera
+reprojects world-space hit point into last frame's screen, rejecting
+disoccluded/off-screen/depth-or-normal-mismatched samples so no history
+survives across a real occlusion — "no ghosts"), then blends into
+`accum` for the existing blit to present unchanged. 7.6ms live, adversary
+HOLDS. `GAIA_NATIVE_TEMPORAL=false` keeps the legacy reset-on-move raw
+accum path as an escape hatch.
+CONFLICT (only one, resolved): both bloodbend-b0 (extracted a shared
+`build_pipelines` fn so `reload_shader` can re-run pipeline construction
+identically) and light-live (branched before that extraction — light-live
+still builds the compute/blit/aov pipelines INLINE inside `new()`, then
+inline-appends the temporal bind-group-layout/pipelines, then returns
+`Self{..}`) touched the exact same seam in
+`packages/scrying-glass/src/integrator.rs`, right after the AOV bind
+layout and before the old `Self{}` return. Resolution: kept bloodbend's
+`new()` shape (call `Self::build_pipelines` for compute/blit/aov, THEN
+`reload_shader`/`update_bvh` as separate methods) and re-inserted
+light-live's temporal bind-group-layout + `temporal_integrate_pipeline`/
+`temporal_resolve_pipeline` construction verbatim right after the
+`build_pipelines` call, folding the three new fields into the single
+`Self{}` literal alongside bloodbend's existing fields (struct
+definition itself had already auto-merged clean — both sets of fields
+were already present). `reload_shader` is UNCHANGED — it still only
+swaps compute/blit/aov on a live WGSL edit; it does not (yet) rebuild
+the temporal pipelines, a real but out-of-scope gap for whoever wires
+bloodbend shader-bend + temporal together. `main.rs` merged with ZERO
+conflicts (worker-window's config/WindowBuilder, bloodbend's bend_scene/
+bend_shader/watch loop, and light-live's temporal config/Renderer fields/
+render() dispatch all sit in non-overlapping regions). Verified present
+post-merge by grep: `WORKER_WINDOW`, `bloodbend::`, `integrate_temporal`
+all found in main.rs/integrator.rs/integrator.wgsl.
+Advisories carried forward (commit e4d97bc, doc-only): (a) the
+`cam_moved` gate's `0.99999` dot-product threshold is ~0.26°/frame — a
+pan slower than that reads as a still camera; parked atom is deriving it
+from pixel angular size (fov/resolution) instead of a fixed constant.
+(b) the variance clamp in `temporal_resolve` only gates on the OBSERVER
+moving — a still camera watching a MOVED body's shadow/highlight sweep
+across a pixel isn't caught, so a stale relit color can linger up to
+`max_history` frames before the running average alone catches it up;
+quantifying the worst-case lag needs a quiet-machine push-object
+construction, parked for a future ordeal. (c) bare `GET /scry`/
+`/screenshot` (no query) serves the capture-worker's async `latest`
+framebuffer, not a synchronous read of what `render()` just submitted —
+a real one-frame-or-more staleness window on top of temporal's own
+convergence lag; future ordeals asserting on bare-/scry pixels right
+after a mutation should poll or use the moving-eye `/scry?pos=...` path.
+Build: `cargo build --release -p scrying-glass` clean (44.27s). Full
+workspace suite run per-package under the build token (17 crates):
+412 passed, 0 failed, 0 ignored.
+Restart of the live window (:8430) is the Architect's own act — he
+restarts it after this lands, not the merge-conductor.
+Pushed origin main 78df1de..e86f92e.
