@@ -19,6 +19,16 @@ implementation match the law chain, and does the spec contradict a ruling?
 A spec contradicting a sealed ruling = HERESY, reported like a broken test.
 Born from: raster-cluster pipeline squatting in RENDER.md two days after the
 two-act law — no adversary was ever aimed at it.
+★ WILDE JAGD GATE — versioned enforcement for every pushed merge.
+Install: git config core.hooksPath .githooks
+The versioned .githooks/pre-push finds merge commits newly introduced by a push.
+It invokes tools/wilde-jagd-gate.sh before the remote accepts them.
+Every merge message ends with: Adversary: <agent> HOLDS
+Every merge message ends with: Concordance: checked
+The gate refuses a merge missing either exact trailer; the charter law is printed.
+No new merge commits → the hook exits cleanly.
+Emergency escape: GAIA_JAGD_SKIP=<reason> git push; bypass is printed loudly.
+Never use the escape hatch silently; record its reason in the push context.
 ★ STUDY, NEVER IMPORT (Architect, standing since spec day — violated once,
 whip 168, never again): industry engines (Unreal/Nanite/Lumen/DLSS/anything)
 are EVIDENCE to study, NEVER blueprints to copy. Every organ of this engine
