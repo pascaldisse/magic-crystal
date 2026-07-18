@@ -1,4 +1,4 @@
-//! THE ONE RENDER PATH — fp16 denoiser verdict (bound re-derivation + BAN
+//! TEACHER/BENCHMARK SURFACE (ITEM 16, de-chartered — was "THE ONE RENDER PATH") — fp16 denoiser verdict (bound re-derivation + BAN
 //! re-proof by simulation). The budget question: can the denoiser run in fp16
 //! without losing the RAZOR-THIN beats-noisy margin (orbit_-20: noisy 0.052073
 //! vs denoised 0.042999 = 0.009074 headroom at 96×64)?

@@ -27,7 +27,11 @@ use std::collections::HashSet;
 /// steeper than `acos(0.3) ≈ 72.54°` from horizontal and is dropped as a
 /// wall, never floor. Named (not a bare `0.3` in two call sites) so the
 /// GUARDIAN RULING 6 contact-patch tolerance derivation below can cite the
-/// EXACT cutoff the floor set was already built with.
+/// EXACT cutoff the floor set was already built with. This is the DEFAULT —
+/// [`PlayerParams::floor_cutoff`] (`GAIA_PLAYER_FLOOR_CUTOFF`) is the live,
+/// env-overridable parameter; [`Ground::from_positions`] (no override) and
+/// [`contact_tolerance`] (no override) both still resolve to this constant,
+/// so their behavior is unchanged at the default.
 const WALL_NORMAL_Y_COS_CUTOFF: f32 = 0.3;
 
 /// Deterministic compass-point probe count for the GUARDIAN RULING 6
@@ -36,15 +40,19 @@ const WALL_NORMAL_Y_COS_CUTOFF: f32 = 0.3;
 /// paid EVERY tick on the winning candidate (never skipped), plus again on
 /// every fallthrough rejection — see [`Ground::height_at_gated`]'s doc
 /// comment for the honest per-tick accounting (it is NOT a per-triangle
-/// cost, but it is not a rare one either).
+/// cost, but it is not a rare one either). DEFAULT for
+/// [`PlayerParams::contact_probes`] (`GAIA_PLAYER_CONTACT_PROBES`);
+/// [`Ground::from_positions`] (no override) still resolves to this constant.
 const CONTACT_PROBE_COUNT: usize = 8;
 
 /// Acceptance epsilon [`Ground::raw_height_at`] uses to decide whether a
 /// candidate height `y` still qualifies under a given `ceiling`: `y <=
 /// ceiling + COLUMN_EPSILON`. Named so [`Ground::height_at_gated`]'s retry
-/// step can be DERIVED from it (see [`GATED_EXCLUSION_STEP`]) instead of
-/// living as a second, independently-chosen literal that could silently
-/// drift smaller than this one.
+/// step can be DERIVED from it (see [`Ground::gated_exclusion_step`])
+/// instead of living as a second, independently-chosen literal that could
+/// silently drift smaller than this one. DEFAULT for
+/// [`PlayerParams::column_eps`] (`GAIA_PLAYER_COLUMN_EPS`);
+/// [`Ground::from_positions`] (no override) still resolves to this constant.
 const COLUMN_EPSILON: f32 = 1e-3;
 
 /// Retry-exclusion step [`Ground::height_at_gated`] subtracts from a
@@ -57,8 +65,13 @@ const COLUMN_EPSILON: f32 = 1e-3;
 /// (this was the exact bug: a 1e-4 step against a 1e-3 acceptance epsilon).
 /// Doubling the epsilon keeps the derivation in one place, expressed in
 /// code, while staying well inside float noise for any realistic scene
-/// scale.
-const GATED_EXCLUSION_STEP: f32 = 2.0 * COLUMN_EPSILON;
+/// scale. The literal `2.0 *` factor now lives in
+/// [`Ground::gated_exclusion_step`] (`step = 2.0 * self.column_eps`), so it
+/// tracks whichever `column_eps` a given [`Ground`] was built with (the
+/// DEFAULT path, [`Ground::from_positions`], uses [`COLUMN_EPSILON`],
+/// reproducing the original fixed `GATED_EXCLUSION_STEP = 2.0 *
+/// COLUMN_EPSILON` exactly) — the `step > eps` invariant below holds for
+/// ANY `column_eps > 0`, not just the default.
 
 /// GUARDIAN RULING 6 contact-patch radius default, m
 /// (`GAIA_PLAYER_CONTACT_RADIUS`). MEASURED, not invented: nari (the "nari"
@@ -93,7 +106,13 @@ pub const DEFAULT_CONTACT_RADIUS: f32 = 0.09;
 /// still standing on floor the code already calls walkable, so it is exactly
 /// the tolerance band: any bigger jump means the probe left real floor.
 pub fn contact_tolerance(radius: f32) -> f32 {
-    radius * WALL_NORMAL_Y_COS_CUTOFF.acos().tan()
+    contact_tolerance_with_cutoff(radius, WALL_NORMAL_Y_COS_CUTOFF)
+}
+
+/// Parameterized form used by a live [`Ground`]. The one-argument helper
+/// remains the bit-identical default oracle for existing tests/tools.
+pub fn contact_tolerance_with_cutoff(radius: f32, floor_cutoff: f32) -> f32 {
+    radius * floor_cutoff.acos().tan()
 }
 
 /// A held control. The window's keyboard and the `/walk` organ both speak in
@@ -174,12 +193,51 @@ pub struct PlayerParams {
     /// standable (`GAIA_PLAYER_CONTACT_RADIUS`). See [`DEFAULT_CONTACT_RADIUS`]
     /// for the measured derivation.
     pub contact_radius: f32,
+    /// Floor/wall cosine cutoff the live [`Ground`] is built with, m
+    /// (`GAIA_PLAYER_FLOOR_CUTOFF`). See [`WALL_NORMAL_Y_COS_CUTOFF`] for the
+    /// derivation this is the DEFAULT of.
+    pub floor_cutoff: f32,
+    /// Contact-patch probe count the live [`Ground`] is built with
+    /// (`GAIA_PLAYER_CONTACT_PROBES`). See [`CONTACT_PROBE_COUNT`] for the
+    /// derivation this is the DEFAULT of.
+    pub contact_probes: usize,
+    /// Column acceptance epsilon the live [`Ground`] is built with, m
+    /// (`GAIA_PLAYER_COLUMN_EPS`). See [`COLUMN_EPSILON`] for the derivation
+    /// this is the DEFAULT of — must stay `> 0` (the fallthrough loop's
+    /// exclusion-step invariant, see [`Ground::gated_exclusion_step`],
+    /// requires it).
+    pub column_eps: f32,
+}
+
+impl Default for PlayerParams {
+    fn default() -> Self {
+        Self {
+            gravity: 9.81,
+            terminal: 55.0,
+            jump_speed: 5.0,
+            walk_speed: 6.0,
+            run_speed: 14.0,
+            crouch_speed: 3.0,
+            eye_stand: 1.7,
+            eye_crouch: 1.0,
+            mouse_sensitivity: 0.0022,
+            move_damp: 10.0,
+            eye_damp: 12.0,
+            ground_follow: 12.0,
+            ground_snap: 0.35,
+            void_y: -120.0,
+            pitch_limit: 1.45,
+            contact_radius: DEFAULT_CONTACT_RADIUS,
+            floor_cutoff: WALL_NORMAL_Y_COS_CUTOFF,
+            contact_probes: CONTACT_PROBE_COUNT,
+            column_eps: COLUMN_EPSILON,
+        }
+    }
 }
 
 impl PlayerParams {
-    /// Read every constant from the environment, falling back to the
-    /// reference-engine defaults (gravity excepted — the Rite spec pins it to
-    /// 9.81 m·s⁻²).
+    /// Read every constant from the environment, falling back to
+    /// [`Self::default`].
     pub fn from_env() -> Result<Self, String> {
         fn number(name: &str, default: f32) -> Result<f32, String> {
             match std::env::var(name) {
@@ -196,23 +254,35 @@ impl PlayerParams {
                 Err(_) => Ok(default),
             }
         }
+        fn integer(name: &str, default: usize) -> Result<usize, String> {
+            match std::env::var(name) {
+                Ok(value) => value
+                    .parse::<usize>()
+                    .map_err(|_| format!("{name} must be a non-negative integer, got {value:?}")),
+                Err(_) => Ok(default),
+            }
+        }
+        let defaults = Self::default();
         let params = Self {
-            gravity: number("GAIA_PLAYER_GRAVITY", 9.81)?,
-            terminal: number("GAIA_PLAYER_TERMINAL", 55.0)?,
-            jump_speed: number("GAIA_PLAYER_JUMP", 5.0)?,
-            walk_speed: number("GAIA_PLAYER_WALK", 6.0)?,
-            run_speed: number("GAIA_PLAYER_RUN", 14.0)?,
-            crouch_speed: number("GAIA_PLAYER_CROUCH", 3.0)?,
-            eye_stand: number("GAIA_PLAYER_EYE_STAND", 1.7)?,
-            eye_crouch: number("GAIA_PLAYER_EYE_CROUCH", 1.0)?,
-            mouse_sensitivity: number("GAIA_PLAYER_SENSITIVITY", 0.0022)?,
-            move_damp: number("GAIA_PLAYER_MOVE_DAMP", 10.0)?,
-            eye_damp: number("GAIA_PLAYER_EYE_DAMP", 12.0)?,
-            ground_follow: number("GAIA_PLAYER_GROUND_FOLLOW", 12.0)?,
-            ground_snap: number("GAIA_PLAYER_GROUND_SNAP", 0.35)?,
-            void_y: number("GAIA_PLAYER_VOID_Y", -120.0)?,
-            pitch_limit: number("GAIA_PLAYER_PITCH_LIMIT", 1.45)?,
-            contact_radius: number("GAIA_PLAYER_CONTACT_RADIUS", DEFAULT_CONTACT_RADIUS)?,
+            gravity: number("GAIA_PLAYER_GRAVITY", defaults.gravity)?,
+            terminal: number("GAIA_PLAYER_TERMINAL", defaults.terminal)?,
+            jump_speed: number("GAIA_PLAYER_JUMP", defaults.jump_speed)?,
+            walk_speed: number("GAIA_PLAYER_WALK", defaults.walk_speed)?,
+            run_speed: number("GAIA_PLAYER_RUN", defaults.run_speed)?,
+            crouch_speed: number("GAIA_PLAYER_CROUCH", defaults.crouch_speed)?,
+            eye_stand: number("GAIA_PLAYER_EYE_STAND", defaults.eye_stand)?,
+            eye_crouch: number("GAIA_PLAYER_EYE_CROUCH", defaults.eye_crouch)?,
+            mouse_sensitivity: number("GAIA_PLAYER_SENSITIVITY", defaults.mouse_sensitivity)?,
+            move_damp: number("GAIA_PLAYER_MOVE_DAMP", defaults.move_damp)?,
+            eye_damp: number("GAIA_PLAYER_EYE_DAMP", defaults.eye_damp)?,
+            ground_follow: number("GAIA_PLAYER_GROUND_FOLLOW", defaults.ground_follow)?,
+            ground_snap: number("GAIA_PLAYER_GROUND_SNAP", defaults.ground_snap)?,
+            void_y: number("GAIA_PLAYER_VOID_Y", defaults.void_y)?,
+            pitch_limit: number("GAIA_PLAYER_PITCH_LIMIT", defaults.pitch_limit)?,
+            contact_radius: number("GAIA_PLAYER_CONTACT_RADIUS", defaults.contact_radius)?,
+            floor_cutoff: number("GAIA_PLAYER_FLOOR_CUTOFF", defaults.floor_cutoff)?,
+            contact_probes: integer("GAIA_PLAYER_CONTACT_PROBES", defaults.contact_probes)?,
+            column_eps: number("GAIA_PLAYER_COLUMN_EPS", defaults.column_eps)?,
         };
         if params.gravity <= 0.0
             || params.terminal <= 0.0
@@ -220,9 +290,15 @@ impl PlayerParams {
             || params.eye_stand <= 0.0
             || params.eye_crouch <= 0.0
             || params.contact_radius <= 0.0
+            || !(0.0..1.0).contains(&params.floor_cutoff)
+            || params.floor_cutoff == 0.0
+            || params.contact_probes == 0
+            || params.column_eps <= 0.0
         {
             return Err(
-                "player gravity, terminal, walk speed, eye heights and contact radius must be positive"
+                "player gravity, terminal, walk speed, eye heights and contact radius must be \
+                 positive, floor_cutoff must be in (0,1), contact_probes must be nonzero and \
+                 column_eps must be positive"
                     .into(),
             );
         }
@@ -269,20 +345,42 @@ impl Triangle {
 /// ceiling, which is exactly the ground-snap the controller needs.
 pub struct Ground {
     triangles: Vec<Triangle>,
+    /// Floor/wall cosine cutoff this set was built with (see
+    /// [`WALL_NORMAL_Y_COS_CUTOFF`]'s doc for the derivation; live default
+    /// via [`PlayerParams::floor_cutoff`]).
+    wall_cutoff: f32,
+    /// Contact-patch probe count (see [`CONTACT_PROBE_COUNT`]; live default
+    /// via [`PlayerParams::contact_probes`]).
+    contact_probes: usize,
+    /// Column acceptance epsilon (see [`COLUMN_EPSILON`]; live default via
+    /// [`PlayerParams::column_eps`]).
+    column_eps: f32,
+    /// Default contact radius for convenience queries through [`Self::height_at`].
+    contact_radius: f32,
 }
 
 impl Ground {
     /// Build the floor set from the render scene's world-space triangle soup
     /// (each consecutive three positions is one triangle). Triangles whose face
-    /// tilts past ~72° from vertical are walls and are dropped.
+    /// tilts past ~72° from vertical are walls and are dropped. Uses
+    /// [`PlayerParams::default`], bit-identical to the former constants.
     pub fn from_positions(positions: &[[f32; 3]]) -> Self {
+        Self::from_positions_with_params(positions, &PlayerParams::default())
+    }
+
+    /// Same floor-set build as [`Self::from_positions`], parameterized by the
+    /// live [`PlayerParams`]. Defaults reproduce the old constants exactly.
+    pub fn from_positions_with_params(positions: &[[f32; 3]], params: &PlayerParams) -> Self {
+        let wall_cutoff = params.floor_cutoff;
+        let contact_probes = params.contact_probes;
+        let column_eps = params.column_eps;
         let mut triangles = Vec::with_capacity(positions.len() / 3);
         for chunk in positions.chunks_exact(3) {
             let a = Vec3::from_array(chunk[0]);
             let b = Vec3::from_array(chunk[1]);
             let c = Vec3::from_array(chunk[2]);
             let normal = (b - a).cross(c - a).normalize_or_zero();
-            if normal.y.abs() <= WALL_NORMAL_Y_COS_CUTOFF {
+            if normal.y.abs() <= wall_cutoff {
                 continue; // near-vertical: a wall, never a floor
             }
             triangles.push(Triangle {
@@ -292,7 +390,26 @@ impl Ground {
                 normal_y: normal.y,
             });
         }
-        Self { triangles }
+        Self {
+            triangles,
+            wall_cutoff,
+            contact_probes,
+            column_eps,
+            contact_radius: params.contact_radius,
+        }
+    }
+
+    /// Contact-patch tolerance derived from this floor set's cutoff.
+    pub fn contact_tolerance(&self, radius: f32) -> f32 {
+        contact_tolerance_with_cutoff(radius, self.wall_cutoff)
+    }
+
+    /// Retry-exclusion step [`Self::height_at_gated`] subtracts from a
+    /// rejected candidate's height (see [`COLUMN_EPSILON`]'s doc for the
+    /// full termination proof — it holds for any `column_eps > 0`,
+    /// substituting this set's own `column_eps` for the module constant).
+    fn gated_exclusion_step(&self) -> f32 {
+        2.0 * self.column_eps
     }
 
     /// Number of retained walkable triangles (diagnostics / tests).
@@ -309,11 +426,11 @@ impl Ground {
     fn raw_height_at(&self, x: f32, z: f32, ceiling: f32) -> Option<f32> {
         let mut best: Option<f32> = None;
         for triangle in &self.triangles {
-            if triangle.normal_y.abs() <= WALL_NORMAL_Y_COS_CUTOFF {
+            if triangle.normal_y.abs() <= self.wall_cutoff {
                 continue;
             }
             if let Some(y) = triangle.height_at(x, z)
-                && y <= ceiling + COLUMN_EPSILON
+                && y <= ceiling + self.column_eps
             {
                 best = Some(best.map_or(y, |current| current.max(y)));
             }
@@ -348,8 +465,8 @@ impl Ground {
         if radius <= 0.0 {
             return true; // patch test disabled — degrade to the raw query
         }
-        for i in 0..CONTACT_PROBE_COUNT {
-            let angle = i as f32 * std::f32::consts::TAU / CONTACT_PROBE_COUNT as f32;
+        for i in 0..self.contact_probes {
+            let angle = i as f32 * std::f32::consts::TAU / self.contact_probes.max(1) as f32;
             let probe_x = x + radius * angle.cos();
             let probe_z = z + radius * angle.sin();
             // Search a column generously above and below `y` (not bounded by
@@ -423,7 +540,7 @@ impl Ground {
             }
             // Exclude this candidate (and anything within float noise of it)
             // and retry with the next-highest raw floor below it.
-            ceiling = y - GATED_EXCLUSION_STEP;
+            ceiling = y - self.gated_exclusion_step();
         }
         panic!(
             "height_at_gated exceeded {max_iterations} fallthrough iterations (bounded by the \
@@ -446,8 +563,8 @@ impl Ground {
             x,
             z,
             ceiling,
-            DEFAULT_CONTACT_RADIUS,
-            contact_tolerance(DEFAULT_CONTACT_RADIUS),
+            self.contact_radius,
+            self.contact_tolerance(self.contact_radius),
         )
     }
 }
@@ -641,9 +758,9 @@ impl Player {
         let ground_y = ground.height_at_gated(
             x,
             z,
-            self.position.y + 1e-3,
+            self.position.y + ground.column_eps,
             self.params.contact_radius,
-            contact_tolerance(self.params.contact_radius),
+            ground.contact_tolerance(self.params.contact_radius),
         );
 
         match ground_y {
@@ -716,6 +833,9 @@ mod tests {
             void_y: -120.0,
             pitch_limit: 1.45,
             contact_radius: DEFAULT_CONTACT_RADIUS,
+            floor_cutoff: WALL_NORMAL_Y_COS_CUTOFF,
+            contact_probes: CONTACT_PROBE_COUNT,
+            column_eps: COLUMN_EPSILON,
         }
     }
 

@@ -52,12 +52,8 @@ pub struct IntegratorUniform {
     /// rgb = the light's colour tint (multiplied outside the scalar scatter);
     /// w = light KIND (0 = directional sun/moon, 1 = point emitter glow).
     pub med_light_color: [f32; 4],
-    /// RESOLUTION OF GOD — the window surface being drawn: surface_w,
-    /// surface_h, upscale_mode (0 = bilinear, 1 = nearest), unused. `params`
-    /// carries the (smaller) internal traced resolution; the blit upscales
-    /// `params.xy` → `surface.xy`. `build` defaults it to the trace dims
-    /// (identity upscale) so every non-window caller is unchanged; the window
-    /// render loop overrides it with the true surface + mode.
+    /// Display target: target_w, target_h, nearest=1, unused. Rendering stays
+    /// at `params.xy`; the shader applies nearest integer display scaling only.
     pub surface: [u32; 4],
     // ── LIGHT-NOT-DOTS: temporal accumulation with reprojection ──
     /// Previous frame's eye (xyz) for reprojection.
@@ -285,9 +281,8 @@ impl IntegratorUniform {
                 }
                 None => [0.0; 4],
             },
-            // Default: surface == trace resolution (identity upscale). The
-            // window loop overrides this after building.
-            surface: [width, height, 0, 0],
+            // Default: canvas-sized nearest identity present.
+            surface: [width, height, 1, 0],
             // Temporal defaults: history invalid (identity — output = current),
             // so every non-temporal caller is byte-unchanged. The window loop
             // overrides these when temporal accumulation is enabled.
