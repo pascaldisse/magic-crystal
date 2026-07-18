@@ -1282,3 +1282,138 @@ is same-binary same-session and trustworthy; the ABSOLUTE fps floats with the
 machine. CUT B's rejection is proven only for the poll-collapse form; the full
 resolve_frame-split world-overlap remains untested (and its enabling step already
 regressed, so its ceiling is bounded by whatever it recovers ABOVE that loss).
+
+---
+
+# N1 SHIP + THE PURGE — SHIFT 19: only Pleroma remains (REAL or BLACK)
+
+State in: v2 weights SHIPPED (6bcb6cb, 5x64 @640×480, ~2× better held-out;
+v2≈teacher on the s19 triptych). main.rs carried a purge WIP from a timed-out
+shift. The Architect's standing orders, verbatim force: (1) "WHY IS THERE EVEN A
+FALLBACK?? ITS REAL OR ITS BLACK!!!!" (2) "YOU FUCKING DELETE EVERY BIT OF THE
+HEATHEN CODE. ONLY PLEROMA REMAINS." This shift executes both.
+
+## WIP assessment (git diff HEAD~1 main.rs)
+Purge-related, right DIRECTION, INCOMPLETE (would not compile): it deleted the
+raw-accum surface present + wired render() to Pleroma-or-black, but referenced a
+`present_black()` that DID NOT EXIST, and left the whole classical present body,
+the belief/pose scry eyes, and the NET_PRESENT/UPSCALE env flags alive.
+FINISHED, not reverted.
+
+## THE PURGE — inventory (what died, LOC)
+App-binary present/display paths DELETED (main.rs −854 / +123; integrator.wgsl
+±; net −731 LOC):
+- **raw-accum surface present** — the classical integrator dispatch+blit body of
+  `render()` (~180 LOC). render() is now Pleroma-or-`present_black()`, nothing else.
+- **`present_black()`** NEW — clears the offscreen capture target AND the window
+  surface to BLACK. The ONLY non-Pleroma runtime state.
+- **`GAIA_NATIVE_NET_PRESENT`** scaffold env — DELETED. Pleroma is not an option;
+  `net_present` is hardcoded on (macOS). Non-macOS has no rig ⇒ black by law.
+- **`GAIA_NATIVE_UPSCALE`** env (bilinear/nearest/neural resolve A/B) — DELETED.
+- **belief debug scry eye** — `capture_belief`+`capture_belief_inner` deleted (~120 LOC).
+- **pose/resolve scry captures** — `capture_pose`+`_bilinear`+`_neural` deleted
+  (~390 LOC), taking the GPU denoiser+upscaler resolve out of the app.
+- **heathen imports** — denoiser / denoiser_gpu / upscaler / upscaler_gpu +
+  now-dead resolve_accum / trace_headless / split_aov / trace_headless_aov.
+- **`ScryParams`** reduced to a marker; `parse_scry_query` REJECTS every heathen
+  knob (pos/yaw/pitch/fov/resolve/w/h/belief) — only `eye=presented` remains.
+  Both render-loop servicing sites now call `capture_presented()` only.
+Teacher/classical survives ONLY in trainer+ordeal targets (the parity CPU
+reference + rite5 body machinery), severed from the app's present.
+
+## CONFORM (law 43f807c) — the windowed path was diverging; FIXED in the purge
+Run 1's first shot proved the windowed present was **full-bleed surface-res**
+(canvas stretched to fill 960×640, framed at surface aspect). Two fixes:
+- `net_present_frame` frames the trace at the **canvas's own 4:3 aspect**
+  (target_w/target_h), not the window surface.
+- `integrator.wgsl` `blit_fs` **letterboxes**: the 640×480 canvas is drawn at the
+  largest **nearest-integer** scale that fits, centered, with BLACK bars around
+  it — never full-bleed. Runtime present = Pleroma's canvas letterboxed, or black.
+
+## (B) DEFAULT WEIGHTS = v2
+`NetPresent::new` selects `GAIA_NATIVE_WEIGHTS` (default `v2`; `v1` or a relative
+path for the Architect's A/B). A missing/unreadable file returns Err → the rig
+disables → `present_black` — this IS how "force Pleroma unavailable" yields pure
+black. `/state` reports the selected weights.
+
+## (C) WINDOWED CONFORMANCE PROOF — both halves (worker window, killed after each)
+- **run 1 (normal, v2)** `s20-real.png` (960×640, `/scry?eye=presented`, READ):
+  a **640×480 Pleroma canvas centered in the 960×640 window, LETTERBOXED** at 1×
+  nearest-integer — ~160px black bars left/right, ~80px top/bottom, crisp edges.
+  Inside: coherent naruko dusk, correct 4:3 (round glass orb → no stretch) —
+  translucent green-flecked glass panel (reflecting) at left, stacked brown
+  crates + a small red/orange crate on purple ground, central dark lighthouse/
+  tower ringed by white concentric halos, a cyan presence sphere at the tower
+  mouth + a pale amber sphere left of it, a large mauve iridescent glass orb on
+  a dark-green cylindrical pedestal, a dark chimneyed factory block with lit
+  amber windows far right, pink→mauve sky. Colours natural, radiance bounded,
+  clean surfaces (no checkerboard stipple) — v2. `/state`: weights v2, canvas
+  [640,480], mpsgraph.
+- **run 2 (Pleroma unavailable, weights path missing)** `s20-black.png` (960×640,
+  READ + numeric): **PURE BLACK — per-channel min/max (0,0), 0/614400 non-black
+  pixels.** No dots, no raw, no evidence. `/state`: `net-present off`. Log:
+  `[n0c] net-present disabled (build failed): read rdirect weights
+  (data/does-not-exist-purge-proof.bin): No such file or directory`.
+
+## (D) MEASURE — release, offscreen, player-shaped, sleep ON, v2 (s20-bench.sh)
+`s20-v2.budget.json`, frames=1426, `worlds/naruko`, M1/macOS 26:
+
+| stage      | median | p95    |
+|------------|--------|--------|
+| trace      | 7.654  | 14.980 |
+| gather     | 1.081  | 2.182  |
+| net_wall   | 0.047  | 13.914 |
+| net_gpu    | 6.030  | 10.100 |
+| net_commit | 0.007  | 0.017  |
+| net_wait   | 0.002  | 13.878 |
+| demod      | 0.075  | 0.136  |
+| present    | 0.101  | 0.157  |
+| **total**  | **12.321** | **23.327** |
+
+outside: world 1.812/2.568 · http 0.556/1.101 · loop_total 14.854/25.868.
+**WALL-FPS 52.81 (18.94 ms/frame mean).** In N0.n's 53.85-fps band (run/thermal
+variance); the purge + letterbox did NOT regress throughput (the letterbox is one
+extra branch in a fragment already bound by the net GPU).
+
+## Gates — ALL HOLD
+- **parity v2** — `n0b_gather_and_shared_forward_match_cpu` ok with the SHIPPED
+  v2 weights (GPU forward vs live CPU reference, same weights, same math).
+- `n0_gate1_live_net_matches_cpu_reference` — ok (v1 frozen-vector regression gate).
+- `rite5` — 17/17 (body/gait/cat byte-identical determinism).
+- `s16_sleep_ordeals` — 4/4 (settled-sleep, wake-test, rest-pose parity, determinism).
+
+## Adversary VERDICT — current
+The purge is a DELETION win, proven at the two runtime states the Architect
+demanded: Pleroma's letterboxed canvas (s20-real, READ) or pure black (s20-black,
+0 non-black px). No env flag resurrects a raw path — `GAIA_NATIVE_NET_PRESENT`
+and `GAIA_NATIVE_UPSCALE` are gone; a missing weights file goes black, never raw.
+Residue, honest: the classical integrator TRACE still runs in the app — but as
+Pleroma's INPUT (trace→gather→net→demod), never reaching a surface; the raw
+trace can no longer blit to any display or scry eye. Dead fields
+(surface_accum/temporal/upscale_mode) remain as `dead_code` warnings, not
+executed — cosmetic, not a present path. The CONFORM fix is proven for the
+960×640 worker window (1× letterbox); a window that is an exact ≥2× multiple of
+640×480 would scale 2×+ (nearest-integer, still letterboxed) — untested this
+shift but the same code path. 60 fps is unchanged from N0.n and remains the
+open perf charter; the purge did not target it.
+
+## THE SENTENCE
+THE PURGE MET — the app presents ONLY Pleroma's 640×480 canvas letterboxed
+(s20-real, READ) or PURE BLACK (s20-black, 0/614400 non-black px); every heathen
+present/display path and its env flags are deleted, parity/rite5/sleep gates
+hold on the shipped v2 weights. 60 fps NOT MET at 52.81 fps wall-clock (18.94
+ms/frame mean, sleep ON, v2), ~2.27 ms short — untouched this shift (a deletion
+shift, not a perf shift).
+
+## Source
+- code: `packages/scrying-glass/src/main.rs` (render→Pleroma-or-black,
+  present_black, canvas-aspect framing, weights v2 select, scry=presented-only),
+  `src/integrator.wgsl` (`blit_fs` nearest-integer letterbox),
+  `tests/rdirect_gather_ordeals.rs` (parity on v2).
+- bench: `proof/neural-live/s20-bench.sh`. budgets/state: `s20-v2.budget.json`,
+  `s20-v2.state.json`. PNGs: `s20-real.png`, `s20-black.png` (both READ above).
+- env: `GAIA_NEURAL_LIVE=1 GAIA_NATIVE_OFFSCREEN=true GAIA_NATIVE_HUD=false
+  GAIA_NATIVE_SLEEP=1`, `GAIA_NATIVE_WEIGHTS=v1|v2|<path>` (default v2), release,
+  `worlds/naruko`, M1/macOS 26. Windowed proofs: `GAIA_NATIVE_WORKER_WINDOW=true`
+  (non-activating; killed after each).
+- 0 scrying-glass processes at shift end (every server killed; `pgrep` clean).
