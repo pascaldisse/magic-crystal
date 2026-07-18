@@ -71,6 +71,16 @@ struct ScryingGlassConfig {
     /// itself, a future third-person mode). Off is the normal weld: her body
     /// vanishes only from the exact eye it is attached to.
     draw_own_body: bool,
+    /// WORKER WINDOW (`GAIA_NATIVE_WORKER_WINDOW`, default off/false — Nekromant
+    /// case #1 fix): a worker instance's window is built non-activating/
+    /// never-key (`focused(false)` + `focusable(false)`, which on macOS rides
+    /// tao's `canBecomeKeyWindow`/`canBecomeMainWindow` override down to a
+    /// permanent `false` — the portable equivalent of patching NSWindow's
+    /// `canBecomeKeyWindow`, no raw objc2 subclassing needed). Such a window
+    /// can never accept a keystroke (including Cmd+Q) no matter what GPU-load
+    /// activation storm hits the app. Off is the pre-fix behavior (Architect's
+    /// live window at :8430 stays exactly as before).
+    worker_window: bool,
 }
 
 impl ScryingGlassConfig {
@@ -112,16 +122,35 @@ impl ScryingGlassConfig {
         let world_path = std::env::var_os("GAIA_WORLD")
             .map(PathBuf::from)
             .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../worlds/naruko"));
+        // Nekromant case #1 fix: a worker instance never activates/steals
+        // focus (item 1 below, applied to the window builder) and defaults to
+        // a visibly smaller window + a title suffix so the Architect can tell
+        // a worker apart from the one live window at a glance (item 1, param).
+        let worker_window = match std::env::var("GAIA_NATIVE_WORKER_WINDOW") {
+            Ok(value) => value.parse::<bool>().map_err(|_| {
+                format!("GAIA_NATIVE_WORKER_WINDOW must be true or false, got {value:?}")
+            })?,
+            Err(_) => false,
+        };
+        let default_window_width = if worker_window { 480.0 } else { 960.0 };
+        let default_window_height = if worker_window { 320.0 } else { 640.0 };
         let config = Self {
-            window_width: number("GAIA_NATIVE_WIDTH", 960.0)?,
-            window_height: number("GAIA_NATIVE_HEIGHT", 640.0)?,
+            window_width: number("GAIA_NATIVE_WIDTH", default_window_width)?,
+            window_height: number("GAIA_NATIVE_HEIGHT", default_window_height)?,
             panel_width: number("SPIKE_PANEL_WIDTH", 300.0)?,
             panel_height: number("SPIKE_PANEL_HEIGHT", 154.0)?,
             panel_margin: number("SPIKE_PANEL_MARGIN", 24.0)?,
             fps: number("GAIA_NATIVE_FPS", 60.0)?,
             native_port,
-            title: std::env::var("GAIA_NATIVE_TITLE")
-                .unwrap_or_else(|_| "GAIA — Scrying Glass".into()),
+            title: {
+                let base = std::env::var("GAIA_NATIVE_TITLE")
+                    .unwrap_or_else(|_| "GAIA — Scrying Glass".into());
+                if worker_window {
+                    format!("{base} [worker]")
+                } else {
+                    base
+                }
+            },
             auto_test_ipc,
             world_path,
             scene: SceneParameters {
@@ -209,6 +238,7 @@ impl ScryingGlassConfig {
                 })?,
                 Err(_) => false,
             },
+            worker_window,
         };
         if config.render_width == 0 || config.render_height == 0 {
             return Err("GAIA_NATIVE_RENDER_W and GAIA_NATIVE_RENDER_H must be positive".into());
@@ -1983,7 +2013,26 @@ fn main() {
             let window = tauri::window::WindowBuilder::new(app, "wgpu-surface")
                 .title(config.title.clone())
                 .inner_size(config.window_width, config.window_height)
+                // Nekromant case #1 fix: `focused(false)` skips the initial
+                // makeKeyAndOrderFront (window shows via orderFront only, never
+                // key at creation); `focusable(false)` rides tao's
+                // canBecomeKeyWindow/canBecomeMainWindow override down to a
+                // permanent `false` (packages/scrying-glass Cargo.toml pins
+                // tauri 2.11.5 -> tao 0.35.3; see
+                // tao-0.35.3/src/platform_impl/macos/window.rs WINDOW_CLASS) —
+                // no NSWindow subclass of our own needed, no keystroke
+                // (including Cmd+Q) can ever land on this window again,
+                // however hard a GPU-load activation storm hits the app.
+                .focused(!config.worker_window)
+                .focusable(!config.worker_window)
                 .build()?;
+            if config.worker_window {
+                eprintln!(
+                    "[worker-window] GAIA_NATIVE_WORKER_WINDOW=true: window built focused=false \
+                     focusable=false (never-key) title={:?}",
+                    config.title
+                );
+            }
             let size = window.inner_size()?;
             let (position, panel_size) = config.panel_layout(size);
             let auto_test_ipc = config.auto_test_ipc;
@@ -2003,10 +2052,28 @@ fn main() {
             let resize_overlay = overlay.clone();
             let resize_config = config.clone();
             window.on_window_event(move |event| {
-                if let tauri::WindowEvent::Resized(size) = event {
-                    let (position, panel_size) = resize_config.panel_layout(*size);
-                    let _ = resize_overlay.set_position(position);
-                    let _ = resize_overlay.set_size(panel_size);
+                match event {
+                    tauri::WindowEvent::Resized(size) => {
+                        let (position, panel_size) = resize_config.panel_layout(*size);
+                        let _ = resize_overlay.set_position(position);
+                        let _ = resize_overlay.set_size(panel_size);
+                    }
+                    // ALWAYS-ON instrumentation (both worker_window modes): every
+                    // future quit-by-stolen-focus now has a named sender — a
+                    // wall-clock-stamped log line for the exact moment this
+                    // window gained/lost key status.
+                    tauri::WindowEvent::Focused(focused) => {
+                        let stamp_ms = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_millis())
+                            .unwrap_or(0);
+                        eprintln!(
+                            "[focus] t={stamp_ms}ms window=\"wgpu-surface\" focused={focused} \
+                             worker_window={}",
+                            resize_config.worker_window
+                        );
+                    }
+                    _ => {}
                 }
             });
             install_passthrough_monitor(window.clone(), config.clone())
@@ -2140,10 +2207,30 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("Tauri app build failed")
         .run(|app, event| {
-            if let tauri::RunEvent::Exit = event {
-                app.state::<RuntimeState>()
-                    .running
-                    .store(false, Ordering::Release);
+            match event {
+                tauri::RunEvent::Exit => {
+                    app.state::<RuntimeState>()
+                        .running
+                        .store(false, Ordering::Release);
+                }
+                // ALWAYS-ON instrumentation: applicationShouldHandleReopen is
+                // the app-activation signal Tauri's RunEvent exposes on macOS
+                // (dock-icon/Cmd+Tab reactivation) — the closest named sender
+                // to "setApplicationIsActive" the public API surfaces (proven
+                // seam: tauri-2.11.5/src/app.rs RunEvent::Reopen). Per-window
+                // key/focus transitions are logged in the window's own
+                // on_window_event above (Focused).
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Reopen { has_visible_windows, .. } => {
+                    let stamp_ms = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis())
+                        .unwrap_or(0);
+                    eprintln!(
+                        "[activation] t={stamp_ms}ms event=Reopen has_visible_windows={has_visible_windows}"
+                    );
+                }
+                _ => {}
             }
         });
 }
