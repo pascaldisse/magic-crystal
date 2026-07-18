@@ -4069,6 +4069,41 @@ fn run_offscreen(config: ScryingGlassConfig, render_scene: RenderScene) -> ! {
     let size = PhysicalSize { width: dims.0.max(1), height: dims.1.max(1) };
     let mut deadline = Instant::now();
     let mut pending: Option<wgpu::SubmissionIndex> = None;
+    // N0.j S13.3 OVERLAP THE REAL WORK — TRIED, MEASURED, DOES NOT HELP.
+    // The ~7 ms world advance (skin·tick·splice + fresh BVH upload) is the
+    // dominant OUTSIDE-work thief. The intent was to advance the NEXT frame's
+    // world AFTER this frame's GPU submit so its CPU cost hides under the
+    // in-flight GPU trace. But `trace` is SYNCHRONOUS on the render thread (it
+    // submits+POLLS the GPU for the AOV that feeds the gather), so by the time
+    // the deferred advance runs the GPU is already idle — nothing to hide under.
+    // A/B measured it neutral-to-slightly-worse (47.5 vs 48.4 fps) AND it costs
+    // one frame of world-state latency, so SERIAL is the default. The overlap
+    // path stays behind `GAIA_NATIVE_WORLD_OVERLAP=1` for the record (it becomes
+    // a real win only once trace stops blocking the render thread — the net
+    // pipeline's next charter). `update_bvh` allocs FRESH buffers each tick and
+    // the in-flight submission retains its own, so the overlap order is SAFE.
+    let world_overlap = matches!(
+        std::env::var("GAIA_NATIVE_WORLD_OVERLAP").as_deref(),
+        Ok("1" | "true")
+    );
+    // Closure-free helper (borrow rules): advance one frame's world, timed.
+    macro_rules! advance_timed {
+        () => {{
+            let t_world = Instant::now();
+            let mut body_speed = 0.0f32;
+            let mut walker_pose = None;
+            if let Ok(mut body) = player.lock() {
+                body.step(tick_dt, &ground);
+                let pose = body.pose();
+                body_speed = body.velocity.length();
+                walker_pose = Some(WalkerPose { position: pose.position, yaw: pose.yaw });
+                drop(body);
+                renderer.set_view_pose(pose.position, pose.yaw, pose.pitch);
+            }
+            renderer.advance_world(body_speed, walker_pose, &[]);
+            t_world.elapsed().as_secs_f64() * 1000.0
+        }};
+    }
     loop {
         let _ = renderer.device.poll(wgpu::PollType::Poll);
         let t_http = Instant::now();
@@ -4093,20 +4128,14 @@ fn run_offscreen(config: ScryingGlassConfig, render_scene: RenderScene) -> ! {
         let mut http_ms = t_http.elapsed().as_secs_f64() * 1000.0;
         // N0.j S13 THE OUTSIDE-9ms HUNT: time the non-net frame-loop segments.
         let t_iter = Instant::now();
-        let t_world = Instant::now();
-        let mut body_speed = 0.0f32;
-        let mut walker_pose = None;
-        if let Ok(mut body) = player.lock() {
-            body.step(tick_dt, &ground);
-            let pose = body.pose();
-            body_speed = body.velocity.length();
-            walker_pose = Some(WalkerPose { position: pose.position, yaw: pose.yaw });
-            drop(body);
-            renderer.set_view_pose(pose.position, pose.yaw, pose.pitch);
-        }
-        renderer.advance_world(body_speed, walker_pose, &[]);
-        let world_ms = t_world.elapsed().as_secs_f64() * 1000.0;
+        // SERIAL mode: advance BEFORE render (the old order).
+        let mut world_ms = if world_overlap { 0.0 } else { advance_timed!() };
         let idx = renderer.render(size);
+        // OVERLAP mode: advance the NEXT frame's world while THIS frame's GPU
+        // flies (before waiting the previous frame below).
+        if world_overlap {
+            world_ms = advance_timed!();
+        }
         if let Some(prev) = pending.take() {
             let _ = renderer.device.poll(wgpu::PollType::Wait {
                 submission_index: Some(prev),

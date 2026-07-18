@@ -1,0 +1,27 @@
+[package] scrying-glass v0.1.0 registered
+[world] /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/../../worlds/naruko scene(s)=["main"] entities=45 chains=23 clusters=913 transmute=77.2ms
+[embodiment] spawn eye=Vec3(0.0, 7.0, 44.0) yaw=0 floor_triangles=10464 tick_dt=0.016666668
+[pleroma] BVH nodes=15487 triangles=23192 (static 12368 + dynamic 10824) build=13.5ms; 22 dynamic entit(ies) — living layer
+[pleroma] traced integrator spp=2 bounces=4 rr_start=2 — first_light is dead
+[wgpu] traced 640x480 → upscale → surface 960x640 (bilinear); Bgra8UnormSrgb
+[frame] trace 640x480 → offscreen 960x640: median 8.06ms mean 9.26ms/frame (spp=2, 60-frame sample)
+[scry] GET http://127.0.0.1:8438/scry (alias: /screenshot; optional pos/yaw/pitch/fov/w/h)
+[embodiment] GET http://127.0.0.1:8438/pose · POST http://127.0.0.1:8438/walk {keys,yaw?,pitch?,ticks?}
+[offscreen] GAIA_NATIVE_OFFSCREEN=true: NO NSWindow — rendering to offscreen 960x640; /scry (?eye=belief|presented), /budget, /state on http://127.0.0.1:8438
+[n0c] net-present rig pooled (God's res): trace 640x480 → net 640x480 → nearest blit → surface 960x640 (307200 px)
+[n0i] frames=60 640x480→640x480 (ms median/p95 vs 16.67): trace 6.54/13.84 gather 0.96/4.32 net[wall 0.01/35.97 gpu 5.22/9.63 commit 0.01/0.01 wait 0.00/35.95] demod 0.61/8.54 present 0.08/0.17 TOTAL 12.26/46.64 | WALL-FPS 38.6
+[n0i] frames=120 640x480→640x480 (ms median/p95 vs 16.67): trace 6.36/12.69 gather 0.93/2.34 net[wall 0.01/14.68 gpu 4.96/8.32 commit 0.01/0.01 wait 0.00/14.67] demod 0.66/10.17 present 0.09/0.15 TOTAL 12.01/26.64 | WALL-FPS 43.2
+[n0i] frames=180 640x480→640x480 (ms median/p95 vs 16.67): trace 6.39/13.04 gather 0.95/2.04 net[wall 0.01/10.38 gpu 4.99/7.90 commit 0.01/0.02 wait 0.00/10.36] demod 0.69/10.25 present 0.09/0.16 TOTAL 12.01/26.14 | WALL-FPS 44.4
+[n0i] frames=240 640x480→640x480 (ms median/p95 vs 16.67): trace 6.42/13.28 gather 0.95/2.04 net[wall 0.01/8.02 gpu 5.00/7.49 commit 0.01/0.02 wait 0.00/8.00] demod 0.76/10.25 present 0.09/0.15 TOTAL 12.54/25.27 | WALL-FPS 44.7
+[n0i] frames=300 640x480→640x480 (ms median/p95 vs 16.67): trace 6.37/13.28 gather 0.92/1.82 net[wall 0.01/7.11 gpu 4.95/7.00 commit 0.01/0.01 wait 0.00/7.09] demod 0.69/10.22 present 0.09/0.14 TOTAL 12.16/24.41 | WALL-FPS 45.9
+[n0i] frames=360 640x480→640x480 (ms median/p95 vs 16.67): trace 6.36/12.69 gather 0.89/1.55 net[wall 0.01/5.65 gpu 4.91/6.61 commit 0.01/0.01 wait 0.00/5.64] demod 0.69/10.22 present 0.08/0.13 TOTAL 12.16/21.44 | WALL-FPS 46.5
+[n0i] frames=420 640x480→640x480 (ms median/p95 vs 16.67): trace 6.30/11.53 gather 0.87/1.50 net[wall 0.01/4.44 gpu 4.85/6.39 commit 0.01/0.01 wait 0.00/4.40] demod 0.69/10.22 present 0.08/0.13 TOTAL 12.01/20.53 | WALL-FPS 46.9
+[n0i] frames=480 640x480→640x480 (ms median/p95 vs 16.67): trace 6.22/11.01 gather 0.86/1.34 net[wall 0.01/2.89 gpu 4.82/6.23 commit 0.01/0.01 wait 0.00/2.87] demod 0.73/10.21 present 0.08/0.13 TOTAL 11.82/20.35 | WALL-FPS 47.4
+[n0i] frames=540 640x480→640x480 (ms median/p95 vs 16.67): trace 6.20/11.01 gather 0.86/1.33 net[wall 0.01/2.89 gpu 4.82/6.23 commit 0.01/0.01 wait 0.00/2.87] demod 0.73/10.21 present 0.08/0.13 TOTAL 11.82/20.00 | WALL-FPS 47.6
+[n0i] frames=600 640x480→640x480 (ms median/p95 vs 16.67): trace 6.23/11.53 gather 0.87/1.34 net[wall 0.01/2.89 gpu 4.83/6.23 commit 0.01/0.01 wait 0.00/2.87] demod 0.72/10.19 present 0.08/0.13 TOTAL 11.82/20.21 | WALL-FPS 47.5
+[n0i] frames=660 640x480→640x480 (ms median/p95 vs 16.67): trace 6.24/12.69 gather 0.88/1.40 net[wall 0.01/3.39 gpu 4.88/6.24 commit 0.01/0.01 wait 0.00/3.37] demod 0.76/10.23 present 0.08/0.14 TOTAL 11.80/20.41 | WALL-FPS 47.3
+[n0i] frames=720 640x480→640x480 (ms median/p95 vs 16.67): trace 6.25/12.86 gather 0.89/1.60 net[wall 0.01/3.38 gpu 4.90/6.19 commit 0.01/0.01 wait 0.00/3.35] demod 0.77/10.32 present 0.08/0.15 TOTAL 11.80/20.40 | WALL-FPS 47.3
+[n0i] frames=780 640x480→640x480 (ms median/p95 vs 16.67): trace 6.25/12.50 gather 0.90/1.53 net[wall 0.01/3.38 gpu 4.90/6.18 commit 0.01/0.01 wait 0.00/3.35] demod 0.76/10.25 present 0.09/0.14 TOTAL 11.58/20.41 | WALL-FPS 47.3
+[n0i] frames=840 640x480→640x480 (ms median/p95 vs 16.67): trace 6.25/11.47 gather 0.90/1.50 net[wall 0.01/3.26 gpu 4.89/6.11 commit 0.01/0.01 wait 0.00/3.24] demod 0.76/10.24 present 0.09/0.14 TOTAL 11.58/20.35 | WALL-FPS 47.5
+[n0i] frames=900 640x480→640x480 (ms median/p95 vs 16.67): trace 6.25/11.31 gather 0.90/1.48 net[wall 0.01/2.89 gpu 4.87/6.04 commit 0.01/0.01 wait 0.00/2.88] demod 0.76/10.23 present 0.09/0.14 TOTAL 11.58/20.00 | WALL-FPS 47.6
+[n0i] frames=960 640x480→640x480 (ms median/p95 vs 16.67): trace 6.25/11.28 gather 0.90/1.41 net[wall 0.01/2.89 gpu 4.87/6.03 commit 0.01/0.01 wait 0.00/2.87] demod 0.76/10.24 present 0.09/0.14 TOTAL 11.48/20.40 | WALL-FPS 47.6
