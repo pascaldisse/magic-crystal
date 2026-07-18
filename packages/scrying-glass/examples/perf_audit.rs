@@ -367,7 +367,14 @@ fn main() {
     let medium = steam_medium(&bound, counter_top_y);
 
     let bvh_params = BvhParams::default();
+    let static_bvh_start = Instant::now();
     let static_bvh = Bvh::build(&scene.leaf_triangles(), &bvh_params);
+    let static_bvh_ms = static_bvh_start.elapsed().as_secs_f64() * 1e3;
+    eprintln!(
+        "[audit] static BVH: {} triangles, {} nodes, build {static_bvh_ms:.3} ms",
+        static_bvh.tris.len(),
+        static_bvh.nodes.len(),
+    );
 
     // Warm the WORLD to the composed mid-stride steady state (coexist
     // precedent: past the crate-settle horizon, landing on the passing phase so
