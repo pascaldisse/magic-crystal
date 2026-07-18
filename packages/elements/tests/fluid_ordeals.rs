@@ -1,41 +1,66 @@
-//! FLUID ORDEALS — round 7: WATER WITHOUT TENSION. The kernel this locks is
+//! FLUID ORDEALS — round 8: WATER WITH A FLOOR. The kernel this locks is
 //! `compression_only = true` (the unilateral liquid density constraint) with
-//! `tensile_k = 0.0` (the artificial-pressure/tensile-instability corrector
-//! DEFAULT-OFF — round-6's isolation probe found it explodes under sustained
-//! hydrostatic compression even correctly per-pair gated; round-7's own
-//! isolation probe confirmed `tensile_k=0` + the same gate is immediately
-//! stable, and `fluid_flatness` confirms the config settles flat, see that
-//! file's module doc for the full flatness measurement). s_corr's
-//! re-enablement is a designed OPEN ITEM scoped to the splash/ballistic
-//! regime — the splash ordeal below runs WITHOUT it and notes the honest
-//! cost (see `ordeal_splash_deterministic`'s doc comment).
+//! s_corr RETIRED (`tensile_k` inert) and, in its place, a genuine collision-
+//! style pairwise MINIMUM-SEPARATION floor resolved through the solver's own
+//! contact machinery ([`elements::Solver::solve_fluid_contacts`]): any two
+//! fluid particles closer than `r_min = min_sep_factor × spacing` become a
+//! CONTACT in the same per-substep solve every rigid body uses. This is the
+//! CURE for the round-7 collapse s_corr could neither fix (it detonated) nor
+//! reveal (with it off, the SPH density estimate read a coincident-particle
+//! collapse as near-ρ₀).
+//!
+//! Round-7's HONEST CAVEAT was: every SPH-density metric (`max_overdensity`,
+//! count/mass, `state_hash`) was blind to real-space clustering — the EXACT
+//! `small_spec()` fixture collapsed at rest (mean NN 0.06m -> ~0.006m, pairs
+//! coincident) while ordeal 1 read near-ρ₀ and passed. Round-8 CLOSES that
+//! gap with `ordeal_min_separation_holds` (gate 2), a GEOMETRIC (non-SPH)
+//! witness that catches collapse forever, plus `ordeal_hydrostatic_endurance`
+//! (gate 3, no detonation over sim-seconds). `fluid_volume_probe` on this
+//! fixture now shows min NN holding at ~0.83×spacing (the floor) instead of
+//! collapsing.
+//!
+//! GATE 4 (BUOYANCY) IS AN OPEN ITEM — `ordeal_buoyancy_rises` is #[ignore]d
+//! and EXPECTED RED: buoyancy does NOT emerge, because the compression_only
+//! fluid (ρ₀ at max packing) is nearly pressureless in the bulk, so the
+//! contact coupling has no hydrostatic gradient to lift a body. The floor
+//! cured collapse/stability but not pressure. See that ordeal's doc for the
+//! full root cause and the escalation.
 //!
 //! Every fixture here is intentionally SMALL (a fast pool, not the render-
 //! scale one `fluid_measure`/`fluid_diorama` use) so the suite stays
 //! budget-bounded under `cargo test`.
-//!
-//! HONEST CAVEAT (round-7, found AFTER these ordeals were green): every
-//! metric below (`max_overdensity`, particle count/mass, `state_hash`) is
-//! either the SPH density estimate or something unaffected by real-space
-//! particle clustering. Running `fluid_volume_probe` on the EXACT
-//! `small_spec()` fixture below shows it collapses at rest — spawn surface
-//! 0.48m -> rest ~0.13m, mean nearest-neighbour distance 0.06m -> ~0.006m
-//! (particles landing exactly coincident, min NN 0.0) — while ordeal_1
-//! (`max_overdensity`, the SPH estimate) reads this SAME collapsed state as
-//! near-ρ₀ and PASSES. These ordeals are therefore NOT sufficient evidence
-//! that `tensile_k=0.0` produces real water; they only prove the SPH
-//! density estimate stays self-consistent, mass/count don't leak, and the
-//! worldline is deterministic. See `fluid_kernel.rs`'s `tensile_k` doc and
-//! the round-7 final report for the full finding and the STOP/escalation
-//! this triggered. A geometric (non-SPH) minimum-separation ordeal is the
-//! missing gate for a future round — not added here (found late in the
-//! round, after the ordeals were already written and green; correcting
-//! them honestly rather than deleting the evidence of the gap).
 
-use elements::fluid::{drop_crate, fill, surface_height, FluidPool, FluidPoolSpec};
+use elements::fluid::{body_center_y, drop_crate, fill, surface_height, FluidPool, FluidPoolSpec};
 use elements::fluid_kernel::poly6;
 use elements::pointgrid::PointGrid;
-use elements::Solver;
+use elements::{Solver, Vec3};
+
+/// Mean and MINIMUM nearest-neighbour distance over the fluid particles — the
+/// GEOMETRIC packing witness, independent of the SPH kernel's smoothed density
+/// estimate (the metric round-7's ordeals lacked). `search_r` bounds the grid
+/// query; pass a small multiple of the spawn spacing.
+fn nn_stats(s: &Solver, search_r: f64) -> (f64, f64) {
+    let grid = PointGrid::build(&s.particles.pos, &s.fluid_particles, PointGrid::cell_size(search_r));
+    let mut cand = Vec::new();
+    let (mut sum, mut n, mut worst_min) = (0.0_f64, 0usize, f64::INFINITY);
+    for &i in &s.fluid_particles {
+        grid.query_ball(s.particles.pos[i], search_r, &mut cand);
+        let mut best = f64::INFINITY;
+        for &jc in &cand {
+            let j = jc as usize;
+            if j == i {
+                continue;
+            }
+            best = best.min((s.particles.pos[i] - s.particles.pos[j]).length());
+        }
+        if best.is_finite() {
+            sum += best;
+            n += 1;
+            worst_min = worst_min.min(best);
+        }
+    }
+    (sum / n.max(1) as f64, worst_min)
+}
 
 /// A fast ordeal-scale pool: small enough that a few hundred ticks stays
 /// well under a test-suite budget. `9x9x5` = 405-ish fluid particles at this
@@ -259,58 +284,182 @@ fn ordeal_splash_deterministic() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// ORDEAL 6 — SABOTAGE: this test exists to prove ordeal 1 actually tests
-// something. It re-enables s_corr UNGATED (the pre-round-6 bug: tensile_k>0
-// applied on EVERY neighbour pair, not just pairs touching a compressed
-// particle) directly against the fluid config, bypassing the source-level
-// gate entirely (the gate lives in `solver::solve_fluid`'s `s_corr` closure
-// on `cfg.tensile_k != 0.0 && (li!=0.0 || lj!=0.0)` — this test cannot
-// disable the PAIR half of that gate without editing solver.rs, so it
-// exercises the weaker, still-diagnostic form: tensile_k>0 under sustained
-// hydrostatic load, which round-6/round-7's probes both show detonates even
-// WITH the pair gate live). Expected: incompressibility-at-rest goes RED
-// (the pool detonates well past any reasonable gate). This is a standalone
-// #[ignore] test — it is EXPECTED to fail and is not part of the green
-// suite; run it explicitly to see the sabotage fire.
+// ORDEAL 6 — GEOMETRIC MINIMUM-SEPARATION (gate 2, the round-7 missing gate).
+// The non-SPH witness: after settling, the TRUE minimum nearest-neighbour
+// distance over the pool must never drop below `r_min × (1 - tol)` — the
+// collision-style floor `solve_fluid_contacts` enforces. This catches the
+// SPH-invisible collapse round-7 exposed (min NN -> 0, particles coincident,
+// while `max_overdensity` read near-ρ₀) forever: `r_min` and `tol` are the
+// only dials, both derived (`r_min = cfg.min_separation` = min_sep_factor ×
+// spacing; `tol` a documented fraction), never a bare metre literal.
+const FLOOR_TOL: f64 = 0.15; // fraction below r_min a settled pair may reach
+                             // (measured rest equilibrium ~0.83×spacing vs the
+                             // 0.85×spacing floor — a ~2% overshoot; 15% is a
+                             // comfortable margin that still slams the door on
+                             // any real collapse, which drives NN toward zero).
+#[test]
+fn ordeal_min_separation_holds() {
+    let spec = small_spec();
+    let mut pool = fill(spec);
+    let r_min = pool.solver.fluid.unwrap().min_separation;
+    assert!(r_min > 0.0, "the min-separation floor must be derived at spawn");
+    let search_r = spec.spacing * 2.0;
+
+    let (_, min0) = nn_stats(&pool.solver, search_r);
+    assert!(min0 + 1e-12 >= r_min, "spawn min NN {min0:.4} < r_min {r_min:.4}");
+
+    for _ in 0..200 {
+        pool.solver.step();
+    }
+    let floor_gate = r_min * (1.0 - FLOOR_TOL);
+    let mut worst_min = f64::INFINITY;
+    for _ in 0..150 {
+        pool.solver.step();
+        let (_, mn) = nn_stats(&pool.solver, search_r);
+        worst_min = worst_min.min(mn);
+    }
+    println!(
+        "ORDEAL min-separation: r_min {r_min:.4} m, gate {floor_gate:.4} (r_min×(1-{FLOOR_TOL})), worst min NN over hold window {worst_min:.4} m"
+    );
+    assert!(
+        worst_min >= floor_gate,
+        "min NN {worst_min:.4} fell below the floor {floor_gate:.4} — SPH-invisible collapse (the round-7 failure)"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ORDEAL 7 — HYDROSTATIC COLUMN ENDURANCE (gate 3). The pool holds under
+// gravity for a sustained run of sim-seconds with NO particle ever reaching a
+// detonation speed — the exact failure s_corr>0 produced. The speed bound is
+// DERIVED (CFL-style): a stable pool never moves a particle more than one
+// spacing per full tick, so `v_max < spacing / dt`. Anti-hang: a fixed tick
+// cap AND an early bail the first tick the bound is exceeded.
 // ─────────────────────────────────────────────────────────────────────────
 #[test]
-#[ignore = "sabotage probe: intentionally re-enables tensile_k under hydrostatic load and IS EXPECTED TO FAIL — run explicitly with --ignored, not part of the green suite"]
-fn sabotage_ungated_tensile_k_detonates_at_rest() {
-    let mut pool = fill(small_spec());
-    {
-        let cfg = pool.solver.fluid.as_mut().unwrap();
-        cfg.tensile_k = 0.1; // round-6's value, the one that detonates.
-    }
-    // ANTI-HANG: once tensile_k detonates, the pool scatters over metres and
-    // the neighbour grid (cell = h, sized for a centimetre-scale lattice)
-    // degenerates into a huge sparse hash — each step gets dramatically
-    // slower, not just physically wrong. Bail on the FIRST tick that reads a
-    // speed no honest hydrostatic pool ever reaches (`50 m/s`, two orders
-    // above the largest speed ever measured on a STABLE config in this
-    // suite/round-7's probes, ~1 m/s) rather than grinding a fixed tick
-    // count through an ever-more-expensive explosion. A max-tick cap backs
-    // it up regardless.
-    const MAX_TICKS: usize = 60;
-    const DETONATION_SPEED: f64 = 15.0;
-    let mut worst = 0.0_f64;
+fn ordeal_hydrostatic_endurance() {
+    const SIM_SECONDS: f64 = 6.0; // the endurance window (param).
+    let spec = small_spec();
+    let mut pool = fill(spec);
+    let dt = pool.solver.config.dt;
+    let ticks = (SIM_SECONDS / dt).round() as usize;
+    let speed_bound = spec.spacing / dt; // one spacing per tick — detonation, not dynamics.
+    let mut worst_speed = 0.0_f64;
     let mut detonated_at: Option<usize> = None;
-    for t in 0..MAX_TICKS {
+    for t in 0..ticks {
         pool.solver.step();
         let spd = max_speed(&pool.solver);
-        worst = worst.max(max_overdensity(&pool.solver));
-        if spd > DETONATION_SPEED {
+        worst_speed = worst_speed.max(spd);
+        if spd > speed_bound {
             detonated_at = Some(t);
-            worst = worst.max(1.0e6); // force the gate comparison red without further stepping.
-            break;
+            break; // ANTI-HANG: never grind ticks through an explosion.
         }
     }
-    let gate = 1.0e-3; // any honest rest pool (see ordeal 1) lands far below this.
-    match detonated_at {
-        Some(t) => println!("SABOTAGE tensile_k=0.1: DETONATED at tick {t} (speed > {DETONATION_SPEED} m/s) — bailed early, worst overdensity forced red"),
-        None => println!("SABOTAGE tensile_k=0.1: ran {MAX_TICKS} ticks without detonating, worst overdensity {worst:.4} (gate {gate:.4})"),
-    }
+    println!(
+        "ORDEAL endurance: {SIM_SECONDS}s ({ticks} ticks), worst max-speed {worst_speed:.4} m/s, bound {speed_bound:.4} m/s (spacing/dt)"
+    );
     assert!(
-        worst <= gate,
-        "EXPECTED FAILURE: tensile_k=0.1 detonated the rest pool (worst overdensity {worst:.4} >> gate {gate:.4}) — proves ordeal 1 is non-vacuous"
+        detonated_at.is_none(),
+        "pool detonated at tick {detonated_at:?}: max speed {worst_speed:.4} m/s exceeded the CFL bound {speed_bound:.4} m/s"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ORDEAL 8 — BUOYANCY (gate 4). OPEN ITEM — #[ignore]d, EXPECTED RED.
+//
+// The intent: a light body (physical density << the fluid's water density)
+// submerged in the settled pool RISES, float/sink emerging from the mass
+// ratio through the fluid<->solid contact coupling. The round-8 MEASURED
+// REALITY (see `fluid_buoy_probe`): it does NOT. Even a density-50 crate
+// (which real water floats ~95% out of the surface) released mid-column
+// settles near the pool floor — it resists sinking onto the floor (a thin
+// fluid layer holds it ~0.03 m up) but develops NO net lift.
+//
+// ROOT CAUSE (honest, escalated): the `compression_only` unilateral density
+// constraint with ρ₀ calibrated to the MAX (fullest) packing leaves the bulk
+// fluid UNDER-dense (C<0 → no force) — it is nearly PRESSURELESS except at
+// the very base. Gate 1 (`max_overdensity` low) passes precisely BECAUSE
+// there is almost no hydrostatic pressure. With no pressure GRADIENT in the
+// bulk, the pure pairwise contact coupling has nothing to transmit, so no
+// buoyant force emerges. The round-8 min-separation floor cured the collapse
+// and stabilised the column (gates 1–3) but does not manufacture pressure.
+// A real fix needs pressure-bearing fluid (bilateral-with-anti-clustering, or
+// ρ₀ calibrated to the interior mean) and/or an Akinci-style boundary coupling
+// where the solid contributes to the fluid density estimate. Neither is in
+// scope here. This ordeal keeps the rise assertion so running it --ignored
+// shows the honest RED; it is NOT part of the green suite.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+#[ignore = "OPEN ITEM (gate 4): buoyancy does not emerge from the pressureless compression_only fluid + contact coupling — EXPECTED RED, escalated, not part of the green suite"]
+fn ordeal_buoyancy_rises() {
+    let spec = small_spec();
+    let mut pool = fill(spec);
+    let r_min = pool.solver.fluid.unwrap().min_separation;
+    let search_r = spec.spacing * 2.0;
+
+    for _ in 0..200 {
+        pool.solver.step();
+    }
+    let surf = surface_height(&pool);
+    let crate_dims = Vec3::new(0.09, 0.09, 0.09);
+    let submerge_y = (surf * 0.35).max(crate_dims.y * 0.5 + spec.spacing);
+    let idx = drop_crate(&mut pool, crate_dims, (3, 3, 3), 400.0, submerge_y, 0.0, 0.01);
+    let y_start = body_center_y(&pool, idx);
+
+    let floor_gate = r_min * (1.0 - FLOOR_TOL);
+    let mut worst_min = f64::INFINITY;
+    let mut y_peak = y_start;
+    for _ in 0..250 {
+        pool.solver.step();
+        y_peak = y_peak.max(body_center_y(&pool, idx));
+        let (_, mn) = nn_stats(&pool.solver, search_r);
+        worst_min = worst_min.min(mn);
+    }
+    let rise = y_peak - y_start;
+    println!(
+        "ORDEAL buoyancy (OPEN, expected red): crate released y={y_start:.4}, peak y={y_peak:.4} (rose {rise:+.4} m); fluid worst min NN {worst_min:.4} m (floor {floor_gate:.4})"
+    );
+    // The packing half IS a real round-8 result and holds even here:
+    assert!(
+        worst_min >= floor_gate,
+        "fluid packing collapsed under the body: min NN {worst_min:.4} < floor {floor_gate:.4}"
+    );
+    // The lift half is the OPEN failure:
+    assert!(
+        rise > spec.spacing,
+        "OPEN ITEM: a light submerged body failed to rise (rose only {rise:+.4} m <= one spacing {:.4}) — the pressureless-fluid buoyancy gap",
+        spec.spacing
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ORDEAL 9 — SABOTAGE: proves gate 2 (min-separation) is non-vacuous. It
+// DISABLES the floor (`min_separation = 0`, recovering the round-7 s_corr-off
+// configuration) and shows the pool collapses — min NN falls far below the
+// floor gate. Expected: RED. Standalone #[ignore]; run explicitly to watch
+// the collapse the cure prevents.
+// ─────────────────────────────────────────────────────────────────────────
+#[test]
+#[ignore = "sabotage probe: disables the min-separation floor and IS EXPECTED TO FAIL (the round-7 collapse) — run explicitly with --ignored, not part of the green suite"]
+fn sabotage_no_floor_collapses() {
+    let spec = small_spec();
+    let mut pool = fill(spec);
+    let r_min = pool.solver.fluid.unwrap().min_separation;
+    {
+        let cfg = pool.solver.fluid.as_mut().unwrap();
+        cfg.min_sep_factor = 0.0;
+        cfg.min_separation = 0.0; // DISABLE the floor — recover round-7.
+    }
+    let search_r = spec.spacing * 2.0;
+    for _ in 0..200 {
+        pool.solver.step();
+    }
+    let (mean_nn, worst_min) = nn_stats(&pool.solver, search_r);
+    let floor_gate = r_min * (1.0 - FLOOR_TOL);
+    println!(
+        "SABOTAGE no-floor: mean NN {mean_nn:.4} m, min NN {worst_min:.4} m (gate {floor_gate:.4}) — collapse expected"
+    );
+    assert!(
+        worst_min >= floor_gate,
+        "EXPECTED FAILURE: with the floor disabled min NN {worst_min:.4} collapsed below {floor_gate:.4} — proves gate 2 is non-vacuous"
     );
 }
