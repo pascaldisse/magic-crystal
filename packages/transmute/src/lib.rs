@@ -23,20 +23,17 @@ pub use mesh::{
     cylinder, subdivided_cube, uv_sphere, GaiaPrimitive, Mesh, Vertex, POSITION_OFFSET,
     VERTEX_STRIDE,
 };
-#[cfg(feature = "metis")]
-pub use partition::MetisPartitioner;
 pub use partition::{
-    default_partitioner, AdjacencyGraph, GreedyPartitioner, Partition, Partitioner,
+    default_partitioner, AdjacencyGraph, MetisPartitioner, Partition, PartitionEntropy,
 };
 pub use serialize::{
     deserialize, read_directory, read_header, read_page, read_root, serialize, Directory, Header,
     Page, PageRef, FORMAT_VERSION, HEADER_LEN, MAGIC,
 };
 
-/// Convenience: transmute with the default partitioner (METIS when compiled in).
+/// Convenience: transmute with the sole vendored-METIS partitioner.
 pub fn transmute_default(mesh: &Mesh, params: &TransmuteParams) -> Result<Dag, TransmuteError> {
-    let p = default_partitioner();
-    transmute(mesh, params, p.as_ref())
+    transmute(mesh, params, &default_partitioner())
 }
 
 #[cfg(test)]
@@ -85,7 +82,7 @@ mod tests {
             }
             .tessellate(),
         ] {
-            let dag = transmute(&mesh, &params, default_partitioner().as_ref()).unwrap();
+            let dag = transmute(&mesh, &params, &default_partitioner()).unwrap();
             assert!(
                 budgets_ok(&dag, &params.meshlet),
                 "a cluster exceeded vert/tri budgets"
@@ -136,20 +133,5 @@ mod tests {
             let m = p.tessellate();
             assert!(m.tri_count() > 0 && !m.vertices.is_empty());
         }
-    }
-
-    #[test]
-    fn greedy_fallback_also_transmutes() {
-        let mesh = uv_sphere(1.0, 96, 64);
-        let dag = transmute(
-            &mesh,
-            &TransmuteParams::default(),
-            &GreedyPartitioner::default(),
-        )
-        .unwrap();
-        assert!(dag.level_count() > 1);
-        assert_eq!(dag.leaf_tri_sum(), mesh.tri_count());
-        assert!(budgets_ok(&dag, &MeshletParams::default()));
-        assert_eq!(dag.partitioner, "greedy", "backend name must not lie");
     }
 }

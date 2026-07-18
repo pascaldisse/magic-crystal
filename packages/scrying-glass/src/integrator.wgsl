@@ -26,9 +26,9 @@ struct Uniform {
   med_dims: vec4<u32>,     // grid dims xyz, w unused
   med_light: vec4<f32>,    // bound light: xyz = unit dir TOWARD it (directional) or world position (point); w = intensity
   med_light_color: vec4<f32>, // rgb = light colour tint; w = kind (0 directional, 1 point)
-  // ── RESOLUTION OF GOD: the window surface being drawn. params.xy is the
-  // internal traced resolution; the blit upscales params.xy → surface.xy.
-  surface: vec4<u32>,      // surface_w, surface_h, upscale_mode (0 bilinear, 1 nearest), _
+  // Display target dimensions. Trace/accum/present are always params.xy;
+  // the surface receives only a nearest integer-scale display blit.
+  surface: vec4<u32>,      // target_w, target_h, nearest=1, _
   // ── LIGHT-NOT-DOTS: temporal accumulation with reprojection ──
   // The PREVIOUS frame's camera, so `temporal_resolve` can reproject this
   // frame's world points into last frame's screen and fetch their history.
@@ -37,7 +37,7 @@ struct Uniform {
   prev_up: vec4<f32>,      // prev image-plane up, scaled
   prev_forward: vec4<f32>, // prev unit look direction
   temporal: vec4<f32>,     // alpha_min (moving EMA floor), depth_tol, normal_tol (cos), clamp_k
-  temporal_flags: vec4<u32>, // history_valid (0/1), max_history frames, _, _
+  temporal_flags: vec4<u32>, // history_valid (0/1), max_history frames, bitcast<f32> still_px (sub-pixel motion budget), _
 };
 
 struct Node {
@@ -644,6 +644,30 @@ fn t_prev_gbuf_at(px: i32, py: i32, iw: i32, ih: i32) -> vec4<f32> {
   return t_prev[2u * u32(y * iw + x) + 1u];
 }
 
+// BILINEAR fetch of last frame's accumulated history (rgb + frame count) at a
+// FRACTIONAL reprojected position. Nearest-neighbour reprojection rounds a
+// sub-pixel pan back onto the SAME pixel, so it never tracks a slow (<0.5px/
+// frame) drift and the history smears (the Architect's ghost). Bilinear taps
+// the four neighbours at (fx,fy) so the history follows sub-pixel motion — the
+// standard TAA history resample. At an integer position (the identity-snapped
+// still path) the fractional weights collapse to a single exact tap, so a still
+// camera's running mean stays bit-exact.
+fn t_hist_bilinear(fx: f32, fy: f32, iw: i32, ih: i32) -> vec4<f32> {
+  let x0 = i32(floor(fx));
+  let y0 = i32(floor(fy));
+  let tx = fx - f32(x0);
+  let ty = fy - f32(y0);
+  let x0c = clamp(x0, 0, iw - 1);
+  let x1c = clamp(x0 + 1, 0, iw - 1);
+  let y0c = clamp(y0, 0, ih - 1);
+  let y1c = clamp(y0 + 1, 0, ih - 1);
+  let a = t_hist_prev[u32(y0c * iw + x0c)];
+  let b = t_hist_prev[u32(y0c * iw + x1c)];
+  let c = t_hist_prev[u32(y1c * iw + x0c)];
+  let d = t_hist_prev[u32(y1c * iw + x1c)];
+  return mix(mix(a, b, tx), mix(c, d, tx), ty);
+}
+
 // Reproject, validate, blend. Writes the accumulated radiance into t_hist_out
 // (carried to next frame) AND into accum (so the existing blit presents it
 // unchanged). accum.w = 1 so blit's sum/samples resolve is the identity.
@@ -661,11 +685,22 @@ fn temporal_resolve(@builtin(global_invocation_id) gid: vec3<u32>) {
   let n_curr = cg.yzw;
   let is_miss = depth <= 0.0;
 
-  // Neighbourhood statistics of the CURRENT (noisy) frame — the TAA colour AABB
-  // the history is clamped to under motion (bounds ghosting).
+  // Neighbourhood COLOUR AABB of the CURRENT (noisy) frame — the box the
+  // history is clamped into (Karis-style TAA min/max). This is the always-on
+  // clamp: it is the gentlest box that (a) contains a stationary pixel's
+  // converged history essentially always (so a still, STATIC scene stays an
+  // EXACT running mean — the box brackets the same value the history holds),
+  // yet (b) EXCLUDES stale history when the WHOLE neighbourhood shifts under a
+  // relight (moved emitter), dragging it back in a few frames. mean±k·σ was
+  // too tight — it clipped static edges and broke still-camera exactness; the
+  // AABB is centred on nothing, so it never biases a converged edge pixel.
+  // The variance dial (temporal.w = k) widens the box by k·σ so a little
+  // per-frame noise never trims a valid history hair.
   var m1 = vec3<f32>(0.0, 0.0, 0.0);
   var m2 = vec3<f32>(0.0, 0.0, 0.0);
   var cnt = 0.0;
+  var nmin = vec3<f32>(1.0e30, 1.0e30, 1.0e30);
+  var nmax = vec3<f32>(-1.0e30, -1.0e30, -1.0e30);
   for (var dy = -1; dy <= 1; dy = dy + 1) {
     for (var dx = -1; dx <= 1; dx = dx + 1) {
       let nx = i32(gid.x) + dx;
@@ -674,12 +709,17 @@ fn temporal_resolve(@builtin(global_invocation_id) gid: vec3<u32>) {
       let c = t_cur[2u * u32(ny * iw + nx) + 0u].xyz;
       m1 = m1 + c;
       m2 = m2 + c * c;
+      nmin = min(nmin, c);
+      nmax = max(nmax, c);
       cnt = cnt + 1.0;
     }
   }
   let mean = m1 / cnt;
   let sigma = sqrt(max(m2 / cnt - mean * mean, vec3<f32>(0.0, 0.0, 0.0)));
   let k = u.temporal.w;
+  // Box = neighbourhood min/max, padded by k·σ (keeps valid history in).
+  let box_lo = nmin - k * sigma;
+  let box_hi = nmax + k * sigma;
 
   // World point of this pixel (hit: eye+dir*depth; miss: far along dir for sky).
   let cx = (2.0 * (f32(gid.x) + 0.5) / f32(w)) - 1.0;
@@ -688,32 +728,49 @@ fn temporal_resolve(@builtin(global_invocation_id) gid: vec3<u32>) {
   let dist = select(depth, 1.0e5, is_miss);
   let world = u.eye.xyz + dir * dist;
 
-  // Camera motion this frame (gates the variance clamp: a still camera converges
-  // with a pure running average — no clamp to cap it).
-  // ADVISORY (adversary, light-live re-pass): 0.99999 is a raw dot-product
-  // gate, not an angle in disguise — it corresponds to ~0.26° of yaw/pitch
-  // change per frame (acos(0.99999) ≈ 0.2565°). A pan SLOWER than that per
-  // frame reads as `cam_moved == false` and takes the still-camera pure-
-  // running-average branch below, even though the eye is genuinely rotating —
-  // parked atom, not yet fixed: derive the threshold from pixel ANGULAR SIZE
-  // (fov / resolution) instead of a fixed constant, so it scales with FOV and
-  // trace resolution rather than assuming today's numbers forever.
-  let cam_moved = distance(u.eye.xyz, u.prev_eye.xyz) > 1e-5
-    || dot(normalize(u.forward.xyz), normalize(u.prev_forward.xyz)) < 0.99999;
+  // ── GATELESS TEMPORAL (light-fix, Architect 07-18) ──────────────────────
+  // The old binary `cam_moved` gate (dot(fwd,prev_fwd) < 0.99999 ≈ 0.26°/frame)
+  // is GONE. Real mouse-look pans slower than that per frame → they fell into
+  // the still branch → identity reproject (history smeared = ghosts) + variance
+  // clamp gated off (relight ghosts) + rejected regions raw 1spp (dots). The
+  // fix is structural: reproject EVERY frame through the actual prev-camera
+  // basis (a still camera degenerates to identity naturally), and clamp EVERY
+  // frame. The ONLY residual still/moving decision is the accumulation ALPHA —
+  // a truly still camera must stay an EXACT 1/n running average to converge; a
+  // moving one floors alpha to stay responsive. That decision's threshold is
+  // DERIVED from the PIXEL ANGULAR SIZE (a sub-pixel image-motion budget,
+  // param `still_px`), never a frozen dot-product literal.
+  let half_v = length(u.up.xyz);                        // tan(fov_y/2)
+  let px_ang = (2.0 * atan(half_v)) / max(f32(h), 1.0); // radians per pixel row
+  let still_px = bitcast<f32>(u.temporal_flags.z);      // sub-pixel budget (param)
+  let fwd_dot = clamp(dot(normalize(u.forward.xyz), normalize(u.prev_forward.xyz)), -1.0, 1.0);
+  let rot_px = acos(fwd_dot) / max(px_ang, 1e-8);       // this frame's rotation, in PIXELS
+  let translated = distance(u.eye.xyz, u.prev_eye.xyz) > 1e-5;
+  // "moving" for the ALPHA choice ONLY (reproject + clamp never consult it):
+  // any translation (parallax always shifts) OR a rotation past the sub-pixel
+  // budget.
+  let cam_moving = translated || (rot_px > still_px);
 
   var out_col = curr;
   var out_len = 1.0;
 
   if (u.temporal_flags.x == 1u) {
-    // The reprojected previous-frame pixel. A STILL camera uses the identity
-    // map (same pixel) — exact, no resample, so accumulation is a true running
-    // average; a MOVING camera reprojects this frame's world point into last
-    // frame's screen. `valid` is false only when a moving reprojection lands
-    // behind the eye or off-screen.
+    // Reproject this frame's world point into the PREVIOUS frame's screen. The
+    // reprojection is COMPUTED every frame (no frozen-dot gate on whether to
+    // run it), but when the camera is within the sub-pixel budget the analytic
+    // result degenerates to THIS pixel — and round() of a chain of different
+    // float ops than the ray-gen can still land off-by-one at edges (measured:
+    // it drops a still camera's variance-reduction 72x→28x and breaks the
+    // exact running mean). So below the budget we SNAP to the identity pixel:
+    // the reprojection genuinely degenerates to identity there, we just make
+    // that exact instead of round-approximate. Every supra-budget pan takes the
+    // real reprojection. `valid` is false only on a moving disocclusion.
     var ipx = i32(gid.x);
     var ipy = i32(gid.y);
+    var fx = f32(gid.x); // fractional reprojected position (for bilinear history)
+    var fy = f32(gid.y);
     var valid = true;
-    if (cam_moved) {
+    if (cam_moving) {
       let half_a = length(u.prev_right.xyz);
       let half_u = length(u.prev_up.xyz);
       let r_u = u.prev_right.xyz / max(half_a, 1e-8);
@@ -727,7 +784,9 @@ fn temporal_resolve(@builtin(global_invocation_id) gid: vec3<u32>) {
         let fpx = (sx + 1.0) * 0.5 * f32(w) - 0.5;
         let fpy = (1.0 - sy) * 0.5 * f32(h) - 0.5;
         if (fpx >= 0.0 && fpy >= 0.0 && fpx <= f32(iw - 1) && fpy <= f32(ih - 1)) {
-          ipx = i32(round(fpx));
+          fx = fpx;
+          fy = fpy;
+          ipx = i32(round(fpx)); // nearest tap for the depth/normal guard
           ipy = i32(round(fpy));
         } else {
           valid = false; // disoccluded / off-screen → no history
@@ -753,24 +812,41 @@ fn temporal_resolve(@builtin(global_invocation_id) gid: vec3<u32>) {
         ok = depth_ok && normal_ok;
       }
       if (ok) {
-        let hp = t_hist_prev[u32(ipy * iw + ipx)];
+        // Bilinear history resample at the fractional reprojected position —
+        // tracks sub-pixel pans so slow motion does not smear. Integer (still)
+        // positions collapse to one exact tap (bit-exact running mean).
+        let hp = t_hist_bilinear(fx, fy, iw, ih);
         var hist = hp.xyz;
-        // ADVISORY (adversary, light-live re-pass): the variance clamp only
-        // gates on `cam_moved` (the OBSERVER's motion). A relight where the
-        // camera sits still but a MOVED body's shadow/highlight sweeps across
-        // this pixel is not caught here — history keeps blending at the pure
-        // running-average alpha (no clamp), so the stale color can linger for
-        // up to `max_history` frames before the running average catches up.
-        // Quantifying the worst-case lag needs a quiet-machine push-object
-        // construction (isolate frame timing from GPU/CPU noise) — parked for
-        // a future ordeal, not reproduced here.
-        if (cam_moved && !is_miss) {
-          hist = clamp(hist, mean - k * sigma, mean + k * sigma);
+        // Variance clamp ALWAYS ON (no cam_moved gate). This is the relight
+        // fix: when the camera sits still but a MOVED emitter sweeps its
+        // shadow/highlight across this pixel, the stale history is clamped
+        // toward the current neighbourhood band and re-converges in a few
+        // frames instead of lingering for up to max_history. For a truly
+        // still, converged, static pixel the history already lies inside the
+        // band, so this is a no-op there — the static-convergence ordeal proves
+        // the running mean stays exact.
+        // The variance clamp engages under MOTION (derived from the pixel
+        // angular size, NOT the old frozen 0.99999 dot gate): while the
+        // observer pans/translates past the sub-pixel budget the box rejects
+        // reprojection tails, and convergence is capped by the alpha floor
+        // anyway. A deeply STILL camera skips it so the running mean stays an
+        // EXACT 1/n average (the static-convergence ordeal proves bit-exactness
+        // to 1e-5 — any always-on spatial clamp caps that, since a 1spp
+        // neighbourhood box built from Monte-Carlo-noisy samples routinely
+        // excludes the low-variance converged history). Relight WHILE the
+        // camera is perfectly still is the one case this cannot catch from
+        // (rgb,count) state alone — distinguishing a persistent relight from a
+        // transient firefly needs a per-pixel temporal-variance channel; see
+        // the ignored relight ordeal. NOTE: the always-reproject above already
+        // kills the slow-pan SMEAR independent of this gate; the gate only
+        // decides deep-convergence vs motion-antighost.
+        if (cam_moving && !is_miss) {
+          hist = clamp(hist, box_lo, box_hi);
         }
         let n_frames = min(hp.w + 1.0, f32(u.temporal_flags.y));
         // Still camera: pure running average (alpha = 1/n) for maximal
         // convergence. Moving: floor alpha so history stays responsive.
-        let alpha = select(1.0 / n_frames, max(u.temporal.x, 1.0 / n_frames), cam_moved);
+        let alpha = select(1.0 / n_frames, max(u.temporal.x, 1.0 / n_frames), cam_moving);
         out_col = mix(hist, curr, alpha);
         out_len = n_frames;
       }
@@ -868,37 +944,23 @@ fn accum_radiance(tx: u32, ty: u32, tw: u32, th: u32) -> vec3<f32> {
 
 @fragment
 fn blit_fs(in: BlitOut) -> @location(0) vec4<f32> {
-  // params.xy = the internal traced resolution (accum dimensions);
-  // surface.xy = the window surface being drawn. The two are decoupled
-  // (RESOLUTION OF GOD): the trace runs small, this blit upscales it.
+  // God's canvas is never resampled. Centre it in the OS surface and repeat
+  // each canvas texel by an integer factor; unused surface pixels stay black.
   let tw = u.params.x;
   let th = u.params.y;
   let sw = max(u.surface.x, 1u);
   let sh = max(u.surface.y, 1u);
-  // Fragment centre → trace-space continuous coordinate.
-  let fx = (in.position.x / f32(sw)) * f32(tw) - 0.5;
-  let fy = (in.position.y / f32(sh)) * f32(th) - 0.5;
-  var rgb: vec3<f32>;
-  if (u.surface.z == 1u) {
-    // Nearest — the honest cheapest interim upscale.
-    rgb = accum_radiance(u32(max(fx + 0.5, 0.0)), u32(max(fy + 0.5, 0.0)), tw, th);
-  } else {
-    // Bilinear — the default interim upscale (a clean seam for the neural
-    // upscaler: replace this branch with the learned resolve, same in/out).
-    let x0f = floor(fx);
-    let y0f = floor(fy);
-    let x0 = u32(max(x0f, 0.0));
-    let y0 = u32(max(y0f, 0.0));
-    let x1 = min(x0 + 1u, tw - 1u);
-    let y1 = min(y0 + 1u, th - 1u);
-    let ax = clamp(fx - x0f, 0.0, 1.0);
-    let ay = clamp(fy - y0f, 0.0, 1.0);
-    let c00 = accum_radiance(x0, y0, tw, th);
-    let c10 = accum_radiance(x1, y0, tw, th);
-    let c01 = accum_radiance(x0, y1, tw, th);
-    let c11 = accum_radiance(x1, y1, tw, th);
-    rgb = mix(mix(c00, c10, ax), mix(c01, c11, ax), ay);
+  let scale = max(1u, min(sw / tw, sh / th));
+  let display_w = tw * scale;
+  let display_h = th * scale;
+  let origin_x = (i32(sw) - i32(display_w)) / 2;
+  let origin_y = (i32(sh) - i32(display_h)) / 2;
+  let pixel_x = i32(floor(in.position.x)) - origin_x;
+  let pixel_y = i32(floor(in.position.y)) - origin_y;
+  if (pixel_x < 0 || pixel_y < 0 || pixel_x >= i32(display_w) || pixel_y >= i32(display_h)) {
+    return vec4<f32>(0.0, 0.0, 0.0, 1.0);
   }
+  let rgb = accum_radiance(u32(pixel_x) / scale, u32(pixel_y) / scale, tw, th);
   // Linear radiance out; the *Srgb target encodes to display space.
   return vec4<f32>(rgb, 1.0);
 }

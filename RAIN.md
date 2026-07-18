@@ -92,7 +92,11 @@ agent-facing sense.
 - Pixel keyframe organ stays for look/material verification only (≤1Hz).
 
 ## Architecture (native)
-- rain-sense package: ECS queries + solver contact taps + vis-buffer taps
+- rain-sense package: ECS queries + solver contact taps + G-buffer/traced-
+  feature taps [DATED-LINEAGE 07-18, spec-concordance item 18: "vis-buffer"
+  named a raster visibility buffer, struck by RENDER.md §1's two-act law —
+  the tap point is the geometry/radiance features Act 1 emits as ray
+  byproducts]
   → PULL-shaped senses (look()/proprio() on demand) + conviction EVENTS on
   flag change; noise-floor diffing kept for the debug --watch mode only.
 - Endpoints: /sense/fov /sense/proprio /sense/convictions (+ --watch

@@ -31,7 +31,7 @@ book BEFORE it exists. The book grows; it never abdicates.
 |---|---|---|
 | render-window | **the Scrying Glass** (`packages/scrying-glass`) | the window; GET /screenshot → **GET /scry**; a screenshot = a scrying |
 | sense (RN1) | **the Oracle** (`packages/oracle`) | pull-only by nature — oracles speak ONLY when consulted; look() = **gaze**, captions = **omens**, glance grid = **the augury**, proprio = **the body's knowing** |
-| cluster-bake | **Transmutation** (`packages/transmute`) | coarse↔fine matter; the DAG = **the Great Chain**, meshlets = **shards**, offline pass = **the transmutation** (the b-word was already forbidden) |
+| cluster-bake | **Transmutation** (`packages/transmute`) | coarse↔fine matter; the DAG = **the Great Chain**, meshlets = **shards** [DATED-LINEAGE 07-18, spec-concordance item 18: "meshlets"/cluster-bake names a raster-cluster mechanism struck by the two-act law, RENDER.md §1 — read "shards" as ray-native BVH page units], offline pass = **the transmutation** (the b-word was already forbidden) |
 | lighting (path tracer) | **THE PLEROMA** (`packages/pleroma`) | the one light; the fullness from which every frame emanates — rays = light behaving as light |
 | solver (physics) | **the Elements** (`packages/elements`) | one solver for all matter; constraints = **bindings** |
 | volumetrics | **the Aether** | participating media: clouds, steam, beam, breath |
@@ -265,7 +265,7 @@ Nothing here is skin. Every row is a mechanic or it doesn't enter.
 | Sidia | the chaos flame: the generative spirits — AI creation daemons that make gods from toys |
 | Gaia (extended by the Architect, 07-18) | THE WORLD SYSTEM — one system for world: the living state at runtime AND the making of it. Her germ = the SEED (packages/seed), the ONE procedural substrate: hash → fields (noise) → scatter (placement) → terrain (ground); no rand crate exists in the tree — every value = hash(seed, coords) (entropy law), zero-loading. Generated content enters the world through the SAME door as hand-placed: a sigil on a scene entity naming seed+tile coords, never stored geometry (VII-0b NO-STORAGE ordeal guards it); one schema, one struct, read by renderer AND oracle. Textures when they come = fields of the same Seed — no second substrate, ever. Open migration: Naruko still stands on an authored plate, not Seed ground (VII-3 pending) |
 | the Darkness | darkness as PRESENCE: in the one-light law there is no fake ambient — unlit is truly unlit, and the unlit is where the world listens. Light attends; it does not fight |
-| the Pleroma (whole, sealed by the Architect 07-18) | THE RENDERING ENGINE — one system, one name: the ray tracing engine AND the one net ARE the Pleroma, its two acts (rays = the truth, the net = the image), never two named things. It holds all light and decides what reaches the eye; every frame is an emanation. No inner names, no sub-systems, no second way |
+| the Pleroma (whole, sealed by the Architect 07-18) | THE RENDERING ENGINE — one system, one name: world truth enters Pleroma; Pleroma renders the final image or nothing. Inside Pleroma: sampling and judgment; rays are evidence, never a picture. It holds all light and decides what reaches the eye; every frame is an emanation. No inner names, no sub-systems, no second way |
 | the Kenoma | true darkness — unlit is genuinely unlit, the deficiency |
 | the AETHER (ruled by the Architect, 07-18) | THE INPUT TO THE PLEROMA — the world projected into renderable truth: geometry/clusters, materials, light sources, physics state as Ananke left it this tick, volumetric density fields (the packages/aether media crate = one province of it: steam/clouds/fire as true volumes, Beer-Lambert + Henyey-Greenstein, hash-noise only), plus the sparse traced evidence + history. ANANKE WRITES THE AETHER, PLEROMA READS IT and emanates the frame. Neo's sight (rain / Matrix vision) = reading the Aether RAW, unconverted — the debugger and the renderer are two readers of the same page. The luminiferous medium made real: what the world IS to the eye, before the eye has seen it |
 | the sparks (nitzotzot) | emissive surfaces — light trapped in matter |
@@ -299,3 +299,31 @@ Nothing here is skin. Every row is a mechanic or it doesn't enter.
 | der NEKROMANT (sealed 07-18) | post-mortem debugging: divination from the dead, literally — the crash dump is a corpse; raise it (repro), question it (stack trace, snapshot JSON), force the confession of what killed it |
 | NEO (sealed by the Architect, 07-18) | THE DEBUGGER — der, der die Wahrheit sieht: look at the running world and see the code-rain beneath the rendered skin (the Concordance already held his door: USC data-vision = "Matrix sight, rain"). One office, three sights: the waking world (Kashf — VisionFlow live state, values pulsing through node veins) · the sleeping world (der Traumdeuter — breakpoint castle) · the dead world (der Nekromant — dump interrogation). Supersedes all earlier debugger-name candidates. THE SPOON LAW: seeing precedes bending — das Blutbändigen is licensed only through Neo's sight; you may only alter what you have seen truly (there is no spoon) |
 | das BLUTBÄNDIGEN (named by the Architect, 07-18) | live code/data alteration of the RUNNING program — the forbidden art: bending the water inside a living body. Forbidden because it passes the gatekeeper (no compile gate blesses a bend, no Jagd rides first). Its laws: FULL-MOON RULE — every bend is validated by the Zauberpolizei before touching living tissue (invalid → rejected, the heart never stops); the TRAUMDEUTER GOES FIRST — snapshot before every bend, every deformation undoable. Safe forms already alive: world-engine live ops, material/scene ops, reset-as-Urknall; VisionFlow will bend natively (code IS data there); the native runtime's bending = hot-reload of scene/shaders while the window breathes |
+
+
+## MONAD — THE GOD-INTERFACE (sealed 07-18, Architect's naming + design)
+MONAD = the gamemaster superagent, crown of THE ONE MIND: the thing the
+player SPEAKS TO, and the authority over every mind (NPCs), every system
+(events, interactions, weather, quests, spawns). Basically god — his words.
+Lineage: the TTRPG gamemaster AI (~/projects/ttrpg) = the existing
+implementation studied first. Cosmological rhyme is exact and intended to
+stand: the Monad is the One from which the PLEROMA emanates — the player
+addresses the source; the source pours out the fullness. Architecture law:
+Monad rules through the SAME doors as every mind (senses in, ops out) —
+one system, no privileged backchannel; its privilege is AUTHORITY, not
+machinery. Beneath it: individual minds; beneath them: bodies; all one
+MIND system (docs/proposals/MIND.md packet, pending the Architect's
+ruling on the full design).
+OFFLINE AMENDMENT (07-18 16:05, his word): the engine runs fully offline;
+LLM NEVER required. Monad's judgment = systemic direction + the ONE MIND's
+nets, not a language model. TTRPG DM = inspiration; only its structural
+laws transfer (op-door authority · engine-rolled dice · stage-before-
+narrate · rules-as-data). Language = optional voice organ, local, riding
+the same doors, required by nothing. Amendment 16:07: a very small
+LOCAL LM may serve as that voice — offline, async, 60fps-inviolate,
+ANE-homed [source: NEURAL.md §Silicon race verdicts], never required.
+PACKAGE AMENDMENT (16:10; corrected 16:13, his word): everything is
+modular — renderer, physics, AI, all of it replaceable. THE CRYSTAL = the
+very minimum core: world state · ops door · entropy/journal replay · the
+door system · MONAD. The god is constitutional; every other organ —
+including Pleroma and Ananke themselves — is a package in its socket.

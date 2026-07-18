@@ -54,9 +54,11 @@ fn load_committed_weights() -> Mlp {
 /// device. Every stage is current-frame-only and deterministic (the trace with
 /// a fixed seed, the two nets proven bit-identical in (a) and viii2 (a)), so the
 /// composed path must be byte-identical frame for frame. This is PROVE (b) of
-/// THE ONE RENDER PATH — the exact `trace → denoise → upscale → present`
-/// sequence a `GAIA_NATIVE_UPSCALE=neural` frame runs, minus the 1:1 present
-/// blit (a straight copy, no arithmetic).
+/// the TEACHER/BENCHMARK SURFACE (ITEM 16, de-chartered — was "THE ONE RENDER
+/// PATH") — the exact `trace → denoise → upscale → present` sequence the
+/// explicit `GET /scry?lab=teacher-benchmark` lab surface runs (never a
+/// live-path default), minus the 1:1 present blit (a straight copy,
+/// no arithmetic).
 #[test]
 fn g_full_neural_path_is_deterministic_end_to_end() {
     let Some((device, queue)) = headless_device() else {

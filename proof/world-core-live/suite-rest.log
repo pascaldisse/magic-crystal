@@ -1,0 +1,211 @@
+   Compiling scrying-glass v0.1.0 (/Users/pascaldisse/projects/magic-crystal-worldcore/packages/scrying-glass)
+   Compiling oracle v0.1.0 (/Users/pascaldisse/projects/magic-crystal-worldcore/packages/oracle)
+   Compiling char-editor v0.1.0 (/Users/pascaldisse/projects/magic-crystal-worldcore/packages/char-editor)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.94s
+     Running unittests src/lib.rs (target/debug/deps/aether-6cc4c7f0edc23b66)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ordeals.rs (target/debug/deps/ordeals-bcbb8448d943b1cf)
+
+running 5 tests
+test ordeal_1_analytic_slab ... ok
+test ordeal_4_determinism ... ok
+test ordeal_5_grid_vs_analytic ... ok
+test ordeal_2_hg_phase_normalized ... ok
+test ordeal_3_energy_budget ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running unittests src/lib.rs (target/debug/deps/char_editor-5dc597fbd223c247)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ordeals.rs (target/debug/deps/ordeals-68675895cfe52d30)
+
+running 5 tests
+test out_of_range_params_clamp_and_surface_never_panic ... ok
+test parity_nari_byte_identical ... ok
+test parity_pink_cat_byte_identical ... ok
+test determinism_byte_identical ... ok
+test watertight_across_sampled_params ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.38s
+
+     Running unittests src/lib.rs (target/debug/deps/crystal-e82dd0a2536f105f)
+
+running 10 tests
+test protocol::tests::parses_the_external_hub_world_when_available ... ok
+test prefab::tests::prefab_name_reads_string_or_link ... ok
+test package_tests::package_registers_versioned_manifest ... ok
+test prefab::tests::objects_merge_recursively_arrays_replace ... ok
+test prefab::tests::diff_keeps_overridden_and_novel_components ... ok
+test prefab::tests::expand_then_diff_is_identity_on_deltas ... ok
+test protocol::tests::preserves_unknown_ops_and_messages ... ok
+test protocol::tests::typed_boomtown_components_and_model_parts_deserialize ... ok
+test protocol::tests::parses_and_roundtrips_the_committed_fixture_world ... ok
+test protocol::tests::parses_boomtown_world_when_available ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.79s
+
+     Running tests/ecs.rs (target/debug/deps/ecs-faa99e814a10566c)
+
+running 4 tests
+test fixed_group_accumulator_clamps_and_preserves_fraction ... ok
+test command_buffer_replays_in_record_order_at_explicit_boundary ... ok
+test dynamic_component_soa_roundtrip_query_and_gaia_map ... ok
+test dotscity_compiled_order_conforms_to_reference_snapshot ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/world_loading.rs (target/debug/deps/world_loading-513b743a55fbe64c)
+
+running 3 tests
+test world_json_composes_two_scenes_into_one_ecs ... ok
+test prefab_instance_deep_merges_under_its_deltas ... ok
+test naruko_blank_page_parses_and_populates_expected_entities ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/fracture-ebe6c5c61604a97e)
+
+running 3 tests
+test tests::fragments_split_the_chain_in_two ... ok
+test tests::fragment_dag_round_trips_transmute ... ok
+test tests::ordeal_fragment_chains_byte_deterministic ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/homunculus-42c9bcf1dcd4e7e3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ordeals.rs (target/debug/deps/ordeals-d6087ebc0b693e58)
+
+running 8 tests
+test ordeal_generator_counts_and_lengths ... ok
+test ordeal_defaults_preserve_v0 ... ok
+test ordeal_bind_pose_roundtrip ... ok
+test ordeal_socket_bind_derivation ... ok
+test ordeal_socket_follows_elbow ... ok
+test ordeal_socket_determinism ... ok
+test ordeal_morphology_continuity ... ok
+test ordeal_weights_normalized ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/jormungandr-3bc25a797f7b6d73)
+
+running 1 test
+test tests::aabb_distance_zero_inside_and_grows_outside ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ordeals.rs (target/debug/deps/ordeals-245b2cb4f19115c2)
+
+running 5 tests
+test ordeal_missing_artifact_is_typed_error ... ok
+test ordeal_torn_page_is_typed_error_no_panic ... ok
+test ordeal_unknown_page_is_typed_error ... ok
+test ordeal_eviction_order_honors_distance ... ok
+test ordeals_flight ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.81s
+
+     Running unittests src/lib.rs (target/debug/deps/kami-5bae62a955038af4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/cat.rs (target/debug/deps/cat-ec44cdad324037e9)
+
+running 3 tests
+test cat_walk_is_bounded_and_returns_home ... ok
+test cat_loop_visits_sit_then_flick_then_walk ... ok
+test cat_drive_stream_is_byte_identical ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ordeals.rs (target/debug/deps/ordeals-600c7b2f40a6cb51)
+
+running 13 tests
+test ordeal_flicker_formula_parity ... ok
+test ordeal_orbit_formula_parity ... ok
+test ordeal_bob_formula_parity ... ok
+test ordeal_path_formula_parity ... ok
+test ordeal_pulse_formula_parity ... ok
+test ordeal_spin_formula_parity ... ok
+test ordeal_emissive_is_always_a_color_string ... ok
+test ordeal_look_at_yaw_error_goes_to_zero ... ok
+test ordeal_patrol_visits_every_waypoint_and_loop_closes ... ok
+test ordeal_follow_converges_without_overshoot ... ok
+test ordeal_wander_stays_in_bounds_10k_ticks ... ok
+test ordeal_decorative_determinism_byte_identical ... ok
+test ordeal_determinism_byte_identical_over_1000_ticks ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running unittests src/lib.rs (target/debug/deps/oracle-e14137683c08a65c)
+
+running 27 tests
+test tests::boomtown_loads_once_and_gazes_stay_cheap ... ok
+test model::aabb_tests::tube_default_radius_is_three_not_half ... ok
+test model::aabb_tests::cylinder_honors_radius_top_and_bottom ... ok
+test model::aabb_tests::rotation_rotates_the_world_aabb ... ok
+test model::aabb_tests::direct_mesh_is_one_implicit_part ... ok
+test model::aabb_tests::tube_short_radii_clamp_last_not_point_five ... ok
+test model::aabb_tests::tube_absent_path_defaults_to_reference_segment ... ok
+test model::aabb_tests::tube_bounds_cover_spline_sag_beyond_control_points ... ok
+test model::aabb_tests::visible_false_part_is_excluded ... ok
+test tests::from_core_live_path_constructs_a_world ... ok
+test tests::loads_naruko_scene_into_ecs ... ok
+test tests::invalid_params_are_typed_errors ... ok
+test tests::default_naruko_excludes_ground_from_captions ... ok
+test tests::invalid_tie_eps_is_a_typed_error ... ok
+test tests::live_ecs_mutation_is_reflected_on_next_gaze ... ok
+test tests::lazy_layers_are_proven_by_the_op_counter ... ok
+test tests::lighthouse_cells_and_depth_are_geometry_truth_at_grid_32 ... ok
+test tests::horizon_row_tracks_pitch ... ok
+test tests::proprio_reports_pose_and_components ... ok
+test tests::look_is_pure_geometry_and_directional ... ok
+test tests::oversized_grid_is_a_typed_error_not_oom ... ok
+test tests::spawn_pose_faces_the_lighthouse ... ok
+test tests::yaw_west_rejects_the_lighthouse_entirely ... ok
+test tests::serialized_channels_are_honest_no_null_no_unrequested_keys ... ok
+test tests::deeper_grid_levels_are_just_a_param ... ok
+test tests::stamped_cells_are_all_true_ray_hits_no_fabricated_depth ... ok
+test tests::byte_budget_is_enforced_before_allocation ... ok
+
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.19s
+
+     Running unittests src/bin/oracle_cli.rs (target/debug/deps/oracle_cli-5d7a2b77adb19d86)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/canon.rs (target/debug/deps/canon-9c48f90903f6c086)
+
+running 8 tests
+test canon_terrain_patch_bounds_and_range_are_derived ... ok
+test canon_depth_band_column_16_is_front_face_path_length ... ok
+test canon_tower_cells_and_depth_band_at_grid_32 ... ok
+test canon_default_glance_frustum_set_is_the_ten_meshed_vessels ... ok
+test canon_moved_eye_pier_glance ... ok
+test canon_tower_owns_no_grid8_cell ... ok
+test canon_glance_serialization_is_deterministic ... ok
+test canon_nearest_ordering_and_ranges_are_derived ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.94s
+
+     Running tests/rest_pose_canon.rs (target/debug/deps/rest_pose_canon-374df831231e01ab)
+
+running 2 tests
+test senses_read_solver_rested_pose ... ok

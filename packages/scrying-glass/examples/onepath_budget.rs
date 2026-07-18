@@ -1,4 +1,4 @@
-//! THE ONE RENDER PATH — production-resolution budget measurement. Times the
+//! TEACHER/BENCHMARK SURFACE (ITEM 16, de-chartered — was "THE ONE RENDER PATH") — production-resolution budget measurement. Times the
 //! two neural compute passes of the chartered path at the REAL production
 //! resolutions (trace/denoise 640×480 low → upscale ×UPSCALE_SCALE to the
 //! surface) via GPU timestamp queries on THIS host's adapter, and prints an
