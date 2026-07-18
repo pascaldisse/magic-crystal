@@ -554,3 +554,37 @@ workspace suite run per-package under the build token (17 crates):
 Restart of the live window (:8430) is the Architect's own act — he
 restarts it after this lands, not the merge-conductor.
 Pushed origin main 78df1de..35dc59a.
+
+## 07-18 EVE — COMPACTION HANDOFF (nyari, ~14:35, read-first anchor)
+Main @ 67a2f9a (day: 6cf5c2b→67a2f9a, suite 412/0, zero red). Landed: THE
+PUSH (playground) · own-eye cull · BLOODBEND B0 (live scene/WGSL bend,
+TOCTOU dead-by-construction) · worker-window (never-key workers) · LIGHT
+merged (temporal, default ON) · pantheon sealed (GRIMOIRE: Ananke · Wilde
+Jagd · Zauberpolizei · NEO · Blutbändigen · Gaia/Seed · Aether=input-to-
+Pleroma · Pleroma WHOLE, no inner names) · TWO-ACT LAW + upscaling banned
+(NEURAL.md) · SWARM COMPUTE LAW (c989f06: brains parallel, ONE build token
+-j2 nice19, GPU=his while present).
+SILICON RACE (NEURAL.md ledger): WGSL door SHUT (280ms native) · ANE
+REFUSED (planner-attested) · METAL TENSOR OPEN: 4.47ms native @94% roofline
+(r-direct @ eed0bdc) → 60fps arithmetic: rays 7.6 + net 4.5 + glue ≈ 13ms.
+Remaining: gather/demod measure · buffer pooling (wall 23ms until) ·
+MPSGraph↔wgpu interop lane · reload_shader↔temporal-pipeline gap.
+⚠ IN FLIGHT: LIGHT-FIX (ghoul-opus-mrqgkqd5zdlmnj, branch light-fix off
+67a2f9a, worktree ../magic-crystal-light): Architect PLAYED → slow-pan
+GHOSTS+DOTS (cam_moved gate 0.26°/frame > real mouse) → gateless fix:
+always-reproject, always-clamp, derived thresholds, ordeals h/i/j
+(slow-pan · micro-jitter · relight). Gate on return: monad verdict →
+adversary → merge → restart his window (his go). FALLBACK RULING (his Q
+14:26): dots = one integrator's young samples, NOT a second path; the
+binary GATE was the fallback-shaped sin (hence this fix); TEMPORAL=false
+switch = his own pre-cutover amendment, dies at his played word.
+HIS WINDOW: pid 57776 :8430 (light+bend build). F=push · toys z32-35 ·
+scene-file edits bend live (B0).
+QUEUE (his word / away-hours): light-fix pipeline · interop lane · vflow
+trio consolidation (1c66cd9/2a884bd/2976bc6) → VISIONFLOW.md packet ·
+fluid pressure-mirrored-boundary ruling · B0 deferred live checks · NRC
+hash-grid · VII-3 planet. RITES HIS: walk · chrome sphere · VI break word
+(hymn owed). Lessons: duplicate-dispatch (ghoul-routing.md) · machine
+facts verified against machine (Tahoe was installed for months) · play it
+with REAL hands before claiming (slow-pan). Host = M1 PRO 16GB, Tahoe
+26.5.1, Metal 4 available.
