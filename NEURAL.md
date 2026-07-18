@@ -104,3 +104,14 @@ r-direct @ f403c65 unmerged): net BEATS chain on ALL held-out poses + scene
 edit at equal 1spp budget (RMSE .0389/.0405/.0372 vs chain .0481/.0540/.0545)
 @ 1.23x MAC; 18k params (fits on-chip). 60fps UNVERIFIED: CPU-ref only;
 fp16/fused GPU kernel = next atom.
+
+## Silicon race verdicts (07-18, Architect's full-speed order; host = M1 Pro)
+- WGSL per-thread MLP: DOOR SHUT at native (280-300ms; even 2x32 net 32.5ms).
+- ANE/CoreML: NO — refuses the net >16k px; never faster than CPU where it
+  runs; native falls to GPU-GEMM ~27.5ms. Does NOT free the GPU. (ane-race)
+- METAL TENSOR (MPSGraph GEMM): DOOR REOPENS — 4.47ms f32 @ native 960x640,
+  ~94% roofline, parity 1.6e-7; 63x over WGSL. 60fps arithmetic: rays 7.6ms
+  + net 4.47ms + elementwise ≈ ~13ms < 16.67. Remaining: gather/demod
+  measure · buffer pooling (157MB intermediates; wall 23ms until pooled) ·
+  wgpu↔MPSGraph interop lane · reload_shader↔temporal-pipeline gap.
+  (r-direct @ eed0bdc, docs/perf/2026-07-18-rdirect-metal-tensor-spike.md)
