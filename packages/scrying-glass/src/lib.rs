@@ -11,6 +11,7 @@ pub mod input;
 pub mod integrator;
 pub mod physics;
 pub mod rdirect;
+pub mod rdirect_gpu;
 pub mod player;
 pub mod presence;
 pub mod retina;
