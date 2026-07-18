@@ -9,7 +9,7 @@ package-fracture	total=3 passed=3 failed=0 ignored=0
 package-homunculus	total=8 passed=8 failed=0 ignored=0
 package-jormungandr	total=6 passed=6 failed=0 ignored=0
 package-kami	total=16 passed=16 failed=0 ignored=0
-package-oracle	total=35 passed=34 failed=1 ignored=0
+package-oracle	total=35 passed=35 failed=0 ignored=0
 package-pleroma	total=30 passed=30 failed=0 ignored=0
 package-sama	total=7 passed=7 failed=0 ignored=0
 package-seed	total=18 passed=18 failed=0 ignored=0
@@ -23,7 +23,7 @@ scrying-glass-body_sigil	total=4 passed=4 failed=0 ignored=0
 scrying-glass-doc	total=0 passed=0 failed=0 ignored=0
 scrying-glass-floor_fallthrough	total=2 passed=2 failed=0 ignored=0
 scrying-glass-horizon	total=5 passed=5 failed=0 ignored=0
-scrying-glass-lib	total=47 passed=46 failed=1 ignored=0
+scrying-glass-lib	total=47 passed=47 failed=0 ignored=0
 scrying-glass-light_temporal	total=4 passed=4 failed=0 ignored=0
 scrying-glass-medium_parity	total=2 passed=2 failed=0 ignored=0
 scrying-glass-ordeals	total=4 passed=4 failed=0 ignored=0

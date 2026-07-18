@@ -2779,13 +2779,19 @@ mod tests {
     /// panel carry NO behavior/body ⇒ they stay STATIC). PLAYGROUND adds nine
     /// more `body` vessels the Architect can push — the 5-crate stack, the
     /// bonded break crate, and the 3-crate pyramid — all dynamic (13 + 9 = 22).
+    /// PLAY's `bldg_tower` has a `body`, adding one; `bldg_basin` has mesh-only
+    /// fluid-container geometry, so it remains static. Hand-derived dynamic
+    /// carriers: 9 behavior meshes (beacon, ring_a/b/c, lantern, kami_orb,
+    /// show_light_a/b/c) + 13 old physical bodies (crate, stack_crate_0/1/2,
+    /// playground_stack_0..4, playground_break_crate, playground_pyramid_0..2)
+    /// + bldg_tower = 23. (`naruko_cat` is already one of the behavior carriers.)
     #[test]
     fn dynamic_split_leaf_parity_holds() {
         let scene = naruko_scene();
         assert_eq!(
             scene.dynamics.entities().len(),
-            22,
-            "the realm breath: lantern + beacon + ring_a/b/c + kami orb + show_light_a/b/c (behaviors) + crate + stack_crate_0/1/2 + playground stack(5)/bonded/pyramid(3) (bodies) are dynamic"
+            23,
+            "hand-derived: 9 behavior meshes + 13 old physical bodies + bldg_tower body; bldg_basin is static mesh-only"
         );
 
         // STATIC BVH triangles (built once) and the DYNAMIC partition triangles.

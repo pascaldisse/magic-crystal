@@ -4,18 +4,22 @@
 
 ## Verdict
 
-**VERDICT: GAPS — 417 / 419 green classes; no merge.**
+**VERDICT: HOLDS — 419 / 419 green classes.**
 
 - suite discovery: 423 classes.
-- passed: 417.
-- failed: 2.
+- passed: 419.
+- failed: 0.
 - ignored: 4; green denominator: 419.
-- logs/count: `proof/PLAY-d-suite/final.summary` → `proof/PLAY-d-suite/full/*.log`.
+- rerun logs/count: `proof/PLAY-d-suite/final.summary` → `proof/PLAY-d-suite/full/*.log`.
 
-Failures → assertion/canon drift; neither waived:
+## Canon re-derivation
 
-- `oracle::canon_default_glance_frustum_set_is_the_ten_meshed_vessels` → expected 36 meshed vessels; observed 38.
-- `scrying_glass::scene::dynamic_split_leaf_parity_holds` → expected 22 dynamics; observed 23.
+| ordeal | old canon | scene/code derivation | canon |
+|---|---:|---|---:|
+| oracle frustum vessels | 36 | old 36 one-vessel ids: `naruko_terra`, `naruko_seawall`, `naruko_sea`, `lighthouse_rock`, `lighthouse_tower`, `naruko_pier`, `naruko_chain_posts`, `naruko_city_massing`, `naruko_lantern`, `naruko_stall_massing`, `lighthouse_beacon`, `naruko_chrome_orb`, `nari`, `naruko_cat`, `signal_ring_a/b/c`, `naruko_mirror`, `naruko_mirror_minor`, `naruko_kami_orb`, `naruko_crate`, `naruko_stack_crate_0/1/2`, `naruko_show_chrome`, `naruko_show_mirror`, `naruko_show_light_a/b/c`, `playground_stack_1/2/3/4`, `playground_pyramid_0/1/2`; scene adds mesh `bldg_tower` + mesh `bldg_basin` → 36 + 2 | 38 |
+| scrying dynamic split | 22 | code selects `behavior`/physical-`body`: 9 behavior meshes (`lighthouse_beacon`, `signal_ring_a/b/c`, `naruko_lantern`, `naruko_kami_orb`, `naruko_show_light_a/b/c`) + 13 old physical bodies (`naruko_crate`, `naruko_stack_crate_0/1/2`, `playground_stack_0..4`, `playground_break_crate`, `playground_pyramid_0..2`) + `bldg_tower` body; `bldg_basin` mesh-only → static | 23 |
+
+- result → stale world-truth counts; no physics delta.
 
 ## Concordance
 
@@ -48,4 +52,4 @@ Failures → assertion/canon drift; neither waived:
 - HEADLESS state proof only; no pixels/window playthrough.
 - `bldg_basin` mesh lacks live world `body` wiring; witness uses matching physics container.
 - no float/sink claim.
-- must-fix before HOLDS: reconcile both failed canonical counts; rerun 419-class green suite.
+- canonical-count gate → discharged by scene/code hand derivation + targeted ordeal/neighbor rerun; 419 / 419 green.

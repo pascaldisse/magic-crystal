@@ -350,7 +350,7 @@ fn range_of(g: &Glance, id: &str) -> f32 {
 /// stack_0 (-0.6261) and playground_break_crate (-0.3761) land OUTSIDE — the
 /// two lowest boxes sitting at the shallowest z (34.6/34.1, nearest the eye's
 /// downward sightline edge) dip just under the bottom plane. entity_count =
-/// 29 + 7 = 36.
+/// 29 + 7 = 36. PLAY adds `bldg_tower` + `bldg_basin` = 38.
 #[test]
 fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
     let world = canon();
@@ -359,8 +359,8 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
     assert_eq!(eye.yaw, 0.0, "canon spawn yaw");
 
     // Full frustum set (captions with a wide nearest_n and support included).
-    // nearest_n=40: 36 in-frustum meshed vessels (Physics Playground grows
-    // 29→36) + terra + sea (support) = 38 ≤ 40, room to spare.
+    // nearest_n=40: 38 in-frustum meshed vessels (old 29→36; PLAY's
+    // bldg_tower + bldg_basin →38) + terra + sea (support) = 40 exactly.
     let g = look(
         &world,
         eye,
@@ -400,9 +400,24 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
     // corner test derived in the header comment); stack_0 and
     // playground_break_crate are the two that fall just OUTSIDE the bottom
     // plane and stay uncaptioned.
+    //
+    // HAND DERIVATION — old 36, one vessel each:
+    // naruko_terra, naruko_seawall, naruko_sea, lighthouse_rock,
+    // lighthouse_tower, naruko_pier, naruko_chain_posts, naruko_city_massing,
+    // naruko_lantern, naruko_stall_massing, lighthouse_beacon,
+    // naruko_chrome_orb, nari, naruko_cat, signal_ring_a, signal_ring_b,
+    // signal_ring_c, naruko_mirror, naruko_mirror_minor, naruko_kami_orb,
+    // naruko_crate, naruko_stack_crate_0, naruko_stack_crate_1,
+    // naruko_stack_crate_2, naruko_show_chrome, naruko_show_mirror,
+    // naruko_show_light_a, naruko_show_light_b, naruko_show_light_c,
+    // playground_stack_1, playground_stack_2, playground_stack_3,
+    // playground_stack_4, playground_pyramid_0, playground_pyramid_1,
+    // playground_pyramid_2 = 36. PLAY scene additions each carry one mesh:
+    // bldg_tower (bonded body) + bldg_basin (fluid container mesh) = 2;
+    // 36 + 2 = 38. The two old culled playground bodies remain excluded.
     assert_eq!(
-        g.entity_count, 36,
-        "exactly thirty-six meshed vessels are in-frustum (Rite V: + nari, + cat; P3: + crate; rings: + a/b/c; Mirror Proof: + mirror, + minor, + orb; VI-1: + stack_crate_0/1/2; Realm Shine: + show_chrome, + show_mirror, + show_light_a/b/c; Physics Playground: + stack_1/2/3/4, + pyramid_0/1/2)"
+        g.entity_count, 38,
+        "exactly thirty-eight meshed vessels are in-frustum: hand-derived old 36 + bldg_tower + bldg_basin"
     );
     let caps = caption_ids(&g);
     for id in [
@@ -442,6 +457,8 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
         "playground_pyramid_0",
         "playground_pyramid_1",
         "playground_pyramid_2",
+        "bldg_tower",
+        "bldg_basin",
     ] {
         assert!(caps.contains(&id.to_string()), "{id} must be in-frustum");
     }

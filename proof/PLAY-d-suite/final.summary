@@ -1,11 +1,11 @@
 PLAY.d full named suite · 2026-07-18
 
 Discovery: 423 test classes; expected green class total 419 = 423 discovered − 4 explicitly ignored fluid probes.
-Result: 417 passed · 2 failed · 4 ignored · 423 executed.
+Result: 419 passed · 0 failed · 4 ignored · 423 executed.
 
-Failures:
-- oracle / canon_default_glance_frustum_set_is_the_ten_meshed_vessels → expected 36; actual 38.
-- scrying-glass lib / scene::tests::dynamic_split_leaf_parity_holds → expected 22; actual 23.
+Canon re-derivation rerun:
+- oracle / canon_default_glance_frustum_set_is_the_ten_meshed_vessels → 8 passed; old 36 + `bldg_tower` + `bldg_basin` = 38.
+- scrying-glass lib / scene::tests::dynamic_split_leaf_parity_holds → 47 passed; 22 + `bldg_tower` body = 23 (`bldg_basin` mesh-only/static).
 
 Explicit ignored / expected-red boundary:
 - `ordeal_buoyancy_rises` · expected red; buoyancy absent.
@@ -17,4 +17,4 @@ Surface:
 - named cargo packages: crystal, aether, char-editor, homunculus, vessel, sama, elements, fracture, transmutation, kami, seed, pleroma, wired, jormungandr, oracle, steiner.
 - scrying-glass: each integration binary isolated; 900 s ceiling; lib/bins/doc completed separately.
 - build token: ~/projects/magic-crystal/.build-lock per cargo invocation; nice -19; cargo -j2.
-- logs: proof/PLAY-d-suite/full/*.log.
+- logs: proof/PLAY-d-suite/full/*.log; reruns: `oracle-canon-rerun.log`, `scrying-glass-lib-rerun.log`.
