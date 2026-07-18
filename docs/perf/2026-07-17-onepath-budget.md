@@ -1,6 +1,10 @@
-# THE ONE RENDER PATH — budget measurement + honest verdict
+# TEACHER/BENCHMARK LAB CHAIN — budget measurement + historical verdict
 
-Lane `one-render-path`. Goal: make the live frame the chartered path
+Status 07-18 → DE-CHARTERED by two-act law (§ NEURAL.md). Chain = lab teacher/
+benchmark only → explicit `/scry?lab=teacher-benchmark`; never present/default.
+Measurements below = historical evidence, not live-path charter.
+
+Lane `one-render-path` historical goal →
 `trace(640×480) → NEURAL DENOISE → NEURAL UPSCALE → present`, bilinear gone.
 
 Measuring instruments (real GPU, M1, timestamp-bracketed compute passes,
@@ -167,4 +171,5 @@ VERDICT UNCHANGED: neural exceeds the 16.67 ms wall by ~21× (best true
 naive-fp32 combined). The upscaler remains the wall-breaker; fp16 MODE A is
 the only sound denoiser lever and cannot touch it. Sole-path cut stays BLOCKED
 on the Architect's pixel/net ruling; runtime bilinear resolve left in place;
-neural is the proven-correct default /scry resolve. Nothing merged.
+chain remains a proven-correct explicit teacher/benchmark lab surface; default
+`/scry` never selects it. Nothing merged.

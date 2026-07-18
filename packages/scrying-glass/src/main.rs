@@ -789,7 +789,7 @@ fn start_screenshot_server(port: u16, ctx: HttpContext) -> Result<(), String> {
         })
         .map_err(|error| format!("spawn scrying HTTP server: {error}"))?;
     eprintln!(
-        "[scry] GET http://127.0.0.1:{port}/scry (alias: /screenshot; optional pos/yaw/pitch/fov/w/h)"
+        "[scry] GET http://127.0.0.1:{port}/scry (alias: /screenshot; optional pos/yaw/pitch/fov/w/h; lab-only chain: lab=teacher-benchmark)"
     );
     eprintln!(
         "[embodiment] GET http://127.0.0.1:{port}/pose · POST http://127.0.0.1:{port}/walk {{keys,yaw?,pitch?,ticks?}}"
@@ -1767,17 +1767,17 @@ impl Renderer {
             far: self.camera.far,
         };
 
-        // THE ONE RENDER PATH — resolve select. `resolve=neural` (or the
-        // window default GAIA_NATIVE_UPSCALE=neural) captures the chartered
-        // trace→denoise→upscale→present sequence; 0/1 stay the plain blit.
-        let resolve = params.resolve.unwrap_or(self.upscale_mode);
-        if resolve == 2 {
-            return self.capture_pose_neural(&camera, width, height);
+        // ITEM 16 (de-charter): the trace→denoise→upscale chain exists only as
+        // an explicitly named teacher/benchmark LAB surface. Neither a missing
+        // query parameter nor a `resolve` selector can enter it.
+        if params.teacher_benchmark {
+            return self.capture_pose_teacher_benchmark(&camera, width, height);
         }
 
         // OWN-EYE CULL — the persistent `self.integrator` buffers already carry
         // the OWN-eye-culled geometry (`advance_world` keeps them in lockstep
         // with `self.camera.eye`, the walker's own eye). A default `/scry` (no
+        let resolve = params.resolve.unwrap_or(0);
         // `pos` override) IS that same eye, so the fast path below needs no
         // rebuild. An EXPLICIT moving eye (`?pos=...`) may be a FOREIGN eye —
         // any eye that is not the walker's own must still see her — so when one
@@ -1803,7 +1803,7 @@ impl Renderer {
         // Whatever happens below (success or an early `?` error), put the
         // persistent own-eye-culled buffers back before this function returns
         // — the live window's next frame must never see the foreign geometry.
-        let result = self.capture_pose_bilinear(&camera, width, height);
+        let result = self.capture_pose_bilinear(&camera, width, height, resolve);
         if foreign_splice.is_some() {
             self.integrator
                 .update_bvh(&self.device, &self.splice.merged);
@@ -1823,6 +1823,7 @@ impl Renderer {
         let accum = self.integrator.make_accum(&self.device, width, height);
         let compute_bg = self.integrator.compute_bind_group(&self.device, &accum);
         let blit_bg = self.integrator.blit_bind_group(&self.device, &accum);
+        filter: u32,
 
         let mut samples_before = 0u32;
         for _ in 0..self.capture_frames.max(1) {
@@ -1862,6 +1863,27 @@ impl Renderer {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        // Source and target dimensions are identical; the filter is retained
+        // only as an explicit plain-capture lab comparison.
+        let mut uniform = IntegratorUniform::build(
+            camera,
+            &self.sun,
+            self.sky_top,
+            self.sky_horizon,
+            width,
+            height,
+            self.integrator.node_count,
+            self.integrator.tri_count,
+            samples_before,
+            &self.int_params,
+            None,
+        );
+        uniform.surface = [width, height, filter, 0];
+        self.queue.write_buffer(
+            &self.integrator.uniform_buf,
+            0,
+            bytemuck::bytes_of(&uniform),
+        );
                 label: Some("scry present + capture"),
             });
         self.integrator
@@ -1928,18 +1950,15 @@ impl Renderer {
         })
     }
 
-    /// THE ONE RENDER PATH — capture a pose through the chartered neural
-    /// resolve: trace(low, 1 spp) → GPU denoise → GPU neural upscale → present
-    /// (1:1 blit) → readback. The EXACT sequence proven correct headless in
-    /// `examples/onepath_proof.rs` and by the viii2/viii3 ordeals, run here on
-    /// the render thread for a live A/B against the plain bilinear/nearest
-    /// capture (`GET /scry?resolve=bilinear` vs `?resolve=neural`). Off the
-    /// 60-fps surface loop — the neural resolve is ~26× over the frame wall at
-    /// production res (docs/perf/2026-07-17-onepath-budget.md), so this is the
-    /// accounting-visible capture surface, not the live present. Traces the
-    /// STATIC BVH (geometry-only AOV guide + radiance); dynamics are absent
-    /// from the capture, which is honest for a resolve-quality A/B.
-    fn capture_pose_neural(
+    /// TEACHER/BENCHMARK LAB SURFACE (ITEM 16): trace(low, 1 spp) → GPU
+    /// denoise → GPU neural upscale → 1:1 present → readback. This historical
+    /// chain is de-chartered: only `GET /scry?lab=teacher-benchmark` enters it;
+    /// no present-path or resolve default can select it. The sequence remains
+    /// available for the headless proofs in `examples/onepath_proof.rs` and the
+    /// viii2/viii3 ordeals. It traces the STATIC BVH (geometry-only AOV guide +
+    /// radiance); dynamics are absent, appropriate for a resolve-quality lab
+    /// comparison and never represented as live output.
+    fn capture_pose_teacher_benchmark(
         &mut self,
         camera: &Camera,
         width: u32,
@@ -2036,7 +2055,7 @@ impl Renderer {
         // capture uses, so the A/B differs only in the resolve.
         let cells: Vec<[f32; 4]> = neural.iter().map(|c| [c.x, c.y, c.z, 1.0]).collect();
         let present = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("neural present accum"),
+            label: Some("teacher benchmark present accum"),
             size: (cells.len() * 16).max(16) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
@@ -2068,10 +2087,14 @@ impl Renderer {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("neural scry present + capture"),
+                label: Some("teacher benchmark present + capture"),
             });
-        self.integrator
-            .blit(&mut encoder, &target.view, &blit_bg, "neural scry present");
+        self.integrator.blit(
+            &mut encoder,
+            &target.view,
+            &blit_bg,
+            "teacher benchmark present",
+        );
         let slot = &target.slots[0];
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
@@ -2108,10 +2131,10 @@ impl Renderer {
         let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
         done_rx
             .recv()
-            .map_err(|error| format!("neural scry readback channel closed: {error}"))??;
+            .map_err(|error| format!("teacher benchmark readback channel closed: {error}"))??;
         let mapped = buffer
             .get_mapped_range(..)
-            .map_err(|error| format!("neural scry framebuffer map: {error}"))?;
+            .map_err(|error| format!("teacher benchmark framebuffer map: {error}"))?;
         let row_bytes = (width * BYTES_PER_PIXEL) as usize;
         let mut rgba = Vec::with_capacity(row_bytes * height as usize);
         for row in mapped
@@ -2145,13 +2168,15 @@ struct ScryParams {
     fov: Option<f32>,
     width: Option<u32>,
     height: Option<u32>,
-    /// The resolve to capture with: 0 bilinear, 1 nearest, 2 neural. Absent =
-    /// the window's GAIA_NATIVE_UPSCALE default. THE ONE RENDER PATH A/B knob.
+    /// Plain capture filter: 0 bilinear, 1 nearest. Absent = 0. This cannot
+    /// select the de-chartered chain.
     resolve: Option<u32>,
 }
 
 struct ScryRequest {
     params: ScryParams,
+    /// Explicit lab gate for the de-chartered teacher/benchmark chain.
+    teacher_benchmark: bool,
     reply: mpsc::Sender<Result<CapturedFrame, String>>,
 }
 
@@ -2191,10 +2216,9 @@ fn parse_scry_query(query: &str) -> Result<ScryParams, String> {
                 params.resolve = Some(match value.trim().to_ascii_lowercase().as_str() {
                     "bilinear" => 0,
                     "nearest" => 1,
-                    "neural" => 2,
                     other => {
                         return Err(format!(
-                            "resolve must be bilinear, nearest, or neural, got {other:?}"
+                            "resolve must be bilinear or nearest, got {other:?}; the historical chain is lab=teacher-benchmark"
                         ));
                     }
                 });
@@ -2203,6 +2227,12 @@ fn parse_scry_query(query: &str) -> Result<ScryParams, String> {
                 params.width = Some(
                     value
                         .parse::<u32>()
+            "lab" => match value.trim().to_ascii_lowercase().as_str() {
+                "teacher-benchmark" => params.teacher_benchmark = true,
+                other => {
+                    return Err(format!("lab must be teacher-benchmark, got {other:?}"));
+                }
+            },
                         .ok()
                         .filter(|width| *width > 0)
                         .ok_or_else(|| format!("w must be a positive integer, got {value:?}"))?,
