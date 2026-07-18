@@ -1,0 +1,15 @@
+[package] scrying-glass v0.1.0 registered
+[world] /Users/pascaldisse/projects/magic-crystal-neural-live/worlds/naruko scene(s)=["main"] entities=45 chains=23 clusters=913 transmute=83.5ms
+[embodiment] spawn eye=Vec3(0.0, 7.0, 44.0) yaw=0 floor_triangles=10464 tick_dt=0.016666668
+[pleroma] BVH nodes=15487 triangles=23192 (static 12368 + dynamic 10824) build=13.3ms; 22 dynamic entit(ies) — living layer
+[pleroma] traced integrator spp=2 bounces=4 rr_start=2 — first_light is dead
+[wgpu] traced 640x480 → upscale → surface 960x640 (bilinear); Bgra8UnormSrgb
+[frame] trace 640x480 → offscreen 960x640: median 7.56ms mean 7.81ms/frame (spp=2, 60-frame sample)
+[scry] GET http://127.0.0.1:8456/scry (alias: /screenshot; optional pos/yaw/pitch/fov/w/h)
+[embodiment] GET http://127.0.0.1:8456/pose · POST http://127.0.0.1:8456/walk {keys,yaw?,pitch?,ticks?}
+[offscreen] GAIA_NATIVE_OFFSCREEN=true: NO NSWindow — rendering to offscreen 960x640; /scry (?eye=belief|presented), /budget, /state on http://127.0.0.1:8456
+[n0c] net-present rig pooled (God's res): trace 640x480 → net 640x480 → nearest blit → surface 960x640 (307200 px)
+[n0i] frames=60 640x480→640x480 (ms median/p95 vs 16.67): trace 6.36/7.58 gather 0.94/1.72 net[wall 0.01/3.28 gpu 4.93/5.53 commit 0.01/0.01 wait 0.00/3.27] demod 0.77/10.23 present 0.09/0.14 TOTAL 12.69/20.56 | WALL-FPS 47.8
+[n0i] frames=120 640x480→640x480 (ms median/p95 vs 16.67): trace 6.24/7.29 gather 0.91/1.25 net[wall 0.01/3.20 gpu 4.93/5.53 commit 0.01/0.01 wait 0.00/3.18] demod 1.00/10.24 present 0.09/0.12 TOTAL 11.90/19.05 | WALL-FPS 48.7
+[n0i] frames=180 640x480→640x480 (ms median/p95 vs 16.67): trace 6.21/7.26 gather 0.91/1.17 net[wall 0.01/2.21 gpu 4.93/5.44 commit 0.01/0.01 wait 0.00/2.20] demod 1.00/10.52 present 0.09/0.12 TOTAL 11.83/18.99 | WALL-FPS 48.9
+[n0i] frames=240 640x480→640x480 (ms median/p95 vs 16.67): trace 6.17/7.11 gather 0.91/1.18 net[wall 0.01/2.21 gpu 4.91/5.44 commit 0.01/0.01 wait 0.00/2.20] demod 1.00/10.53 present 0.08/0.12 TOTAL 11.83/18.88 | WALL-FPS 49.0

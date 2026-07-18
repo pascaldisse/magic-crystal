@@ -710,3 +710,139 @@ sync/ordeal path.
   `/budget` now carries an `outside` block (world/readback/http/loop_total).
   Toggles: `GAIA_NATIVE_PERFRAME_READBACK=1`, `GAIA_NATIVE_WORLD_OVERLAP=1`,
   `GAIA_NATIVE_NET_NOOVERLAP=1` (N0.i, still live).
+
+
+# N0.k — SHIFT 15: the 7ms world advance, split to the leaf (premise overturned)
+
+State in: N0.j named the ~7ms world advance as "BVH re-splice + upload EVERY
+animating frame" and told S15 to make splice/upload dirty-only. S15's FIRST act
+— instrument INSIDE the 7ms — proves that premise WRONG. The whole 7ms is the
+physics solver step; splice+upload together are ~0.6ms.
+
+## (1) INSTRUMENT — the 7ms world advance, split to the leaf (`/budget world_stages`)
+`advance_world` + `Dynamics::tick_with_ops` now carry per-stage timers, spliced
+into `/budget` as a `world_stages` block. Naruko, offscreen 640×480, release,
+GAIA_NATIVE_OFFSCREEN=true, player-shaped (POST /walk KeyW bursts), ≥1000 frames,
+median/p95 ms:
+
+| stage        | median | p95   | what it is                                        |
+|--------------|--------|-------|---------------------------------------------------|
+| world        | 6.97   | 7.39  | the whole advance (skin·tick·gather·splice·upload) |
+|  ├ command   | 0.539  | 0.617 | command_bodies_walked (SAMA gait + body SKIN)      |
+|  ├ tick      | 5.456  | 5.704 | Dynamics::tick_with_ops                             |
+|  │  ├ kami   | 0.032  | 0.042 | tick_decorative (KAMI eval → transform ops)        |
+|  │  ├ apply  | 0.011  | 0.015 | apply KAMI ops to the ECS                          |
+|  │  ├ physics| 5.389  | 5.635 | physics block (solver.step + poll_bonded + write)  |
+|  │  │  ├ **solver_step** | **5.362** | **5.603** | **elements::Solver::step() — THE THIEF** |
+|  │  │  └ poll | 0.024 | 0.035 | poll_bonded per-tick fracture flood-fill           |
+|  │  └ rederive| 0.018 | 0.024 | re-derive every entity model from its transform    |
+|  ├ gather    | 0.063  | 0.086 | dynamic_leaf_triangles_for_eye                     |
+|  ├ splice    | 0.158  | 0.187 | DynamicSplice::update (refit + CPU merge)          |
+|  └ upload    | 0.433  | 0.541 | integrator.update_bvh (GPU node/tri buffers)       |
+
+**VERDICT of the hunt: the 7ms world advance is `elements::Solver::step()`,
+5.36ms every tick.** N0.j was wrong TWICE: (a) the BVH re-splice+upload it named
+is ~0.6ms (splice 0.16 + upload 0.43), not 7; (b) neither KAMI decorative eval
+(0.03) nor the JSON transform round-trip (apply 0.01 + rederive 0.02) is a thief.
+The living layer's XPBD rigid+particle solver — `substeps × iterations` of
+solve_distance/shape_matching/collision_normal + O(n²) solve_body_collisions over
+the 22 declared bodies — owns the entire cost. The books balance:
+`command(0.54) + tick(5.46) + gather(0.06) + splice(0.16) + upload(0.43) ≈
+world(6.97)`, and inside tick `physics(5.39) + kami/apply/rederive(0.06) ≈ 5.46`.
+
+## (2) THE ONE DIRTY-ONLY CUT IN THE ADVANCE PATH — dirty-only SKIN
+`command_bodies_walked` re-skinned ALL bodies every tick even though only the
+animating ones change geometry. `BodyInstance::reskin_if_dirty` gates `skin_body`:
+an idle, settled body (gait Idle, not blending) whose model is unchanged from the
+last skin keeps its `world_tris` verbatim — the engine's own `is_animating`
+contract already treats such a body as STATIC geometry, and `skin_body` is pure,
+so a kept `world_tris` is byte-identical to a re-skin (determinism intact,
+`prev_animating` forces one final skin the tick after motion stops). Toggle
+`GAIA_NATIVE_DIRTY_SKIN=0` restores always-skin.
+
+**A/B (command stage, median ms):** dirty-on 0.539 vs dirty-off 0.578 — a ~0.04ms
+median / ~0.11ms p95 saving. HONEST: negligible against the 20ms frame, because
+`command`/skin was already only ~0.58ms and most naruko presences ARE animating.
+It is the RIGHT cut for the advance path (static bodies now cost zero skin) but it
+does NOT move 60fps — the thief is solver_step, which this shift did not touch
+(a solver rest/sleep charter in the `elements` crate is a separate scope, and the
+IRON law + parity/determinism ordeals guard that crate).
+
+## (3) SPLICE/UPLOAD DIRTY-ONLY — NOT DONE, and CORRECTLY not done
+N0.j's PRIMARY (only touched subtrees re-splice, only dirty ranges upload) is a
+~0.6ms surface (measured above). Cutting it to zero would buy ~0.6ms of a 20ms
+frame — inside the contention noise band (N0.e). The instrumentation redirects
+the next shift's effort away from a proven non-thief and onto solver_step.
+
+## (4) MEASURE — wall-clock fps A/B (release, offscreen, player-shaped, ≥1000f)
+
+| arm                                  | WALL-FPS | world med | command | solver_step |
+|--------------------------------------|----------|-----------|---------|-------------|
+| dirty-skin ON (S15 DEFAULT)          | ~49.5    | 6.97–7.05 | 0.539   | 5.362       |
+| dirty-skin OFF (`DIRTY_SKIN=0`)      | ~45–49*  | 7.38      | 0.578   | 5.593       |
+
+*the OFF run landed in a more contended moment (sibling load; p95 net_wait rose
+to ~7–10ms) so its wall-fps is not comparable — the honest A/B delta is the
+`command` stage (0.578→0.539), not wall-fps, which is dominated by contention
+noise (N0.e). No meaningful throughput was bought or claimed.
+
+## 60 FPS THROUGHPUT VERDICT — NOT MET at ~49 fps wall-clock; the 7ms is the physics solver
+`60fps throughput NOT MET at ~49 fps wall-clock (~20.4 ms/frame). The ~7ms world
+advance N0.j blamed on BVH re-splice+upload is, when instrumented to the leaf,
+elements::Solver::step() at 5.36ms — splice+upload together are ~0.6ms and are
+NOT the thief; KAMI decorative + JSON round-trip are ~0.06ms and are NOT the
+thief. The one dirty-only cut available in the advance path (dirty-only skin,
+static bodies cost zero) is correct and green but saves only ~0.04ms because skin
+was already ~0.58ms. 60fps needs a solver-level rest/sleep charter in the elements
+crate — a separate scope guarded by the IRON law and the parity/determinism
+ordeals.` Remaining-thief table (updated):
+
+| thief             | ms    | why it stands / next attack                                  |
+|-------------------|-------|--------------------------------------------------------------|
+| **solver_step**   | ~5.36 | elements XPBD step: substeps×iterations solve + O(n²) body   |
+|                   |       | collisions over 22 bodies. CUT: island sleeping (rest bodies |
+|                   |       | skip solve), or O(n²)→broadphase body collisions. NEW CHARTER|
+| trace (synchronous)| ~6.0 | submits+polls GPU on the render thread (N0.j) — async it     |
+| net_gpu contention| ~4.7  | single-M1-GPU serialization (N0.i)                            |
+| body skin         | ~0.54 | dirty-only skin landed (static bodies now zero); tail is the |
+|                   |       | animating handful — cheap, not worth further cutting          |
+
+Honest sum: solver_step(5.4) + splice/upload/skin/gather(1.2) ≈ world(6.97);
+world(6.97) + trace(6) + net_gpu(4.7) ≈ the 20.4ms wall. As N0.i/N0.j warned,
+60 needs CUTTING — and the cut that matters is now NAMED to the leaf: the solver.
+
+## Parity + determinism ordeals — HOLD (final build, all timers in)
+- `n0b_gather_and_shared_forward_match_cpu` — ok.
+- `n0_gate1_live_net_matches_cpu_reference` — ok.
+- `rite5` — 17/17 ok, incl. `v0_body_render_is_deterministic`,
+  `v1_gait_is_deterministic_byte_identical`, `v2_cat_animation_is_byte_identical`
+  (the dirty-skin gate is byte-identical to always-skin, determinism intact).
+All added timers are measurement-only (Instant reads), the step-profiled pattern.
+
+## Correctness gate — animation still MOVES (dirty-skin did not freeze it)
+Two `/scry` presented frames ~2.5s apart (`s15-motionA.png`, `s15-motionB.png`,
+READ): the presence spheres MOVED — the amber sphere travelled from left-of-tower
+to right-of-tower, the white spheres shifted, and the tower's concentric halos
+sit at a different animation phase. Coherent naruko dusk in both. Dirty-tracking
+did NOT silently freeze the living layer.
+
+## Proof — both eyes (READ, pixel words — on-demand path)
+- presented `s15-presented.png` (960×640, bare `/scry`): coherent naruko dusk —
+  pale green-flecked translucent glass panel, stacked brown crates with a white
+  sphere, a small orange crate, central dark tower ringed by white/pink/cyan
+  halos, pale presence spheres (amber+white by the tower, one at the platform),
+  a large green-tinted glass orb on a dark pedestal, a dark chimneyed factory
+  block with lit amber windows, pink→mauve sky over purple-mauve ground. Colours
+  natural, radiance bounded.
+- belief `s15-belief.png` (640×480): same geometry, brighter/desaturated over a
+  CREAM ground (albedo not undone), factory pale beige, glass orb dark olive — as
+  designed. Both eyes render, no black, no wedge — the on-demand readback holds.
+
+## Source
+- commits: instrument sub-stages + dirty-skin + finer tick/physics split (S15,
+  neural-live branch — see `git log`).
+- bench: `packages/scrying-glass/proof/neural-live/s15-bench.sh`.
+- budgets: `s15-*.budget.json`; logs `s15-*.log`; PNGs `s15-*.png` (same dir).
+- env: `GAIA_NEURAL_LIVE=1 GAIA_NATIVE_OFFSCREEN=true GAIA_NATIVE_NET_PRESENT=true
+  GAIA_NATIVE_HUD=false`, release, world `worlds/naruko`, M1/macOS 26.
+  `/budget` now carries `world_stages`. Toggle `GAIA_NATIVE_DIRTY_SKIN=0`.
