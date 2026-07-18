@@ -692,3 +692,11 @@ CANON SEALED (21:19): the OG story = docs/design/THE-MAGIC-CRYSTAL.md —
 intro real-time (never pre-rendered), map = INFINITE CANVAS always, worlds
 = f(seed), shard = interaction layer (speaks back, tutorial), two wizard
 factions (Edan Connor / Zareb Aiden), protagonist name OPEN.
+LATE-NIGHT STATE (23:07): THE PURGE DONE on neural-live (dc3a7d9: -854 LOC,
+app = Pleroma letterboxed 640x480 OR black, both proven s20-real/s20-black
+0/614400 px) · REAL IMAGE BAR sealed 4f8ec5b (false image = heresy; ordeal
+stamps weights, unstamped -> black) · v2 weights 2x better, still sub-bar ->
+window BLACK correctly · LASHES rows 13-15 · RIDING: N2 memory/recurrence
+(kills dots at root) · light ordeal (20-light ocean + 1000-echo laser @
+R=0.999 his order) · manifest crack (neural-cores wall). His ratifications:
+low samples = less accurate guess NEVER dots · unlimited lights = R5 next.
