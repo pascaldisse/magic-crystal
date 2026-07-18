@@ -824,25 +824,9 @@ fn handle_http(mut stream: TcpStream, ctx: &HttpContext) {
         return;
     }
 
-    // No query = exactly the prior behaviour: serve the latest live surface frame.
-    if query.is_empty() {
-        match latest.read().ok().and_then(|frame| frame.clone()) {
-            Some(frame) => respond_frame(&mut stream, &frame),
-            None => {
-                let _ = write_response(
-                    &mut stream,
-                    "503 Service Unavailable",
-                    "text/plain; charset=utf-8",
-                    b"framebuffer not ready\n",
-                    "Retry-After: 1\r\n",
-                );
-            }
-        }
-        return;
-    }
-
-    // Parse the query (pose overrides and/or the S12.5 eye selector).
-    let params = match parse_scry_query(query) {
+    // Parse the query (pose overrides and/or the S12.5 eye selector). An empty
+    // query yields the default params (the bare live-frame request).
+    let mut params = match parse_scry_query(query) {
         Ok(params) => params,
         Err(error) => {
             let _ = write_response(
@@ -865,20 +849,18 @@ fn handle_http(mut stream: TcpStream, ctx: &HttpContext) {
         && params.resolve.is_none()
         && params.width.is_none()
         && params.height.is_none();
+    // N0.j S13.2 ON-DEMAND READBACK: a bare `/scry` (or `eye=presented` with no
+    // pose override) is served by reading the CURRENT offscreen texture back to
+    // the CPU on the render thread ONLY when asked — the per-frame readback that
+    // fed `latest` is gone. Flag the request so the loop calls
+    // `capture_presented`. `latest` stays a fallback under the A/B toggle
+    // (`GAIA_NATIVE_PERFRAME_READBACK=1`), read first when populated.
     if !params.belief && no_capture_override {
-        match latest.read().ok().and_then(|frame| frame.clone()) {
-            Some(frame) => respond_frame(&mut stream, &frame),
-            None => {
-                let _ = write_response(
-                    &mut stream,
-                    "503 Service Unavailable",
-                    "text/plain; charset=utf-8",
-                    b"framebuffer not ready\n",
-                    "Retry-After: 1\r\n",
-                );
-            }
+        if let Some(frame) = latest.read().ok().and_then(|frame| frame.clone()) {
+            respond_frame(&mut stream, &frame);
+            return;
         }
-        return;
+        params.presented = true;
     }
     let (reply_tx, reply_rx) = mpsc::channel();
     if scry
@@ -1181,6 +1163,49 @@ impl OffscreenTarget {
             }
         }
         None
+    }
+}
+
+/// NEURAL-LIVE N0.j S13 THE OUTSIDE-9ms HUNT — the frame-loop work that lives
+/// OUTSIDE the per-stage net budget (N0.i named ~9 ms of it): world advance
+/// (skin·tick·splice + BVH re-upload), the per-frame offscreen readback that
+/// feeds `/scry`, and the http/debug servicing on the render thread. Measured
+/// in the render loop (not `NetPresent`, which only sees the GPU stages) and
+/// merged into `/budget` so the throughput gap is finally VISIBLE, not implied.
+#[derive(Default)]
+struct OutsideBudget {
+    /// player.step + set_view_pose + advance_world (skin·tick·splice·upload).
+    world: Vec<f64>,
+    /// the per-frame offscreen copy_texture_to_buffer + map submit (the
+    /// measurement tax — S13.2 makes it on-demand, so this collapses to ~0).
+    readback: Vec<f64>,
+    /// scry drain + the /budget + /state JSON write on the render thread.
+    http: Vec<f64>,
+    /// the whole iteration wall (frame-start to frame-start), sans deadline
+    /// sleep — the honest per-frame cost the wall-clock fps derives from.
+    loop_total: Vec<f64>,
+    frames: u64,
+}
+
+impl OutsideBudget {
+    fn record(&mut self, world: f64, readback: f64, http: f64, loop_total: f64) {
+        self.world.push(world);
+        self.readback.push(readback);
+        self.http.push(http);
+        self.loop_total.push(loop_total);
+        self.frames += 1;
+    }
+
+    /// The `"outside"` block spliced into `/budget` (median/p95 per segment).
+    fn json(&self) -> String {
+        format!(
+            "\"outside\":{{\"world\":[{:.3},{:.3}],\"readback\":[{:.3},{:.3}],\
+             \"http\":[{:.3},{:.3}],\"loop_total\":[{:.3},{:.3}]}}",
+            pct(&self.world, 0.5), pct(&self.world, 0.95),
+            pct(&self.readback, 0.5), pct(&self.readback, 0.95),
+            pct(&self.http, 0.5), pct(&self.http, 0.95),
+            pct(&self.loop_total, 0.5), pct(&self.loop_total, 0.95),
+        )
     }
 }
 
@@ -1602,7 +1627,6 @@ fn undo_log_demod_px(dl: Vec3, albedo: Vec3) -> Vec3 {
 
 /// The `q` quantile (0..=1) of `samples` by the nearest-rank method (budget
 /// table helper). Returns 0.0 for an empty slice.
-#[cfg(target_os = "macos")]
 fn pct(samples: &[f64], q: f64) -> f64 {
     if samples.is_empty() {
         return 0.0;
@@ -1686,6 +1710,17 @@ struct Renderer {
     offscreen: OffscreenTarget,
     pixel_order: PixelOrder,
     capture_sender: mpsc::Sender<CaptureReady>,
+    /// N0.j S13: does the live present path do the offscreen readback EVERY
+    /// frame (the old measurement tax, kept as an A/B via
+    /// `GAIA_NATIVE_PERFRAME_READBACK=1`) or ON-DEMAND when `/scry` actually
+    /// asks (the S13 default)? On-demand serves the current offscreen texture
+    /// via `capture_presented`, so the render loop never pays the copy.
+    perframe_readback: bool,
+    /// N0.j S13: the last frame's per-frame-readback ms (0 in on-demand mode),
+    /// set by `net_present_frame`, read by the loop's `outside` accounting.
+    last_readback_ms: f64,
+    /// N0.j S13 THE OUTSIDE-9ms HUNT: the non-net frame-loop budget.
+    outside: OutsideBudget,
     /// DAS BLUTBÄNDIGEN — B0 data door state. `None` when the master switch is
     /// off; `Some` carries the world/scene params + last-good snapshot the live
     /// scene/shader bends re-materialize and journal against.
@@ -1909,6 +1944,12 @@ impl Renderer {
             offscreen,
             pixel_order,
             capture_sender,
+            perframe_readback: matches!(
+                std::env::var("GAIA_NATIVE_PERFRAME_READBACK").as_deref(),
+                Ok("1" | "true")
+            ),
+            last_readback_ms: 0.0,
+            outside: OutsideBudget::default(),
             bloodbend: None,
             net_present_enabled,
             #[cfg(target_os = "macos")]
@@ -2666,57 +2707,70 @@ impl Renderer {
             self.integrator
                 .blit(&mut encoder, &view, &np.present_blit_bg, "net surface present");
         }
-        if let Some(index) = self.offscreen.claim_slot() {
-            let slot = &self.offscreen.slots[index];
-            encoder.copy_texture_to_buffer(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &self.offscreen.texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                wgpu::TexelCopyBufferInfo {
-                    buffer: &slot.buffer,
-                    layout: wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(self.offscreen.padded_bytes_per_row),
-                        rows_per_image: Some(self.offscreen.height),
+        // N0.j S13.2 KILL THE MEASUREMENT TAX: the per-frame offscreen readback
+        // (copy_texture_to_buffer + map submit) fed `latest` so a bare `/scry`
+        // could be served cheaply — but it ran EVERY frame whether anyone looked
+        // or not, ~measurement tax on the render thread. It is now ON-DEMAND
+        // (`capture_presented` reads the current offscreen texture when `/scry`
+        // asks); the per-frame copy runs only under the A/B toggle
+        // `GAIA_NATIVE_PERFRAME_READBACK=1`. The offscreen BLIT above still runs
+        // every frame, so the texture always holds the latest presented image
+        // for the on-demand path to read.
+        let t_readback = Instant::now();
+        if self.perframe_readback {
+            if let Some(index) = self.offscreen.claim_slot() {
+                let slot = &self.offscreen.slots[index];
+                encoder.copy_texture_to_buffer(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &self.offscreen.texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
                     },
-                },
-                wgpu::Extent3d {
-                    width: self.offscreen.width,
-                    height: self.offscreen.height,
-                    depth_or_array_layers: 1,
-                },
-            );
-            let sender = self.capture_sender.clone();
-            let buffer = slot.buffer.clone();
-            let callback_buffer = buffer.clone();
-            let busy = slot.busy.clone();
-            let callback_busy = busy.clone();
-            let width = self.offscreen.width;
-            let height = self.offscreen.height;
-            let padded_bytes_per_row = self.offscreen.padded_bytes_per_row;
-            let pixel_order = self.pixel_order;
-            encoder.map_buffer_on_submit(&buffer, wgpu::MapMode::Read, .., move |result| {
-                let capture = CaptureReady {
-                    result: result.map_err(|error| error.to_string()),
-                    buffer: callback_buffer,
-                    width,
-                    height,
-                    padded_bytes_per_row,
-                    pixel_order,
-                    busy: callback_busy,
-                };
-                if let Err(error) = sender.send(capture) {
-                    let capture = error.0;
-                    if capture.result.is_ok() {
-                        capture.buffer.unmap();
+                    wgpu::TexelCopyBufferInfo {
+                        buffer: &slot.buffer,
+                        layout: wgpu::TexelCopyBufferLayout {
+                            offset: 0,
+                            bytes_per_row: Some(self.offscreen.padded_bytes_per_row),
+                            rows_per_image: Some(self.offscreen.height),
+                        },
+                    },
+                    wgpu::Extent3d {
+                        width: self.offscreen.width,
+                        height: self.offscreen.height,
+                        depth_or_array_layers: 1,
+                    },
+                );
+                let sender = self.capture_sender.clone();
+                let buffer = slot.buffer.clone();
+                let callback_buffer = buffer.clone();
+                let busy = slot.busy.clone();
+                let callback_busy = busy.clone();
+                let width = self.offscreen.width;
+                let height = self.offscreen.height;
+                let padded_bytes_per_row = self.offscreen.padded_bytes_per_row;
+                let pixel_order = self.pixel_order;
+                encoder.map_buffer_on_submit(&buffer, wgpu::MapMode::Read, .., move |result| {
+                    let capture = CaptureReady {
+                        result: result.map_err(|error| error.to_string()),
+                        buffer: callback_buffer,
+                        width,
+                        height,
+                        padded_bytes_per_row,
+                        pixel_order,
+                        busy: callback_busy,
+                    };
+                    if let Err(error) = sender.send(capture) {
+                        let capture = error.0;
+                        if capture.result.is_ok() {
+                            capture.buffer.unmap();
+                        }
+                        capture.busy.store(false, Ordering::Release);
                     }
-                    capture.busy.store(false, Ordering::Release);
-                }
-            });
+                });
+            }
         }
+        self.last_readback_ms = t_readback.elapsed().as_secs_f64() * 1000.0;
         let submission = self.queue.submit(Some(encoder.finish()));
         if let Some(frame) = surface_frame {
             self.queue.present(frame);
@@ -2857,14 +2911,83 @@ impl Renderer {
         Ok(CapturedFrame { width: w, height: h, rgba })
     }
 
+    /// N0.j S13.2 ON-DEMAND READBACK: read the CURRENT offscreen texture (the
+    /// last presented net frame — the offscreen blit runs every frame) back to
+    /// the CPU, only when a bare `/scry` actually asks. This replaces the old
+    /// per-frame readback that fed `latest`: no re-trace, no demod, just the one
+    /// copy+map the viewer needs. Runs on the render thread (owns the device).
+    fn capture_presented(&mut self) -> Result<CapturedFrame, String> {
+        let (w, h) = (self.offscreen.width, self.offscreen.height);
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("presented on-demand readback"),
+            });
+        let slot = &self.offscreen.slots[0];
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.offscreen.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &slot.buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(self.offscreen.padded_bytes_per_row),
+                    rows_per_image: Some(h),
+                },
+            },
+            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        );
+        let buffer = slot.buffer.clone();
+        let (done_tx, done_rx) = mpsc::channel::<Result<(), String>>();
+        encoder.map_buffer_on_submit(&buffer, wgpu::MapMode::Read, .., move |result| {
+            let _ = done_tx.send(result.map(|_| ()).map_err(|e| e.to_string()));
+        });
+        self.queue.submit(Some(encoder.finish()));
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        done_rx
+            .recv()
+            .map_err(|e| format!("presented readback channel closed: {e}"))??;
+        let mapped = buffer
+            .get_mapped_range(..)
+            .map_err(|e| format!("presented framebuffer map: {e}"))?;
+        let row_bytes = (w * BYTES_PER_PIXEL) as usize;
+        let mut rgba = Vec::with_capacity(row_bytes * h as usize);
+        for row in mapped
+            .chunks(self.offscreen.padded_bytes_per_row as usize)
+            .take(h as usize)
+        {
+            rgba.extend_from_slice(&row[..row_bytes]);
+        }
+        if matches!(self.pixel_order, PixelOrder::Bgra) {
+            for pixel in rgba.chunks_exact_mut(BYTES_PER_PIXEL as usize) {
+                pixel.swap(0, 2);
+            }
+        }
+        drop(mapped);
+        buffer.unmap();
+        Ok(CapturedFrame { width: w, height: h, rgba })
+    }
+
     /// S12.5: the live per-stage budget JSON (`/budget`) and forward-state JSON
     /// (`/state`), or an honest "net-present off" stub.
     fn debug_budget_json(&self) -> String {
+        // N0.j S13: splice the OUTSIDE-work block into the net budget JSON so
+        // `/budget` carries both the GPU stage table AND the ~9 ms non-net
+        // frame-loop segments (world/readback/http/loop_total) in one door.
         #[cfg(target_os = "macos")]
         if let Some(np) = &self.net_present {
-            return np.budget_json();
+            let base = np.budget_json();
+            let outside = self.outside.json();
+            return match base.strip_suffix('}') {
+                Some(head) => format!("{head},{outside}}}"),
+                None => base,
+            };
         }
-        "{\"frames\":0,\"note\":\"net-present off\"}".to_string()
+        format!("{{\"frames\":0,\"note\":\"net-present off\",{}}}", self.outside.json())
     }
 
     fn debug_state_json(&self) -> String {
@@ -3337,6 +3460,10 @@ struct ScryParams {
     /// The resolve to capture with: 0 bilinear, 1 nearest, 2 neural. Absent =
     /// the window's GAIA_NATIVE_UPSCALE default. THE ONE RENDER PATH A/B knob.
     resolve: Option<u32>,
+    /// N0.j S13.2: serve the CURRENT presented frame by an ON-DEMAND readback of
+    /// the offscreen texture (no re-trace) — set by the http handler for a bare
+    /// `/scry`, consumed by the render loop (`capture_presented`).
+    presented: bool,
 }
 
 struct ScryRequest {
@@ -3944,6 +4071,7 @@ fn run_offscreen(config: ScryingGlassConfig, render_scene: RenderScene) -> ! {
     let mut pending: Option<wgpu::SubmissionIndex> = None;
     loop {
         let _ = renderer.device.poll(wgpu::PollType::Poll);
+        let t_http = Instant::now();
         while let Ok(request) = scry_rx.try_recv() {
             let frame = if request.params.belief {
                 #[cfg(target_os = "macos")]
@@ -3954,11 +4082,18 @@ fn run_offscreen(config: ScryingGlassConfig, render_scene: RenderScene) -> ! {
                 {
                     Err("belief eye is macOS-only".to_string())
                 }
+            } else if request.params.presented {
+                // N0.j S13.2 on-demand readback of the current offscreen frame.
+                renderer.capture_presented()
             } else {
                 renderer.capture_pose(&request.params)
             };
             let _ = request.reply.send(frame);
         }
+        let mut http_ms = t_http.elapsed().as_secs_f64() * 1000.0;
+        // N0.j S13 THE OUTSIDE-9ms HUNT: time the non-net frame-loop segments.
+        let t_iter = Instant::now();
+        let t_world = Instant::now();
         let mut body_speed = 0.0f32;
         let mut walker_pose = None;
         if let Ok(mut body) = player.lock() {
@@ -3970,6 +4105,7 @@ fn run_offscreen(config: ScryingGlassConfig, render_scene: RenderScene) -> ! {
             renderer.set_view_pose(pose.position, pose.yaw, pose.pitch);
         }
         renderer.advance_world(body_speed, walker_pose, &[]);
+        let world_ms = t_world.elapsed().as_secs_f64() * 1000.0;
         let idx = renderer.render(size);
         if let Some(prev) = pending.take() {
             let _ = renderer.device.poll(wgpu::PollType::Wait {
@@ -3978,10 +4114,18 @@ fn run_offscreen(config: ScryingGlassConfig, render_scene: RenderScene) -> ! {
             });
         }
         pending = idx;
+        let t_debug = Instant::now();
         if let Ok(mut d) = debug.write() {
             d.budget = renderer.debug_budget_json();
             d.state = renderer.debug_state_json();
         }
+        http_ms += t_debug.elapsed().as_secs_f64() * 1000.0;
+        // Record the outside-work AFTER render set `last_readback_ms` this frame.
+        let readback_ms = renderer.last_readback_ms;
+        let loop_total_ms = t_iter.elapsed().as_secs_f64() * 1000.0;
+        renderer
+            .outside
+            .record(world_ms, readback_ms, http_ms, loop_total_ms);
         deadline += render_interval;
         let now = Instant::now();
         if deadline > now {
@@ -4094,6 +4238,9 @@ fn run_render_loop(
                         {
                             Err("belief eye is macOS-only".to_string())
                         }
+                    } else if request.params.presented {
+                        // N0.j S13.2 on-demand readback of the current offscreen frame.
+                        renderer.capture_presented()
                     } else {
                         renderer.capture_pose(&request.params)
                     };
