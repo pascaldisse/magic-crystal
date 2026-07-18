@@ -28,13 +28,13 @@
   "supersedes": "rdirect-weights-v2.bin",
   "training": {
     "batch": 64,
-    "epochs": 6,
+    "epochs": 60,
     "lr0": 0.0020000000949949026,
     "note": "data=f(seed); fresh 1-spp render seeds per frame carry the variance to average",
     "recurrence": "still unroll (identity reproject), prev output fed as history input, validity 1 after step 0",
-    "ref_frames": 48,
-    "subsample_px_per_pose_per_epoch": 2000,
-    "unroll_steps": 4
+    "ref_frames": 128,
+    "subsample_px_per_pose_per_epoch": 4000,
+    "unroll_steps": 5
   },
-  "weights_sha256": "d005d9256678098b642826daf828bba18148faa90c859b1af68bda3f8f8e5b9b"
+  "weights_sha256": "2c6622ec2f82127b671a5dd43368f6629ba5dc85b549e891df2178a14872869e"
 }
