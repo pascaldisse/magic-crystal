@@ -177,7 +177,6 @@ impl ScryingGlassConfig {
                 ],
                 camera_yaw: number("GAIA_NATIVE_CAMERA_YAW", 0.0)? as f32,
                 camera_pitch: number("GAIA_NATIVE_CAMERA_PITCH", 0.0)? as f32,
-                cluster_error_threshold: number("GAIA_NATIVE_CLUSTER_ERROR", 1.0)? as f32,
                 tick_dt: number("GAIA_NATIVE_TICK_DT", 1.0 / 60.0)?,
                 sun: SunDefaults {
                     sun_color: std::env::var("GAIA_NATIVE_SUN_COLOR")

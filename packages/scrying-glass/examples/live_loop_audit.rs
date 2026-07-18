@@ -67,7 +67,6 @@ fn naruko_params() -> SceneParameters {
         ],
         camera_yaw: env_f32("GAIA_NATIVE_CAMERA_YAW", 0.0),
         camera_pitch: env_f32("GAIA_NATIVE_CAMERA_PITCH", 0.0),
-        cluster_error_threshold: 1.0,
         tick_dt: 1.0 / 60.0,
         sun: SunDefaults {
             sun_color: "#ffe2b0".into(),
@@ -156,7 +155,10 @@ fn main() {
     int_params.max_bounces = env_u32("GAIA_NATIVE_MAX_BOUNCES", 4);
 
     let bvh_params = BvhParams::default();
-    let static_bvh = Bvh::build(&scene.leaf_triangles(), &bvh_params);
+    let static_triangles = scene.leaf_triangles();
+    let t = Instant::now();
+    let static_bvh = Bvh::build(&static_triangles, &bvh_params);
+    let static_build_ms = t.elapsed().as_secs_f64() * 1e3;
 
     // Warm to the composed mid-stride steady state (coexist precedent).
     let body = Body::from_preset(&Preset::nari());
@@ -185,12 +187,13 @@ fn main() {
         far: params.far,
     };
     eprintln!(
-        "[live-audit] {w}x{h} internal, surface {surf_w}x{surf_h}, spp {}, vista eye={:?} yaw={} — {} static / {} dynamic tris, {} bodies",
+        "[live-audit] {w}x{h} internal, surface {surf_w}x{surf_h}, spp {}, vista eye={:?} yaw={} — {} static / {} dynamic tris, {} static BVH nodes, static build {static_build_ms:.3} ms, {} bodies",
         int_params.spp,
         params.camera_position,
         params.camera_yaw,
-        scene.leaf_triangles().len(),
+        static_triangles.len(),
         scene.dynamic_leaf_triangles().len(),
+        static_bvh.nodes.len(),
         scene.bodies.len(),
     );
 

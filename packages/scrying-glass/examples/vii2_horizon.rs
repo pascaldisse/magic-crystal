@@ -41,7 +41,6 @@ fn scene_params() -> SceneParameters {
         camera_position: [0.0, 2.0, 22.0],
         camera_yaw: 0.0,
         camera_pitch: 0.0,
-        cluster_error_threshold: 1.0,
         tick_dt: TICK_DT as f64,
         sun: SunDefaults {
             sun_color: "#ffe6bd".into(),

@@ -1,10 +1,11 @@
-//! Transmutation: mesh → shards (leaves) → group → simplify → re-shardize →
-//! parents-reference-children → repeat to root. The result is the Great Chain
+//! Transmutation: mesh → shards (loss-free leaves) → group → simplify →
+//! re-shardize → parents-reference-children. The result is the Great Chain
 //! (RENDER.md §1, the sole geometry pipeline, offline/import half).
 //!
-//! Follows research/nanite-recon.md: ≤max_triangles-tri shards, adjacency
-//! groups, ratio-simplify per group, DAG with monotone error so a runtime cut
-//! `parentError > τ ≥ clusterError` is crack-free. CPU-only (this lane).
+//! SUPERSEDED — hierarchy error and level records are bake lineage for future
+//! ray-footprint residency research, not live geometry selection. The renderer
+//! consumes only the loss-free leaves; no camera/projection threshold exists.
+//! CPU-only (this lane).
 //!
 //! CRACK-FREE INVARIANTS (the reason the group machinery exists):
 //!  - BOUNDARY LOCKING (finding 1): positions shared across two groups are
@@ -271,9 +272,9 @@ impl Cluster {
     }
 }
 
-/// An explicit group record (finding 2). Every member cluster — the children it
-/// consumes AND the parents it produces — shares this ONE bounds sphere + error,
-/// so they all cross the same screen-space threshold: crack-free by construction.
+/// An explicit bake-lineage group (finding 2). Its children and produced
+/// re-shards retain one bounds/error record for offline lineage analysis; this
+/// metadata has no live screen-space selection role.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Group {
     pub id: u32,
@@ -296,7 +297,8 @@ pub struct Dag {
     pub clusters: Vec<Cluster>,
     /// Explicit group records; `groups[id as usize].id == id`.
     pub groups: Vec<Group>,
-    /// Cluster ids per level; level 0 = leaves (finest), last = root(s).
+    /// Serialized bake lineage; level 0 is the live, loss-free leaf geometry.
+    /// Higher entries are superseded lineage, never a runtime detail choice.
     pub levels: Vec<Vec<u32>>,
     /// Triangle count of the input mesh (leaf sum invariant).
     pub input_tri_count: u32,

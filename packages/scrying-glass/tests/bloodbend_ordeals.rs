@@ -42,7 +42,6 @@ fn proof_params() -> SceneParameters {
         camera_position: [0.0, 1.7, 24.0],
         camera_yaw: 0.0,
         camera_pitch: 0.0,
-        cluster_error_threshold: 1.0,
         tick_dt: 1.0 / 60.0,
         sun: SunDefaults {
             sun_color: "#ffe8c0".into(),
