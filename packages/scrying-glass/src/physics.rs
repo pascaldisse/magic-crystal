@@ -240,6 +240,19 @@ impl Physics {
             ..SolverConfig::default()
         };
         let mut solver = Solver::new(config);
+        // S16 ISLAND SLEEP — IRON params. `GAIA_NATIVE_SLEEP=1` arms per-island
+        // rest (settled bodies skip the whole solve); off = byte-unchanged.
+        // `GAIA_NATIVE_SLEEP_VEL` (m/s) / `GAIA_NATIVE_SLEEP_FRAMES` tune the
+        // rest threshold; sane defaults live in `SolverConfig`.
+        if std::env::var("GAIA_NATIVE_SLEEP").map(|v| v == "1" || v == "true").unwrap_or(false) {
+            if let Ok(v) = std::env::var("GAIA_NATIVE_SLEEP_VEL").and_then(|s| s.parse::<f64>().map_err(|_| std::env::VarError::NotPresent)) {
+                solver.config.sleep_vel = v;
+            }
+            if let Ok(f) = std::env::var("GAIA_NATIVE_SLEEP_FRAMES").and_then(|s| s.parse::<u32>().map_err(|_| std::env::VarError::NotPresent)) {
+                solver.config.sleep_frames = f;
+            }
+            solver.set_sleep(true);
+        }
         solver.collider = Some(Collider {
             triangles: collider_triangles,
             material: ContactMaterial::default(),
