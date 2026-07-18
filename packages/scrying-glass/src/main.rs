@@ -1221,8 +1221,12 @@ struct NetPresent {
     /// Low-res noisy radiance accum (STORAGE|COPY_SRC|COPY_DST — cleared each
     /// frame so a moving camera never smears progressive samples).
     net_accum: wgpu::Buffer,
-    /// Native-res AOV G-buffer (albedo/normal/depth, 2 cells/px).
-    net_aov: wgpu::Buffer,
+    /// Native-res AOV G-buffer (albedo/normal/depth, 2 cells/px). N0.i S13:
+    /// ONE PER SET — the frame overlap demods the PREVIOUS frame's net output,
+    /// so its albedo must be that frame's, not the one trace just wrote. Trace
+    /// writes `net_aov[set]`, gather reads `net_aov[set]`, demod reads
+    /// `net_aov[demod_set]` — albedo stays matched to the radiance's frame.
+    net_aov: Vec<wgpu::Buffer>,
     /// Surface-res present accum the blit resolves to screen (linear rgb, w=1).
     present_accum: wgpu::Buffer,
     present_blit_bg: wgpu::BindGroup,
@@ -1240,10 +1244,17 @@ struct NetPresent {
     /// S3 instrument: the net forward's GPU-only ms (MTLCommandBuffer GPU
     /// timestamps), split from `s_net` (the wall around the blocking call).
     s_net_gpu: Vec<f64>,
+    /// N0.i S13 probe: the net stage's wall split — commit CPU ms (critical
+    /// path) and downstream wait ms (overlap-hidden). Where the ~8.5 ms hides.
+    s_net_commit: Vec<f64>,
+    s_net_wait: Vec<f64>,
     s_demod: Vec<f64>,
     s_present: Vec<f64>,
     s_total: Vec<f64>,
     frames: u64,
+    /// N0.i S13 THROUGHPUT: wall-clock start of the first recorded frame, for
+    /// the frames/second-over-the-whole-run figure (the throughput truth).
+    wall_start: Option<Instant>,
 }
 
 // SAFETY: `NetPresent` embeds `RdirectLive` (an MPSGraph handle + Metal
@@ -1295,7 +1306,11 @@ impl NetPresent {
                 | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let net_aov = integrator.make_aov_buffer(device, target_w, target_h);
+        // N0.i S13: one AOV per buffer set (frame-overlap demod matches albedo
+        // to the radiance's frame). Same count as the net's double-buffer sets.
+        let net_aov: Vec<wgpu::Buffer> = (0..live.set_count())
+            .map(|_| integrator.make_aov_buffer(device, target_w, target_h))
+            .collect();
         let present_accum = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("net-present surface accum"),
             size: (n as u64).max(1) * 16,
@@ -1322,10 +1337,13 @@ impl NetPresent {
             s_gather: Vec::new(),
             s_net: Vec::new(),
             s_net_gpu: Vec::new(),
+            s_net_commit: Vec::new(),
+            s_net_wait: Vec::new(),
             s_demod: Vec::new(),
             s_present: Vec::new(),
             s_total: Vec::new(),
             frames: 0,
+            wall_start: None,
         })
     }
 
@@ -1352,7 +1370,8 @@ impl NetPresent {
         // Bind groups over the integrator's node/tri buffers (reallocated each
         // dynamic tick) — rebuilt per frame, handle-weight.
         let accum_bg = integrator.compute_bind_group(device, &self.net_accum);
-        let aov_bg = integrator.aov_bind_group(device, &self.net_aov);
+        // N0.i S13: trace + gather touch THIS frame's set's AOV.
+        let aov_bg = integrator.aov_bind_group(device, &self.net_aov[set]);
 
         // —— STAGE: trace (low radiance + native AOV) ——
         let t0 = Instant::now();
@@ -1393,7 +1412,7 @@ impl NetPresent {
             queue,
             &mut enc,
             &self.net_accum,
-            &self.net_aov,
+            &self.net_aov[set],
             feats,
             self.low_w,
             self.low_h,
@@ -1410,50 +1429,59 @@ impl NetPresent {
         // split introduces (net→demod stays a CPU fence via commit_net).
         self.live.signal_gather_ready();
 
-        // —— STAGE: net (S9 PIPELINED: encode already done on the encode thread)
-        // The ~14 ms MPSGraph `encodeToCommandBuffer` (S8 default path) ran on
-        // the background encode thread while the render thread did trace+gather;
-        // `commit_net` here only COMMITS the pre-encoded buffer for `set` (which
-        // the gather just filled) and WAITS for the GPU forward. So `net_ms`
-        // (wall) now measures ≈ commit + GPU wait, NOT encode + GPU. GPU-only ms
-        // still comes from MTLCommandBuffer timestamps (S3). The result stays ON
-        // the GPU in `output_buffer_set(set)` — no readback.
+        // —— STAGE: net (N0.i S13 FRAME OVERLAP) ———————————————————————————
+        // `commit_net` commits THIS frame's pre-encoded buffer (for `set`, which
+        // the gather just filled) WITHOUT blocking — its GPU forward now overlaps
+        // the NEXT frame's trace+gather — and WAITS the PREVIOUS frame's buffer,
+        // whose net ran during THIS frame's trace+gather and is (near-)complete.
+        // So `net_ms` (wall) now measures ≈ commit(cur) + wait(prev, overlapped).
+        // GPU-only ms is the completed PREVIOUS buffer's timestamps. The demod
+        // consumes that finished buffer's set — one frame of DISPLAY latency, and
+        // the presented image is always the COMPLETE image of its own frame's
+        // evidence (output-or-nothing). `None` only on the first frame.
         let t2 = Instant::now();
-        self.live.commit_net().expect("net commit_net");
+        let demod_set = self.live.commit_net().expect("net commit_net");
         let net_ms = t2.elapsed().as_secs_f64() * 1000.0;
         let net_gpu_ms = self.live.last_gpu_ms();
 
         // —— STAGE: resolve (CUT 2 GPU demod — no AOV readback, no CPU loop) ——
-        // One compute dispatch: reads the net output MTLBuffer (zero-copy wgpu
-        // view) + the native AOV albedo, undoes the log-demod, writes
-        // present_accum. Same pixels as the old CPU round-trip, all on the GPU.
+        // One compute dispatch: reads the FINISHED net output MTLBuffer (the
+        // previous frame's `demod_set`, zero-copy wgpu view) + its AOV albedo,
+        // undoes the log-demod, writes present_accum. Skipped on the first frame
+        // (demod_set None) — present_accum stays as-is (black on boot).
         let t3 = Instant::now();
-        let net_out = self
-            .live
-            .output_buffer_set(set)
-            .expect("net-present pooled output buffer");
-        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("net demod"),
-        });
-        self.demod.encode(
-            device,
-            queue,
-            &mut enc,
-            net_out,
-            &self.net_aov,
-            &self.present_accum,
-            self.n as u32,
-            false, // presented (undo albedo demod); belief eye is the /scry?eye=belief capture
-        );
-        queue.submit(Some(enc.finish()));
-        let _ = device.poll(wgpu::PollType::wait_indefinitely());
-        // S12.5: remember which set the net just wrote, so a /scry?eye=belief
-        // capture can re-demod THIS frame's net output in belief mode.
-        self.last_set = set;
+        if let Some(dset) = demod_set {
+            let net_out = self
+                .live
+                .output_buffer_set(dset)
+                .expect("net-present pooled output buffer");
+            let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("net demod"),
+            });
+            self.demod.encode(
+                device,
+                queue,
+                &mut enc,
+                net_out,
+                &self.net_aov[dset],
+                &self.present_accum,
+                self.n as u32,
+                false, // presented (undo albedo demod); belief eye is /scry?eye=belief
+            );
+            queue.submit(Some(enc.finish()));
+            let _ = device.poll(wgpu::PollType::wait_indefinitely());
+            // S12.5: remember which set the presented frame came from, so a
+            // /scry?eye=belief capture re-demods THAT net output in belief mode.
+            self.last_set = dset;
+        }
         // The present blit resolves present_accum (w=1) 1:1 nearest to screen.
         queue.write_buffer(&integrator.uniform_buf, 0, bytemuck::bytes_of(blit_uniform));
         let resolve_ms = t3.elapsed().as_secs_f64() * 1000.0;
         self.s_net_gpu.push(net_gpu_ms);
+        // N0.i S13 probe: the net wall = commit(cur, critical) + wait(prev,
+        // overlap-hidden). Split them so the doc can name where the gap lives.
+        self.s_net_commit.push(self.live.last_commit_ms());
+        self.s_net_wait.push(self.live.last_wait_ms());
 
         (trace_ms, gather_ms, net_ms, resolve_ms)
     }
@@ -1468,12 +1496,21 @@ impl NetPresent {
         self.s_demod.push(t.demod);
         self.s_present.push(t.present);
         self.s_total.push(t.total);
+        if self.wall_start.is_none() {
+            self.wall_start = Some(Instant::now());
+        }
         self.frames += 1;
         if self.frames % 60 == 0 {
+            // N0.i S13 throughput truth: frames / wall seconds over the run.
+            let wall_fps = self
+                .wall_start
+                .map(|s| self.frames as f64 / s.elapsed().as_secs_f64().max(1e-9))
+                .unwrap_or(0.0);
             eprintln!(
-                "[n0g] frames={} {}x{}→{}x{} (ms median/p95 vs 16.67): \
-                 trace {:.2}/{:.2} gather {:.2}/{:.2} net[wall {:.2}/{:.2} gpu {:.2}/{:.2}] \
-                 demod {:.2}/{:.2} present {:.2}/{:.2} TOTAL {:.2}/{:.2}",
+                "[n0i] frames={} {}x{}→{}x{} (ms median/p95 vs 16.67): \
+                 trace {:.2}/{:.2} gather {:.2}/{:.2} \
+                 net[wall {:.2}/{:.2} gpu {:.2}/{:.2} commit {:.2}/{:.2} wait {:.2}/{:.2}] \
+                 demod {:.2}/{:.2} present {:.2}/{:.2} TOTAL {:.2}/{:.2} | WALL-FPS {:.1}",
                 self.frames,
                 self.low_w,
                 self.low_h,
@@ -1487,12 +1524,17 @@ impl NetPresent {
                 pct(&self.s_net, 0.95),
                 pct(&self.s_net_gpu, 0.5),
                 pct(&self.s_net_gpu, 0.95),
+                pct(&self.s_net_commit, 0.5),
+                pct(&self.s_net_commit, 0.95),
+                pct(&self.s_net_wait, 0.5),
+                pct(&self.s_net_wait, 0.95),
                 pct(&self.s_demod, 0.5),
                 pct(&self.s_demod, 0.95),
                 pct(&self.s_present, 0.5),
                 pct(&self.s_present, 0.95),
                 pct(&self.s_total, 0.5),
                 pct(&self.s_total, 0.95),
+                wall_fps,
             );
         }
     }
@@ -1501,20 +1543,28 @@ impl NetPresent {
     /// median/p95 (ms) plus the frame count and the 16.67 ms wall.
     fn budget_json(&self) -> String {
         let path = if self.live.use_mpsgraph_now() { "mpsgraph" } else { "chain" };
+        let wall_fps = self
+            .wall_start
+            .map(|s| self.frames as f64 / s.elapsed().as_secs_f64().max(1e-9))
+            .unwrap_or(0.0);
         format!(
-            "{{\"frames\":{},\"wall_ms\":16.67,\"path\":\"{path}\",\
+            "{{\"frames\":{},\"wall_ms\":16.67,\"wall_fps\":{:.2},\"path\":\"{path}\",\
              \"canvas\":[{},{}],\"stages\":{{\
              \"trace\":[{:.3},{:.3}],\"gather\":[{:.3},{:.3}],\
              \"net_wall\":[{:.3},{:.3}],\"net_gpu\":[{:.3},{:.3}],\
+             \"net_commit\":[{:.3},{:.3}],\"net_wait\":[{:.3},{:.3}],\
              \"demod\":[{:.3},{:.3}],\"present\":[{:.3},{:.3}],\
              \"total\":[{:.3},{:.3}]}}}}",
             self.frames,
+            wall_fps,
             self.target_w,
             self.target_h,
             pct(&self.s_trace, 0.5), pct(&self.s_trace, 0.95),
             pct(&self.s_gather, 0.5), pct(&self.s_gather, 0.95),
             pct(&self.s_net, 0.5), pct(&self.s_net, 0.95),
             pct(&self.s_net_gpu, 0.5), pct(&self.s_net_gpu, 0.95),
+            pct(&self.s_net_commit, 0.5), pct(&self.s_net_commit, 0.95),
+            pct(&self.s_net_wait, 0.5), pct(&self.s_net_wait, 0.95),
             pct(&self.s_demod, 0.5), pct(&self.s_demod, 0.95),
             pct(&self.s_present, 0.5), pct(&self.s_present, 0.95),
             pct(&self.s_total, 0.5), pct(&self.s_total, 0.95),
@@ -2724,7 +2774,7 @@ impl Renderer {
             &self.queue,
             &mut enc,
             net_out,
-            &np.net_aov,
+            &np.net_aov[np.last_set],
             &np.present_accum,
             np.n as u32,
             true, // BELIEF

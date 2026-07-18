@@ -488,20 +488,37 @@ kernel void bias_relu(
         }
     }
 
-    /// Commit a `PreparedNet` and block until its GPU forward completes.
-    /// Returns GPU-only ms (MTLCommandBuffer GPU timestamps). Render-thread
-    /// only.
+    /// N0.i S13 — COMMIT ONLY (no wait). Submits the pre-encoded net buffer to
+    /// its queue and returns immediately, so its GPU forward can OVERLAP the
+    /// NEXT frame's trace+gather on the render queue. The wait moves one frame
+    /// downstream (`wait_prepared`). Returns the CPU ms the commit itself cost
+    /// (the S13 probe: is the ~8.5 ms net_wall−net_gpu gap the commit or the
+    /// wait?). Render-thread only.
     #[allow(unsafe_op_in_unsafe_fn)]
-    unsafe fn commit_prepared(p: &PreparedNet) -> f64 {
+    unsafe fn commit_prepared_nowait(p: &PreparedNet) -> f64 {
         if net_trace() {
             eprintln!("[net-trace] pre-commit set={} base.status={:?}", p.set, p.base.status());
         }
+        let t = std::time::Instant::now();
         if let Some(mps) = &p.mps {
-            let root = mps.rootCommandBuffer();
             mps.commit();
-            root.waitUntilCompleted();
         } else {
             p.base.commit();
+        }
+        t.elapsed().as_secs_f64() * 1000.0
+    }
+
+    /// N0.i S13 — WAIT ONLY. Blocks until an already-committed `PreparedNet`'s
+    /// GPU forward completes and returns GPU-only ms (MTLCommandBuffer GPU
+    /// timestamps). Called ONE frame after `commit_prepared_nowait`, so in
+    /// steady state the buffer has been running during the intervening
+    /// trace+gather and this wait is short (overlap dividend). Render-thread
+    /// only.
+    #[allow(unsafe_op_in_unsafe_fn)]
+    unsafe fn wait_prepared(p: &PreparedNet) -> f64 {
+        if let Some(mps) = &p.mps {
+            mps.rootCommandBuffer().waitUntilCompleted();
+        } else {
             p.base.waitUntilCompleted();
         }
         // S11 INSTRUMENT: after the wait, read the base buffer's terminal status
@@ -547,6 +564,15 @@ kernel void bias_relu(
         rx_ready: Receiver<PreparedNet>,
         /// The buffer `begin_frame` claimed this frame, consumed by `commit_net`.
         current: Option<PreparedNet>,
+        /// N0.i S13 FRAME OVERLAP — the buffer committed LAST frame, its GPU
+        /// forward running (overlapping this frame's trace+gather) and awaiting
+        /// its wait one frame downstream. `commit_net` commits `current` without
+        /// blocking, moves it here, and waits/returns the PREVIOUS occupant (the
+        /// frame whose net is now complete) for the demod+present. This is the
+        /// double-buffered output that keeps output-or-nothing intact at the
+        /// cost of one frame of DISPLAY latency (never evidence latency: each
+        /// presented image is the complete image of its OWN frame's trace).
+        pending: Option<PreparedNet>,
         join: Option<JoinHandle<()>>,
     }
 
@@ -570,6 +596,12 @@ kernel void bias_relu(
         /// GPUEndTime − GPUStartTime, ms). The `runWithMTLCommandQueue` API hid
         /// this; the encode path below owns the command buffer so it reads it.
         last_gpu_ms: Cell<f64>,
+        /// N0.i S13 probe: CPU ms the last net COMMIT cost (no wait) and the
+        /// last downstream WAIT cost. Splits the ~8.5 ms net_wall−net_gpu gap
+        /// into its commit half (on the critical path) vs its wait half (which
+        /// the frame overlap hides). Read by the budget line.
+        last_commit_ms: Cell<f64>,
+        last_wait_ms: Cell<f64>,
         /// S8 A/B toggle: force the raw MPSMatrixMultiplication chain (default
         /// TRUE = MPSGraph, the fused-GPU winner, per S8). `GAIA_NATIVE_NET_CHAIN=1`
         /// opts into the chain; `set_use_mpsgraph` flips it (the parity ordeal).
@@ -678,6 +710,8 @@ kernel void bias_relu(
                     pool: None,
                     event,
                     last_gpu_ms: Cell::new(0.0),
+                    last_commit_ms: Cell::new(0.0),
+                    last_wait_ms: Cell::new(0.0),
                     // S8: MPSGraph (fused GPU, 6.65 ms) is the DEFAULT — it beat
                     // the un-fused chain (42.8 ms GPU) 1.8× in N0.f. The chain
                     // stays a lab A/B opt-in via `GAIA_NATIVE_NET_CHAIN`.
@@ -933,7 +967,9 @@ kernel void bias_relu(
             // Autorelease pool drains MPSGraph's per-run intermediate NDArrays.
             objc2::rc::autoreleasepool(|_| unsafe {
                 let prepared = pool.ctx.encode(set, false);
-                let gpu_ms = commit_prepared(&prepared);
+                // Sync/ordeal path: commit + wait back-to-back on this thread.
+                let _ = commit_prepared_nowait(&prepared);
+                let gpu_ms = wait_prepared(&prepared);
                 self.last_gpu_ms.set(gpu_ms);
             });
             Ok(())
@@ -992,6 +1028,7 @@ kernel void bias_relu(
                 tx_req,
                 rx_ready,
                 current: None,
+                pending: None,
                 join: Some(join),
             });
             Ok(())
@@ -1017,29 +1054,73 @@ kernel void bias_relu(
             set
         }
 
-        /// S9: commit this frame's claimed net command buffer (after the gather
-        /// filled its set) and block until the GPU forward completes. Records
-        /// GPU-only ms, then requests the encode thread to prepare the NEXT
-        /// command buffer for the SAME set (ready ~2 frames later — the
-        /// double-buffer keeps the encode a frame ahead of consumption). The
-        /// render thread's only cost here is the commit + the GPU wait; the
-        /// ~14 ms encode already happened on the encode thread.
-        pub fn commit_net(&self) -> Result<(), String> {
+        /// N0.i S13 FRAME OVERLAP: commit this frame's claimed net buffer
+        /// WITHOUT blocking (its GPU forward now overlaps the NEXT frame's
+        /// trace+gather), stash it as `pending`, and WAIT/return the PREVIOUS
+        /// frame's buffer — whose net has been running during THIS frame's
+        /// trace+gather and is (near-)complete, so the wait is short. The
+        /// returned `Some(set)` names the buffer set whose net output is ready
+        /// for demod+present; `None` only on the very first frame (nothing
+        /// finished yet — present nothing, output-or-nothing holds).
+        ///
+        /// Per-set net queues (N0.h) keep the FIFO waits monotonic PER QUEUE:
+        /// each set's queue runs its buffers in commit order (frame N, N+2, …),
+        /// each awaiting its own strictly-increasing V signaled that frame — the
+        /// deferral moves only WHEN we `waitUntilCompleted`, never the
+        /// signal/wait pairing, so the N0.h wedge cannot reopen.
+        ///
+        /// Refill cadence is unchanged: one refill request per frame for the
+        /// CURRENT set (the buffer just committed), so the encode thread stays
+        /// SET_COUNT deep and `begin_frame` never stalls.
+        pub fn commit_net(&self) -> Result<Option<usize>, String> {
             let mut guard = self.pipeline.borrow_mut();
             let pipe = guard
                 .as_mut()
                 .expect("rdirect_live: commit_net before start_pipeline");
-            let prepared = pipe
+            let current = pipe
                 .current
                 .take()
                 .expect("rdirect_live: commit_net without begin_frame");
-            let set = prepared.set;
-            // SAFETY: this thread solely owns `prepared` now; commit + wait here.
-            let gpu_ms = objc2::rc::autoreleasepool(|_| unsafe { commit_prepared(&prepared) });
-            self.last_gpu_ms.set(gpu_ms);
-            // Ask for the replacement for this set (double-buffer refill).
-            let _ = pipe.tx_req.send(set);
-            Ok(())
+            let cur_set = current.set;
+            // Commit THIS frame's buffer without waiting (overlap starts now).
+            // SAFETY: this thread solely owns `current`; commit here.
+            let commit_ms =
+                objc2::rc::autoreleasepool(|_| unsafe { commit_prepared_nowait(&current) });
+            self.last_commit_ms.set(commit_ms);
+            // Keep the encode a frame ahead: refill the set we just committed.
+            let _ = pipe.tx_req.send(cur_set);
+            // Rotate: the buffer committed LAST frame becomes the one we wait on.
+            let prev = pipe.pending.replace(current);
+            match prev {
+                Some(p) => {
+                    let demod_set = p.set;
+                    // SAFETY: `p` was committed last frame and is solely owned
+                    // here now; wait for its GPU forward (short — overlapped).
+                    let (gpu_ms, wait_ms) = objc2::rc::autoreleasepool(|_| unsafe {
+                        let t = std::time::Instant::now();
+                        let g = wait_prepared(&p);
+                        (g, t.elapsed().as_secs_f64() * 1000.0)
+                    });
+                    self.last_gpu_ms.set(gpu_ms);
+                    self.last_wait_ms.set(wait_ms);
+                    Ok(Some(demod_set))
+                }
+                None => {
+                    // First frame: nothing finished to present yet.
+                    self.last_gpu_ms.set(0.0);
+                    self.last_wait_ms.set(0.0);
+                    Ok(None)
+                }
+            }
+        }
+
+        /// N0.i S13 probe: split of the net stage's wall cost — the commit CPU
+        /// ms (critical path) and the downstream wait ms (overlap-hidden).
+        pub fn last_commit_ms(&self) -> f64 {
+            self.last_commit_ms.get()
+        }
+        pub fn last_wait_ms(&self) -> f64 {
+            self.last_wait_ms.get()
         }
 
         /// S12: release the gather→net fence. Call AFTER the gather submit AND
