@@ -493,6 +493,12 @@ pub struct Player {
     pub grounded: bool,
     /// Held Space is one jump until release (edge-triggered launch).
     jump_locked: bool,
+    /// PLAYGROUND — an edge-fired PUSH request from the window (F key or a
+    /// click while pointer-locked, or the `/push` organ). The render loop
+    /// consumes it once per set, casts the view ray, and shoves the nearest
+    /// pushable body with an `Op::Impulse`. A plain flag (not a movement
+    /// `Key`) because it is a one-shot action, not a held control.
+    pub push_pending: bool,
     /// Last static ground pose — a void fall returns here.
     last_safe: Option<Vec3>,
     /// Spawn eye pose `(position, yaw)` for respawns.
@@ -514,6 +520,7 @@ impl Player {
             keys: HashSet::new(),
             grounded: false,
             jump_locked: false,
+            push_pending: false,
             last_safe: None,
             spawn: (spawn_eye, spawn_yaw),
         }

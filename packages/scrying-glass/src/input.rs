@@ -25,6 +25,7 @@ mod vk {
     pub const S: u16 = 1;
     pub const D: u16 = 2;
     pub const C: u16 = 8;
+    pub const F: u16 = 3;
     pub const W: u16 = 13;
     pub const SPACE: u16 = 49;
     pub const ESCAPE: u16 = 53;
@@ -77,6 +78,10 @@ pub fn install_player_input(player: Arc<Mutex<Player>>) -> Result<(), String> {
                         CGAssociateMouseAndMouseCursorPosition(false);
                         NSCursor::hide();
                     }
+                } else if let Ok(mut player) = player.lock() {
+                    // PLAYGROUND — a click while ALREADY pointer-locked is a
+                    // PUSH (the first click only captures the pointer).
+                    player.push_pending = true;
                 }
             }
             NSEventType::KeyDown => {
@@ -87,6 +92,13 @@ pub fn install_player_input(player: Arc<Mutex<Player>>) -> Result<(), String> {
                             CGAssociateMouseAndMouseCursorPosition(true);
                             NSCursor::unhide();
                         }
+                    }
+                } else if code == vk::F {
+                    // PLAYGROUND — F is the PUSH key: edge-fire a shove of the
+                    // body the view ray is aimed at (consumed by the render
+                    // loop, same Op::Impulse route an agent op would take).
+                    if let Ok(mut player) = player.lock() {
+                        player.push_pending = true;
                     }
                 } else if let Some(key) = intent(code)
                     && let Ok(mut player) = player.lock()

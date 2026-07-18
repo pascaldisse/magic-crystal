@@ -187,6 +187,72 @@
 //!     by that test still passing verbatim — the realm-growth law's other
 //!     branch: sometimes the honest re-derivation is "no change", and this
 //!     comment records why rather than silently relying on it).
+//!   ── THE PHYSICS PLAYGROUND (toy-add a49bd77, 07-18): nine `body` box
+//!   vessels (unrotated 0.8 cubes, half=0.4) planted on `naruko_terra`
+//!   (ground top y=0 in this footprint) south of the market, z∈[32,35] —
+//!   AABB = entityPos ± 0.4 on every axis (no part offset). ──
+//!   playground_stack_0   pos [-3.0,0.45,35.0]  center [-3.0,0.45,35.0]
+//!   playground_stack_1   pos [-3.0,1.30,35.0]  center [-3.0,1.30,35.0]
+//!   playground_stack_2   pos [-3.0,2.15,35.0]  center [-3.0,2.15,35.0]
+//!   playground_stack_3   pos [-3.0,3.00,35.0]  center [-3.0,3.00,35.0]
+//!   playground_stack_4   pos [-3.0,3.85,35.0]  center [-3.0,3.85,35.0]
+//!     — a 5-crate authored-at-rest column (a49bd77's `stack`): each level
+//!     y = ground(0) + half(0.4) + contact_radius(0.05) = 0.45, then +0.85
+//!     per level (2·half + contact_radius = 0.85, the SAME simplified
+//!     chain-rest convention `naruko_stack_crate_0/1/2` was authored at —
+//!     that stack's F6 solver-rested gaze (`rest_pose_canon.rs`) measured
+//!     the true chain including `contact_margin` (1 mm) departs from this
+//!     convention by ≤0.0004 m, well under RANGE_TOL — so these five are
+//!     read at their AUTHORED (load) pose here, unticked, same precedent).
+//!   playground_break_crate pos [-0.8,0.45,34.5] center [-0.8,0.45,34.5]
+//!     — the bonded/fracturable crate (a49bd77 + b3ba864 love=0.5 +
+//!     ad22ce8 settle=90), also ground-rest y=0.45, standing alone at rest
+//!     (no impulse applied by a static gaze) so load pose is senses-truth
+//!     unticked, same reasoning.
+//!   playground_pyramid_0 pos [-2.35,0.45,32.0] center [-2.35,0.45,32.0]
+//!   playground_pyramid_1 pos [-1.65,0.45,32.0] center [-1.65,0.45,32.0]
+//!   playground_pyramid_2 pos [-2.00,1.30,32.0] center [-2.00,1.30,32.0]
+//!     — a two-base/one-apex pyramid (a49bd77): the two base crates rest on
+//!     the ground at y=0.45 (same formula), the apex centers exactly
+//!     between them in x ((-2.35-1.65)/2 = -2.0) at y=1.30 = 0.45 + 0.85
+//!     (one chain-rest level up, same convention as the stack).
+//!   FRUSTUM (eye [0,7,44] yaw 0, planes below): the LEFT/RIGHT/TOP planes
+//!   never bind for this cluster (all nine clear those three planes by wide
+//!   margins — worst-case right-plane dot -13.42 vs offset -22, worst-case
+//!   top-plane dot -15.84 vs offset -28.06, shown by direct computation);
+//!   only the BOTTOM plane (n=(0,0.8660254,-0.5), offset
+//!   0.8660254·7 − 0.5·44 = 6.0621780 − 22 = −15.9378220) is close enough to
+//!   matter, since every crate sits low (y≈0.45–1.30) far out (z≈32–35).
+//!   Conservative AABB test: outside iff 0.8660254·mx_y − 0.5·mn_z <
+//!   −15.9378220, using the box's TOP-front corner (mx_y = center.y+0.4,
+//!   mn_z = center.z−0.4 — the corner that maximizes the dot product):
+//!     stack_0        mx_y=0.85 mn_z=34.6 → 0.7361216−17.3     = −16.5639 < −15.9378 ⇒ OUT (by 0.6261)
+//!     stack_1        mx_y=1.70 mn_z=34.6 → 1.4722432−17.3     = −15.8278 ≥ −15.9378 ⇒ IN  (margin 0.1100)
+//!     stack_2        mx_y=2.55 mn_z=34.6 → 2.2083648−17.3     = −15.0916 ≥ −15.9378 ⇒ IN
+//!     stack_3        mx_y=3.40 mn_z=34.6 → 2.9444864−17.3     = −14.3555 ≥ −15.9378 ⇒ IN
+//!     stack_4        mx_y=4.25 mn_z=34.6 → 3.6806080−17.3     = −13.6194 ≥ −15.9378 ⇒ IN
+//!     break_crate    mx_y=0.85 mn_z=34.1 → 0.7361216−17.05    = −16.3139 < −15.9378 ⇒ OUT (by 0.3761)
+//!     pyramid_0      mx_y=0.85 mn_z=31.6 → 0.7361216−15.80    = −15.0639 ≥ −15.9378 ⇒ IN
+//!     pyramid_1      mx_y=0.85 mn_z=31.6 → 0.7361216−15.80    = −15.0639 ≥ −15.9378 ⇒ IN
+//!     pyramid_2      mx_y=1.70 mn_z=31.6 → 1.4722432−15.80    = −14.3278 ≥ −15.9378 ⇒ IN
+//!   ⇒ SEVEN of the nine are in-frustum (stack_1/2/3/4, pyramid_0/1/2);
+//!   stack_0 and break_crate — the two LOWEST-and-farthest boxes (only
+//!   ground level at z=34.6/34.1) — fall just below the bottom plane and
+//!   are excluded. entity_count grows 29→36.
+//!   Ranges (center−eye, eye [0,7,44]), the in-frustum seven:
+//!     stack_1   d=[-3,-5.70,-9] → √(9+32.49+81)   = √122.49  = 11.0675
+//!     stack_2   d=[-3,-4.85,-9] → √(9+23.5225+81) = √113.5225= 10.6547
+//!     stack_3   d=[-3,-4.00,-9] → √(9+16+81)      = √106     = 10.2956
+//!     stack_4   d=[-3,-3.15,-9] → √(9+9.9225+81)  = √99.9225 = 9.9961
+//!     pyramid_0 d=[-2.35,-6.55,-12] → √(5.5225+42.9025+144) = √192.425 = 13.8717
+//!     pyramid_1 d=[-1.65,-6.55,-12] → √(2.7225+42.9025+144) = √189.625 = 13.7704
+//!     pyramid_2 d=[-2,-5.70,-12]    → √(4+32.49+144)        = √180.49  = 13.4347
+//!   All seven undercut every prior nearest-5 entrant (`naruko_show_light_c`
+//!   at 12.4230 was nearest before) — the four stack crates AND light_c beat
+//!   the pyramid trio, so the new default top-5 is
+//!   [stack_4, stack_3, stack_2, stack_1, show_light_c] (9.9961 < 10.2956 <
+//!   10.6547 < 11.0675 < 12.4230), pushing show_chrome (15.7392) etc. down;
+//!   the pyramid trio (13.43–13.87) ranks 6th–8th, still ahead of show_chrome.
 //! Eye basis at yaw 0: fwd=(0,0,-1), right=(1,0,0), up=(0,1,0); FOV 60 vertical
 //! (aspect 1) ⇒ tan_half = tan(30°) = 0.5773502692.
 
@@ -274,6 +340,17 @@ fn range_of(g: &Glance, id: &str) -> f32 {
 /// eye y=7) sits well inside its cone half-width tan30·z_view (chrome 4.5/4.15
 /// < 8.37, mirror 6.5/3.6 < 9.24, light_a 1.5/5.0 < 8.66, light_b 4.0/3.4 <
 /// 8.66, light_c 1.5/1.8 < 7.04) ⇒ all five in-frustum. entity_count = 29.
+///
+/// THE PHYSICS PLAYGROUND (toy-add a49bd77) grows it to THIRTY-SIX: seven of
+/// the nine new box vessels clear the BOTTOM plane (the only plane close
+/// enough to bind at their low y / far z — left/right/top all clear by wide
+/// margins), the conservative AABB corner test derived in the header comment
+/// (n=(0,0.8660254,-0.5), offset -15.9378220): stack_1 (margin +0.1100),
+/// stack_2, stack_3, stack_4, pyramid_0, pyramid_1, pyramid_2 all land INSIDE;
+/// stack_0 (-0.6261) and playground_break_crate (-0.3761) land OUTSIDE — the
+/// two lowest boxes sitting at the shallowest z (34.6/34.1, nearest the eye's
+/// downward sightline edge) dip just under the bottom plane. entity_count =
+/// 29 + 7 = 36.
 #[test]
 fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
     let world = canon();
@@ -282,11 +359,13 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
     assert_eq!(eye.yaw, 0.0, "canon spawn yaw");
 
     // Full frustum set (captions with a wide nearest_n and support included).
+    // nearest_n=40: 36 in-frustum meshed vessels (Physics Playground grows
+    // 29→36) + terra + sea (support) = 38 ≤ 40, room to spare.
     let g = look(
         &world,
         eye,
         LookParams {
-            nearest_n: 32,
+            nearest_n: 40,
             include_support: true,
             ..Default::default()
         },
@@ -316,10 +395,14 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
     // center [3,2.9,18] and naruko_mirror_minor center [-9,2.9,18], both
     // |x_off| < tan30·26 = 15.01) and set the cyan kami orb between them
     // (naruko_kami_orb, bind center [-1,2.2,18.1], |x_off|=1 < tan30·25.9 =
-    // 14.95) — the 19th–21st meshed vessels, dead ahead.
+    // 14.95) — the 19th–21st meshed vessels, dead ahead. THE PHYSICS
+    // PLAYGROUND adds SEVEN more (stack_1/2/3/4, pyramid_0/1/2 — bottom-plane
+    // corner test derived in the header comment); stack_0 and
+    // playground_break_crate are the two that fall just OUTSIDE the bottom
+    // plane and stay uncaptioned.
     assert_eq!(
-        g.entity_count, 29,
-        "exactly the twenty-nine meshed vessels are in-frustum (Rite V: + nari, + cat; P3: + crate; rings: + a/b/c; Mirror Proof: + mirror, + minor, + orb; VI-1: + stack_crate_0/1/2; Realm Shine: + show_chrome, + show_mirror, + show_light_a/b/c)"
+        g.entity_count, 36,
+        "exactly thirty-six meshed vessels are in-frustum (Rite V: + nari, + cat; P3: + crate; rings: + a/b/c; Mirror Proof: + mirror, + minor, + orb; VI-1: + stack_crate_0/1/2; Realm Shine: + show_chrome, + show_mirror, + show_light_a/b/c; Physics Playground: + stack_1/2/3/4, + pyramid_0/1/2)"
     );
     let caps = caption_ids(&g);
     for id in [
@@ -352,12 +435,24 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
         "naruko_show_light_a",
         "naruko_show_light_b",
         "naruko_show_light_c",
+        "playground_stack_1",
+        "playground_stack_2",
+        "playground_stack_3",
+        "playground_stack_4",
+        "playground_pyramid_0",
+        "playground_pyramid_1",
+        "playground_pyramid_2",
     ] {
         assert!(caps.contains(&id.to_string()), "{id} must be in-frustum");
     }
     // env & world_spawn have no bounds ⇒ never captioned.
     assert!(!caps.contains(&"env".to_string()));
     assert!(!caps.contains(&"world_spawn".to_string()));
+    // The two culled playground boxes never enter the caption set (bottom-
+    // plane corner test: stack_0 margin -0.6261, break_crate margin -0.3761 —
+    // header comment derivation).
+    assert!(!caps.contains(&"playground_stack_0".to_string()));
+    assert!(!caps.contains(&"playground_break_crate".to_string()));
 }
 
 /// CANON #2 — the nearest-N caption ORDERING with derived ranges. Captions rank
@@ -383,6 +478,16 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
 ///   mirror         center [3, 2.9, 18]        → √(9+16.81+676)      = 26.4917
 ///   mirror_minor   center [-9, 2.9, 18]       → √(81+16.81+676)     = 27.8175
 ///   kami_orb       center [-1, 2.2, 18.1]     → √(1+23.04+670.81)   = 26.3600
+///   playground_stack_1   center [-3,1.30,35] → √(9+32.49+81)     = 11.0675
+///   playground_stack_2   center [-3,2.15,35] → √(9+23.5225+81)  = 10.6547
+///   playground_stack_3   center [-3,3.00,35] → √(9+16+81)       = 10.2956
+///   playground_stack_4   center [-3,3.85,35] → √(9+9.9225+81)   = 9.9961
+///   playground_pyramid_0 center [-2.35,0.45,32] → √(5.5225+42.9025+144) = 13.8717
+///   playground_pyramid_1 center [-1.65,0.45,32] → √(2.7225+42.9025+144) = 13.7704
+///   playground_pyramid_2 center [-2,1.30,32]    → √(4+32.49+144)        = 13.4347
+///   (stack_0 11.5283, break_crate 11.5669 are OUT OF FRUSTUM — never
+///   captioned, see CANON #1's bottom-plane derivation — so they never
+///   compete for a slot.)
 ///   (sea 604.06, terra 9.41 are SUPPORT — demoted.)
 /// The SIGNAL RINGS at 168.4–169.4 m sit far beyond the top-5 band ⇒ inert on
 /// the caption order (they rank 16th–18th).
@@ -397,7 +502,16 @@ fn canon_default_glance_frustum_set_is_the_ten_meshed_vessels() {
 /// (mirror 6th at 26.4917, chain_posts 7th at 26.5613, seawall 8th at 26.7524,
 /// mirror_minor 9th at 27.8175, crate 10th at 33.0390, chrome orb 11th at
 /// 34.5227, pier 12th at 48.1812, city 13th, rock/tower 14th/15th, rings
-/// 16th–18th).
+/// 16th–18th). THE PHYSICS PLAYGROUND then displaces the WHOLE top-5: its
+/// seven in-frustum boxes range 9.9961–13.8717, all nearer than the previous
+/// leader `naruko_show_light_c` (12.4230) except the pyramid trio (13.43–
+/// 13.87, which slot AFTER light_c) — the four stack crates (9.9961/10.2956/
+/// 10.6547/11.0675, nearest-first) fill slots 1–4 and light_c takes slot 5:
+///   [stack_4, stack_3, stack_2, stack_1, show_light_c]
+/// pushing show_chrome (15.7392) out of the top-5; the pyramid trio
+/// (13.4347/13.7704/13.8717) ranks 6th–8th, ahead of show_chrome (9th).
+/// (stack_0 and break_crate never enter this competition — CANON #1 excludes
+/// them from the frustum outright.)
 /// TOLERANCE (DERIVED): each range is the live f32 √(Σ(center−eye)²) vs the f64
 /// reference above quoted to 4 decimals. The measured live-vs-reference
 /// discrepancy across all twenty ranges peaks at 6.1e-5 m (at the 604 m sea
@@ -427,24 +541,23 @@ fn canon_nearest_ordering_and_ranges_are_derived() {
     let world = canon();
     let eye = world.spawn_pose().unwrap();
 
-    // Default nearest_n=5, support demoted. REALM SHINE's five vessels are all
-    // nearer than the old nearest non-support caption (stall 19.6037), so the
-    // top-5 is now ENTIRELY the show, ordered by range from [0,7,44]:
-    //   light_c 12.4230 < chrome 15.7392 < light_a 15.8824 < light_b 15.8921
-    //   < mirror 17.6411   (then stall 19.6037, cat 22.4292, … pushed down).
-    // terra (9.4108, nearer than light_c) stays SUPPORT-demoted; light_a vs
-    // light_b are 9.7 mm apart (≈10× RANGE_TOL) — a real, derived ordering.
+    // Default nearest_n=5, support demoted. THE PHYSICS PLAYGROUND now owns
+    // the whole top-5: the four stack crates (9.9961/10.2956/10.6547/11.0675,
+    // nearest-first) undercut every prior entrant, and show_light_c (12.4230,
+    // the old leader) takes the fifth slot ahead of the pyramid trio
+    // (13.4347-13.8717) and show_chrome (15.7392). terra (9.4108, nearer than
+    // stack_4) stays SUPPORT-demoted.
     let g = look(&world, eye, LookParams::default()).unwrap();
     assert_eq!(
         caption_ids(&g),
         vec![
+            "playground_stack_4",
+            "playground_stack_3",
+            "playground_stack_2",
+            "playground_stack_1",
             "naruko_show_light_c",
-            "naruko_show_chrome",
-            "naruko_show_light_a",
-            "naruko_show_light_b",
-            "naruko_show_mirror",
         ],
-        "default nearest-5 caption order (Realm Shine: the spawn-sightline show is the nearest cluster)"
+        "default nearest-5 caption order (Physics Playground: the stack column 4/3/2/1 leads, nearer than every prior entrant; light_c holds the fifth slot)"
     );
 
     // Support surfaces never eat a caption slot.
@@ -454,11 +567,12 @@ fn canon_nearest_ordering_and_ranges_are_derived() {
     // Derived ranges (RANGE_TOL derived above), read at a wide nearest_n so the
     // lighthouse pair is present too.
     const RANGE_TOL: f32 = 1e-3;
+    // nearest_n=40 (see CANON #1: 36 in-frustum + terra + sea = 38).
     let wide = look(
         &world,
         eye,
         LookParams {
-            nearest_n: 32,
+            nearest_n: 40,
             include_support: true,
             ..Default::default()
         },
@@ -490,6 +604,16 @@ fn canon_nearest_ordering_and_ranges_are_derived() {
         ("naruko_show_light_a", 15.8824),
         ("naruko_show_light_b", 15.8921),
         ("naruko_show_mirror", 17.6411),
+        // THE PHYSICS PLAYGROUND (derived in the header comment; only the
+        // seven in-frustum boxes — stack_0/break_crate are culled, no range
+        // to read).
+        ("playground_stack_1", 11.0675),
+        ("playground_stack_2", 10.6547),
+        ("playground_stack_3", 10.2956),
+        ("playground_stack_4", 9.9961),
+        ("playground_pyramid_0", 13.8717),
+        ("playground_pyramid_1", 13.7704),
+        ("playground_pyramid_2", 13.4347),
     ] {
         let r = range_of(&wide, id);
         assert!(
@@ -497,6 +621,12 @@ fn canon_nearest_ordering_and_ranges_are_derived() {
             "range({id}) live {r} != derived {expect} (tol {RANGE_TOL})"
         );
     }
+
+    // The two culled Physics Playground boxes are OUT of frustum (CANON #1's
+    // bottom-plane derivation) — they own no caption/range even at this wide
+    // nearest_n=32.
+    assert!(!caption_ids(&wide).contains(&"playground_stack_0".to_string()));
+    assert!(!caption_ids(&wide).contains(&"playground_break_crate".to_string()));
 
     // F6 — the four PHYSICS rows gaze the SOLVER-RESTED world, not `wide`
     // (see the F6 MIGRATION doc comment above this test; full derivation +
@@ -515,7 +645,7 @@ fn canon_nearest_ordering_and_ranges_are_derived() {
         &rested_world,
         eye,
         LookParams {
-            nearest_n: 32,
+            nearest_n: 40,
             include_support: true,
             ..Default::default()
         },

@@ -377,6 +377,51 @@
       { "shape": "sphere", "radius": 0.45, "position": [0, 0, 0], "color": "#ff6bb0", "emissive": "#ff6bb0" }
     ] }
   },
+  "playground_stack_0": {
+    "transform": { "position": [-3.0, 0.45, 35.0] },
+    "mesh": { "parts": [ { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#6a4a2c", "roughness": 0.85 } ] },
+    "body": { "shape": "box", "size": [0.8, 0.8, 0.8], "density": 500, "resolution": [2, 2, 2], "contact_radius": 0.05, "rigidity": 1.0 }
+  },
+  "playground_stack_1": {
+    "transform": { "position": [-3.0, 1.30, 35.0] },
+    "mesh": { "parts": [ { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#7a5636", "roughness": 0.85 } ] },
+    "body": { "shape": "box", "size": [0.8, 0.8, 0.8], "density": 500, "resolution": [2, 2, 2], "contact_radius": 0.05, "rigidity": 1.0 }
+  },
+  "playground_stack_2": {
+    "transform": { "position": [-3.0, 2.15, 35.0] },
+    "mesh": { "parts": [ { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#6a4a2c", "roughness": 0.85 } ] },
+    "body": { "shape": "box", "size": [0.8, 0.8, 0.8], "density": 500, "resolution": [2, 2, 2], "contact_radius": 0.05, "rigidity": 1.0 }
+  },
+  "playground_stack_3": {
+    "transform": { "position": [-3.0, 3.00, 35.0] },
+    "mesh": { "parts": [ { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#7a5636", "roughness": 0.85 } ] },
+    "body": { "shape": "box", "size": [0.8, 0.8, 0.8], "density": 500, "resolution": [2, 2, 2], "contact_radius": 0.05, "rigidity": 1.0 }
+  },
+  "playground_stack_4": {
+    "transform": { "position": [-3.0, 3.85, 35.0] },
+    "mesh": { "parts": [ { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#6a4a2c", "roughness": 0.85 } ] },
+    "body": { "shape": "box", "size": [0.8, 0.8, 0.8], "density": 500, "resolution": [2, 2, 2], "contact_radius": 0.05, "rigidity": 1.0 }
+  },
+  "playground_break_crate": {
+    "transform": { "position": [-0.8, 0.45, 34.5] },
+    "mesh": { "parts": [ { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#8a3a2c", "roughness": 0.85 } ] },
+    "body": { "shape": "box", "size": [0.8, 0.8, 0.8], "density": 200, "resolution": [3, 3, 3], "contact_radius": 0.05, "bonded": true, "love": 0.5, "compliance": 1e-7, "settle": 90 }
+  },
+  "playground_pyramid_0": {
+    "transform": { "position": [-2.35, 0.45, 32.0] },
+    "mesh": { "parts": [ { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#6a4a2c", "roughness": 0.85 } ] },
+    "body": { "shape": "box", "size": [0.8, 0.8, 0.8], "density": 500, "resolution": [2, 2, 2], "contact_radius": 0.05, "rigidity": 1.0 }
+  },
+  "playground_pyramid_1": {
+    "transform": { "position": [-1.65, 0.45, 32.0] },
+    "mesh": { "parts": [ { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#6a4a2c", "roughness": 0.85 } ] },
+    "body": { "shape": "box", "size": [0.8, 0.8, 0.8], "density": 500, "resolution": [2, 2, 2], "contact_radius": 0.05, "rigidity": 1.0 }
+  },
+  "playground_pyramid_2": {
+    "transform": { "position": [-2.0, 1.30, 32.0] },
+    "mesh": { "parts": [ { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#7a5636", "roughness": 0.85 } ] },
+    "body": { "shape": "box", "size": [0.8, 0.8, 0.8], "density": 500, "resolution": [2, 2, 2], "contact_radius": 0.05, "rigidity": 1.0 }
+  },
   "naruko_first_ground": {
     "terrain": { "seed": 20260717, "tile_x": 0, "tile_y": 2 }
   }

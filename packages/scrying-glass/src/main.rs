@@ -14,7 +14,7 @@ use std::{
 use scrying_glass::player::{Ground, Key, Player, PlayerParams};
 use scrying_glass::{input, player};
 
-use crystal::{Core, GaiaPackage, load_world_dir};
+use crystal::{Core, GaiaPackage, ImpulseOp, Op, load_world_dir};
 use glam::Vec3;
 use scrying_glass::ScryingGlassPackage;
 use scrying_glass::bvh::{Bvh, BvhParams, DEFAULT_DEGRADE_RATIO, DynamicSplice, RefitParams};
@@ -446,6 +446,10 @@ fn handle_http(mut stream: TcpStream, ctx: &HttpContext) {
         respond_walk(&mut stream, ctx, &body);
         return;
     }
+    if path == "/push" && method == "POST" {
+        respond_push(&mut stream, ctx, &body);
+        return;
+    }
 
     if method != "GET" {
         let _ = write_response(
@@ -651,6 +655,47 @@ fn respond_walk(stream: &mut TcpStream, ctx: &HttpContext, body: &str) {
         "{{\"ticks\":{ticks},\"pose\":{final_pose},\"stream\":[{}]}}",
         poses.join(",")
     );
+    let _ = write_response(
+        stream,
+        "200 OK",
+        "application/json; charset=utf-8",
+        body.as_bytes(),
+        "",
+    );
+}
+
+/// POST /push — fire ONE push from the current view ray, the exact keyboard
+/// path without a keyboard: flip the shared player's `push_pending` flag (the
+/// same flag the F key and a pointer-locked click set) so the render loop
+/// casts the ray, picks the nearest aimed-at body, and shoves it with an
+/// `Op::Impulse` on its next tick. Optional body `{yaw?, pitch?}` aims first.
+fn respond_push(stream: &mut TcpStream, ctx: &HttpContext, body: &str) {
+    let request: serde_json::Value = serde_json::from_str(body.trim()).unwrap_or(serde_json::Value::Null);
+    let yaw = request.get("yaw").and_then(serde_json::Value::as_f64);
+    let pitch = request.get("pitch").and_then(serde_json::Value::as_f64);
+    let mut player = match ctx.player.lock() {
+        Ok(player) => player,
+        Err(_) => {
+            let _ = write_response(
+                stream,
+                "500 Internal Server Error",
+                "text/plain; charset=utf-8",
+                b"player state poisoned\n",
+                "",
+            );
+            return;
+        }
+    };
+    if let Some(yaw) = yaw {
+        player.yaw = yaw as f32;
+    }
+    if let Some(pitch) = pitch {
+        player.pitch = (pitch as f32).clamp(-player.params.pitch_limit, player.params.pitch_limit);
+    }
+    player.push_pending = true;
+    let pose = pose_json(&player.pose());
+    drop(player);
+    let body = format!("{{\"pushed\":true,\"pose\":{pose}}}");
     let _ = write_response(
         stream,
         "200 OK",
@@ -1039,7 +1084,70 @@ impl Renderer {
     /// unchanged; the instant one changes (a bobbing lantern, every tick) the
     /// BVH re-splices and accumulation resets — so a continuously moving world
     /// renders live at `spp` samples/frame (no ghosting), and pauses converge.
-    fn advance_world(&mut self, body_speed: f32, walker: Option<WalkerPose>) {
+    /// PLAYGROUND — push reach (m) and speed (m/s, the Op::Impulse velocity
+    /// delta) read from the environment, never hardcoded: `GAIA_PUSH_REACH`
+    /// (default 4 m — arm's length plus a step) and `GAIA_PUSH_SPEED`
+    /// (default 5 m/s — a few m/s, enough to topple a rigid stack and, on a
+    /// weakly-bonded crate, tear it apart).
+    fn push_params() -> (f32, f32) {
+        let num = |name: &str, default: f32| {
+            std::env::var(name)
+                .ok()
+                .and_then(|v| v.parse::<f32>().ok())
+                .filter(|v| v.is_finite() && *v > 0.0)
+                .unwrap_or(default)
+        };
+        (num("GAIA_PUSH_REACH", 4.0), num("GAIA_PUSH_SPEED", 5.0))
+    }
+
+    /// PLAYGROUND — build the push op for a view ray: pick the nearest
+    /// pushable body the ray is aimed at within reach and name it in an
+    /// `Op::Impulse` carrying a `speed` m/s velocity delta along the ray.
+    /// Empty when nothing physical is under the crosshair (a silent miss) or
+    /// the realm has no physics. This is the WHOLE push door: the F key / a
+    /// locked click / the `/push` organ all funnel through the identical
+    /// Op::Impulse an agent would send.
+    fn build_push_ops(&self, eye: Vec3, yaw: f32, pitch: f32) -> Vec<Op> {
+        let Some(physics) = self.scene.physics() else {
+            return Vec::new();
+        };
+        let (reach, speed) = Self::push_params();
+        let cos_pitch = pitch.cos();
+        let dir = Vec3::new(-yaw.sin() * cos_pitch, pitch.sin(), -yaw.cos() * cos_pitch);
+        // A body counts as "aimed at" when its centroid lies within this
+        // perpendicular distance of the ray — a crate's own reach radius, so
+        // the crosshair need not be pixel-perfect on a 0.8 m box.
+        const AIM_RADIUS: f32 = 0.9;
+        let mut best: Option<(f32, String)> = None;
+        for (gaia_id, centroid) in physics.push_targets() {
+            let c = Vec3::new(centroid[0] as f32, centroid[1] as f32, centroid[2] as f32);
+            let v = c - eye;
+            let t = v.dot(dir);
+            if t <= 0.0 || t > reach {
+                continue; // behind the eye or past arm's reach
+            }
+            let perp = (v - dir * t).length();
+            if perp > AIM_RADIUS {
+                continue; // the ray does not pass through this body
+            }
+            if best.as_ref().is_none_or(|(bt, _)| t < *bt) {
+                best = Some((t, gaia_id));
+            }
+        }
+        match best {
+            Some((_, id)) => {
+                let dv = dir * speed;
+                vec![Op::Impulse(ImpulseOp {
+                    id,
+                    delta_velocity: [dv.x as f64, dv.y as f64, dv.z as f64],
+                    extra: Default::default(),
+                })]
+            }
+            None => Vec::new(),
+        }
+    }
+
+    fn advance_world(&mut self, body_speed: f32, walker: Option<WalkerPose>, push_ops: &[Op]) {
         let has_bodies = !self.scene.bodies.is_empty();
         if self.scene.dynamics.entities().is_empty() && !has_bodies {
             return; // a still realm never pays the living-layer cost
@@ -1052,7 +1160,7 @@ impl Renderer {
         // bodies (`follows: "walker"`): they TRACK the walker, gait derived from
         // displacement, instead of gaiting in place off the broadcast.
         let bodies_animating = self.scene.command_bodies_walked(body_speed, walker);
-        self.scene.tick();
+        self.scene.tick_with_ops(push_ops);
         let models = self.scene.dynamics.model_matrices();
         if models == self.last_models && !bodies_animating {
             return; // nothing moved — keep accumulating
@@ -1999,10 +2107,18 @@ fn run_render_loop(
         // Step the body one fixed tick and aim the window camera at its eye.
         let mut body_speed = 0.0f32;
         let mut walker_pose = None;
+        // PLAYGROUND — the pushed view ray this tick, taken (edge-fired) from
+        // the shared player: F key, a pointer-locked click, or the /push organ
+        // all set `push_pending`; we consume it here and cast the ray below.
+        let mut push_ray: Option<(Vec3, f32, f32)> = None;
         if let Ok(mut body) = render_player.lock() {
             body.step(tick_dt, render_ground);
             let pose = body.pose();
             body_speed = body.velocity.length();
+            if body.push_pending {
+                body.push_pending = false;
+                push_ray = Some((pose.position, pose.yaw, pose.pitch));
+            }
             walker_pose = Some(WalkerPose {
                 position: pose.position,
                 yaw: pose.yaw,
@@ -2010,7 +2126,11 @@ fn run_render_loop(
             drop(body);
             renderer.set_view_pose(pose.position, pose.yaw, pose.pitch);
         }
-        renderer.advance_world(body_speed, walker_pose);
+        let push_ops = match push_ray {
+            Some((eye, yaw, pitch)) => renderer.build_push_ops(eye, yaw, pitch),
+            None => Vec::new(),
+        };
+        renderer.advance_world(body_speed, walker_pose, &push_ops);
         // Submit THIS frame's GPU work WITHOUT waiting. Its trace now runs on
         // the GPU while the NEXT iteration's CPU stages execute above.
         if let Ok(size) = window.inner_size() {
