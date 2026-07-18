@@ -846,3 +846,140 @@ did NOT silently freeze the living layer.
 - env: `GAIA_NEURAL_LIVE=1 GAIA_NATIVE_OFFSCREEN=true GAIA_NATIVE_NET_PRESENT=true
   GAIA_NATIVE_HUD=false`, release, world `worlds/naruko`, M1/macOS 26.
   `/budget` now carries `world_stages`. Toggle `GAIA_NATIVE_DIRTY_SKIN=0`.
+
+# N0.l — SHIFT 16: THE SOLVER CHARTER — island sleeping (settled bodies cost ZERO)
+
+State in: N0.k named `elements::Solver::step()` the 5.36ms thief but stopped at
+the solver door. S16's charter: instrument INSIDE the step, then cut with island
+sleeping. Both done. Design law kept: the classical XPBD solver is the
+teacher/lab equipment (Ananke's learned solve replaces it by measurement later);
+this is legal maintenance of the teacher, not a new physics.
+
+## (1) INSTRUMENT — solver_step split to the leaf (`step_profiled`/`PhaseProfile`)
+The `PhaseProfile` seam already existed; `naruko_solver_substages` (new example)
+loads the REAL settled naruko, warms 120t, then times the resting arrangement.
+Median ms/tick, 240 samples, release, single core:
+
+| phase             | BEFORE (sleep off) | note                                        |
+|-------------------|--------------------|---------------------------------------------|
+| integrate         | 0.003              | symplectic-Euler predict                    |
+| solve_distance    | 0.005              | XPBD bond solve (50 bonds)                   |
+| shape_matching    | 0.023              | 12 rigids' polar shape-match                 |
+| **collision_static** | **3.30**        | **particle-vs-12368-static-tris — THE LEAF THIEF** |
+| collision_body    | 0.44               | O(n²) over 199 clustered particles          |
+| cluster_floodfill | 0.007              | per-tick fragment components                 |
+| velocity_passes   | 0.07               | friction/restitution/strife                  |
+| ── TOTAL          | 3.88*              | *after the fp-cache below; was 5.36 (N0.k)   |
+
+**LEAF VERDICT: the thief inside solver_step is `collision_static` (3.30ms) — the
+per-substep particle-vs-static-triangle broadphase over naruko's 12368-tri soup,
+NOT the O(n²) body pass (0.44ms).** The N0.k lesson held twice: the sub-table
+moved the cut from the assumed O(n²) body collisions to the real static pass.
+
+Instrumenting also exposed a SECOND thief hiding in the untimed remainder: N0.k's
+5.36ms was 3.88ms of phases + ~1.48ms of `ensure_collision_grid` RE-HASHING the
+static 12368-tri soup EVERY tick (`TriangleGrid::fingerprint` ≈ 148k f64 absorbs)
+just to check staleness of an immutable collider.
+
+## (2) THE CUTS
+- **Collider-fingerprint identity cache** (universal, every tick): colliders are
+  static per scene and always REPLACED wholesale, so `(triangles.as_ptr(), len)`
+  is a sound identity key — the fingerprint is recomputed only on a genuine
+  collider swap. Byte-identical (same fp value either way). Alone: 5.36 → 3.88ms.
+- **Island sleeping** (the charter cut): `maintain_sleep` runs once at tick end.
+  QUIET counters (speed < `sleep_vel` → +1, else 0). ISLANDS = union-find (root =
+  MIN member index — deterministic, no HashMap in outcomes) over rigid
+  membership + live bonds + body-vs-body PROXIMITY edges sourced ONLY from AWAKE
+  clustered particles (two settled asleep bodies can't newly touch ⇒ all-asleep
+  is O(bonds), free). An island sleeps iff no member is wake-flagged AND every
+  member's quiet ≥ `sleep_frames`; asleep particles are skipped WHOLE by
+  integrate / solve_distance / shape_matching / collision_static / collision_body
+  and their velocity is held 0. WAKE on: impulse/op (`apply_impulse*` wake the
+  touched island — door pushes), a moving body's proximity union into a sleeping
+  island (contact), and fracture (torn bonds wake-flag their endpoints). Sleeping
+  is per-ISLAND, never per-body (stacks stay coherent). IRON params:
+  `GAIA_NATIVE_SLEEP` (arm), `GAIA_NATIVE_SLEEP_VEL` (def 0.03 m/s),
+  `GAIA_NATIVE_SLEEP_FRAMES` (def 24). Sleep OFF = byte-unchanged (every branch
+  gated on `sleep_enabled` + a set flag).
+
+**solver_step SUB-TABLE, settled naruko (median ms/tick):**
+
+| phase             | BEFORE | AFTER (sleep on) |
+|-------------------|--------|------------------|
+| integrate         | 0.003  | 0.002            |
+| solve_distance    | 0.005  | 0.0003           |
+| shape_matching    | 0.023  | 0.0002           |
+| collision_static  | 3.30   | 0.002            |
+| collision_body    | 0.44   | 0.008            |
+| velocity_passes   | 0.07   | 0.003            |
+| ── TOTAL          | 3.88   | **0.026 (152×)** |
+
+199 particles / 13 islands, all asleep at rest. Settled bodies now cost ~ZERO.
+
+## (3) GATES — all hold
+- elements ordeals: 40/40 (36 prior + 4 new S16). Prior determinism/broadphase
+  byte-identity ordeals unchanged (fp-cache is byte-identical; sleep off by
+  default). New `s16_sleep_ordeals`: sleep DETERMINISM (two runs byte-identical
+  incl. a mid-run wake), settled-box-SLEEPS (frozen, drift <1e-9), the WAKE-TEST
+  (a slept box PUSHED wakes the same instant and travels >0.05m — silent-freeze
+  would fail), rest-pose parity (|Δcentroid| slept-vs-always-solve < 5e-3 m).
+- `rite5` 17/17 byte-identical. gather + live parity ordeals: ok
+  (`n0b_gather_and_shared_forward_match_cpu`, `n0_gate1_live_net_matches_cpu_reference`).
+- fracture/building ordeals present + green: `ordeal_building_at_rest_stays_at_rest`,
+  `ordeal_building_collapse_replay_byte_identical`, vi2 break ordeals 7/7.
+- MOTION gate (render): two `/scry` frames 2.5s apart under sleep ON
+  (`s16-motionA/B.png`, READ) — the presence spheres MOVED (pink/cyan pair from
+  left-of-tower to right-of-tower and out to the glass panel; halo rings at a
+  different phase) while the settled crates/glass-orb/factory stayed put. Sleep
+  froze the physics islands, NOT the living animation layer.
+
+## (4) MEASURE — live, offscreen, player-shaped (/walk KeyW bursts), naruko
+| arm         | solver_step med | tick med | outside.world med | loop_total med |
+|-------------|-----------------|----------|-------------------|----------------|
+| sleep OFF   | 4.45 ms         | 4.53 ms  | 5.98 ms           | 6.21 ms        |
+| sleep ON    | 0.077 ms        | 0.20 ms  | 2.64 ms           | 3.07 ms        |
+
+solver_step median 4.45 → 0.077 ms (58× live); the world-advance CPU cost
+(loop_total) 6.21 → 3.07 ms. p95 solver_step stays ~3.9ms because /walk bursts
+wake nearby/own bodies — correct: moving = solving; the median is the settled
+town. (Offscreen loop_total is world+http only; it does NOT include the windowed
+trace(~6ms) + net_gpu(~4.7ms) N0.k measured as the rest of the 20.4ms wall.)
+
+## 60 FPS THROUGHPUT VERDICT — solver thief ELIMINATED; frame is now TRACE-bound
+`60fps NOT YET MET on the full windowed wall, but the SOLVER charter is MET:
+elements::Solver::step() is no longer a thief — settled naruko's solver_step
+falls 4.45→0.077ms live median (152× on the isolated settled sub-table), and the
+world advance drops from N0.k's ~6.97ms to ~2.6ms. The remaining thieves are the
+synchronous trace (~6ms, submits+polls GPU on the render thread — N0.j) and
+single-GPU net_gpu contention (~4.7ms, N0.i); with world≈2.6 + trace≈6 +
+net_gpu≈4.7 the projected wall is ~14-16ms (≈60-70fps) IF those two hold, so the
+next cut that matters is async trace, not the solver.` Remaining-thief table:
+
+| thief             | ms    | status                                                    |
+|-------------------|-------|-----------------------------------------------------------|
+| ~~solver_step~~   | 0.08  | KILLED — island sleeping + fp-cache (settled = zero)      |
+| trace (synchronous)| ~6.0 | NEW #1 — async the GPU submit/poll off the render thread  |
+| net_gpu contention| ~4.7  | single-M1-GPU serialization (N0.i)                        |
+
+## Adversary — S16 current
+The sub-table could still lie about a MOVING town (many awake bodies): the win is
+proven only for the settled/mostly-static naruko the charter named — a scene that
+keeps 200 bodies tumbling pays the full 3.88ms and gains nothing from sleep (by
+design; motion must solve). The p95 3.9ms under /walk is that regime showing
+through. The fp-cache assumes no code mutates a collider's triangles in place
+without reallocating — true across this engine today (colliders reinstall on
+scene change), asserted by grep, but it is an INVARIANT a future in-place
+collider editor would silently break. Wake latency is one tick (proximity union
+fires at tick end, real overlap the next) — a body moving >~1 cell/tick could
+tunnel one frame into a sleeper before it wakes; acceptable at sleep-scale
+speeds, unproven for a bullet. The 60fps claim rests on N0.k's trace/net_gpu
+numbers being stable; this shift did not re-measure the windowed wall (offscreen
+only), so the ~14-16ms projection is a PROJECTION, not a played windowed frame.
+
+## Source
+- commits: S16 island sleep + fp-cache + sleep ordeals (neural-live — see git log).
+- instrument: `packages/scrying-glass/examples/naruko_solver_substages.rs`.
+- ordeals: `packages/elements/tests/s16_sleep_ordeals.rs`.
+- PNGs: `/tmp/s16-{off,on}-presented.png`, `/tmp/s16-motion{A,B}.png` (READ above).
+- env: `GAIA_NATIVE_OFFSCREEN=true GAIA_NATIVE_SLEEP=1 [GAIA_NATIVE_SLEEP_VEL/_FRAMES]`,
+  release, world `worlds/naruko`, M1/macOS 26. Toggle sleep off = omit the env.
