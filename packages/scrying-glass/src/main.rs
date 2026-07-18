@@ -241,7 +241,14 @@ impl ScryingGlassConfig {
                 Ok(value) => value.parse::<bool>().map_err(|_| {
                     format!("GAIA_NATIVE_TEMPORAL must be true or false, got {value:?}")
                 })?,
-                Err(_) => true,
+                // THE DESIGN IS THE LAW (Architect, 07-18): the shipped present
+                // path is trace → THE NET → screen and nothing else. The temporal
+                // accumulation machinery is LAB EQUIPMENT (training ground-truth
+                // generator + history-buffer substrate) — default OFF; its
+                // hand-heuristics (gates/clamps/thresholds) never ship. Until the
+                // net lands in the present path, the window shows the one
+                // integrator's young samples — the truth, not a stand-in.
+                Err(_) => false,
             },
             temporal: TemporalParams {
                 alpha_min: number("GAIA_NATIVE_TEMPORAL_ALPHA_MIN", 0.1)? as f32,
