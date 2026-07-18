@@ -27,6 +27,13 @@ use scrying_glass::integrator::{
     split_aov,
     trace_headless, trace_headless_aov,
 };
+// NEURAL-LIVE N0.c construction scaffold: the ONE net presented per live frame.
+#[cfg(target_os = "macos")]
+use scrying_glass::rdirect::ALBEDO_DEMOD_EPS;
+#[cfg(target_os = "macos")]
+use scrying_glass::rdirect_gather::FeatureGather;
+#[cfg(target_os = "macos")]
+use scrying_glass::rdirect_live::RdirectLive;
 use scrying_glass::scene::{
     Camera, RenderScene, SceneParameters, SunDefaults, SunLight, WalkerPose,
 };
@@ -93,6 +100,14 @@ struct ScryingGlassConfig {
     /// activation storm hits the app. Off is the pre-fix behavior (Architect's
     /// live window at :8430 stays exactly as before).
     worker_window: bool,
+    /// NEURAL-LIVE N0.c CONSTRUCTION SCAFFOLD (`GAIA_NATIVE_NET_PRESENT`,
+    /// default OFF on the branch). When on, the live window loop presents the
+    /// ONE net's frame every frame: trace low radiance + native AOV → GPU
+    /// feature gather (N0.b) → MPSGraph batched-GEMM forward (N0.a) → undo
+    /// log-demod by the native albedo → the existing blit/present path. This
+    /// flag DIES at lane cutover — the merged state presents the net
+    /// unconditionally, no flag. macOS-only (the MPSGraph net is macOS-only).
+    net_present: bool,
 }
 
 impl ScryingGlassConfig {
@@ -260,6 +275,12 @@ impl ScryingGlassConfig {
             event_limit_max: integer("GAIA_NATIVE_EVENT_LIMIT_MAX", 500)? as usize,
             max_request_bytes: integer("GAIA_NATIVE_HTTP_MAX_BYTES", 1 << 20)? as usize,
             worker_window,
+            net_present: match std::env::var("GAIA_NATIVE_NET_PRESENT") {
+                Ok(value) => value.parse::<bool>().map_err(|_| {
+                    format!("GAIA_NATIVE_NET_PRESENT must be true or false, got {value:?}")
+                })?,
+                Err(_) => false,
+            },
         };
         if config.window_width <= 0.0
             || config.window_height <= 0.0
@@ -1077,6 +1098,316 @@ impl OffscreenTarget {
     }
 }
 
+/// NEURAL-LIVE N0.c per-frame stage budget (ms). One frame's cost split across
+/// the pipeline stages the budget table (N0.d) reports.
+#[cfg(target_os = "macos")]
+#[derive(Clone, Copy)]
+struct NetTimings {
+    trace: f64,
+    gather: f64,
+    net: f64,
+    present: f64,
+    total: f64,
+}
+
+/// NEURAL-LIVE N0.c CONSTRUCTION SCAFFOLD (dies at lane cutover). Presents the
+/// ONE net's frame in the live window loop. EVERYTHING is pooled ONCE here at
+/// construction — the low-res radiance accum, the native-res AOV, the AOV
+/// readback stage, the net's zero-copy feature/output MTLBuffers (inside
+/// `RdirectLive`), the surface-res present accum, and the CPU upload scratch.
+/// The per-frame path allocates nothing on the heap except the forward's
+/// output `Vec` (owned by N0.a's `forward_shared`, out of this shift's scope)
+/// and two lightweight compute bind groups (the integrator reallocates its
+/// node/tri storage buffers each dynamic tick, so bind groups over them MUST
+/// be rebuilt per frame — wgpu bind groups are handle-weight, not buffer
+/// churn). Sized to the boot surface; the net path self-disables if the
+/// surface ever exceeds the pooled ceiling (resize rebuild is out of scope
+/// for a scaffold that dies at cutover).
+#[cfg(target_os = "macos")]
+struct NetPresent {
+    live: RdirectLive,
+    gather: FeatureGather,
+    /// Low-res noisy radiance accum (STORAGE|COPY_SRC|COPY_DST — cleared each
+    /// frame so a moving camera never smears progressive samples).
+    net_accum: wgpu::Buffer,
+    /// Native-res AOV G-buffer (albedo/normal/depth, 2 cells/px).
+    net_aov: wgpu::Buffer,
+    /// Mappable copy of `net_aov` for the CPU undo-log-demod (needs the albedo).
+    aov_stage: wgpu::Buffer,
+    /// Surface-res present accum the blit resolves to screen (linear rgb, w=1).
+    present_accum: wgpu::Buffer,
+    present_blit_bg: wgpu::BindGroup,
+    low_w: u32,
+    low_h: u32,
+    target_w: u32,
+    target_h: u32,
+    n: usize,
+    /// Reused CPU upload scratch (target pixels) — allocated once.
+    present_cells: Vec<[f32; 4]>,
+    // Rolling per-stage budget samples for the N0.d table.
+    s_trace: Vec<f64>,
+    s_gather: Vec<f64>,
+    s_net: Vec<f64>,
+    s_present: Vec<f64>,
+    s_total: Vec<f64>,
+    frames: u64,
+}
+
+// SAFETY: `NetPresent` embeds `RdirectLive` (an MPSGraph handle + Metal
+// buffers), which is not auto-`Send` because Objective-C objects are
+// thread-affine. This rig is built lazily ON the render thread and every
+// method that touches it (`net_present_frame` → `resolve_frame`) runs ONLY on
+// that thread — `Renderer` is moved once into the render worker and never
+// shared or accessed from another thread afterward (the HTTP/screenshot
+// threads read the shared `latest` frame, never the `Renderer`). So the
+// MPSGraph is never used from two threads; marking the field `Send` (needed
+// only so the one-time `Renderer` move compiles) is sound. Scaffold: dies at
+// cutover.
+#[cfg(target_os = "macos")]
+unsafe impl Send for NetPresent {}
+
+#[cfg(target_os = "macos")]
+impl NetPresent {
+    /// Pool everything once. `low_*` is the trace resolution, `target_*` the
+    /// surface (present) resolution the net upscales to.
+    fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        integrator: &Integrator,
+        low_w: u32,
+        low_h: u32,
+        target_w: u32,
+        target_h: u32,
+    ) -> Result<Self, String> {
+        let n = (target_w as usize) * (target_h as usize);
+        let weights = std::fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("data/rdirect-weights-v1.bin"),
+        )
+        .map_err(|e| format!("read rdirect weights: {e}"))?;
+        let live = RdirectLive::from_wgpu_queue(device, queue, &weights, n)?;
+        let gather = FeatureGather::new(device);
+
+        let low_cells = (low_w as u64) * (low_h as u64);
+        let net_accum = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("net-present low accum"),
+            size: low_cells.max(1) * 16, // ACCUM_CELL = vec4<f32>
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let net_aov = integrator.make_aov_buffer(device, target_w, target_h);
+        let aov_stage = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("net-present aov readback"),
+            size: net_aov.size(),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let present_accum = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("net-present surface accum"),
+            size: (n as u64).max(1) * 16,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let present_blit_bg = integrator.blit_bind_group(device, &present_accum);
+
+        Ok(Self {
+            live,
+            gather,
+            net_accum,
+            net_aov,
+            aov_stage,
+            present_accum,
+            present_blit_bg,
+            low_w,
+            low_h,
+            target_w,
+            target_h,
+            n,
+            present_cells: vec![[0.0f32; 4]; n],
+            s_trace: Vec::new(),
+            s_gather: Vec::new(),
+            s_net: Vec::new(),
+            s_present: Vec::new(),
+            s_total: Vec::new(),
+            frames: 0,
+        })
+    }
+
+    /// Trace → gather → forward → undo-log-demod, leaving `present_accum`
+    /// filled and `integrator.uniform_buf` set for a 1:1 nearest present blit.
+    /// Returns (trace, gather, net, resolve) ms; the final blit+present is timed
+    /// by the caller and folded into the `present` stage.
+    #[allow(clippy::too_many_arguments)]
+    fn resolve_frame(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        integrator: &Integrator,
+        uni_low: &IntegratorUniform,
+        uni_target: &IntegratorUniform,
+        blit_uniform: &IntegratorUniform,
+    ) -> (f64, f64, f64, f64) {
+        // Bind groups over the integrator's node/tri buffers (reallocated each
+        // dynamic tick) — rebuilt per frame, handle-weight.
+        let accum_bg = integrator.compute_bind_group(device, &self.net_accum);
+        let aov_bg = integrator.aov_bind_group(device, &self.net_aov);
+
+        // —— STAGE: trace (low radiance + native AOV) ——
+        let t0 = Instant::now();
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("net trace: clear+accum"),
+        });
+        enc.clear_buffer(&self.net_accum, 0, None);
+        integrator.dispatch(queue, &mut enc, uni_low, &accum_bg, self.low_w, self.low_h);
+        queue.submit(Some(enc.finish()));
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("net trace: aov"),
+        });
+        integrator.dispatch_aov(
+            queue,
+            &mut enc,
+            uni_target,
+            &accum_bg,
+            &aov_bg,
+            self.target_w,
+            self.target_h,
+        );
+        queue.submit(Some(enc.finish()));
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        let trace_ms = t0.elapsed().as_secs_f64() * 1000.0;
+
+        // —— STAGE: gather (GPU feature build → pooled shared MTLBuffer) ——
+        let feats = self
+            .live
+            .feature_buffer()
+            .expect("net-present pooled feature buffer");
+        let t1 = Instant::now();
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("net gather"),
+        });
+        self.gather.encode(
+            device,
+            queue,
+            &mut enc,
+            &self.net_accum,
+            &self.net_aov,
+            feats,
+            self.low_w,
+            self.low_h,
+            self.target_w,
+            self.target_h,
+        );
+        queue.submit(Some(enc.finish()));
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        let gather_ms = t1.elapsed().as_secs_f64() * 1000.0;
+
+        // —— STAGE: net (MPSGraph batched-GEMM forward, zero-copy) ——
+        let t2 = Instant::now();
+        let out = self.live.forward_shared(self.n).expect("net forward_shared");
+        let net_ms = t2.elapsed().as_secs_f64() * 1000.0;
+
+        // —— STAGE: resolve (readback albedo → undo log-demod → upload) ——
+        let t3 = Instant::now();
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("net aov readback"),
+        });
+        enc.copy_buffer_to_buffer(&self.net_aov, 0, &self.aov_stage, 0, self.net_aov.size());
+        let (tx, rx) = mpsc::channel();
+        enc.map_buffer_on_submit(&self.aov_stage, wgpu::MapMode::Read, .., move |r| {
+            let _ = tx.send(r.map(|_| ()));
+        });
+        queue.submit(Some(enc.finish()));
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        rx.recv().expect("aov readback chan").expect("map aov");
+        {
+            let mapped = self
+                .aov_stage
+                .get_mapped_range(..)
+                .expect("mapped aov readback");
+            let raw: &[[f32; 4]] = bytemuck::cast_slice(&mapped);
+            for i in 0..self.n {
+                let a = raw[2 * i];
+                let albedo = Vec3::new(a[0], a[1], a[2]);
+                let dl = Vec3::new(out[3 * i], out[3 * i + 1], out[3 * i + 2]);
+                let lin = undo_log_demod_px(dl, albedo);
+                self.present_cells[i] = [lin.x, lin.y, lin.z, 1.0];
+            }
+        }
+        self.aov_stage.unmap();
+        queue.write_buffer(
+            &self.present_accum,
+            0,
+            bytemuck::cast_slice(&self.present_cells),
+        );
+        // The present blit resolves present_accum (w=1) 1:1 nearest to screen.
+        queue.write_buffer(&integrator.uniform_buf, 0, bytemuck::bytes_of(blit_uniform));
+        let resolve_ms = t3.elapsed().as_secs_f64() * 1000.0;
+
+        (trace_ms, gather_ms, net_ms, resolve_ms)
+    }
+
+    /// Record one frame's stage budget and print a rolling median/p95 summary
+    /// every 60 frames (the N0.d budget table's live source).
+    fn record(&mut self, t: NetTimings) {
+        self.s_trace.push(t.trace);
+        self.s_gather.push(t.gather);
+        self.s_net.push(t.net);
+        self.s_present.push(t.present);
+        self.s_total.push(t.total);
+        self.frames += 1;
+        if self.frames % 60 == 0 {
+            eprintln!(
+                "[n0d] frames={} {}x{}→{}x{} (ms median/p95 vs 16.67): \
+                 trace {:.2}/{:.2} gather {:.2}/{:.2} net {:.2}/{:.2} \
+                 present {:.2}/{:.2} TOTAL {:.2}/{:.2}",
+                self.frames,
+                self.low_w,
+                self.low_h,
+                self.target_w,
+                self.target_h,
+                pct(&self.s_trace, 0.5),
+                pct(&self.s_trace, 0.95),
+                pct(&self.s_gather, 0.5),
+                pct(&self.s_gather, 0.95),
+                pct(&self.s_net, 0.5),
+                pct(&self.s_net, 0.95),
+                pct(&self.s_present, 0.5),
+                pct(&self.s_present, 0.95),
+                pct(&self.s_total, 0.5),
+                pct(&self.s_total, 0.95),
+            );
+        }
+    }
+}
+
+/// undo the net's log-demod residual by the native albedo (bit-identical to
+/// `examples/rdirect_live_frame.rs` / VIII-1's `undo_log_demod`).
+#[cfg(target_os = "macos")]
+fn undo_log_demod_px(dl: Vec3, albedo: Vec3) -> Vec3 {
+    let divisor = if albedo.length_squared() > 1e-8 {
+        albedo + Vec3::splat(ALBEDO_DEMOD_EPS)
+    } else {
+        Vec3::ONE
+    };
+    let e = Vec3::new(dl.x.exp() - 1.0, dl.y.exp() - 1.0, dl.z.exp() - 1.0);
+    Vec3::new(e.x.max(0.0), e.y.max(0.0), e.z.max(0.0)) * divisor
+}
+
+/// The `q` quantile (0..=1) of `samples` by the nearest-rank method (budget
+/// table helper). Returns 0.0 for an empty slice.
+#[cfg(target_os = "macos")]
+fn pct(samples: &[f64], q: f64) -> f64 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let mut s: Vec<f64> = samples.to_vec();
+    s.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let rank = ((q * (s.len() as f64 - 1.0)).round() as usize).min(s.len() - 1);
+    s[rank]
+}
+
 struct Renderer {
     // Safety: created from the native Tauri Window's raw handles; the app owns that Window
     // until shutdown, and the render worker stops before process exit.
@@ -1152,6 +1483,13 @@ struct Renderer {
     /// off; `Some` carries the world/scene params + last-good snapshot the live
     /// scene/shader bends re-materialize and journal against.
     bloodbend: Option<Bloodbend>,
+    /// NEURAL-LIVE N0.c: master switch for the net-present scaffold (config).
+    net_present_enabled: bool,
+    /// NEURAL-LIVE N0.c: the pooled net-present rig, built lazily on the first
+    /// frame once the boot surface size is known (`None` until then / when the
+    /// flag is off). macOS-only.
+    #[cfg(target_os = "macos")]
+    net_present: Option<NetPresent>,
 }
 
 impl Renderer {
@@ -1168,6 +1506,7 @@ impl Renderer {
         temporal_params: TemporalParams,
         canvas_width: u32,
         canvas_height: u32,
+        net_present_enabled: bool,
     ) -> Result<Self, String> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let target = unsafe {
@@ -1332,6 +1671,9 @@ impl Renderer {
             pixel_order,
             capture_sender,
             bloodbend: None,
+            net_present_enabled,
+            #[cfg(target_os = "macos")]
+            net_present: None,
         })
     }
 
@@ -1751,6 +2093,16 @@ impl Renderer {
     fn render(&mut self, size: PhysicalSize<u32>) -> Option<wgpu::SubmissionIndex> {
         self.resize(size);
 
+        // NEURAL-LIVE N0.c SCAFFOLD: present the ONE net's frame instead of the
+        // integrator's raw blit. On build failure the flag self-clears and the
+        // normal present below runs (never a black window).
+        #[cfg(target_os = "macos")]
+        if self.net_present_enabled {
+            if let Ok(idx) = self.net_present_frame() {
+                return idx;
+            }
+        }
+
         // LIGHT-NOT-DOTS: with temporal accumulation the eye moving is NOT a
         // reset — the resolve reprojects last frame's light into the new view.
         // Only the legacy escape-hatch path throws the samples away on move.
@@ -1923,6 +2275,202 @@ impl Renderer {
             self.queue.present(frame);
         }
         Some(submission)
+    }
+
+    /// NEURAL-LIVE N0.c: one live frame through the ONE net. Builds/rebuilds the
+    /// pooled rig on demand, traces low radiance + native AOV, gathers features
+    /// on the GPU, runs the MPSGraph forward, undoes the log-demod, and presents
+    /// the result 1:1 to both the surface and the offscreen capture target (so
+    /// `/screenshot` reads the net's frame). Records the per-stage budget.
+    /// `Err(())` means the rig could not be built (flag self-cleared) — the
+    /// caller falls through to the normal present.
+    #[cfg(target_os = "macos")]
+    fn net_present_frame(&mut self) -> Result<Option<wgpu::SubmissionIndex>, ()> {
+        let (surface_w, surface_h) = (self.config.width, self.config.height);
+        let (low_w, low_h) = (self.render_width, self.render_height);
+
+        let rebuild = match &self.net_present {
+            Some(np) => np.target_w != surface_w || np.target_h != surface_h,
+            None => true,
+        };
+        if rebuild {
+            match NetPresent::new(
+                &self.device,
+                &self.queue,
+                &self.integrator,
+                low_w,
+                low_h,
+                surface_w,
+                surface_h,
+            ) {
+                Ok(np) => {
+                    eprintln!(
+                        "[n0c] net-present rig pooled: trace {low_w}x{low_h} → net {surface_w}x{surface_h} ({} px)",
+                        (surface_w as usize) * (surface_h as usize)
+                    );
+                    self.net_present = Some(np);
+                }
+                Err(e) => {
+                    eprintln!("[n0c] net-present disabled (build failed): {e}");
+                    self.net_present_enabled = false;
+                    return Err(());
+                }
+            }
+        }
+
+        // Uniforms: low radiance trace, native AOV, and the 1:1 nearest present
+        // blit — all framed to the SURFACE aspect (mirrors the normal `render`).
+        let (right, up, _forward) = self.camera.basis();
+        let surface_aspect = surface_w as f32 / surface_h.max(1) as f32;
+        let half = (self.camera.fov_y_radians * 0.5).tan();
+        let r = right * (half * surface_aspect);
+        let u = up * half;
+        let apply_aspect = |uni: &mut IntegratorUniform| {
+            uni.right = [r.x, r.y, r.z, 0.0];
+            uni.up = [u.x, u.y, u.z, 0.0];
+        };
+        let noisy = IntegratorParams {
+            spp: 1,
+            ..self.int_params.clone()
+        };
+        let mut uni_low = IntegratorUniform::build(
+            &self.camera,
+            &self.sun,
+            self.sky_top,
+            self.sky_horizon,
+            low_w,
+            low_h,
+            self.integrator.node_count,
+            self.integrator.tri_count,
+            0,
+            &noisy,
+            None,
+        );
+        apply_aspect(&mut uni_low);
+        let mut uni_target = IntegratorUniform::build(
+            &self.camera,
+            &self.sun,
+            self.sky_top,
+            self.sky_horizon,
+            surface_w,
+            surface_h,
+            self.integrator.node_count,
+            self.integrator.tri_count,
+            0,
+            &self.int_params,
+            None,
+        );
+        apply_aspect(&mut uni_target);
+        let mut blit_uniform = uni_target;
+        blit_uniform.surface = [surface_w, surface_h, 1, 0]; // nearest, 1:1.
+
+        // Take the rig out to avoid borrowing `self` twice; put it back after.
+        let mut np = self.net_present.take().expect("net-present rig present");
+        let (trace_ms, gather_ms, net_ms, resolve_ms) = np.resolve_frame(
+            &self.device,
+            &self.queue,
+            &self.integrator,
+            &uni_low,
+            &uni_target,
+            &blit_uniform,
+        );
+
+        // —— STAGE: present (blit the net frame to surface + offscreen, capture) ——
+        let t_present = Instant::now();
+        let surface_frame = match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(frame)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => Some(frame),
+            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+                self.surface.configure(&self.device, &self.config);
+                None
+            }
+            _ => None,
+        };
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("net present + capture"),
+            });
+        self.integrator.blit(
+            &mut encoder,
+            &self.offscreen.view,
+            &np.present_blit_bg,
+            "net offscreen present",
+        );
+        if let Some(frame) = &surface_frame {
+            let view = frame
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
+            self.integrator
+                .blit(&mut encoder, &view, &np.present_blit_bg, "net surface present");
+        }
+        if let Some(index) = self.offscreen.claim_slot() {
+            let slot = &self.offscreen.slots[index];
+            encoder.copy_texture_to_buffer(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &self.offscreen.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyBufferInfo {
+                    buffer: &slot.buffer,
+                    layout: wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(self.offscreen.padded_bytes_per_row),
+                        rows_per_image: Some(self.offscreen.height),
+                    },
+                },
+                wgpu::Extent3d {
+                    width: self.offscreen.width,
+                    height: self.offscreen.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+            let sender = self.capture_sender.clone();
+            let buffer = slot.buffer.clone();
+            let callback_buffer = buffer.clone();
+            let busy = slot.busy.clone();
+            let callback_busy = busy.clone();
+            let width = self.offscreen.width;
+            let height = self.offscreen.height;
+            let padded_bytes_per_row = self.offscreen.padded_bytes_per_row;
+            let pixel_order = self.pixel_order;
+            encoder.map_buffer_on_submit(&buffer, wgpu::MapMode::Read, .., move |result| {
+                let capture = CaptureReady {
+                    result: result.map_err(|error| error.to_string()),
+                    buffer: callback_buffer,
+                    width,
+                    height,
+                    padded_bytes_per_row,
+                    pixel_order,
+                    busy: callback_busy,
+                };
+                if let Err(error) = sender.send(capture) {
+                    let capture = error.0;
+                    if capture.result.is_ok() {
+                        capture.buffer.unmap();
+                    }
+                    capture.busy.store(false, Ordering::Release);
+                }
+            });
+        }
+        let submission = self.queue.submit(Some(encoder.finish()));
+        if let Some(frame) = surface_frame {
+            self.queue.present(frame);
+        }
+        let blit_ms = t_present.elapsed().as_secs_f64() * 1000.0;
+        let present_ms = resolve_ms + blit_ms;
+        let total = trace_ms + gather_ms + net_ms + present_ms;
+        np.record(NetTimings {
+            trace: trace_ms,
+            gather: gather_ms,
+            net: net_ms,
+            present: present_ms,
+            total,
+        });
+        self.net_present = Some(np);
+        Ok(Some(submission))
     }
 
     /// The moving eye: integrate `capture_frames` accumulation frames from an
@@ -2725,6 +3273,7 @@ fn main() {
                 config.temporal,
                 config.native_canvas_width,
                 config.native_canvas_height,
+                config.net_present,
             )
             .map_err(std::io::Error::other)?;
             // DAS BLUTBÄNDIGEN — B0 DATA DOOR. Seed the live bend state from the
