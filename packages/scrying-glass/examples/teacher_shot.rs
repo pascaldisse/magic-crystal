@@ -99,6 +99,7 @@ struct Setup {
     camera: Camera,
     emission_intensity: f32,
     max_bounces: u32,
+    exposure: f32,
 }
 
 fn main() {
@@ -107,10 +108,11 @@ fn main() {
     let h = env_u32("GAIA_ORDEAL_H", 480);
     let spp = env_u32("GAIA_ORDEAL_SPP", 4);
     let frames = env_u32("GAIA_ORDEAL_FRAMES", 48);
-    let exposure = env_f32("GAIA_ORDEAL_EXPOSURE", 1.0);
     let seed_base = env_u32("GAIA_ORDEAL_SEED_BASE", 0x5eed);
     let mirror_r = env_f32("GAIA_NATIVE_ORDEAL_MIRROR_R", 0.999);
-    let fov = env_f32("GAIA_ORDEAL_FOV", 58.0);
+    // Per-scene FOV default (labyrinth wants a tight tunnel crop).
+    let fov_default = if scene_name == "labyrinth" { 40.0 } else { 58.0 };
+    let fov = env_f32("GAIA_ORDEAL_FOV", fov_default);
 
     let deg = std::f32::consts::PI / 180.0;
     let mk = |eye: [f32; 3], yaw: f32, pitch: f32| Camera {
@@ -132,12 +134,14 @@ fn main() {
             camera: mk([0.0, 3.0, 34.0], 0.0, -0.145),
             emission_intensity: env_f32("GAIA_ORDEAL_EMISSIVE", 7.0),
             max_bounces: env_u32("GAIA_ORDEAL_MAX_BOUNCES", 8),
+            exposure: env_f32("GAIA_ORDEAL_EXPOSURE", 1.0),
         },
         "labyrinth" => Setup {
             world: "ordeal-labyrinth",
-            camera: mk([0.35, 4.0, 4.6], 0.028, -0.012),
-            emission_intensity: env_f32("GAIA_ORDEAL_EMISSIVE", 26.0),
+            camera: mk([0.0, 4.0, 3.4], 0.055, -0.008),
+            emission_intensity: env_f32("GAIA_ORDEAL_EMISSIVE", 10.0),
             max_bounces: env_u32("GAIA_ORDEAL_MAX_BOUNCES", 1024),
+            exposure: env_f32("GAIA_ORDEAL_EXPOSURE", 0.7),
         },
         other => panic!("[teacher] unknown GAIA_ORDEAL_SCENE '{other}' (ocean|labyrinth)"),
     };
@@ -145,6 +149,7 @@ fn main() {
     // so the mirror tunnel keeps every echo — unbiased, just zero-variance depth.
     let rr_start = env_u32("GAIA_ORDEAL_RR_START", setup.max_bounces);
 
+    let exposure = setup.exposure;
     let out = env_str(
         "GAIA_ORDEAL_OUT",
         &format!("proof/ordeal-light/{scene_name}.png"),
