@@ -52,10 +52,13 @@ mod imp {
     use objc2::{AnyThread, Message};
     use objc2_foundation::{NSArray, NSData, NSNumber, NSString};
     use objc2_metal::{
-        MTLBuffer, MTLCommandBuffer, MTLCommandQueue, MTLCreateSystemDefaultDevice, MTLDevice,
-        MTLResourceOptions,
+        MTLBuffer, MTLCommandBuffer, MTLCommandEncoder, MTLCommandQueue,
+        MTLComputeCommandEncoder, MTLComputePipelineState, MTLCreateSystemDefaultDevice,
+        MTLDevice, MTLLibrary, MTLResourceOptions, MTLSize,
     };
-    use objc2_metal_performance_shaders::{MPSCommandBuffer, MPSDataType};
+    use objc2_metal_performance_shaders::{
+        MPSCommandBuffer, MPSDataType, MPSMatrix, MPSMatrixDescriptor, MPSMatrixMultiplication,
+    };
     use std::cell::Cell;
     use objc2_metal_performance_shaders_graph::{
         MPSGraph, MPSGraphDevice, MPSGraphExecutable,
@@ -72,6 +75,247 @@ mod imp {
         is_last: bool,
     }
 
+    /// S5 — the RAW-KERNEL forward (kill the MPSGraph per-frame encode wall).
+    ///
+    /// n0e verdict: MPSGraph's per-frame `encodeToCommandBuffer` +
+    /// `waitUntilCompleted` cost ~22 ms of CPU even though the GPU forward is
+    /// ~4.5 ms. This is that same 23→5×64→3 net expressed as a chain of
+    /// classic-MPS `MPSMatrixMultiplication` GEMMs (one encode per layer,
+    /// µs-class CPU cost) interleaved with a hand-written `bias+ReLU` compute
+    /// kernel — all on ONE MTLCommandBuffer we own. Same weights, same math as
+    /// the CPU `Mlp::forward`; bit-parity gated by the ordeal.
+    ///
+    /// Each layer: `C[rows,out] = A[rows,in] · Wᵀ` via MPSMatrixMultiplication
+    /// with `transposeRight=true` over the CPU-native `[out,in]` weight buffer
+    /// (no CPU transpose), `beta=0`; then the compute kernel adds the bias and
+    /// (hidden layers) applies ReLU in place. Ping-pong activation buffers.
+    /// Built ONCE (kernels, MPSMatrix wrappers, weight/bias/act MTLBuffers, the
+    /// pipeline) so per-frame `run` allocates nothing.
+    struct MatmulChain {
+        /// One MPSMatrixMultiplication per layer (fixed shapes).
+        kernels: Vec<Retained<MPSMatrixMultiplication>>,
+        /// Weight matrix per layer (wraps the `[out,in]` weight buffer).
+        weight_mats: Vec<Retained<MPSMatrix>>,
+        /// Left/input matrix per layer (layer 0 = feature buffer; else an act).
+        in_mats: Vec<Retained<MPSMatrix>>,
+        /// Result matrix per layer (last = out buffer; else an act).
+        out_mats: Vec<Retained<MPSMatrix>>,
+        /// Bias MTLBuffer per layer (`[out]` f32, Shared).
+        bias_bufs: Vec<Retained<ProtocolObject<dyn MTLBuffer>>>,
+        /// Output column count per layer (for the bias+ReLU grid).
+        out_cols: Vec<u32>,
+        /// ReLU applied to this layer's output (false only on the last).
+        relu: Vec<bool>,
+        /// The fused bias+ReLU compute pipeline (compiled once).
+        pipeline: Retained<ProtocolObject<dyn MTLComputePipelineState>>,
+        /// Kept alive: the weight buffers the weight matrices reference.
+        _weight_bufs: Vec<Retained<ProtocolObject<dyn MTLBuffer>>>,
+        /// Kept alive: the two ping-pong activation buffers.
+        _act_bufs: [Retained<ProtocolObject<dyn MTLBuffer>>; 2],
+        max_rows: usize,
+    }
+
+    /// The fused bias+ReLU kernel (one thread per output element, buffer is
+    /// row-major `[rows, out_cols]` tightly packed = the MPSMatrix layout).
+    const BIAS_RELU_MSL: &str = r#"
+#include <metal_stdlib>
+using namespace metal;
+kernel void bias_relu(
+    device float*        buf      [[buffer(0)]],
+    const device float*  bias     [[buffer(1)]],
+    constant uint&       out_cols [[buffer(2)]],
+    constant uint&       do_relu  [[buffer(3)]],
+    uint gid [[thread_position_in_grid]]) {
+  uint o = gid % out_cols;
+  float v = buf[gid] + bias[o];
+  if (do_relu != 0u) { v = fmax(v, 0.0f); }
+  buf[gid] = v;
+}
+"#;
+
+    impl MatmulChain {
+        /// Build the whole chain once. `dims` are `(in, out)` per layer in blob
+        /// order; `flat` is `w[out*in]` then `b[out]` per layer (Mlp layout).
+        /// `input_mtl` is the feature buffer (`[max_rows, dims[0].0]`),
+        /// `out_mtl` the result buffer (`[max_rows, dims.last().1]`).
+        #[allow(unsafe_op_in_unsafe_fn)]
+        unsafe fn new(
+            device: &Retained<ProtocolObject<dyn MTLDevice>>,
+            dims: &[(usize, usize)],
+            flat: &[f32],
+            max_rows: usize,
+            input_mtl: &Retained<ProtocolObject<dyn MTLBuffer>>,
+            out_mtl: &Retained<ProtocolObject<dyn MTLBuffer>>,
+        ) -> Result<Self, String> {
+            let f32sz = std::mem::size_of::<f32>();
+            let max_width = dims.iter().map(|d| d.1).max().unwrap_or(1);
+
+            // Two ping-pong activation buffers, sized to the widest layer.
+            let act_bytes = max_rows * max_width * f32sz;
+            let make_buf = |bytes: usize, what: &str| {
+                device
+                    .newBufferWithLength_options(bytes.max(f32sz), MTLResourceOptions::StorageModeShared)
+                    .ok_or_else(|| format!("rdirect_live: MatmulChain {what} alloc failed"))
+            };
+            let act0 = make_buf(act_bytes, "act0")?;
+            let act1 = make_buf(act_bytes, "act1")?;
+
+            let mtl_matrix = |buf: &Retained<ProtocolObject<dyn MTLBuffer>>,
+                              rows: usize,
+                              cols: usize|
+             -> Retained<MPSMatrix> {
+                let desc = MPSMatrixDescriptor::matrixDescriptorWithRows_columns_rowBytes_dataType(
+                    rows,
+                    cols,
+                    cols * f32sz,
+                    MPSDataType::Float32,
+                );
+                MPSMatrix::initWithBuffer_descriptor(MPSMatrix::alloc(), buf, &desc)
+            };
+
+            let mut kernels = Vec::with_capacity(dims.len());
+            let mut weight_mats = Vec::with_capacity(dims.len());
+            let mut in_mats = Vec::with_capacity(dims.len());
+            let mut out_mats = Vec::with_capacity(dims.len());
+            let mut bias_bufs = Vec::with_capacity(dims.len());
+            let mut weight_bufs = Vec::with_capacity(dims.len());
+            let mut out_cols = Vec::with_capacity(dims.len());
+            let mut relu = Vec::with_capacity(dims.len());
+
+            let mut cursor = 0usize;
+            for (li, &(in_dim, out_dim)) in dims.iter().enumerate() {
+                let w_flat = &flat[cursor..cursor + in_dim * out_dim];
+                cursor += in_dim * out_dim;
+                let b_flat = &flat[cursor..cursor + out_dim];
+                cursor += out_dim;
+                let is_last = li == dims.len() - 1;
+
+                // Weight buffer holds the CPU-native [out,in] row-major weights;
+                // transposeRight in the GEMM makes B = Wᵀ = [in,out].
+                let wbuf = make_buf(in_dim * out_dim * f32sz, "weight")?;
+                std::ptr::copy_nonoverlapping(
+                    w_flat.as_ptr(),
+                    wbuf.contents().as_ptr() as *mut f32,
+                    in_dim * out_dim,
+                );
+                let wmat = mtl_matrix(&wbuf, out_dim, in_dim);
+
+                let bbuf = make_buf(out_dim * f32sz, "bias")?;
+                std::ptr::copy_nonoverlapping(
+                    b_flat.as_ptr(),
+                    bbuf.contents().as_ptr() as *mut f32,
+                    out_dim,
+                );
+
+                // Input matrix: layer 0 reads the feature buffer; later layers
+                // read the previous activation (ping-pong act[(li-1)%2]).
+                let in_mat = if li == 0 {
+                    mtl_matrix(input_mtl, max_rows, in_dim)
+                } else if (li - 1) % 2 == 0 {
+                    mtl_matrix(&act0, max_rows, in_dim)
+                } else {
+                    mtl_matrix(&act1, max_rows, in_dim)
+                };
+                // Output matrix: last layer writes the result buffer; hidden
+                // layers write act[li%2].
+                let out_mat = if is_last {
+                    mtl_matrix(out_mtl, max_rows, out_dim)
+                } else if li % 2 == 0 {
+                    mtl_matrix(&act0, max_rows, out_dim)
+                } else {
+                    mtl_matrix(&act1, max_rows, out_dim)
+                };
+
+                let kernel = MPSMatrixMultiplication::initWithDevice_transposeLeft_transposeRight_resultRows_resultColumns_interiorColumns_alpha_beta(
+                    MPSMatrixMultiplication::alloc(),
+                    device,
+                    false, // A not transposed
+                    true,  // B = Wᵀ (weights stored [out,in])
+                    max_rows,
+                    out_dim,
+                    in_dim,
+                    1.0,
+                    0.0,
+                );
+
+                kernels.push(kernel);
+                weight_mats.push(wmat);
+                in_mats.push(in_mat);
+                out_mats.push(out_mat);
+                bias_bufs.push(bbuf);
+                weight_bufs.push(wbuf);
+                out_cols.push(out_dim as u32);
+                relu.push(!is_last);
+            }
+
+            // Compile the fused bias+ReLU kernel once.
+            let src = NSString::from_str(BIAS_RELU_MSL);
+            let lib = device
+                .newLibraryWithSource_options_error(&src, None)
+                .map_err(|e| format!("rdirect_live: bias_relu compile failed: {e:?}"))?;
+            let func = lib
+                .newFunctionWithName(&NSString::from_str("bias_relu"))
+                .ok_or_else(|| "rdirect_live: bias_relu function missing".to_string())?;
+            let pipeline = device
+                .newComputePipelineStateWithFunction_error(&func)
+                .map_err(|e| format!("rdirect_live: bias_relu pipeline failed: {e:?}"))?;
+
+            Ok(Self {
+                kernels,
+                weight_mats,
+                in_mats,
+                out_mats,
+                bias_bufs,
+                out_cols,
+                relu,
+                pipeline,
+                _weight_bufs: weight_bufs,
+                _act_bufs: [act0, act1],
+                max_rows,
+            })
+        }
+
+        /// Encode the whole forward onto `cmd` (matmul + bias/ReLU per layer).
+        /// No allocation — everything was built in `new`.
+        #[allow(unsafe_op_in_unsafe_fn)]
+        unsafe fn encode(&self, cmd: &ProtocolObject<dyn MTLCommandBuffer>) {
+            let tg = self.pipeline.maxTotalThreadsPerThreadgroup().min(256);
+            for li in 0..self.kernels.len() {
+                self.kernels[li].encodeToCommandBuffer_leftMatrix_rightMatrix_resultMatrix(
+                    cmd,
+                    &self.in_mats[li],
+                    &self.weight_mats[li],
+                    &self.out_mats[li],
+                );
+                let enc = cmd
+                    .computeCommandEncoder()
+                    .expect("rdirect_live: computeCommandEncoder");
+                enc.setComputePipelineState(&self.pipeline);
+                let out_buf = self.out_mats[li].data();
+                enc.setBuffer_offset_atIndex(Some(&out_buf), 0, 0);
+                enc.setBuffer_offset_atIndex(Some(&self.bias_bufs[li]), 0, 1);
+                let out_cols = self.out_cols[li];
+                let do_relu: u32 = if self.relu[li] { 1 } else { 0 };
+                enc.setBytes_length_atIndex(
+                    std::ptr::NonNull::new(&out_cols as *const u32 as *mut c_void).unwrap(),
+                    std::mem::size_of::<u32>(),
+                    2,
+                );
+                enc.setBytes_length_atIndex(
+                    std::ptr::NonNull::new(&do_relu as *const u32 as *mut c_void).unwrap(),
+                    std::mem::size_of::<u32>(),
+                    3,
+                );
+                let total = self.max_rows * out_cols as usize;
+                enc.dispatchThreads_threadsPerThreadgroup(
+                    MTLSize { width: total, height: 1, depth: 1 },
+                    MTLSize { width: tg, height: 1, depth: 1 },
+                );
+                enc.endEncoding();
+            }
+        }
+    }
+
     /// The zero-copy pool (N0.b): the feature input and net output as MTLBuffers
     /// allocated ONCE, sized to a fixed `max_pixels` ceiling. `feature_buf` is
     /// the SAME MTLBuffer wrapped as a wgpu STORAGE buffer, so the gather
@@ -81,7 +325,9 @@ mod imp {
     struct SharedPool {
         /// wgpu view of `feature_mtl` (STORAGE): the gather's destination.
         feature_buf: wgpu::Buffer,
-        /// Same MTLBuffer as `feature_buf`, fed to the graph zero-copy.
+        /// Same MTLBuffer as `feature_buf`, fed to the graph zero-copy. Held to
+        /// keep the buffer alive for the graph in_td / chain input matrix.
+        #[allow(dead_code)]
         feature_mtl: Retained<ProtocolObject<dyn MTLBuffer>>,
         /// The graph's output MTLBuffer (Shared storage → CPU-readable AND the
         /// same buffer wrapped as `out_buf` for the GPU demod, CUT 2).
@@ -102,6 +348,11 @@ mod imp {
         inputs: Retained<NSArray<MPSGraphTensorData>>,
         /// Result array `[out_td]` (out_td wraps `out_mtl` zero-copy).
         results: Retained<NSArray<MPSGraphTensorData>>,
+        /// S5: the raw-kernel forward over the SAME pooled feature/out buffers
+        /// (MPSMatrixMultiplication + bias/ReLU on one owned command buffer).
+        /// Default live path; the MPSGraph `executable` above survives for the
+        /// A/B toggle (`GAIA_NATIVE_NET_MPSGRAPH=1`) and the offline ordeal.
+        chain: MatmulChain,
     }
 
     /// The live net: an MPSGraph batched-GEMM forward built once at construction
@@ -120,6 +371,10 @@ mod imp {
         /// GPUEndTime − GPUStartTime, ms). The `runWithMTLCommandQueue` API hid
         /// this; the encode path below owns the command buffer so it reads it.
         last_gpu_ms: Cell<f64>,
+        /// S5 A/B toggle: force the old MPSGraph executable path (default false =
+        /// the raw MPSMatrixMultiplication chain). `GAIA_NATIVE_NET_MPSGRAPH=1`,
+        /// or per-instance via `set_use_mpsgraph` (the parity ordeal flips it).
+        use_mpsgraph: Cell<bool>,
     }
 
     impl RdirectLive {
@@ -214,6 +469,10 @@ mod imp {
                     out_channels: OUTPUT_CHANNELS,
                     pool: None,
                     last_gpu_ms: Cell::new(0.0),
+                    use_mpsgraph: Cell::new(matches!(
+                        std::env::var("GAIA_NATIVE_NET_MPSGRAPH").ok().as_deref(),
+                        Some("1") | Some("true") | Some("on")
+                    )),
                 })
             }
         }
@@ -354,6 +613,24 @@ mod imp {
                 );
                 let inputs = NSArray::from_slice(&[&*in_td]);
                 let results = NSArray::from_slice(&[&*out_td]);
+
+                // ── S5: build the raw-kernel GEMM chain over the SAME pooled
+                // feature/out MTLBuffers (kill the MPSGraph per-frame encode). ──
+                let dims: Vec<(usize, usize)> = self
+                    .cpu_ref
+                    .layer_dims()
+                    .iter()
+                    .map(|&(i, o)| (i as usize, o as usize))
+                    .collect();
+                let flat = self.cpu_ref.flat_weights();
+                let chain = MatmulChain::new(
+                    mtl_device,
+                    &dims,
+                    &flat,
+                    max_pixels,
+                    &feature_mtl,
+                    &out_mtl,
+                )?;
                 // NOTE: the forward now runs through `encodeToCommandBuffer` on a
                 // command buffer WE own (see `run_executable`) — we commit + wait
                 // manually so GPUStartTime/GPUEndTime are readable (S3). The old
@@ -370,6 +647,7 @@ mod imp {
                     executable,
                     inputs,
                     results,
+                    chain,
                 });
             }
             Ok(())
@@ -424,26 +702,37 @@ mod imp {
                     .queue
                     .commandBuffer()
                     .ok_or_else(|| "rdirect_live: commandBuffer alloc failed".to_string())?;
-                let mps_cmd = MPSCommandBuffer::commandBufferWithCommandBuffer(&base);
-                let _ = pool
-                    .executable
-                    .encodeToCommandBuffer_inputsArray_resultsArray_executionDescriptor(
-                        &mps_cmd,
-                        &pool.inputs,
-                        Some(&pool.results),
-                        // descriptor None: we own commit + wait below, so the
-                        // executable must not internally commit/wait (that hides
-                        // GPU timestamps and races our root wait).
-                        None,
-                    );
-                // encode may commitAndContinue; commit the live root and wait on
-                // it. `base` is the first (and, for this small graph, only)
-                // buffer — its GPU timestamps bound the forward's GPU work.
-                let root = mps_cmd.rootCommandBuffer();
-                mps_cmd.commit();
-                root.waitUntilCompleted();
-                let gpu_ms = (base.GPUEndTime() - base.GPUStartTime()) * 1000.0;
-                self.last_gpu_ms.set(gpu_ms);
+                if self.use_mpsgraph.get() {
+                    // A/B fallback: the old MPSGraph executable path.
+                    let mps_cmd = MPSCommandBuffer::commandBufferWithCommandBuffer(&base);
+                    let _ = pool
+                        .executable
+                        .encodeToCommandBuffer_inputsArray_resultsArray_executionDescriptor(
+                            &mps_cmd,
+                            &pool.inputs,
+                            Some(&pool.results),
+                            // descriptor None: we own commit + wait below, so the
+                            // executable must not internally commit/wait (that
+                            // hides GPU timestamps and races our root wait).
+                            None,
+                        );
+                    let root = mps_cmd.rootCommandBuffer();
+                    mps_cmd.commit();
+                    root.waitUntilCompleted();
+                    let gpu_ms = (base.GPUEndTime() - base.GPUStartTime()) * 1000.0;
+                    self.last_gpu_ms.set(gpu_ms);
+                } else {
+                    // S5 DEFAULT: the raw MPSMatrixMultiplication + bias/ReLU
+                    // chain, all encoded onto ONE command buffer we own. µs-class
+                    // CPU encode (no MPSGraph per-frame command-buffer build),
+                    // then a single commit + wait. GPU timestamps bound the
+                    // whole forward exactly as the metal4-probe measured.
+                    pool.chain.encode(&base);
+                    base.commit();
+                    base.waitUntilCompleted();
+                    let gpu_ms = (base.GPUEndTime() - base.GPUStartTime()) * 1000.0;
+                    self.last_gpu_ms.set(gpu_ms);
+                }
                 Ok::<(), String>(())
             })?;
             Ok(pool)
@@ -464,6 +753,12 @@ mod imp {
         /// encode/readback — the metal4-probe's 4.47ms is this number.
         pub fn last_gpu_ms(&self) -> f64 {
             self.last_gpu_ms.get()
+        }
+
+        /// S5 A/B (ordeal-only): force this instance's forward path.
+        /// `true` = old MPSGraph executable, `false` = the raw GEMM chain.
+        pub fn set_use_mpsgraph(&self, on: bool) {
+            self.use_mpsgraph.set(on);
         }
 
         /// Ceiling passed at construction (max target pixels per forward).

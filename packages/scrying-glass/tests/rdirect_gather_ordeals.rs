@@ -177,6 +177,19 @@ fn n0b_gather_and_shared_forward_match_cpu() {
     let got2 = live.forward_shared(n).expect("second shared forward");
     assert_eq!(got, got2, "shared forward not deterministic");
 
+    // S5 A/B PARITY — the raw MPSMatrixMultiplication chain (default above) vs
+    // the old MPSGraph executable over the SAME pooled buffers. Same weights,
+    // same math; the chain kills the CPU encode wall, not the numbers.
+    live.set_use_mpsgraph(true);
+    let got_graph = live.forward_shared(n).expect("mpsgraph forward");
+    live.set_use_mpsgraph(false);
+    let mut max_ab = 0f32;
+    for k in 0..got.len() {
+        max_ab = max_ab.max((got[k] - got_graph[k]).abs());
+    }
+    eprintln!("[n0f] S5 chain vs MPSGraph: max abs {max_ab:.3e}");
+    assert!(max_ab < 1.0e-3, "S5 chain vs MPSGraph abs {max_ab:.3e} ≥ 1e-3");
+
     // GATHER-ms budget line: median wall of encode+submit+wait over 200 frames.
     let iters = 200;
     let mut samples = Vec::with_capacity(iters);

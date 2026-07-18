@@ -67,11 +67,22 @@ features = [
 
 [target.'cfg(target_os = "macos")'.dependencies.objc2-metal-performance-shaders]
 version = "0.3.2"
-features = ["MPSCore", "MPSCoreTypes", "MPSNDArray", "MPSCommandBuffer"]
+# S5 (kill the encode wall): MPSMatrix + MPSMatrixMultiplication give a raw
+# per-layer GEMM chain on our own command buffer (µs-class CPU encode), the
+# metal4-probe pattern minus MPSGraph's per-frame CPU cost.
+features = [
+  "MPSCore", "MPSCoreTypes", "MPSNDArray", "MPSCommandBuffer",
+  "MPSMatrix", "MPSMatrixMultiplication", "MPSMatrixTypes",
+]
 
 [target.'cfg(target_os = "macos")'.dependencies.objc2-metal]
 version = "0.3.2"
-features = ["MTLDevice", "MTLCommandQueue", "MTLBuffer", "MTLResource", "MTLCommandBuffer"]
+# S5: raw compute encoder + library for the fused bias+ReLU kernel between GEMMs.
+features = [
+  "MTLDevice", "MTLCommandQueue", "MTLBuffer", "MTLResource", "MTLCommandBuffer",
+  "MTLComputePipeline", "MTLComputeCommandEncoder", "MTLCommandEncoder",
+  "MTLLibrary", "MTLTypes",
+]
 
 [target.'cfg(target_os = "macos")'.dependencies.objc2]
 version = "0.6"
