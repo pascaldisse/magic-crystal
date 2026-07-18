@@ -90,8 +90,8 @@ impl Default for RdirectConfig {
 }
 
 impl RdirectConfig {
-    fn layer_sizes(&self) -> Vec<usize> {
-        let mut sizes = vec![INPUT_FEATURES];
+    fn layer_sizes_with(&self, input: usize) -> Vec<usize> {
+        let mut sizes = vec![input];
         for _ in 0..self.hidden_layers {
             sizes.push(self.hidden_width);
         }
@@ -156,7 +156,13 @@ impl Mlp {
     /// honesty). Unlike the upscaler, the last layer is NOT zeroed — this net
     /// emits the image directly, it has no bilinear base to fall back to.
     pub fn new_random(config: RdirectConfig, seed: u64) -> Self {
-        let sizes = config.layer_sizes();
+        Self::new_random_with_input(config, INPUT_FEATURES, seed)
+    }
+
+    /// He-init with an EXPLICIT input width — the N2 recurrent net widens the
+    /// input layer to [`HIST_FEATURES`] (27) for the reprojected-history channels.
+    pub fn new_random_with_input(config: RdirectConfig, input_features: usize, seed: u64) -> Self {
+        let sizes = config.layer_sizes_with(input_features);
         let mut rng = SplitMix64::new(seed);
         let mut layers = Vec::with_capacity(sizes.len() - 1);
         for pair in sizes.windows(2) {
@@ -664,9 +670,332 @@ pub fn weights_sha256(mlp: &Mlp) -> String {
     sha256_hex(&serialize_weights(mlp))
 }
 
+// ══════════════════════════ N2 — MEMORY (reprojected history) ═══════════════
+// The dots the Architect sees are single-frame spp=1 VARIANCE the current-frame
+// net cannot close from one sample. N2 gives the net a MEMORY: its OWN previous
+// output, reprojected into this frame (the light-fix reprojection math, reused
+// as FEATURE PLUMBING — not a separate present path), fed as extra per-pixel
+// features + a validity flag that GATES it (like the light-fix `still_px` /
+// disocclusion reject). One render, one net: the history is INPUT, the image is
+// still the only output. Trained with the recurrence UNROLLED (the net's own
+// prev output fed back) so it learns to AVERAGE across frames at stillness and
+// to DROP stale history under motion (validity=0) — killing dots without ghosts.
+
+/// N2 feature vector: the v2 base (23) + reprojected previous demod-log radiance
+/// (3) + history validity (1) = 27. The base half is byte-identical to v2, so a
+/// v2 net (in_dim 23) and a v3 net (in_dim 27) coexist; the loader dispatches on
+/// the first layer's in_dim.
+pub const HIST_FEATURES: usize = INPUT_FEATURES + 4;
+
+/// A previous-frame camera pose, enough to reproject a world point into its
+/// screen. `half_tan` = tan(fov_y/2); `aspect` = w/h. Kept dependency-free
+/// (raw glam vectors) so this module stays decoupled from `scene::Camera`.
+#[derive(Debug, Clone, Copy)]
+pub struct CamPose {
+    pub eye: Vec3,
+    pub right: Vec3,
+    pub up: Vec3,
+    pub forward: Vec3,
+    pub half_tan: f32,
+    pub aspect: f32,
+}
+
+impl CamPose {
+    /// World-space ray direction through target pixel (tx,ty) — the same primary
+    /// ray the integrator generates (pixel centre).
+    pub fn ray_dir(&self, tx: u32, ty: u32, w: u32, h: u32) -> Vec3 {
+        let cx = (2.0 * (tx as f32 + 0.5) / w as f32) - 1.0;
+        let cy = 1.0 - (2.0 * (ty as f32 + 0.5) / h as f32);
+        (self.forward + self.right * cx * self.half_tan * self.aspect + self.up * cy * self.half_tan)
+            .normalize_or_zero()
+    }
+
+    /// Reproject a world point into THIS (previous) camera's fractional screen
+    /// pixel. `None` when behind the eye or off-screen (a disocclusion). Mirrors
+    /// the light-fix `temporal_resolve` reprojection, sign-for-sign.
+    pub fn reproject(&self, world: Vec3, w: u32, h: u32) -> Option<(f32, f32)> {
+        let rel = world - self.eye;
+        let rz = rel.dot(self.forward);
+        if rz <= 1e-4 {
+            return None;
+        }
+        let sx = rel.dot(self.right) / (rz * self.half_tan * self.aspect);
+        let sy = rel.dot(self.up) / (rz * self.half_tan);
+        let fpx = (sx + 1.0) * 0.5 * w as f32 - 0.5;
+        let fpy = (1.0 - sy) * 0.5 * h as f32 - 0.5;
+        if fpx < 0.0 || fpy < 0.0 || fpx > (w - 1) as f32 || fpy > (h - 1) as f32 {
+            return None;
+        }
+        Some((fpx, fpy))
+    }
+}
+
+/// Bilinear fetch of a Vec3 image at a fractional position (clamped) — the
+/// standard TAA history resample (light-fix `t_hist_bilinear`).
+fn bilinear_vec3(img: &[Vec3], fx: f32, fy: f32, w: u32, h: u32) -> Vec3 {
+    let x0 = fx.floor() as i32;
+    let y0 = fy.floor() as i32;
+    let tx = fx - x0 as f32;
+    let ty = fy - y0 as f32;
+    let cl = |v: i32, hi: u32| v.clamp(0, hi as i32 - 1) as usize;
+    let x0c = cl(x0, w);
+    let x1c = cl(x0 + 1, w);
+    let y0c = cl(y0, h);
+    let y1c = cl(y0 + 1, h);
+    let idx = |x: usize, y: usize| y * w as usize + x;
+    let a = img[idx(x0c, y0c)];
+    let b = img[idx(x1c, y0c)];
+    let c = img[idx(x0c, y1c)];
+    let d = img[idx(x1c, y1c)];
+    let top = a * (1.0 - tx) + b * tx;
+    let bot = c * (1.0 - tx) + d * tx;
+    top * (1.0 - ty) + bot * ty
+}
+
+/// Assemble one target pixel's 27-feature N2 input: the v2 base (23) followed by
+/// the reprojected previous demod-log radiance (3) + validity (1). `prev_dl` is
+/// ALREADY in the net's output space (demod-log), so at stillness the net's own
+/// previous output feeds straight back (no re-demod round-trip). `valid` is 1.0
+/// when the history was reprojected and passed the depth/normal guard, else 0.0
+/// (and `prev_dl` must be zeroed by the caller).
+pub fn hist_features(base: &[f32; INPUT_FEATURES], prev_dl: [f32; 3], valid: f32) -> [f32; HIST_FEATURES] {
+    let mut f = [0.0f32; HIST_FEATURES];
+    f[..INPUT_FEATURES].copy_from_slice(base);
+    f[INPUT_FEATURES] = prev_dl[0];
+    f[INPUT_FEATURES + 1] = prev_dl[1];
+    f[INPUT_FEATURES + 2] = prev_dl[2];
+    f[INPUT_FEATURES + 3] = valid;
+    f
+}
+
+/// The absolute target (demod-log radiance) for a reference pixel given its
+/// high-res albedo — the net's output space. Public for the v3 trainer.
+pub fn target_demod_log(reference: Vec3, hi_albedo: Vec3) -> [f32; OUTPUT_CHANNELS] {
+    let divisor = demod_divisor(hi_albedo);
+    let dl = log_demod(reference, divisor);
+    [dl.x, dl.y, dl.z]
+}
+
+/// Backprop one (27-feature, target) pair, accumulating into caller grads.
+/// Exposed so the v3 trainer can unroll the recurrence (feed the net's own
+/// previous output) without re-featurising through the private dataset path.
+pub fn accumulate_backward(
+    mlp: &Mlp,
+    feat: &[f32; HIST_FEATURES],
+    target: &[f32; OUTPUT_CHANNELS],
+    w_grads: &mut [Vec<f32>],
+    b_grads: &mut [Vec<f32>],
+    scale: f32,
+) {
+    let (wg, bg) = mlp.backward(feat, target);
+    for li in 0..w_grads.len() {
+        for k in 0..w_grads[li].len() {
+            w_grads[li][k] += wg[li][k] * scale;
+        }
+        for k in 0..b_grads[li].len() {
+            b_grads[li][k] += bg[li][k] * scale;
+        }
+    }
+}
+
+/// Allocate zero grad buffers shaped like the MLP.
+pub fn zero_grads(mlp: &Mlp) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
+    (
+        mlp.layers.iter().map(|l| vec![0.0; l.w.len()]).collect(),
+        mlp.layers.iter().map(|l| vec![0.0; l.b.len()]).collect(),
+    )
+}
+
+/// Apply accumulated grads via Adam (v3 trainer step).
+pub fn adam_apply(adam: &mut Adam, mlp: &mut Mlp, w_grads: &[Vec<f32>], b_grads: &[Vec<f32>]) {
+    adam.step(mlp, w_grads, b_grads);
+}
+
+/// One frame of a reprojection sequence for the recurrent (N2) eval path.
+pub struct HistFrame<'a> {
+    pub low_radiance: &'a [Vec3],
+    pub low_w: u32,
+    pub low_h: u32,
+    pub hi_albedo: &'a [Vec3],
+    pub hi_normal: &'a [Vec3],
+    pub hi_depth: &'a [f32],
+    pub target_w: u32,
+    pub target_h: u32,
+    pub cam: CamPose,
+}
+
+/// Render a whole sequence through the RECURRENT N2 net: each frame consumes the
+/// PREVIOUS frame's net output, reprojected into this frame's screen with a
+/// depth+normal validity guard (disocclusions → history dropped, validity 0).
+/// Returns every frame's output image (the caller reads the tail for stillness
+/// convergence / the motion frames for ghosting). This is the eval embodiment
+/// of the live recurrence — the ordeal runs it.
+pub fn direct_render_sequence_hist(
+    mlp: &Mlp,
+    frames: &[HistFrame],
+    depth_tol: f32,
+    normal_thresh: f32,
+) -> Vec<Vec<Vec3>> {
+    let mut outputs: Vec<Vec<Vec3>> = Vec::with_capacity(frames.len());
+    // Previous frame's net output (demod-log radiance) + gbuffer + camera.
+    let mut prev: Option<(Vec<[f32; 3]>, Vec<f32>, Vec<Vec3>, CamPose, u32, u32)> = None;
+    for f in frames {
+        let tw = f.target_w;
+        let th = f.target_h;
+        let n = (tw * th) as usize;
+        let mut out_rgb = vec![Vec3::ZERO; n];
+        let mut out_dl = vec![[0.0f32; 3]; n];
+        for ty in 0..th {
+            for tx in 0..tw {
+                let i = (ty * tw + tx) as usize;
+                let albedo = f.hi_albedo[i];
+                let divisor = demod_divisor(albedo);
+                let base = pixel_features(
+                    f.low_radiance, f.low_w, f.low_h, tw, th, tx, ty, albedo, f.hi_normal[i],
+                    f.hi_depth[i], Vec2::ZERO,
+                );
+                // Reproject the previous net output into THIS pixel.
+                let (prev_dl, valid) = match &prev {
+                    None => ([0.0f32; 3], 0.0f32),
+                    Some((p_dl, p_depth, p_norm, p_cam, pw, ph)) => {
+                        let depth = f.hi_depth[i];
+                        let is_miss = depth <= 0.0;
+                        let dir = f.cam.ray_dir(tx, ty, tw, th);
+                        let dist = if is_miss { 1.0e5 } else { depth };
+                        let world = f.cam.eye + dir * dist;
+                        match p_cam.reproject(world, *pw, *ph) {
+                            None => ([0.0f32; 3], 0.0f32),
+                            Some((fx, fy)) => {
+                                let ipx = fx.round().clamp(0.0, (*pw - 1) as f32) as usize;
+                                let ipy = fy.round().clamp(0.0, (*ph - 1) as f32) as usize;
+                                let pj = ipy * *pw as usize + ipx;
+                                let prev_depth = p_depth[pj];
+                                let prev_miss = prev_depth <= 0.0;
+                                let ok = if is_miss {
+                                    prev_miss
+                                } else if prev_miss {
+                                    false
+                                } else {
+                                    let dist_prev = (world - p_cam.eye).length();
+                                    let depth_ok = (dist_prev - prev_depth).abs()
+                                        <= depth_tol * dist_prev.max(1e-4);
+                                    let normal_ok = f.hi_normal[i].dot(p_norm[pj]) >= normal_thresh;
+                                    depth_ok && normal_ok
+                                };
+                                if ok {
+                                    // Bilinear resample of the prev demod-log output.
+                                    let img: Vec<Vec3> =
+                                        p_dl.iter().map(|d| Vec3::new(d[0], d[1], d[2])).collect();
+                                    let s = bilinear_vec3(&img, fx, fy, *pw, *ph);
+                                    ([s.x, s.y, s.z], 1.0)
+                                } else {
+                                    ([0.0f32; 3], 0.0)
+                                }
+                            }
+                        }
+                    }
+                };
+                let feat = hist_features(&base, prev_dl, valid);
+                let dl = mlp.forward(&feat);
+                out_dl[i] = dl;
+                out_rgb[i] = undo_log_demod(Vec3::new(dl[0], dl[1], dl[2]), divisor);
+            }
+        }
+        prev = Some((
+            out_dl,
+            f.hi_depth.to_vec(),
+            f.hi_normal.to_vec(),
+            f.cam,
+            tw,
+            th,
+        ));
+        outputs.push(out_rgb);
+    }
+    outputs
+}
+
+// ──────────────────── THE REAL-IMAGE ORDEAL STAMP + GATE ────────────────────
+// THE REAL IMAGE BAR (Architect, 2026-07-18): REAL OR BLACK. The app presents a
+// neural frame ONLY when the shipped weights carry a PASS stamp from the
+// real-image ordeal (residual-vs-teacher + sparkle bars). The stamp is a sidecar
+// file beside the weights whose recorded sha256 must match the weights bytes and
+// whose status must be PASS. Unstamped / failing / tampered → the gate denies →
+// present_black. There is NO env override: the bar models HIS eye.
+
+/// sha256 of a raw weights blob (== `weights_sha256(mlp)` of the same bytes).
+pub fn blob_sha256(bytes: &[u8]) -> String {
+    sha256_hex(bytes)
+}
+
+/// Canonical stamp path for a weights file: `<weights>.stamp`.
+pub fn stamp_path_for(weights_path: &std::path::Path) -> std::path::PathBuf {
+    let mut s = weights_path.as_os_str().to_os_string();
+    s.push(".stamp");
+    std::path::PathBuf::from(s)
+}
+
+/// The stamp text an ordeal PASS writes. Deterministic, greppable.
+pub fn stamp_pass_text(weights_bytes: &[u8], metrics: &[(&str, f64)]) -> String {
+    let mut t = String::from("GAIA-REAL-IMAGE-ORDEAL v1\n");
+    t.push_str(&format!("weights_sha256={}\n", blob_sha256(weights_bytes)));
+    t.push_str("status=PASS\n");
+    for (k, v) in metrics {
+        t.push_str(&format!("{k}={v:.6}\n"));
+    }
+    t
+}
+
+/// GATE: do these weights bytes carry a valid PASS stamp at `stamp_path`?
+/// True ONLY when the file exists, records this exact sha256, and status=PASS.
+/// Any mismatch / missing / FAIL → false (→ present_black). No env override.
+pub fn verify_stamp(weights_bytes: &[u8], stamp_path: &std::path::Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(stamp_path) else {
+        return false;
+    };
+    let want_sha = blob_sha256(weights_bytes);
+    let mut sha_ok = false;
+    let mut pass = false;
+    for line in text.lines() {
+        let line = line.trim();
+        if let Some(sha) = line.strip_prefix("weights_sha256=") {
+            sha_ok = sha.trim() == want_sha;
+        } else if line == "status=PASS" {
+            pass = true;
+        }
+    }
+    sha_ok && pass
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hist_feature_count_is_27() {
+        assert_eq!(HIST_FEATURES, 27);
+    }
+
+    #[test]
+    fn stamp_gate_accepts_only_matching_pass() {
+        let dir = std::env::temp_dir().join(format!("gaia-stamp-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let wpath = dir.join("w.bin");
+        let bytes = vec![1u8, 2, 3, 4, 5];
+        std::fs::write(&wpath, &bytes).unwrap();
+        let spath = stamp_path_for(&wpath);
+        // No stamp → denied (v2/unstamped case = BLACK).
+        assert!(!verify_stamp(&bytes, &spath));
+        // Valid PASS stamp → allowed.
+        std::fs::write(&spath, stamp_pass_text(&bytes, &[("resid", 0.01)])).unwrap();
+        assert!(verify_stamp(&bytes, &spath));
+        // Tampered weights (sha mismatch) → denied.
+        let tampered = vec![9u8, 9, 9];
+        assert!(!verify_stamp(&tampered, &spath));
+        // FAIL stamp → denied.
+        std::fs::write(&spath, format!("GAIA-REAL-IMAGE-ORDEAL v1\nweights_sha256={}\nstatus=FAIL\n", blob_sha256(&bytes))).unwrap();
+        assert!(!verify_stamp(&bytes, &spath));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn forward_is_pure_and_repeatable() {

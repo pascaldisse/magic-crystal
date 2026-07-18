@@ -1398,14 +1398,30 @@ impl NetPresent {
         // missing/unreadable file returns Err → net_present_frame Err →
         // present_black (Pleroma-or-BLACK: this is how "force Pleroma
         // unavailable" yields a pure-black window).
-        let weights_sel = std::env::var("GAIA_NATIVE_WEIGHTS").unwrap_or_else(|_| "v2".to_string());
+        // N2 REAL IMAGE BAR: default = v3 (the memory/recurrence weights that
+        // must EARN a real-image ordeal PASS stamp to present). v2/v1 remain
+        // env-selectable for the Architect's A/B, but ALL of them face the gate.
+        let weights_sel = std::env::var("GAIA_NATIVE_WEIGHTS").unwrap_or_else(|_| "v3".to_string());
         let weights_file = match weights_sel.as_str() {
             "v1" => "data/rdirect-weights-v1.bin".to_string(),
             "v2" => "data/rdirect-weights-v2.bin".to_string(),
+            "v3" => "data/rdirect-weights-v3.bin".to_string(),
             other => other.to_string(),
         };
-        let weights = std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join(&weights_file))
+        let weights_abs = Path::new(env!("CARGO_MANIFEST_DIR")).join(&weights_file);
+        let weights = std::fs::read(&weights_abs)
             .map_err(|e| format!("read rdirect weights ({weights_file}): {e}"))?;
+        // THE REAL IMAGE BAR (Architect, 2026-07-18): REAL OR BLACK. Present is
+        // GATED on the weights carrying a PASS stamp from the real-image ordeal
+        // (residual-vs-teacher + sparkle bars). Unstamped / failing / tampered
+        // weights → Err → present_black. NO env override — the bar models HIS eye.
+        let stamp = scrying_glass::rdirect::stamp_path_for(&weights_abs);
+        if !scrying_glass::rdirect::verify_stamp(&weights, &stamp) {
+            return Err(format!(
+                "REAL-IMAGE BAR: weights {weights_file} carry no PASS stamp ({}) — present BLACK by law (real or black)",
+                stamp.display()
+            ));
+        }
         let live = RdirectLive::from_wgpu_queue(device, queue, &weights, n)?;
         // SHIFT 17 CUT A: opt into the fused native demod (encode the demod on
         // the net's OWN queue right after the forward, killing N0.m's

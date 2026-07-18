@@ -37,6 +37,10 @@ wired = { path = "../wired" }
 tokio = { version = "1", features = ["full"] }
 
 [[example]]
+name = "teacher_shot"
+path = "examples/teacher_shot.rs"
+
+[[example]]
 name = "n2_presence"
 path = "examples/n2_presence.rs"
 
