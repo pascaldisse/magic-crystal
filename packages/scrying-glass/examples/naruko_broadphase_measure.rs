@@ -83,7 +83,11 @@ fn main() {
         .solver()
         .clone();
 
-    let tris = base.collider.as_ref().map(|c| c.triangles.len()).unwrap_or(0);
+    let tris = base
+        .collider
+        .as_ref()
+        .map(|c| c.triangles.len())
+        .unwrap_or(0);
     let particles = base.particles.pos.len();
 
     // Two warmed clones: broadphase ON vs brute OFF, same start state.
@@ -140,13 +144,21 @@ fn main() {
         "collision_static  {:>9.3} ms       {:>9.3} ms        {:>6.1}x",
         s_off,
         s_on,
-        if s_on > 0.0 { s_off / s_on } else { f64::INFINITY }
+        if s_on > 0.0 {
+            s_off / s_on
+        } else {
+            f64::INFINITY
+        }
     );
     println!(
         "TOTAL tick        {:>9.3} ms       {:>9.3} ms        {:>6.1}x",
         t_off,
         t_on,
-        if t_on > 0.0 { t_off / t_on } else { f64::INFINITY }
+        if t_on > 0.0 {
+            t_off / t_on
+        } else {
+            f64::INFINITY
+        }
     );
     println!(
         "\nREAL-MESH HUD tick: {:.3} ms broadphase  (was {:.3} ms brute)",

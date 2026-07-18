@@ -264,3 +264,150 @@ the break (VI) · neural-frame cutover call · physics-quality items
 LESSONS: checkpoint-first (7 lane deaths today, zero loss) · warm-target
 reuse · silent lane ≠ dead lane, verify the room · one worker per dir ·
 the adversary law drew real blood (2r overshoot) and must never soften.
+
+## EVENING DELTA — fall-through RESOLVED (merge-conductor burst #10)
+main @ 5856fda (merges 79e9953 floor-fallthrough + 5856fda realm-
+rimguard). VERDICT: no interior fall-through — naruko terra plate
+watertight, 3511 walks (42 bounded suspect+grid + 3393 coverage + 50
+walk-sweep + 15 rim), 0 genuine tunnels; harness classifier honest
+(gated-not-raw + settle-confirm). The Architect's episodic drop was a
+MAP EDGE, not a floor bug: south/east/west rims were naked (sub-eye-
+height walls auto-climb like stairs — no horizontal collision in this
+controller) → now guarded wall+catch-shelf, 15/15 rim walks caught
+(StepDown), 0 OffWorld breaches. 2 permanent CI ordeals added
+(floor_fallthrough.rs). O(n) Ground query flagged as future exact-perf
+atom (not blocking). Suite: 396 passed, 0 failed, workspace --release.
+ARCHITECT'S FALL-THROUGH COMPLAINT (evening OPEN BUG, above) — CLOSED
+pending his own walk of the guarded rims.
+
+## EVENING DELTA — one-render-path MERGED (merge-conductor burst #11)
+main @ 8b47f7e (merge, no-ff) + fc95c82 (adversary advisory). Lane 1
+(one-render-path, @ e9a48f2, adversary HOLDS) landed clean — branch
+contained main via earlier merges, no conflicts.
+WHAT LANDED: the neural frame EXISTS on main as a selectable candidate,
+scry-side only — upscaler ported to WGSL compute (`upscaler.wgsl` +
+`upscaler_gpu.rs`, house pattern), denoiser fp16 MODE A cleared (viable,
+razor-thin beats-noisy margin survives), neural resolve selectable via
+`GAIA_NATIVE_UPSCALE=neural` for /scry A/B capture. The LIVE surface
+loop is UNTOUCHED: bilinear stays the runtime default per the
+Architect's escape-hatch order; the selector is structurally unreachable
+from `run_render_loop` (neural only ever writes /scry, never the
+surface) — hash-identity confirms both selections produce identical
+surface bytes, 24/24 frames.
+ADVISORY (fc95c82, docs/derivation only, no functional change): MODE B
+fp16's rejection bound had quoted `macs·u16` (total 3488 MACs) as the
+Higham compounding term — corrected to the per-dot-product CHAIN length
+(this net's max in_dim, ≤64), honest worst case ≈0.03–0.12 rel, not the
+1.703e0 previously cited (don't quote 1.703 as tight). REJECTION VERDICT
+UNCHANGED — even corrected, MODE B's bound dwarfs the MODE A margin.
+MODE A's own bound noted conservative vs the rigorous per-layer L·2u16
+term (~4.9e-3, still far above measured parity). Hash-identity claim
+reworded: the run hashes the SURFACE frame (upstream of the resolve
+selector) — it shows both env-var runs match, it does not itself
+exercise neural resolve executing; the live-surface invariance is a
+STRUCTURAL property of the wiring, not something that run demonstrates
+alone. onepath_fp16_verdict.rs: noted — promote to an asserting ordeal
+if fp16 ever becomes a runtime path (currently a printing example).
+HONEST WALL (unchanged by the merge, still open): combined neural
+best-true ~334ms memory-shaped (upscaler naive fp32 the wall-breaker,
+not the denoiser) — 26× over 16.67ms/60fps at 1280×960. Kernel atom
+target 19–26ms (memory-shaped diagnosis: per-layer threadgroup tiles,
+subgroup broadcast, f16 storage — the naive full-net f16 threadgroup
+cache lever was TRIED and REJECTED, 7.6× slower, occupancy collapse).
+Even a PERFECT kernel at that target still needs the Architect's
+pixel/net ruling for 60fps neural — denoise+upscale together still
+exceed 16.67ms at production res without a smaller net or lower neural
+present-res.
+SUITE: cargo test --workspace --release — 400 passed, 0 failed (real
+run, this burst). viii3b_ordeals run explicitly: 4/4 green
+(byte-identical determinism, GPU-vs-CPU parity+beats-bilinear both
+held-out orbits, BAN, full neural path deterministic end-to-end).
+PUSHED: origin/main c7189a5..fc95c82 (2 commits: 8b47f7e merge,
+fc95c82 advisory).
+ARCHITECT RULING REQUIRED (new open item): 60fps neural needs a call —
+(a) smaller/shallower/separable net (retrain, quality ruling), (b) lower
+neural present-res / scale (pixel ruling), or (c) neural stays scry-only
+until a real kernel campaign (subgroup-tiled MLP, multi-day, not this
+burst) or ANE offload lands. Nothing about the LIVE surface changes
+until he rules — bilinear remains default, his window at 8420/5173 was
+not touched by this merge.
+NO SURPRISES: clean merge, suite green first try, no MUST-FIX from this
+conductor pass (adversary already HELD e9a48f2 before this burst).
+
+## EVENING DELTA — NRC spike CONCLUDED (worktree magic-crystal-nrc, not merged)
+Branch `neural-radiance` @ b43e38c, worktree /Users/pascaldisse/projects/
+magic-crystal-nrc — separate spike, no main code touched by this delta.
+VERDICT: NEEDS-BIGGER-MACHINERY. Drift ablation (nrc_drift.rs, 4
+conditions swept, proof/matrix-*.log) found the round-3 descend-then-
+UNLEARN curve was constant-α SGD's stationary noise ball (Robbins–Monro),
+not a capacity plateau — CURED by the combined cure (harmonic lr-decay +
+k=16 target-averaging + ema=.999 Polyak): 0.85→0.0377±0.0114 tail
+(descend-and-hold shape, CV 0.30, vs 0.42–0.72 CV for the three partial
+cures). Drift is dead. But even cured, the tail sits at gate 0.0178 NOT
+MET (~2.1× above) — that is the CAPACITY FLOOR of the frequency-band MLP
+itself (FREQ_BANDS=6, 4×64), not a training pathology. Next-wave scope:
+hash-grid encoding (instant-NGP style, replaces/augments the frequency-
+band input — this is where the real capacity lives), wider-net as a
+cheaper first probe, and a bound audit (the 0.0178 gate predates this
+matrix's own derived bounds — 0.02678 in nrc_drift.rs's setup, 0.01865 in
+nrc_proof.rs's — pin one canonical derivation before the next wave).
+Cost-vs-rays accounting still owed (current gate (d) is CPU-toy wall-
+clock only, real target is the GPU naruko world's BVH). Verdict doc:
+magic-crystal-nrc/docs/perf/2026-07-17-nrc-spike-verdict.md. Branch
+PARKS AS REFERENCE, UNMERGED — same precedent as rite8-viii2-ari. Next
+wave (hash-grid encoding) awaits the Architect's call.
+
+### EVENING DELTA — fluid truth kernel PARKED (escalated to the Architect)
+Branch fluid-truth @ 096628b (clean, unmerged; 3-round conclusion, full
+data in docs + fluid_kernel.rs docs):
+- WORKS: PBF density constraint, compression-only clamp (correct), RMS
+  flatness 0.030-0.044 vs 0.040 bound. 5 ordeals green + sabotage RED.
+- THE DISEASE (both cheap cures fail): s_corr detonates under sustained
+  hydrostatic load even per-pair-gated (r6+r7) · tensile_k=0 collapses
+  real geometry INVISIBLY to SPH density — NN spacing −70-90%,
+  coincident pairs, no buoyant differentiation, cobblestone surface
+  (found by the new geometric volume probe, not the density gate).
+- MISSING GATE identified: geometric min-separation ordeal (SPH-density
+  ordeals are blind to clustering — disclosed in fluid_ordeals.rs).
+- CANDIDATE CURES for the Architect's physics pass: (1) RECOMMENDED:
+  pairwise min-separation as a unilateral distance constraint via the
+  solver's OWN proven contact machinery (charter-coherent: one solver,
+  fluid rides the same contact floor as rigids — unconditionally stable
+  projection, decoupled from the density feedback loop); (2) duration/
+  magnitude-gated s_corr. Cost note: solve_fluid 131.7ms @ N=1372
+  (bench kernel — speed is not the gate).
+
+## PLAYGROUND MERGED (merge-conductor burst #12)
+main @ cf571de (merge becd50d + adversary advisory cf571de) — GREEN,
+suite 400/0. THE PUSH lands: the Architect's hand becomes an op — F key /
+locked click / `/push` organ all funnel through the same `Op::Impulse`
+(`build_push_ops` in scrying-glass/src/main.rs) an agent op would send.
+Nine Physics Playground vessels folded into the hand-derived canon
+(packages/oracle/tests/canon.rs); naruko plaza gets toys (rigid stack,
+bonded break-crate, pyramid) in worlds/naruko/scenes/main.json. Adversary
+HOLDS with live-door proof: shattered the bonded crate over the live HTTP
+door with her own eyes on it (proof/live-before-push.png,
+proof/live-after-push-5.png, proof/finish-toys-view2.png).
+Merge was a clean fast-forward-able join (physics-playground's
+merge-base IS main's HEAD 6cf5c2b) — no worlds/naruko/scenes/main.json
+conflict against rimguard; rimguard already sat on main before the
+playground branch was cut.
+Adversary advisory (cf571de): (a) AIM_RADIUS bare const 0.9 in
+`build_push_ops` → env param `GAIA_PUSH_AIM_RADIUS`, default 0.9,
+validated finite>0, matching its `GAIA_PUSH_REACH`/`GAIA_PUSH_SPEED`
+siblings (IRON-law fix, zero behavior change at default — rebuilt,
+playground_push example re-run, PASSED); (b) doc note: examples/
+playground_push.rs's `pick()` is a deliberate verbatim copy of the ray/
+aim-radius picker (proves the real door, not a stub) — shared-fn
+extraction considered, parked as copy-drift risk on record (example
+sits outside the crate's public surface); (c) F-key autorepeat
+(input.rs) documented as-is: held F re-fires push_pending at the OS
+KeyDown repeat rate, not once per press — rapid-shove-feature vs
+isARepeat-edge-gate is a gameplay-feel call parked for the Architect.
+Also carried, parked for the Architect: F6 solver-rest ergonomics, scry
+timeout ergonomics (both pre-existing, unrelated to this lane).
+The Architect's live window (pid 69733) already runs this build — F =
+push, toys sit behind spawn; the merge does not disturb that session.
+Full suite: `cargo test --workspace --release` → 400 passed, 0 failed,
+82 test-result groups (unit + integration + doctests), clean.
+Pushed origin main 6cf5c2b..cf571de.

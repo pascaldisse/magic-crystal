@@ -14,14 +14,21 @@ use std::{
 use scrying_glass::player::{Ground, Key, Player, PlayerParams};
 use scrying_glass::{input, player};
 
-use crystal::{Core, GaiaPackage, load_world_dir};
+use crystal::{Core, GaiaPackage, ImpulseOp, Op, load_world_dir};
 use glam::Vec3;
 use scrying_glass::ScryingGlassPackage;
 use scrying_glass::bvh::{Bvh, BvhParams, DEFAULT_DEGRADE_RATIO, DynamicSplice, RefitParams};
-use scrying_glass::integrator::{Integrator, IntegratorParams, IntegratorUniform};
+use scrying_glass::denoiser::deserialize_weights as deserialize_denoiser_weights;
+use scrying_glass::denoiser_gpu::GpuDenoiser;
+use scrying_glass::integrator::{
+    Integrator, IntegratorParams, IntegratorUniform, resolve as resolve_accum, split_aov,
+    trace_headless, trace_headless_aov,
+};
 use scrying_glass::scene::{
     Camera, RenderScene, SceneParameters, SunDefaults, SunLight, WalkerPose,
 };
+use scrying_glass::upscaler::deserialize_weights as deserialize_upscaler_weights;
+use scrying_glass::upscaler_gpu::GpuUpscaler;
 use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewUrl};
 
 const DEFAULT_NATIVE_PORT: u16 = 8430;
@@ -171,9 +178,18 @@ impl ScryingGlassConfig {
                 Ok(value) => match value.trim().to_ascii_lowercase().as_str() {
                     "bilinear" => 0,
                     "nearest" => 1,
+                    // THE ONE RENDER PATH — neural = new value in this param
+                    // family. The chartered trace→denoise→upscale resolve. It is
+                    // the DEFAULT resolve for /scry A/B captures; the 60-fps
+                    // surface present stays bilinear (the neural resolve is
+                    // ~26× over the 16.67 ms wall at production res — see
+                    // docs/perf/2026-07-17-onepath-budget.md — so it is the
+                    // capture-surface A/B, not the live present, until the
+                    // Architect's pixel/net ruling lands).
+                    "neural" => 2,
                     other => {
                         return Err(format!(
-                            "GAIA_NATIVE_UPSCALE must be bilinear or nearest, got {other:?}"
+                            "GAIA_NATIVE_UPSCALE must be bilinear, nearest, or neural, got {other:?}"
                         ));
                     }
                 },
@@ -430,6 +446,10 @@ fn handle_http(mut stream: TcpStream, ctx: &HttpContext) {
         respond_walk(&mut stream, ctx, &body);
         return;
     }
+    if path == "/push" && method == "POST" {
+        respond_push(&mut stream, ctx, &body);
+        return;
+    }
 
     if method != "GET" {
         let _ = write_response(
@@ -635,6 +655,47 @@ fn respond_walk(stream: &mut TcpStream, ctx: &HttpContext, body: &str) {
         "{{\"ticks\":{ticks},\"pose\":{final_pose},\"stream\":[{}]}}",
         poses.join(",")
     );
+    let _ = write_response(
+        stream,
+        "200 OK",
+        "application/json; charset=utf-8",
+        body.as_bytes(),
+        "",
+    );
+}
+
+/// POST /push — fire ONE push from the current view ray, the exact keyboard
+/// path without a keyboard: flip the shared player's `push_pending` flag (the
+/// same flag the F key and a pointer-locked click set) so the render loop
+/// casts the ray, picks the nearest aimed-at body, and shoves it with an
+/// `Op::Impulse` on its next tick. Optional body `{yaw?, pitch?}` aims first.
+fn respond_push(stream: &mut TcpStream, ctx: &HttpContext, body: &str) {
+    let request: serde_json::Value = serde_json::from_str(body.trim()).unwrap_or(serde_json::Value::Null);
+    let yaw = request.get("yaw").and_then(serde_json::Value::as_f64);
+    let pitch = request.get("pitch").and_then(serde_json::Value::as_f64);
+    let mut player = match ctx.player.lock() {
+        Ok(player) => player,
+        Err(_) => {
+            let _ = write_response(
+                stream,
+                "500 Internal Server Error",
+                "text/plain; charset=utf-8",
+                b"player state poisoned\n",
+                "",
+            );
+            return;
+        }
+    };
+    if let Some(yaw) = yaw {
+        player.yaw = yaw as f32;
+    }
+    if let Some(pitch) = pitch {
+        player.pitch = (pitch as f32).clamp(-player.params.pitch_limit, player.params.pitch_limit);
+    }
+    player.push_pending = true;
+    let pose = pose_json(&player.pose());
+    drop(player);
+    let body = format!("{{\"pushed\":true,\"pose\":{pose}}}");
     let _ = write_response(
         stream,
         "200 OK",
@@ -904,8 +965,23 @@ impl Renderer {
             "[wgpu] traced {render_width}x{render_height} → upscale → surface {}x{} ({}); {format:?}",
             config.width,
             config.height,
-            if upscale_mode == 1 { "nearest" } else { "bilinear" },
+            match upscale_mode {
+                1 => "nearest",
+                // Neural is selected: the LIVE surface still presents bilinear
+                // (the neural resolve is ~26× over the 16.67 ms wall — the
+                // honest budget), and neural becomes the DEFAULT /scry A/B
+                // resolve so the accounting is visible per screenshot.
+                2 => "bilinear (live) · neural default on /scry A/B",
+                _ => "bilinear",
+            },
         );
+        if upscale_mode == 2 {
+            eprintln!(
+                "[onepath] GAIA_NATIVE_UPSCALE=neural — the chartered trace→denoise→upscale resolve \
+                 is the /scry capture A/B (GET /scry?resolve=neural|bilinear|nearest). The 60-fps \
+                 present stays bilinear until the budget wall is ruled (docs/perf/2026-07-17-onepath-budget.md)."
+            );
+        }
         Ok(Self {
             surface,
             device,
@@ -939,9 +1015,9 @@ impl Renderer {
     /// Rebuild the window accumulation buffer (zeroed) for the current surface
     /// size and drop the accumulated samples — the reset gesture on move/resize.
     fn reset_surface_accum(&mut self) {
-        let accum =
-            self.integrator
-                .make_accum(&self.device, self.render_width, self.render_height);
+        let accum = self
+            .integrator
+            .make_accum(&self.device, self.render_width, self.render_height);
         self.surface_compute_bg = self.integrator.compute_bind_group(&self.device, &accum);
         self.surface_blit_bg = self.integrator.blit_bind_group(&self.device, &accum);
         self.surface_accum = accum;
@@ -975,13 +1051,19 @@ impl Renderer {
                 None,
             );
             let start = Instant::now();
-            let mut encoder =
-                self.device
-                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                        label: Some("trace timing"),
-                    });
-            self.integrator
-                .dispatch(&self.queue, &mut encoder, &uniform, &compute_bg, width, height);
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("trace timing"),
+                });
+            self.integrator.dispatch(
+                &self.queue,
+                &mut encoder,
+                &uniform,
+                &compute_bg,
+                width,
+                height,
+            );
             self.queue.submit(Some(encoder.finish()));
             let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
             times.push(start.elapsed().as_secs_f64() * 1e3);
@@ -1002,7 +1084,82 @@ impl Renderer {
     /// unchanged; the instant one changes (a bobbing lantern, every tick) the
     /// BVH re-splices and accumulation resets — so a continuously moving world
     /// renders live at `spp` samples/frame (no ghosting), and pauses converge.
-    fn advance_world(&mut self, body_speed: f32, walker: Option<WalkerPose>) {
+    /// PLAYGROUND — push reach (m), speed (m/s, the Op::Impulse velocity
+    /// delta) and aim radius (m, perpendicular tolerance off the view ray)
+    /// read from the environment, never hardcoded: `GAIA_PUSH_REACH`
+    /// (default 4 m — arm's length plus a step), `GAIA_PUSH_SPEED`
+    /// (default 5 m/s — a few m/s, enough to topple a rigid stack and, on a
+    /// weakly-bonded crate, tear it apart) and `GAIA_PUSH_AIM_RADIUS`
+    /// (default 0.9 m — a crate's own reach radius, so the crosshair need
+    /// not be pixel-perfect on a 0.8 m box).
+    fn push_params() -> (f32, f32, f32) {
+        let num = |name: &str, default: f32| {
+            std::env::var(name)
+                .ok()
+                .and_then(|v| v.parse::<f32>().ok())
+                .filter(|v| v.is_finite() && *v > 0.0)
+                .unwrap_or(default)
+        };
+        (
+            num("GAIA_PUSH_REACH", 4.0),
+            num("GAIA_PUSH_SPEED", 5.0),
+            num("GAIA_PUSH_AIM_RADIUS", 0.9),
+        )
+    }
+
+    /// PLAYGROUND — build the push op for a view ray: pick the nearest
+    /// pushable body the ray is aimed at within reach and name it in an
+    /// `Op::Impulse` carrying a `speed` m/s velocity delta along the ray.
+    /// Empty when nothing physical is under the crosshair (a silent miss) or
+    /// the realm has no physics. This is the WHOLE push door: the F key / a
+    /// locked click / the `/push` organ all funnel through the identical
+    /// Op::Impulse an agent would send.
+    ///
+    /// ADVISORY (merge-conductor #12): `examples/playground_push.rs` carries
+    /// its own `pick()` — a byte-for-byte copy of this ray/AIM_RADIUS logic,
+    /// kept verbatim on purpose so the example proves the window's actual
+    /// door rather than a stub. Extracting a shared fn was considered and
+    /// parked: the example lives outside the crate's public surface (no
+    /// clean import path today) and a shared helper would need its own
+    /// pub(crate) plumbing for one call site. Noted as copy-drift risk on
+    /// record — if `build_push_ops` changes, `pick()` must change with it.
+    fn build_push_ops(&self, eye: Vec3, yaw: f32, pitch: f32) -> Vec<Op> {
+        let Some(physics) = self.scene.physics() else {
+            return Vec::new();
+        };
+        let (reach, speed, aim_radius) = Self::push_params();
+        let cos_pitch = pitch.cos();
+        let dir = Vec3::new(-yaw.sin() * cos_pitch, pitch.sin(), -yaw.cos() * cos_pitch);
+        let mut best: Option<(f32, String)> = None;
+        for (gaia_id, centroid) in physics.push_targets() {
+            let c = Vec3::new(centroid[0] as f32, centroid[1] as f32, centroid[2] as f32);
+            let v = c - eye;
+            let t = v.dot(dir);
+            if t <= 0.0 || t > reach {
+                continue; // behind the eye or past arm's reach
+            }
+            let perp = (v - dir * t).length();
+            if perp > aim_radius {
+                continue; // the ray does not pass through this body
+            }
+            if best.as_ref().is_none_or(|(bt, _)| t < *bt) {
+                best = Some((t, gaia_id));
+            }
+        }
+        match best {
+            Some((_, id)) => {
+                let dv = dir * speed;
+                vec![Op::Impulse(ImpulseOp {
+                    id,
+                    delta_velocity: [dv.x as f64, dv.y as f64, dv.z as f64],
+                    extra: Default::default(),
+                })]
+            }
+            None => Vec::new(),
+        }
+    }
+
+    fn advance_world(&mut self, body_speed: f32, walker: Option<WalkerPose>, push_ops: &[Op]) {
         let has_bodies = !self.scene.bodies.is_empty();
         if self.scene.dynamics.entities().is_empty() && !has_bodies {
             return; // a still realm never pays the living-layer cost
@@ -1015,7 +1172,7 @@ impl Renderer {
         // bodies (`follows: "walker"`): they TRACK the walker, gait derived from
         // displacement, instead of gaiting in place off the broadcast.
         let bodies_animating = self.scene.command_bodies_walked(body_speed, walker);
-        self.scene.tick();
+        self.scene.tick_with_ops(push_ops);
         let models = self.scene.dynamics.model_matrices();
         if models == self.last_models && !bodies_animating {
             return; // nothing moved — keep accumulating
@@ -1247,6 +1404,14 @@ impl Renderer {
             far: self.camera.far,
         };
 
+        // THE ONE RENDER PATH — resolve select. `resolve=neural` (or the
+        // window default GAIA_NATIVE_UPSCALE=neural) captures the chartered
+        // trace→denoise→upscale→present sequence; 0/1 stay the plain blit.
+        let resolve = params.resolve.unwrap_or(self.upscale_mode);
+        if resolve == 2 {
+            return self.capture_pose_neural(&camera, width, height);
+        }
+
         let accum = self.integrator.make_accum(&self.device, width, height);
         let compute_bg = self.integrator.compute_bind_group(&self.device, &accum);
         let blit_bg = self.integrator.blit_bind_group(&self.device, &accum);
@@ -1354,6 +1519,212 @@ impl Renderer {
             rgba,
         })
     }
+
+    /// THE ONE RENDER PATH — capture a pose through the chartered neural
+    /// resolve: trace(low, 1 spp) → GPU denoise → GPU neural upscale → present
+    /// (1:1 blit) → readback. The EXACT sequence proven correct headless in
+    /// `examples/onepath_proof.rs` and by the viii2/viii3 ordeals, run here on
+    /// the render thread for a live A/B against the plain bilinear/nearest
+    /// capture (`GET /scry?resolve=bilinear` vs `?resolve=neural`). Off the
+    /// 60-fps surface loop — the neural resolve is ~26× over the frame wall at
+    /// production res (docs/perf/2026-07-17-onepath-budget.md), so this is the
+    /// accounting-visible capture surface, not the live present. Traces the
+    /// STATIC BVH (geometry-only AOV guide + radiance); dynamics are absent
+    /// from the capture, which is honest for a resolve-quality A/B.
+    fn capture_pose_neural(
+        &mut self,
+        camera: &Camera,
+        width: u32,
+        height: u32,
+    ) -> Result<CapturedFrame, String> {
+        let (low_w, low_h) = (width.div_ceil(2).max(1), height.div_ceil(2).max(1));
+        let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("data");
+        let denoiser = GpuDenoiser::new(
+            &self.device,
+            &deserialize_denoiser_weights(
+                &std::fs::read(data_dir.join("denoiser-weights-v1.bin"))
+                    .map_err(|e| format!("read denoiser weights: {e}"))?,
+            )
+            .ok_or_else(|| "deserialize denoiser weights".to_string())?,
+        );
+        let upscaler = GpuUpscaler::new(
+            &self.device,
+            &deserialize_upscaler_weights(
+                &std::fs::read(data_dir.join("upscaler-weights-v1.bin"))
+                    .map_err(|e| format!("read upscaler weights: {e}"))?,
+            )
+            .ok_or_else(|| "deserialize upscaler weights".to_string())?,
+        );
+
+        // trace(low, 1 spp) noisy radiance + low/hi geometry AOVs.
+        let noisy_params = IntegratorParams {
+            spp: 1,
+            ..self.int_params.clone()
+        };
+        let low_noisy = resolve_accum(&trace_headless(
+            &self.device,
+            &self.queue,
+            &self.static_bvh,
+            camera,
+            &self.sun,
+            self.sky_top,
+            self.sky_horizon,
+            low_w,
+            low_h,
+            1,
+            &noisy_params,
+            None,
+        ));
+        let (low_alb, low_nrm, low_dep) = split_aov(&trace_headless_aov(
+            &self.device,
+            &self.queue,
+            &self.static_bvh,
+            camera,
+            &self.sun,
+            self.sky_top,
+            self.sky_horizon,
+            low_w,
+            low_h,
+        ));
+        let (hi_alb, hi_nrm, hi_dep) = split_aov(&trace_headless_aov(
+            &self.device,
+            &self.queue,
+            &self.static_bvh,
+            camera,
+            &self.sun,
+            self.sky_top,
+            self.sky_horizon,
+            width,
+            height,
+        ));
+
+        // denoise(low) → upscale(→ surface) — the neural resolve.
+        let denoised = denoiser.denoise(
+            &self.device,
+            &self.queue,
+            &low_noisy,
+            &low_alb,
+            &low_nrm,
+            &low_dep,
+            low_w,
+            low_h,
+        );
+        let neural = upscaler.upscale(
+            &self.device,
+            &self.queue,
+            &denoised,
+            low_w,
+            low_h,
+            &hi_alb,
+            &hi_nrm,
+            &hi_dep,
+            width,
+            height,
+        );
+
+        // Present: upload the full-res linear image into a surface-sized accum
+        // (w = 1 sample) and 1:1 nearest-blit it to a fresh sRGB target — the
+        // SAME colour pipeline (linear accum → sRGB target OETF) the plain
+        // capture uses, so the A/B differs only in the resolve.
+        let cells: Vec<[f32; 4]> = neural.iter().map(|c| [c.x, c.y, c.z, 1.0]).collect();
+        let present = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("neural present accum"),
+            size: (cells.len() * 16).max(16) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue
+            .write_buffer(&present, 0, bytemuck::cast_slice(&cells));
+        let blit_bg = self.integrator.blit_bind_group(&self.device, &present);
+        let mut uniform = IntegratorUniform::build(
+            camera,
+            &self.sun,
+            self.sky_top,
+            self.sky_horizon,
+            width,
+            height,
+            self.integrator.node_count,
+            self.integrator.tri_count,
+            0,
+            &self.int_params,
+            None,
+        );
+        uniform.surface = [width, height, 1, 0]; // nearest, 1:1 — no re-scale.
+        self.queue.write_buffer(
+            &self.integrator.uniform_buf,
+            0,
+            bytemuck::bytes_of(&uniform),
+        );
+
+        let target = OffscreenTarget::new(&self.device, self.config.format, width, height);
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("neural scry present + capture"),
+            });
+        self.integrator
+            .blit(&mut encoder, &target.view, &blit_bg, "neural scry present");
+        let slot = &target.slots[0];
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &target.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &slot.buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(target.padded_bytes_per_row),
+                    rows_per_image: Some(height),
+                },
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        let buffer = slot.buffer.clone();
+        let (done_tx, done_rx) = mpsc::channel::<Result<(), String>>();
+        let callback_buffer = buffer.clone();
+        encoder.map_buffer_on_submit(&buffer, wgpu::MapMode::Read, .., move |result| {
+            let mapped = result.map_err(|error| error.to_string());
+            if mapped.is_err() {
+                let _ = callback_buffer;
+            }
+            let _ = done_tx.send(mapped.map(|_| ()));
+        });
+        self.queue.submit(Some(encoder.finish()));
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        done_rx
+            .recv()
+            .map_err(|error| format!("neural scry readback channel closed: {error}"))??;
+        let mapped = buffer
+            .get_mapped_range(..)
+            .map_err(|error| format!("neural scry framebuffer map: {error}"))?;
+        let row_bytes = (width * BYTES_PER_PIXEL) as usize;
+        let mut rgba = Vec::with_capacity(row_bytes * height as usize);
+        for row in mapped
+            .chunks(target.padded_bytes_per_row as usize)
+            .take(height as usize)
+        {
+            rgba.extend_from_slice(&row[..row_bytes]);
+        }
+        if matches!(self.pixel_order, PixelOrder::Bgra) {
+            for pixel in rgba.chunks_exact_mut(BYTES_PER_PIXEL as usize) {
+                pixel.swap(0, 2);
+            }
+        }
+        drop(mapped);
+        buffer.unmap();
+        Ok(CapturedFrame {
+            width,
+            height,
+            rgba,
+        })
+    }
 }
 
 /// Optional moving-eye overrides parsed from `GET /scry?...`.
@@ -1366,6 +1737,9 @@ struct ScryParams {
     fov: Option<f32>,
     width: Option<u32>,
     height: Option<u32>,
+    /// The resolve to capture with: 0 bilinear, 1 nearest, 2 neural. Absent =
+    /// the window's GAIA_NATIVE_UPSCALE default. THE ONE RENDER PATH A/B knob.
+    resolve: Option<u32>,
 }
 
 struct ScryRequest {
@@ -1405,6 +1779,18 @@ fn parse_scry_query(query: &str) -> Result<ScryParams, String> {
             "yaw" => params.yaw = Some(parse_finite_f32(value, "yaw")?),
             "pitch" => params.pitch = Some(parse_finite_f32(value, "pitch")?),
             "fov" => params.fov = Some(parse_finite_f32(value, "fov")?),
+            "resolve" => {
+                params.resolve = Some(match value.trim().to_ascii_lowercase().as_str() {
+                    "bilinear" => 0,
+                    "nearest" => 1,
+                    "neural" => 2,
+                    other => {
+                        return Err(format!(
+                            "resolve must be bilinear, nearest, or neural, got {other:?}"
+                        ));
+                    }
+                });
+            }
             "w" => {
                 params.width = Some(
                     value
@@ -1733,10 +2119,18 @@ fn run_render_loop(
         // Step the body one fixed tick and aim the window camera at its eye.
         let mut body_speed = 0.0f32;
         let mut walker_pose = None;
+        // PLAYGROUND — the pushed view ray this tick, taken (edge-fired) from
+        // the shared player: F key, a pointer-locked click, or the /push organ
+        // all set `push_pending`; we consume it here and cast the ray below.
+        let mut push_ray: Option<(Vec3, f32, f32)> = None;
         if let Ok(mut body) = render_player.lock() {
             body.step(tick_dt, render_ground);
             let pose = body.pose();
             body_speed = body.velocity.length();
+            if body.push_pending {
+                body.push_pending = false;
+                push_ray = Some((pose.position, pose.yaw, pose.pitch));
+            }
             walker_pose = Some(WalkerPose {
                 position: pose.position,
                 yaw: pose.yaw,
@@ -1744,7 +2138,11 @@ fn run_render_loop(
             drop(body);
             renderer.set_view_pose(pose.position, pose.yaw, pose.pitch);
         }
-        renderer.advance_world(body_speed, walker_pose);
+        let push_ops = match push_ray {
+            Some((eye, yaw, pitch)) => renderer.build_push_ops(eye, yaw, pitch),
+            None => Vec::new(),
+        };
+        renderer.advance_world(body_speed, walker_pose, &push_ops);
         // Submit THIS frame's GPU work WITHOUT waiting. Its trace now runs on
         // the GPU while the NEXT iteration's CPU stages execute above.
         if let Ok(size) = window.inner_size() {
@@ -1782,9 +2180,12 @@ fn run_render_loop(
             let mut sorted: Vec<f64> = frame_times.iter().copied().collect();
             sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
             let median_ms = sorted[sorted.len() / 2];
-            let fps = if median_ms > 0.0 { 1000.0 / median_ms } else { 0.0 };
-            let payload =
-                format!("window.__gaiaHud && window.__gaiaHud({fps:.1},{median_ms:.2})");
+            let fps = if median_ms > 0.0 {
+                1000.0 / median_ms
+            } else {
+                0.0
+            };
+            let payload = format!("window.__gaiaHud && window.__gaiaHud({fps:.1},{median_ms:.2})");
             let _ = hud_overlay.eval(payload.clone());
             hud_frame += 1;
             if hud_logged < 5 {

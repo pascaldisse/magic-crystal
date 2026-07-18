@@ -29,6 +29,7 @@ tauri = { version = "2.11.5", features = ["macos-private-api", "unstable"] }
 wgpu = "30.0.0"
 
 [dev-dependencies]
+half = "2"
 aether = { path = "../aether" }
 pleroma = { path = "../pleroma" }
 wired = { path = "../wired" }

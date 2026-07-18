@@ -3058,6 +3058,7 @@ dependencies = [
  "elements",
  "fracture",
  "glam",
+ "half",
  "homunculus",
  "kami",
  "objc2-app-kit",
