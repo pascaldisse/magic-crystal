@@ -152,6 +152,20 @@ pub struct FluidConfig {
     /// the round-8 contact-only behaviour, used by the sabotage probe to prove
     /// this gate is non-vacuous). Costs zero when no rigid/bonded body exists.
     pub solid_coupling: f64,
+    /// ROUND-10 — CONTAINER-BOUNDARY (Akinci 2012) coupling toggle. When
+    /// `true` (default) the static pool floor/wall samples in
+    /// [`crate::Solver::fluid_boundary`] contribute their `ψ_b·W` to the SPH
+    /// density of every nearby fluid particle (and push it inward with the
+    /// same `λ`), so the confined bottom fluid stops reading boundary-
+    /// DEFICIENT and develops a real depth-increasing `λ` field — the
+    /// hydrostatic gradient the round-9 free-surface relaxation could not
+    /// sustain (a free surface just expands; a floored container cannot). This
+    /// is the lever that makes a submerged light body RISE and a heavy one
+    /// SINK (Archimedes / mass discrimination). `false` disables it (the
+    /// round-9 pressureless-bulk behaviour), used by the sabotage probe to
+    /// prove the container gate is non-vacuous. Costs zero when
+    /// `fluid_boundary` is empty. NOT a magnitude — a coupling on/off law.
+    pub container_boundary: bool,
     /// JACOBI SOR under-relaxation on the per-particle position correction Δp
     /// (Macklin §4, "Algorithm 1" applies the density correction with a
     /// relaxation because ALL particles project simultaneously — the pairwise
@@ -231,6 +245,7 @@ impl Default for FluidConfig {
             min_separation: 0.0, // set by spawn_fluid_box
             contact_restitution: 0.0,
             solid_coupling: 1.0,
+            container_boundary: true,
             relax: 0.1,
             solver_iterations: 4,
             compression_only: true,

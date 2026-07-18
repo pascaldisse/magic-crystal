@@ -175,9 +175,73 @@ pub fn fill(spec: FluidPoolSpec) -> FluidPool {
     let center = Vec3::new(0.0, fill_dims.y * 0.5 + s, 0.0);
     let radius = spec.fluid_radius_factor * s;
     let fluid = solver.spawn_fluid_box(center, fill_dims, s, spec.rest_density, spec.h_factor, radius);
+    // ROUND-10 — CONTAINER-BOUNDARY (Akinci) static samples tiling the pool
+    // floor + four inner walls at the fluid spacing, so the confined bottom
+    // fluid stops reading boundary-deficient and a real hydrostatic λ gradient
+    // forms (the buoyancy lever). Installed BEFORE calibration so ψ is derived.
+    solver.set_fluid_boundary(pool_boundary_samples(spec.inner.0, spec.inner.1, spec.wall_height, s));
     solver.calibrate_fluid_rest_density();
 
     FluidPool { solver, fluid, spec }
+}
+
+/// CONTAINER-BOUNDARY (Akinci) static sample points: the pool floor and the
+/// four inner walls tiled at `spacing` resolution, a single layer ON the
+/// collider surfaces (floor `y = 0`, walls `x = ±hx`, `z = ±hz`), centred on
+/// the origin in xz. These are NOT solver particles — they feed only the SPH
+/// boundary density in [`Solver::solve_fluid`]. Deterministic order (floor,
+/// then the four walls, each row-major) for byte-identical replay.
+fn pool_boundary_samples(ix: f64, iz: f64, wh: f64, spacing: f64) -> Vec<Vec3> {
+    let s = spacing.max(f64::EPSILON);
+    let hx = ix * 0.5;
+    let hz = iz * 0.5;
+    // Inclusive lattice count spanning an extent `[-half, half]` at spacing s.
+    let count = |extent: f64| ((extent / s).floor() as i64 + 1).max(1) as usize;
+    let coord = |k: usize, n: usize, half: f64| -> f64 {
+        if n <= 1 {
+            0.0
+        } else {
+            -half + (2.0 * half) * (k as f64 / (n - 1) as f64)
+        }
+    };
+    let nx = count(ix);
+    let nz = count(iz);
+    let ny = count(wh);
+    // Wall vertical coordinate: y in [0, wh] (floor up), NOT symmetric.
+    let wall_y = |k: usize| -> f64 {
+        if ny <= 1 { 0.0 } else { wh * (k as f64 / (ny - 1) as f64) }
+    };
+    let mut pts = Vec::new();
+    // Floor (y = 0): full xz grid.
+    for kx in 0..nx {
+        let x = coord(kx, nx, hx);
+        for kz in 0..nz {
+            pts.push(Vec3::new(x, 0.0, coord(kz, nz, hz)));
+        }
+    }
+    // Walls x = ±hx: (z, y) grid, y in (0, wh] (skip y=0 row — floor owns it).
+    for &wx in &[-hx, hx] {
+        for kz in 0..nz {
+            let z = coord(kz, nz, hz);
+            for ky in 1..ny {
+                pts.push(Vec3::new(wx, wall_y(ky), z));
+            }
+        }
+    }
+    // Walls z = ±hz: (x, y) grid, y in (0, wh]; skip the shared vertical edges
+    // (x = ±hx already tiled by the x-walls) to avoid double-stacking corners.
+    for &wz in &[-hz, hz] {
+        for kx in 0..nx {
+            let x = coord(kx, nx, hx);
+            if x <= -hx + s * 0.5 || x >= hx - s * 0.5 {
+                continue;
+            }
+            for ky in 1..ny {
+                pts.push(Vec3::new(x, wall_y(ky), wz));
+            }
+        }
+    }
+    pts
 }
 
 /// The current top (max y) of the fluid — the surface height witness.

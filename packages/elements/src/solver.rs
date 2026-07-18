@@ -171,6 +171,26 @@ pub struct Solver {
     /// rigid/bonded cluster; their mutual incompressibility is the density
     /// constraint, not pairwise collision. Empty = no fluid.
     pub fluid_particles: Vec<usize>,
+    /// FLUID — ROUND-10 CONTAINER-BOUNDARY (Akinci 2012) static sample points
+    /// (world-space) tiling the pool floor + walls. NOT solver particles: they
+    /// never fall, collide, or move — they exist ONLY as SPH boundary samples
+    /// in [`Solver::solve_fluid`], contributing `ψ_b·W` to a nearby fluid
+    /// particle's density so the confined bottom fluid stops reading boundary-
+    /// DEFICIENT (the round-9 root cause of the pressureless bulk: a triangle
+    /// collider adds no density, so base fluid read `ρ<ρ₀`, `C≤0`, `λ≈0`, no
+    /// hydrostatic gradient). With the floor's mass present in the estimate,
+    /// the weight of the column above compresses the base into `C>0` → a real
+    /// depth-increasing `λ` field → Archimedes on a submerged body. Populated
+    /// by [`crate::fluid::fill`]; empty = no container coupling (the round-9
+    /// behaviour). Their reaction is nil (static, `inv_mass = 0`).
+    pub fluid_boundary: Vec<Vec3>,
+    /// FLUID — per-`fluid_boundary` Akinci volume mass `ψ_b = ρ₀·V_b`,
+    /// `V_b = 1/Σ_{b'}W(r_bb')` over the boundary's OWN samples (self-
+    /// calibrated from the boundary packing so a densely-tiled wall does not
+    /// over-contribute — never a bare literal). Filled by
+    /// [`Solver::calibrate_fluid_rest_density`] once `ρ₀` is known. `0.0` until
+    /// calibrated; index-aligned with `fluid_boundary`.
+    pub fluid_boundary_psi: Vec<f64>,
 }
 
 /// A collision cluster: particles in the SAME cluster never collide with
@@ -212,7 +232,18 @@ impl Solver {
             broadphase_audit: false,
             fluid: None,
             fluid_particles: Vec::new(),
+            fluid_boundary: Vec::new(),
+            fluid_boundary_psi: Vec::new(),
         }
+    }
+
+    /// FLUID — install the CONTAINER-BOUNDARY (Akinci) static sample points
+    /// (world-space, tiling the pool floor + walls). Stored verbatim; their
+    /// per-sample `ψ_b` is (re)derived at the next
+    /// [`Solver::calibrate_fluid_rest_density`]. Replaces any prior set.
+    pub fn set_fluid_boundary(&mut self, positions: Vec<Vec3>) {
+        self.fluid_boundary = positions;
+        self.fluid_boundary_psi = vec![0.0; self.fluid_boundary.len()];
     }
 
     /// P-SCALE — enable (default) or disable the collision broadphase. Disabled
@@ -623,7 +654,42 @@ impl Solver {
         // denominator for ε is that full-neighbourhood Σ|∇C|².
         let ref_denom = best_sum_grad2 / (cfg.rest_density * cfg.rest_density);
         cfg.cfm_epsilon = cfg.cfm_relax * ref_denom;
+        let rho0 = cfg.rest_density;
         self.fluid = Some(cfg);
+        // ROUND-10 — (re)derive the CONTAINER-BOUNDARY Akinci volume mass
+        // ψ_b = ρ₀·V_b, V_b = 1/Σ_{b'}W(r_bb') over the boundary's OWN samples
+        // (self-calibrated from the wall/floor packing so a densely-tiled
+        // surface does not over-contribute — no bare literal). Uses the same
+        // poly6 support h. No-op when no boundary is installed.
+        self.recompute_boundary_psi(h, rho0);
+    }
+
+    /// FLUID — fill [`Solver::fluid_boundary_psi`] from the current boundary
+    /// sample packing: `ψ_b = ρ₀·V_b`, `V_b = 1/Σ_{b'}W(r_bb', h)` over the
+    /// boundary's own samples within `h`. Deterministic (ascending). No-op
+    /// when the boundary is empty.
+    fn recompute_boundary_psi(&mut self, h: f64, rho0: f64) {
+        let n = self.fluid_boundary.len();
+        if n == 0 {
+            self.fluid_boundary_psi = Vec::new();
+            return;
+        }
+        let cell = PointGrid::cell_size(h);
+        let idx: Vec<usize> = (0..n).collect();
+        let grid = PointGrid::build(&self.fluid_boundary, &idx, cell);
+        let mut psi = vec![0.0_f64; n];
+        let mut cand: Vec<u32> = Vec::new();
+        for b in 0..n {
+            let pb = self.fluid_boundary[b];
+            grid.query_ball(pb, h, &mut cand);
+            let mut wsum = 0.0_f64;
+            for &cc in &cand {
+                let bb = cc as usize;
+                wsum += poly6((pb - self.fluid_boundary[bb]).length(), h);
+            }
+            psi[b] = if wsum > 0.0 { rho0 / wsum } else { 0.0 };
+        }
+        self.fluid_boundary_psi = psi;
     }
 
     /// FLUID — the Position-Based-Fluids density-constraint pass (Macklin &
@@ -720,6 +786,33 @@ impl Solver {
             }
         }
 
+        // ROUND-10 — CONTAINER-BOUNDARY (Akinci) STATIC samples: the pool
+        // floor/wall points in `self.fluid_boundary` (ψ in `fluid_boundary_psi`,
+        // derived at calibration). They fill the density DEFICIT the triangle
+        // collider leaves at the base, so the confined bottom fluid reads full
+        // → the column weight compresses it → a real hydrostatic λ gradient.
+        // Static: they receive NO reaction (inv_mass 0). `sbneigh[a]` = the
+        // container samples within h of fluid particle a (ascending).
+        let use_container = cfg.container_boundary && !self.fluid_boundary.is_empty();
+        let sbgrid = if use_container {
+            let idx: Vec<usize> = (0..self.fluid_boundary.len()).collect();
+            Some(PointGrid::build(&self.fluid_boundary, &idx, cell))
+        } else {
+            None
+        };
+        let mut sbneigh: Vec<Vec<usize>> = Vec::with_capacity(fp.len());
+        if let Some(sg) = &sbgrid {
+            let mut scand: Vec<u32> = Vec::new();
+            for &i in fp {
+                sg.query_ball(self.particles.pos[i], h, &mut scand);
+                sbneigh.push(scand.iter().map(|&c| c as usize).collect());
+            }
+        } else {
+            for _ in fp {
+                sbneigh.push(Vec::new());
+            }
+        }
+
         let mass = |p: &Particles, j: usize| -> f64 {
             if p.inv_mass[j] > 0.0 {
                 1.0 / p.inv_mass[j]
@@ -767,6 +860,18 @@ impl Solver {
                     let r_vec = pi - self.particles.pos[b];
                     density += psi[b] * poly6(r_vec.length(), h);
                     let g = spiky_grad(r_vec, h).scale(psi[b] * inv_rho0);
+                    grad_i = grad_i + g;
+                    sum_grad_j2 += g.dot(g);
+                }
+                // ROUND-10: the STATIC container samples contribute exactly as
+                // Akinci boundary particles — ψ_b·W to the density, gradient to
+                // the denominator — so bottom fluid reads full density and the
+                // hydrostatic λ rises with depth (the missing pressure field).
+                for &b in &sbneigh[a] {
+                    let r_vec = pi - self.fluid_boundary[b];
+                    let psib = self.fluid_boundary_psi[b];
+                    density += psib * poly6(r_vec.length(), h);
+                    let g = spiky_grad(r_vec, h).scale(psib * inv_rho0);
                     grad_i = grad_i + g;
                     sum_grad_j2 += g.dot(g);
                 }
@@ -832,6 +937,15 @@ impl Solver {
                     }
                     fluid_dp = fluid_dp + base.scale(wi / wsum);
                     solid_dx[b] = solid_dx[b] - base.scale((wb / wsum) * coupling);
+                }
+                // ROUND-10: STATIC container samples push the fluid inward with
+                // pressure li alone (they carry no λ). No reaction (inv_mass 0),
+                // so the whole correction lands on the fluid — the wall/floor is
+                // immovable, exactly the confining boundary that lets λ build.
+                for &b in &sbneigh[a] {
+                    let r_vec = pi - self.fluid_boundary[b];
+                    let term = spiky_grad(r_vec, h).scale(self.fluid_boundary_psi[b] * li);
+                    fluid_dp = fluid_dp + term.scale(inv_rho0 * cfg.relax);
                 }
                 dp[a] = fluid_dp;
             }
