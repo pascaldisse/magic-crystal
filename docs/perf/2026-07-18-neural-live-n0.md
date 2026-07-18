@@ -157,3 +157,94 @@ encode + the blocking wait. Two independent attacks:
 ## Source
 - log: `packages/scrying-glass/proof/neural-live/n0e-run.log` (1260+ frames)
 - table tag: `[n0e]` — `net[wall .. gpu ..]` splits GPU from wall live.
+
+---
+
+# N0.f — S5 chain default + S4 God's res (SHIFT 8): the net presents at the 640×480 canvas
+
+Two changes land:
+- **S4 GOD'S RES** (law `0a25530`): the net rig now pools + presents at the
+  **640×480 canvas**, NOT the window. Trace low == net target == `render_w/h`
+  (640×480, 307 200 px). The window gets the canvas by a **nearest/integer
+  display blit** only (`blit_uniform.surface=[surf_w,surf_h,1]`, mode 1 =
+  nearest). No neural enlarge — the net never runs at the window's pixel count.
+  `net_present_frame` derives `target = render_res`; the offscreen capture
+  upscales the canvas to the surface exactly as the on-screen blit does.
+- **S5 chain default**: the frame's default net is the raw
+  `MPSMatrixMultiplication`+bias/ReLU **chain** (parity ordeal `4.8e-7` vs
+  MPSGraph). `GAIA_NATIVE_NET_MPSGRAPH=1` flips back to the MPSGraph executable
+  (A/B).
+- **S3 demod split**: `demod` (GPU undo-log-demod) and `present` (surface blit)
+  are now separate `[n0e]` columns.
+
+## Budget — median / p95 ms per stage · 640×480 · ≥300-frame samples · vs 16.67
+
+Machine quieter than n0e (most sibling lanes done). `trace`/`gather`/`demod`/
+`present` are near-identical across BOTH runs below — the ONLY stage that moves
+is `net`, so its split is a true GPU-cost difference, not load noise.
+
+**CHAIN (S5 default)** — `s3-godres-chain.log`, frames 720:
+
+| stage    | median | p95   | note                                              |
+|----------|--------|-------|---------------------------------------------------|
+| trace    | 6.65   | 9.25  | low accum (clear+dispatch) + native AOV, 2 submits |
+| gather   | 1.06   | 1.99  | one compute dispatch → pooled shared MTLBuffer      |
+| net wall | 43.15  | 48.29 | raw GEMM chain, all on one owned command buffer      |
+| net GPU  | 42.76  | 47.81 | **6.4× the MPSGraph GPU** — separate per-layer GEMMs |
+| demod    | 0.66   | 1.41  | CUT 2 GPU undo-log-demod, one dispatch              |
+| present  | 0.20   | 0.27  | surface blit + offscreen capture (nearest)          |
+| **TOTAL**| **53.06** | **58.54** | ~19 fps · **3.2× over the 16.67 ms wall**    |
+
+**MPSGRAPH (A/B)** — `s3-godres-mpsgraph.log`, frames 1140:
+
+| stage    | median | p95   | note                                              |
+|----------|--------|-------|---------------------------------------------------|
+| trace    | 6.53   | 9.22  | (same as chain)                                    |
+| gather   | 1.01   | 1.99  | (same)                                             |
+| net wall | 20.51  | 24.19 | GPU 6.65 + **~13.9 ms CPU** `encodeToCommandBuffer` |
+| net GPU  | 6.65   | 10.60 | fused GEMM+bias+ReLU kernels                        |
+| demod    | 0.64   | 1.26  | (same)                                             |
+| present  | 0.19   | 0.25  | (same)                                             |
+| **TOTAL**| **30.05** | **34.05** | ~33 fps · **1.8× over the wall**              |
+
+## ⚠ THE CHAIN IS A PERF REGRESSION — read the numbers, not the premise
+Shift 7's raw-kernel chain was chartered to "kill the MPSGraph per-frame encode
+wall". It DID: chain net CPU = wall−GPU = 43.15−42.76 = **0.39 ms** (vs
+MPSGraph's ~13.9 ms encode). **But the trade is catastrophic:** the raw
+`MPSMatrixMultiplication` chain runs each layer as a separate dispatch with
+intermediate buffers and NO fusion, so its **GPU time is 42.76 ms vs MPSGraph's
+6.65 ms — 6.4×**. Killing a ~14 ms CPU wall cost ~36 ms of extra GPU. Net:
+**chain TOTAL 53.06 ms vs MPSGraph 30.05 ms — the chain is 1.8× SLOWER.**
+Parity is green (4.8e-7); SPEED is worse. The dispatcher keeps chain as the
+default per the S5 charter, but **the honest budget says MPSGraph wins today**,
+and the real target is a fused GPU forward that keeps MPSGraph's ~6.6 ms GPU
+while shedding its ~14 ms CPU encode (MTL4 tensor / hand-fused compute), not the
+un-fused chain.
+
+## God's res dividend — the frame is CLEANER
+The net now runs at 640×480 (the canvas) instead of the n0d 960×640 (the
+window). Fewer pixels (307 200 vs 614 400) AND closer to a shape the static
+weights tolerate: the n0d **dithered checkerboard stipple is gone**. See
+`proof/neural-live/s7-godres-chain-net.png` and `…-mpsgraph-net.png`.
+
+## Proof — both eyes
+- chain surface:    `proof/neural-live/s7-godres-chain-net.png` (960×640 PNG =
+  the 640×480 canvas nearest-blitted to the worker window, live `/scry` :8436).
+- mpsgraph surface: `proof/neural-live/s7-godres-mpsgraph-net.png` (:8437).
+- **Pixel words (both):** coherent naruko scene — brown crates, translucent
+  green-flecked glass panel, central dark tower ringed by cyan/violet halos,
+  iridescent spheres, a large glass orb on a green pedestal, dark chimneyed
+  factory block, pink→mauve dusk sky over purple ground. Colours natural,
+  radiance bounded → GPU demod wired right. **Clean surfaces — no checkerboard
+  stipple** (the God's-res dividend). **Parity chain↔mpsgraph: HOLDS** — same
+  geometry/lighting/silhouettes/demod; the only visible diff is the animated
+  presence spheres sitting at a different frame instant (live-scene motion +
+  spp=1 noise), consistent with the ordeal's numeric 4.8e-7.
+
+## Source
+- logs: `s3-godres-chain.log` (:8436), `s3-godres-mpsgraph.log` (:8437) under
+  `packages/scrying-glass/proof/neural-live/`.
+- env: `GAIA_NATIVE_WORKER_WINDOW=true GAIA_NATIVE_NET_PRESENT=true
+  GAIA_NATIVE_HUD=false` (+ `GAIA_NATIVE_NET_MPSGRAPH=1` for the A/B), release
+  binary, world `worlds/naruko`, M1 / macOS 26. Worker window = non-activating
+  (never key, never pops in front). `[n0e]` tag now carries `demod` + `present`.
