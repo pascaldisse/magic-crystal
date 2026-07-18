@@ -1192,6 +1192,11 @@ impl NetPresent {
         )
         .map_err(|e| format!("read rdirect weights: {e}"))?;
         let live = RdirectLive::from_wgpu_queue(device, queue, &weights, n)?;
+        // S9: spin up the encode thread so the ~14 ms MPSGraph per-frame encode
+        // rides a background thread while the render thread does GPU work. After
+        // this the net is driven via `begin_frame` (pick set) + `commit_net`
+        // (commit the pre-encoded buffer + wait) instead of `forward_shared_gpu`.
+        live.start_pipeline()?;
         let gather = FeatureGather::new(device);
         let demod = DemodPass::new(device);
 
@@ -1251,6 +1256,12 @@ impl NetPresent {
         uni_target: &IntegratorUniform,
         blit_uniform: &IntegratorUniform,
     ) -> (f64, f64, f64, f64) {
+        // S9: claim this frame's pre-encoded net command buffer. Returns the
+        // buffer SET the gather must fill; the net (committed in the net stage
+        // below) reads THIS set, so evidence stays this frame's own (0 latency).
+        // Near-instant in steady state (the pipeline stays primed).
+        let set = self.live.begin_frame();
+
         // Bind groups over the integrator's node/tri buffers (reallocated each
         // dynamic tick) — rebuilt per frame, handle-weight.
         let accum_bg = integrator.compute_bind_group(device, &self.net_accum);
@@ -1284,7 +1295,7 @@ impl NetPresent {
         // —— STAGE: gather (GPU feature build → pooled shared MTLBuffer) ——
         let feats = self
             .live
-            .feature_buffer()
+            .feature_buffer_set(set)
             .expect("net-present pooled feature buffer");
         let t1 = Instant::now();
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -1306,17 +1317,16 @@ impl NetPresent {
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
         let gather_ms = t1.elapsed().as_secs_f64() * 1000.0;
 
-        // —— STAGE: net (MPSGraph batched-GEMM forward, zero-copy, NO readback)
-        // CUT 1 (S1 kill): the live path leaves the demod-log radiance ON the
-        // GPU in `output_buffer()` — no per-frame Vec<f32> (640×480×3 floats)
-        // GPU→CPU copy. `forward_shared_gpu` also records the GPU-only ms
-        // (MTLCommandBuffer GPU timestamps) so we split GPU work from the wall
-        // the timer below measures (S3). The Vec path (`forward_shared`) stays
-        // for the offline parity ordeal only.
+        // —— STAGE: net (S9 PIPELINED: encode already done on the encode thread)
+        // The ~14 ms MPSGraph `encodeToCommandBuffer` (S8 default path) ran on
+        // the background encode thread while the render thread did trace+gather;
+        // `commit_net` here only COMMITS the pre-encoded buffer for `set` (which
+        // the gather just filled) and WAITS for the GPU forward. So `net_ms`
+        // (wall) now measures ≈ commit + GPU wait, NOT encode + GPU. GPU-only ms
+        // still comes from MTLCommandBuffer timestamps (S3). The result stays ON
+        // the GPU in `output_buffer_set(set)` — no readback.
         let t2 = Instant::now();
-        self.live
-            .forward_shared_gpu(self.n)
-            .expect("net forward_shared_gpu");
+        self.live.commit_net().expect("net commit_net");
         let net_ms = t2.elapsed().as_secs_f64() * 1000.0;
         let net_gpu_ms = self.live.last_gpu_ms();
 
@@ -1327,7 +1337,7 @@ impl NetPresent {
         let t3 = Instant::now();
         let net_out = self
             .live
-            .output_buffer()
+            .output_buffer_set(set)
             .expect("net-present pooled output buffer");
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("net demod"),
@@ -1364,7 +1374,7 @@ impl NetPresent {
         self.frames += 1;
         if self.frames % 60 == 0 {
             eprintln!(
-                "[n0e] frames={} {}x{}→{}x{} (ms median/p95 vs 16.67): \
+                "[n0g] frames={} {}x{}→{}x{} (ms median/p95 vs 16.67): \
                  trace {:.2}/{:.2} gather {:.2}/{:.2} net[wall {:.2}/{:.2} gpu {:.2}/{:.2}] \
                  demod {:.2}/{:.2} present {:.2}/{:.2} TOTAL {:.2}/{:.2}",
                 self.frames,

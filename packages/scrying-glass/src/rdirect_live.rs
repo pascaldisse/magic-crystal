@@ -59,13 +59,17 @@ mod imp {
     use objc2_metal_performance_shaders::{
         MPSCommandBuffer, MPSDataType, MPSMatrix, MPSMatrixDescriptor, MPSMatrixMultiplication,
     };
-    use std::cell::Cell;
+    use std::cell::{Cell, RefCell};
     use objc2_metal_performance_shaders_graph::{
         MPSGraph, MPSGraphDevice, MPSGraphExecutable,
         MPSGraphShapedType, MPSGraphTensor, MPSGraphTensorData,
     };
     use std::ffi::c_void;
     use std::ptr::NonNull;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::mpsc::{Receiver, Sender};
+    use std::sync::Arc;
+    use std::thread::JoinHandle;
 
     /// A single dense layer's Metal-resident weights, already transposed to the
     /// GEMM's second operand `[in, out]` (the CPU net stores `[out, in]`).
@@ -316,43 +320,154 @@ kernel void bias_relu(
         }
     }
 
-    /// The zero-copy pool (N0.b): the feature input and net output as MTLBuffers
-    /// allocated ONCE, sized to a fixed `max_pixels` ceiling. `feature_buf` is
-    /// the SAME MTLBuffer wrapped as a wgpu STORAGE buffer, so the gather
-    /// compute pass writes it and the MPSGraph forward reads it with no copy and
-    /// no per-frame allocation (this is where the spike's 157 MB/frame churn
-    /// dies). Only present on the live wgpu path (`from_wgpu_queue`).
-    struct SharedPool {
-        /// wgpu view of `feature_mtl` (STORAGE): the gather's destination.
+    /// S9 double buffering: how many independent tensor-data/output sets the
+    /// pipeline rotates through. Two = the render thread consumes set[frame%2]
+    /// while the encode thread pre-encodes the OTHER set's next command buffer.
+    const SET_COUNT: usize = 2;
+
+    /// The render-thread-visible half of one buffer set: the wgpu views the
+    /// gather (feature) and demod (out) passes touch, plus the MTLBuffers held
+    /// alive. The objc encode half lives in `EncodeSet` (owned by the encode
+    /// thread via the shared `EncodeCtx`).
+    struct SetWgpu {
+        /// wgpu view of this set's feature MTLBuffer (STORAGE): gather target.
         feature_buf: wgpu::Buffer,
-        /// Same MTLBuffer as `feature_buf`, fed to the graph zero-copy. Held to
-        /// keep the buffer alive for the graph in_td / chain input matrix.
+        /// wgpu view of this set's output MTLBuffer (STORAGE): demod source.
+        out_buf: wgpu::Buffer,
+        /// Held alive: the MTLBuffers the wgpu views and the EncodeSet share.
         #[allow(dead_code)]
         feature_mtl: Retained<ProtocolObject<dyn MTLBuffer>>,
-        /// The graph's output MTLBuffer (Shared storage → CPU-readable AND the
-        /// same buffer wrapped as `out_buf` for the GPU demod, CUT 2).
+        #[allow(dead_code)]
         out_mtl: Retained<ProtocolObject<dyn MTLBuffer>>,
-        /// CUT 2: `out_mtl` wrapped as a wgpu STORAGE buffer so the demod
-        /// compute pass reads the net output on the GPU (no CPU round-trip).
-        out_buf: wgpu::Buffer,
-        max_pixels: usize,
-        // ── CUT 1: POOL THE NET — everything below is built ONCE here (the
-        // metal4-probe pattern: a compiled MPSGraphExecutable + pre-allocated
-        // MPSGraphTensorData on the persistent MTLBuffers). Per-frame
-        // `forward` then just runs the executable — no graph rebuild, no
-        // tensor-data / NSDictionary allocation, which is what took the net
-        // stage from the probe's 4.47 ms down to 27 ms in the N0.d run.
+    }
+
+    /// The objc encode half of one buffer set (feed/result tensor-data arrays
+    /// over the set's zero-copy MTLBuffers, and the raw GEMM chain bound to
+    /// them). Read-only after construction except during `encode`, which the
+    /// pipeline guarantees only ONE thread touches per set at a time (S9).
+    struct EncodeSet {
+        /// Input feed array `[in_td]` (wraps this set's feature MTLBuffer).
+        inputs: Retained<NSArray<MPSGraphTensorData>>,
+        /// Result array `[out_td]` (wraps this set's output MTLBuffer).
+        results: Retained<NSArray<MPSGraphTensorData>>,
+        /// S5 raw-kernel forward bound to this set's feature/out MTLBuffers.
+        chain: MatmulChain,
+    }
+
+    /// The encode context shared (Arc) between the render thread's synchronous
+    /// set-0 path (ordeal/example) and the S9 encode thread. Holds the compiled
+    /// executable (shared, MPSGraph encode is documented thread-safe across
+    /// distinct command buffers) and the per-set encode halves.
+    ///
+    /// SAFETY (`Send`+`Sync`): the objc handles are thread-affine in general,
+    /// but this context is used under a strict ownership discipline — either the
+    /// synchronous path (pipeline NOT started, calling thread only) OR the
+    /// pipeline (encode thread encodes, render thread commits), never both, and
+    /// the double buffering means the encode thread and render thread never
+    /// touch the SAME `EncodeSet` concurrently. `executable`/`queue` are the
+    /// only shared-mutable objc state and both are Apple-documented thread-safe
+    /// (executable encode; command-buffer creation off a queue).
+    struct EncodeCtx {
+        queue: Retained<ProtocolObject<dyn MTLCommandQueue>>,
         /// Compiled once for the FIXED shape `[max_pixels, in_features]`.
         executable: Retained<MPSGraphExecutable>,
-        /// Input feed array `[in_td]` (in_td wraps `feature_mtl` zero-copy).
-        inputs: Retained<NSArray<MPSGraphTensorData>>,
-        /// Result array `[out_td]` (out_td wraps `out_mtl` zero-copy).
-        results: Retained<NSArray<MPSGraphTensorData>>,
-        /// S5: the raw-kernel forward over the SAME pooled feature/out buffers
-        /// (MPSMatrixMultiplication + bias/ReLU on one owned command buffer).
-        /// Default live path; the MPSGraph `executable` above survives for the
-        /// A/B toggle (`GAIA_NATIVE_NET_MPSGRAPH=1`) and the offline ordeal.
-        chain: MatmulChain,
+        sets: Vec<EncodeSet>,
+        /// S5/S8 A/B: true = MPSGraph executable (S8 default), false = chain.
+        use_mpsgraph: AtomicBool,
+    }
+    // SAFETY: see the doc comment above — the ownership discipline, not raw
+    // thread-safety of every field, is what makes this sound.
+    unsafe impl Send for EncodeCtx {}
+    unsafe impl Sync for EncodeCtx {}
+
+    /// A net command buffer ENCODED but NOT yet committed — the S9 hand-off from
+    /// the encode thread (which built it, ~14 ms CPU, off the critical path) to
+    /// the render thread (which commits + waits, on the critical path only for
+    /// the GPU work). `set` names which buffer set the gather must fill BEFORE
+    /// this is committed, so the net reads the frame's own fresh evidence
+    /// (0 latency — the pre-encode records references, not data).
+    struct PreparedNet {
+        base: Retained<ProtocolObject<dyn MTLCommandBuffer>>,
+        /// Some on the MPSGraph path (the wrapper we commit), None on the chain.
+        mps: Option<Retained<MPSCommandBuffer>>,
+        set: usize,
+    }
+    // SAFETY: the encode thread builds it, hands sole ownership across the
+    // channel to the render thread, which is the only place it is committed.
+    unsafe impl Send for PreparedNet {}
+
+    impl EncodeCtx {
+        /// Encode the net forward for `set` onto a FRESH command buffer off the
+        /// shared queue — no commit, no wait. This is the ~14 ms CPU cost S9
+        /// moves off the critical path. The path (MPSGraph vs chain) is read
+        /// from `use_mpsgraph` at encode time.
+        #[allow(unsafe_op_in_unsafe_fn)]
+        unsafe fn encode(&self, set: usize) -> PreparedNet {
+            let base = self
+                .queue
+                .commandBuffer()
+                .expect("rdirect_live: commandBuffer alloc failed (encode)");
+            let s = &self.sets[set];
+            if self.use_mpsgraph.load(Ordering::Relaxed) {
+                let mps = MPSCommandBuffer::commandBufferWithCommandBuffer(&base);
+                let _ = self
+                    .executable
+                    .encodeToCommandBuffer_inputsArray_resultsArray_executionDescriptor(
+                        &mps,
+                        &s.inputs,
+                        Some(&s.results),
+                        // None: the render thread owns commit + wait, so the
+                        // executable must not internally commit/wait.
+                        None,
+                    );
+                PreparedNet { base, mps: Some(mps), set }
+            } else {
+                s.chain.encode(&base);
+                PreparedNet { base, mps: None, set }
+            }
+        }
+    }
+
+    /// Commit a `PreparedNet` and block until its GPU forward completes.
+    /// Returns GPU-only ms (MTLCommandBuffer GPU timestamps). Render-thread
+    /// only.
+    #[allow(unsafe_op_in_unsafe_fn)]
+    unsafe fn commit_prepared(p: &PreparedNet) -> f64 {
+        if let Some(mps) = &p.mps {
+            let root = mps.rootCommandBuffer();
+            mps.commit();
+            root.waitUntilCompleted();
+        } else {
+            p.base.commit();
+            p.base.waitUntilCompleted();
+        }
+        (p.base.GPUEndTime() - p.base.GPUStartTime()) * 1000.0
+    }
+
+    /// The zero-copy pool (N0.b → S9): feature/output MTLBuffers per set,
+    /// allocated ONCE, sized to a fixed `max_pixels` ceiling. Each set's
+    /// `feature_buf` is the SAME MTLBuffer wrapped as a wgpu STORAGE buffer, so
+    /// the gather writes it and the forward reads it with no copy (the spike's
+    /// 157 MB/frame churn dies here). Only present on the live wgpu path
+    /// (`from_wgpu_queue`). `ctx` holds the compiled executable + per-set encode
+    /// halves, shared with the S9 encode thread.
+    struct SharedPool {
+        sets: Vec<SetWgpu>,
+        max_pixels: usize,
+        ctx: Arc<EncodeCtx>,
+    }
+
+    /// The S9 pipeline handle: the encode thread + the channels that hand
+    /// pre-encoded net command buffers from it to the render thread, plus the
+    /// buffer currently claimed by `begin_frame` awaiting `commit_net`.
+    struct Pipeline {
+        /// render → encode: "prepare the next command buffer for set i".
+        tx_req: Sender<usize>,
+        /// encode → render: a `PreparedNet` (FIFO in request order).
+        rx_ready: Receiver<PreparedNet>,
+        /// The buffer `begin_frame` claimed this frame, consumed by `commit_net`.
+        current: Option<PreparedNet>,
+        join: Option<JoinHandle<()>>,
     }
 
     /// The live net: an MPSGraph batched-GEMM forward built once at construction
@@ -371,10 +486,14 @@ kernel void bias_relu(
         /// GPUEndTime − GPUStartTime, ms). The `runWithMTLCommandQueue` API hid
         /// this; the encode path below owns the command buffer so it reads it.
         last_gpu_ms: Cell<f64>,
-        /// S5 A/B toggle: force the old MPSGraph executable path (default false =
-        /// the raw MPSMatrixMultiplication chain). `GAIA_NATIVE_NET_MPSGRAPH=1`,
-        /// or per-instance via `set_use_mpsgraph` (the parity ordeal flips it).
+        /// S8 A/B toggle: force the raw MPSMatrixMultiplication chain (default
+        /// TRUE = MPSGraph, the fused-GPU winner, per S8). `GAIA_NATIVE_NET_CHAIN=1`
+        /// opts into the chain; `set_use_mpsgraph` flips it (the parity ordeal).
+        /// Mirrored into `pool.ctx.use_mpsgraph` once the pool exists.
         use_mpsgraph: Cell<bool>,
+        /// S9 pipeline (encode thread). `None` until `start_pipeline`; the
+        /// synchronous set-0 path (ordeal/example) requires it stay `None`.
+        pipeline: RefCell<Option<Pipeline>>,
     }
 
     impl RdirectLive {
@@ -469,10 +588,14 @@ kernel void bias_relu(
                     out_channels: OUTPUT_CHANNELS,
                     pool: None,
                     last_gpu_ms: Cell::new(0.0),
-                    use_mpsgraph: Cell::new(matches!(
-                        std::env::var("GAIA_NATIVE_NET_MPSGRAPH").ok().as_deref(),
+                    // S8: MPSGraph (fused GPU, 6.65 ms) is the DEFAULT — it beat
+                    // the un-fused chain (42.8 ms GPU) 1.8× in N0.f. The chain
+                    // stays a lab A/B opt-in via `GAIA_NATIVE_NET_CHAIN`.
+                    use_mpsgraph: Cell::new(!matches!(
+                        std::env::var("GAIA_NATIVE_NET_CHAIN").ok().as_deref(),
                         Some("1") | Some("true") | Some("on")
                     )),
+                    pipeline: RefCell::new(None),
                 })
             }
         }
@@ -533,53 +656,15 @@ kernel void bias_relu(
             let in_bytes = max_pixels * self.in_features * std::mem::size_of::<f32>();
             let out_bytes = max_pixels * self.out_channels * std::mem::size_of::<f32>();
             // SAFETY: objc2 message sends + the wgpu-hal Metal buffer bridge; the
-            // MTLBuffer we clone into wgpu outlives the wgpu buffer (both held in
-            // `SharedPool`).
+            // MTLBuffers we clone into wgpu outlive the wgpu buffers (both held
+            // in `SharedPool` / the shared `EncodeCtx`).
             unsafe {
-                let feature_mtl = mtl_device
-                    .newBufferWithLength_options(in_bytes, MTLResourceOptions::StorageModeShared)
-                    .ok_or_else(|| "rdirect_live: feature MTLBuffer alloc failed".to_string())?;
-                let out_mtl = mtl_device
-                    .newBufferWithLength_options(out_bytes, MTLResourceOptions::StorageModeShared)
-                    .ok_or_else(|| "rdirect_live: output MTLBuffer alloc failed".to_string())?;
-                let hal_buf = wgpu::hal::metal::Device::buffer_from_raw(
-                    feature_mtl.clone(),
-                    in_bytes as u64,
-                );
-                let feature_buf = wgpu_device.create_buffer_from_hal::<wgpu::hal::api::Metal>(
-                    hal_buf,
-                    &wgpu::BufferDescriptor {
-                        label: Some("rdirect feature (shared MTLBuffer)"),
-                        size: in_bytes as u64,
-                        // COPY_SRC so ordeals can read the gather output back for
-                        // parity (the live path never copies it — the graph reads
-                        // the same MTLBuffer in place).
-                        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-                        mapped_at_creation: false,
-                    },
-                );
-                // CUT 2: wrap the SAME output MTLBuffer as a wgpu STORAGE buffer
-                // so the GPU demod pass reads the net output in place (no CPU
-                // readback). COPY_SRC lets `forward_shared` still map it for the
-                // ordeal/CPU path.
-                let out_hal = wgpu::hal::metal::Device::buffer_from_raw(
-                    out_mtl.clone(),
-                    out_bytes as u64,
-                );
-                let out_buf = wgpu_device.create_buffer_from_hal::<wgpu::hal::api::Metal>(
-                    out_hal,
-                    &wgpu::BufferDescriptor {
-                        label: Some("rdirect net output (shared MTLBuffer)"),
-                        size: out_bytes as u64,
-                        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-                        mapped_at_creation: false,
-                    },
-                );
-
-                // ── CUT 1: compile the executable ONCE for the fixed shape and
-                // pre-build the zero-copy feed/result tensor-data arrays. ──
                 let in_shape = shape(&[max_pixels, self.in_features]);
                 let out_shape = shape(&[max_pixels, self.out_channels]);
+
+                // ── compile the executable ONCE for the fixed shape (shared by
+                // both sets — MPSGraph encode is thread-safe across the distinct
+                // command buffers the two sets feed). ──
                 let in_shaped = MPSGraphShapedType::initWithShape_dataType(
                     MPSGraphShapedType::alloc(),
                     Some(&in_shape),
@@ -599,23 +684,7 @@ kernel void bias_relu(
                         None,
                         None,
                     );
-                let in_td = MPSGraphTensorData::initWithMTLBuffer_shape_dataType(
-                    MPSGraphTensorData::alloc(),
-                    &feature_mtl,
-                    &in_shape,
-                    MPSDataType::Float32,
-                );
-                let out_td = MPSGraphTensorData::initWithMTLBuffer_shape_dataType(
-                    MPSGraphTensorData::alloc(),
-                    &out_mtl,
-                    &out_shape,
-                    MPSDataType::Float32,
-                );
-                let inputs = NSArray::from_slice(&[&*in_td]);
-                let results = NSArray::from_slice(&[&*out_td]);
 
-                // ── S5: build the raw-kernel GEMM chain over the SAME pooled
-                // feature/out MTLBuffers (kill the MPSGraph per-frame encode). ──
                 let dims: Vec<(usize, usize)> = self
                     .cpu_ref
                     .layer_dims()
@@ -623,58 +692,119 @@ kernel void bias_relu(
                     .map(|&(i, o)| (i as usize, o as usize))
                     .collect();
                 let flat = self.cpu_ref.flat_weights();
-                let chain = MatmulChain::new(
-                    mtl_device,
-                    &dims,
-                    &flat,
-                    max_pixels,
-                    &feature_mtl,
-                    &out_mtl,
-                )?;
-                // NOTE: the forward now runs through `encodeToCommandBuffer` on a
-                // command buffer WE own (see `run_executable`) — we commit + wait
-                // manually so GPUStartTime/GPUEndTime are readable (S3). The old
-                // `MPSGraphExecutableExecutionDescriptor` / GAIA_NATIVE_NET_ASYNC
-                // block-toggle is gone; S2 one-frame pipelining, if adopted, drops
-                // the `root.waitUntilCompleted()` in `run_executable` instead.
 
-                self.pool = Some(SharedPool {
-                    feature_buf,
-                    feature_mtl,
-                    out_mtl,
-                    out_buf,
-                    max_pixels,
+                // ── S9: SET_COUNT independent feature/output buffer sets. ──
+                let mut sets_wgpu: Vec<SetWgpu> = Vec::with_capacity(SET_COUNT);
+                let mut encode_sets: Vec<EncodeSet> = Vec::with_capacity(SET_COUNT);
+                for si in 0..SET_COUNT {
+                    let feature_mtl = mtl_device
+                        .newBufferWithLength_options(in_bytes, MTLResourceOptions::StorageModeShared)
+                        .ok_or_else(|| "rdirect_live: feature MTLBuffer alloc failed".to_string())?;
+                    let out_mtl = mtl_device
+                        .newBufferWithLength_options(out_bytes, MTLResourceOptions::StorageModeShared)
+                        .ok_or_else(|| "rdirect_live: output MTLBuffer alloc failed".to_string())?;
+                    let hal_buf = wgpu::hal::metal::Device::buffer_from_raw(
+                        feature_mtl.clone(),
+                        in_bytes as u64,
+                    );
+                    let feature_buf = wgpu_device.create_buffer_from_hal::<wgpu::hal::api::Metal>(
+                        hal_buf,
+                        &wgpu::BufferDescriptor {
+                            label: Some("rdirect feature (shared MTLBuffer)"),
+                            size: in_bytes as u64,
+                            // COPY_SRC so ordeals can read the gather output back
+                            // for parity (the live path never copies it).
+                            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                            mapped_at_creation: false,
+                        },
+                    );
+                    let out_hal = wgpu::hal::metal::Device::buffer_from_raw(
+                        out_mtl.clone(),
+                        out_bytes as u64,
+                    );
+                    let out_buf = wgpu_device.create_buffer_from_hal::<wgpu::hal::api::Metal>(
+                        out_hal,
+                        &wgpu::BufferDescriptor {
+                            label: Some("rdirect net output (shared MTLBuffer)"),
+                            size: out_bytes as u64,
+                            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                            mapped_at_creation: false,
+                        },
+                    );
+
+                    let in_td = MPSGraphTensorData::initWithMTLBuffer_shape_dataType(
+                        MPSGraphTensorData::alloc(),
+                        &feature_mtl,
+                        &in_shape,
+                        MPSDataType::Float32,
+                    );
+                    let out_td = MPSGraphTensorData::initWithMTLBuffer_shape_dataType(
+                        MPSGraphTensorData::alloc(),
+                        &out_mtl,
+                        &out_shape,
+                        MPSDataType::Float32,
+                    );
+                    let inputs = NSArray::from_slice(&[&*in_td]);
+                    let results = NSArray::from_slice(&[&*out_td]);
+                    let chain = MatmulChain::new(
+                        mtl_device,
+                        &dims,
+                        &flat,
+                        max_pixels,
+                        &feature_mtl,
+                        &out_mtl,
+                    )?;
+                    let _ = si;
+                    sets_wgpu.push(SetWgpu { feature_buf, out_buf, feature_mtl, out_mtl });
+                    encode_sets.push(EncodeSet { inputs, results, chain });
+                }
+
+                let ctx = Arc::new(EncodeCtx {
+                    queue: self.queue.clone(),
                     executable,
-                    inputs,
-                    results,
-                    chain,
+                    sets: encode_sets,
+                    use_mpsgraph: AtomicBool::new(self.use_mpsgraph.get()),
                 });
+
+                self.pool = Some(SharedPool { sets: sets_wgpu, max_pixels, ctx });
             }
             Ok(())
         }
 
-        /// The gather's destination STORAGE buffer (the shared feature MTLBuffer
-        /// wrapped for wgpu). `None` unless built via `from_wgpu_queue`.
+        /// The gather's destination STORAGE buffer for buffer set 0 (the
+        /// synchronous ordeal/example path). `None` unless built via
+        /// `from_wgpu_queue`. The S9 live path uses `feature_buffer_set`.
         pub fn feature_buffer(&self) -> Option<&wgpu::Buffer> {
-            self.pool.as_ref().map(|p| &p.feature_buf)
+            self.pool.as_ref().map(|p| &p.sets[0].feature_buf)
         }
 
-        /// CUT 2: the net's OUTPUT MTLBuffer wrapped as a wgpu STORAGE buffer
-        /// (`[N, out_channels]` row-major, demod-log radiance). The GPU demod
-        /// pass reads this in place — no CPU readback. `None` unless built via
-        /// `from_wgpu_queue`.
+        /// CUT 2: set 0's net OUTPUT MTLBuffer wrapped for wgpu (demod source,
+        /// synchronous path). The S9 live path uses `output_buffer_set`.
         pub fn output_buffer(&self) -> Option<&wgpu::Buffer> {
-            self.pool.as_ref().map(|p| &p.out_buf)
+            self.pool.as_ref().map(|p| &p.sets[0].out_buf)
         }
 
-        /// CUT 1 CORE: run the pooled, compiled executable over the pooled
-        /// buffers. Zero per-call allocation — the executable, feed/result
-        /// tensor-data arrays and execution descriptor were all built once in
-        /// `attach_pool`. Blocks until the GPU forward completes
-        /// (`waitUntilCompleted`), so on return `out_mtl` / `out_buf` hold the
-        /// frame's radiance. `n` must equal the pooled `max_pixels` (the
-        /// executable is specialized to that fixed shape).
-        fn run_executable(&self, n: usize) -> Result<&SharedPool, String> {
+        /// S9: the gather's destination STORAGE buffer for buffer set `set`.
+        pub fn feature_buffer_set(&self, set: usize) -> Option<&wgpu::Buffer> {
+            self.pool.as_ref().map(|p| &p.sets[set].feature_buf)
+        }
+
+        /// S9: set `set`'s net OUTPUT MTLBuffer wrapped for wgpu (demod source).
+        pub fn output_buffer_set(&self, set: usize) -> Option<&wgpu::Buffer> {
+            self.pool.as_ref().map(|p| &p.sets[set].out_buf)
+        }
+
+        /// How many double-buffer sets the pipeline rotates through.
+        pub fn set_count(&self) -> usize {
+            SET_COUNT
+        }
+
+        /// SYNCHRONOUS forward over buffer set `set`: encode + commit + wait on
+        /// the CALLING thread, leaving the result in `output_buffer_set(set)`.
+        /// Used by the ordeal/example (pipeline NOT started). Records GPU-only
+        /// ms. Panics if the S9 pipeline is running (that thread owns the
+        /// encode objects).
+        fn run_set_sync(&self, set: usize, n: usize) -> Result<(), String> {
             let pool = self.pool.as_ref().ok_or_else(|| {
                 "rdirect_live: forward needs the shared pool (from_wgpu_queue)".to_string()
             })?;
@@ -685,80 +815,141 @@ kernel void bias_relu(
                     pool.max_pixels
                 ));
             }
-            // SAFETY: objc2 message send; the executable, inputs/results arrays
-            // and descriptor are the pool's (fixed shapes over the persistent
-            // MTLBuffers), and the run waits for completion before returning.
-            // The run is wrapped in an autorelease pool so MPSGraph's per-call
-            // intermediate NDArrays (the ~157MB hidden activations) are drained
-            // this frame rather than piling into the thread's outer pool.
-            //
-            // S3: we OWN the command buffer (metal4-probe pattern) instead of
-            // `runWithMTLCommandQueue` — that API allocs+commits+waits its own
-            // buffer and gives back only wall time. Here a base MTLCommandBuffer
-            // wrapped as MPSCommandBuffer lets us read GPUStartTime/GPUEndTime
-            // (GPU-only ms) after the wait, separating GPU work from CPU encode.
+            assert!(
+                self.pipeline.borrow().is_none(),
+                "rdirect_live: run_set_sync while the S9 pipeline owns the encode context"
+            );
+            // Mirror the live toggle into the shared ctx so the sync encode picks
+            // the same path the ordeal selected via `set_use_mpsgraph`.
+            pool.ctx
+                .use_mpsgraph
+                .store(self.use_mpsgraph.get(), Ordering::Relaxed);
+            // SAFETY: encode + commit + wait on this thread; the pipeline is not
+            // running (asserted), so no other thread touches `ctx.sets[set]`.
+            // Autorelease pool drains MPSGraph's per-run intermediate NDArrays.
             objc2::rc::autoreleasepool(|_| unsafe {
-                let base = self
-                    .queue
-                    .commandBuffer()
-                    .ok_or_else(|| "rdirect_live: commandBuffer alloc failed".to_string())?;
-                if self.use_mpsgraph.get() {
-                    // A/B fallback: the old MPSGraph executable path.
-                    let mps_cmd = MPSCommandBuffer::commandBufferWithCommandBuffer(&base);
-                    let _ = pool
-                        .executable
-                        .encodeToCommandBuffer_inputsArray_resultsArray_executionDescriptor(
-                            &mps_cmd,
-                            &pool.inputs,
-                            Some(&pool.results),
-                            // descriptor None: we own commit + wait below, so the
-                            // executable must not internally commit/wait (that
-                            // hides GPU timestamps and races our root wait).
-                            None,
-                        );
-                    let root = mps_cmd.rootCommandBuffer();
-                    mps_cmd.commit();
-                    root.waitUntilCompleted();
-                    let gpu_ms = (base.GPUEndTime() - base.GPUStartTime()) * 1000.0;
-                    self.last_gpu_ms.set(gpu_ms);
-                } else {
-                    // S5 DEFAULT: the raw MPSMatrixMultiplication + bias/ReLU
-                    // chain, all encoded onto ONE command buffer we own. µs-class
-                    // CPU encode (no MPSGraph per-frame command-buffer build),
-                    // then a single commit + wait. GPU timestamps bound the
-                    // whole forward exactly as the metal4-probe measured.
-                    pool.chain.encode(&base);
-                    base.commit();
-                    base.waitUntilCompleted();
-                    let gpu_ms = (base.GPUEndTime() - base.GPUStartTime()) * 1000.0;
-                    self.last_gpu_ms.set(gpu_ms);
-                }
-                Ok::<(), String>(())
-            })?;
-            Ok(pool)
-        }
-
-        /// CUT 1 + CUT 2 live path: run the pooled executable and leave the
-        /// result ON the GPU in `output_buffer()`. No CPU readback, no output
-        /// `Vec` allocation — the demod compute pass consumes `out_buf`
-        /// directly.
-        pub fn forward_shared_gpu(&self, n: usize) -> Result<(), String> {
-            self.run_executable(n)?;
+                let prepared = pool.ctx.encode(set);
+                let gpu_ms = commit_prepared(&prepared);
+                self.last_gpu_ms.set(gpu_ms);
+            });
             Ok(())
         }
 
-        /// S3 instrument: GPU-only ms of the last `forward_shared*` call
-        /// (MTLCommandBuffer GPU timestamps). Compare against the wall time the
-        /// caller measures around the same call to split GPU work from CPU
-        /// encode/readback — the metal4-probe's 4.47ms is this number.
+        /// CUT 1 + CUT 2 SYNCHRONOUS live path (set 0): run the pooled forward
+        /// and leave the result ON the GPU in `output_buffer()`. Kept for the
+        /// non-pipelined bring-up / example. The S9 live loop uses
+        /// `begin_frame` + `commit_net`.
+        pub fn forward_shared_gpu(&self, n: usize) -> Result<(), String> {
+            self.run_set_sync(0, n)
+        }
+
+        // ── S9 PIPELINE ─────────────────────────────────────────────────────
+
+        /// Start the S9 encode thread. After this the synchronous set-0 path
+        /// (`forward_shared*`) is invalid (the thread owns the encode context);
+        /// the render loop drives the net via `begin_frame` + `commit_net`.
+        /// Primes the pipeline `SET_COUNT` deep (one prepared buffer per set) so
+        /// the first frame never stalls on the encode.
+        pub fn start_pipeline(&self) -> Result<(), String> {
+            if self.pipeline.borrow().is_some() {
+                return Ok(());
+            }
+            let pool = self.pool.as_ref().ok_or_else(|| {
+                "rdirect_live: start_pipeline needs the shared pool (from_wgpu_queue)".to_string()
+            })?;
+            // Sync the toggle into the ctx BEFORE the thread reads it.
+            pool.ctx
+                .use_mpsgraph
+                .store(self.use_mpsgraph.get(), Ordering::Relaxed);
+            let ctx = pool.ctx.clone();
+            let (tx_req, rx_req) = std::sync::mpsc::channel::<usize>();
+            let (tx_ready, rx_ready) = std::sync::mpsc::channel::<PreparedNet>();
+            // The encode thread: for each requested set, build (encode, ~14 ms
+            // CPU, NO commit) a fresh net command buffer and hand it back. This
+            // is the CPU work S9 moves off the render thread's critical path.
+            let join = std::thread::Builder::new()
+                .name("rdirect-net-encode".into())
+                .spawn(move || {
+                    while let Ok(set) = rx_req.recv() {
+                        let prepared = objc2::rc::autoreleasepool(|_| unsafe { ctx.encode(set) });
+                        if tx_ready.send(prepared).is_err() {
+                            break; // render side gone
+                        }
+                    }
+                })
+                .map_err(|e| format!("rdirect_live: encode thread spawn failed: {e}"))?;
+            // Prime: request one buffer per set (order 0,1,… = the render
+            // thread's consumption order).
+            for set in 0..SET_COUNT {
+                let _ = tx_req.send(set);
+            }
+            *self.pipeline.borrow_mut() = Some(Pipeline {
+                tx_req,
+                rx_ready,
+                current: None,
+                join: Some(join),
+            });
+            Ok(())
+        }
+
+        /// S9: claim this frame's pre-encoded net command buffer. Blocks until
+        /// the encode thread has one ready (immediate in steady state — the
+        /// pipeline stays primed). Returns the buffer SET the caller must fill
+        /// with the gather BEFORE `commit_net`, so the net reads THIS frame's
+        /// own fresh evidence (0 latency). Panics if the pipeline is not
+        /// running.
+        pub fn begin_frame(&self) -> usize {
+            let mut guard = self.pipeline.borrow_mut();
+            let pipe = guard
+                .as_mut()
+                .expect("rdirect_live: begin_frame before start_pipeline");
+            let prepared = pipe
+                .rx_ready
+                .recv()
+                .expect("rdirect_live: encode thread hung up");
+            let set = prepared.set;
+            pipe.current = Some(prepared);
+            set
+        }
+
+        /// S9: commit this frame's claimed net command buffer (after the gather
+        /// filled its set) and block until the GPU forward completes. Records
+        /// GPU-only ms, then requests the encode thread to prepare the NEXT
+        /// command buffer for the SAME set (ready ~2 frames later — the
+        /// double-buffer keeps the encode a frame ahead of consumption). The
+        /// render thread's only cost here is the commit + the GPU wait; the
+        /// ~14 ms encode already happened on the encode thread.
+        pub fn commit_net(&self) -> Result<(), String> {
+            let mut guard = self.pipeline.borrow_mut();
+            let pipe = guard
+                .as_mut()
+                .expect("rdirect_live: commit_net before start_pipeline");
+            let prepared = pipe
+                .current
+                .take()
+                .expect("rdirect_live: commit_net without begin_frame");
+            let set = prepared.set;
+            // SAFETY: this thread solely owns `prepared` now; commit + wait here.
+            let gpu_ms = objc2::rc::autoreleasepool(|_| unsafe { commit_prepared(&prepared) });
+            self.last_gpu_ms.set(gpu_ms);
+            // Ask for the replacement for this set (double-buffer refill).
+            let _ = pipe.tx_req.send(set);
+            Ok(())
+        }
+
+        /// S3 instrument: GPU-only ms of the last forward (sync or pipelined).
         pub fn last_gpu_ms(&self) -> f64 {
             self.last_gpu_ms.get()
         }
 
-        /// S5 A/B (ordeal-only): force this instance's forward path.
-        /// `true` = old MPSGraph executable, `false` = the raw GEMM chain.
+        /// S5/S8 A/B (ordeal-only): force this instance's forward path.
+        /// `true` = MPSGraph executable (S8 default), `false` = raw GEMM chain.
+        /// Mirrored into the shared ctx for both sync and pipelined encodes.
         pub fn set_use_mpsgraph(&self, on: bool) {
             self.use_mpsgraph.set(on);
+            if let Some(pool) = self.pool.as_ref() {
+                pool.ctx.use_mpsgraph.store(on, Ordering::Relaxed);
+            }
         }
 
         /// Ceiling passed at construction (max target pixels per forward).
@@ -772,15 +963,18 @@ kernel void bias_relu(
         /// MTLBuffer, returning `[n, out_channels]` demod-log radiance. No NSData
         /// staging, no per-call allocation — both buffers are the pool's.
         pub fn forward_shared(&self, n: usize) -> Result<Vec<f32>, String> {
-            // CUT 1: run the pooled compiled executable (blocks until done),
-            // then read the pooled Shared-storage output back to a Vec. The
+            // Run the pooled forward on set 0 SYNCHRONOUSLY (blocks until done),
+            // then read the Shared-storage output back to a Vec. The
             // ordeal/example CPU path keeps this Vec return; the live present
-            // uses `forward_shared_gpu` (no readback) + the GPU demod pass.
-            let pool = self.run_executable(n)?;
-            // SAFETY: `out_mtl` is Shared storage, sized to max_pixels ≥ n, and
-            // `run_executable` waited for the GPU forward to complete.
+            // uses the S9 pipeline (no readback) + the GPU demod pass.
+            self.run_set_sync(0, n)?;
+            let pool = self.pool.as_ref().ok_or_else(|| {
+                "rdirect_live: forward_shared needs the shared pool".to_string()
+            })?;
+            // SAFETY: set 0's `out_mtl` is Shared storage, sized to max_pixels ≥
+            // n, and `run_set_sync` waited for the GPU forward to complete.
             unsafe {
-                let ptr = pool.out_mtl.contents().as_ptr() as *const f32;
+                let ptr = pool.sets[0].out_mtl.contents().as_ptr() as *const f32;
                 let out = std::slice::from_raw_parts(ptr, n * self.out_channels).to_vec();
                 Ok(out)
             }
@@ -851,6 +1045,22 @@ kernel void bias_relu(
                     std::ptr::null_mut(),
                 );
                 Ok(out)
+            }
+        }
+    }
+
+    impl Drop for RdirectLive {
+        fn drop(&mut self) {
+            // Stop the S9 encode thread: drop the request Sender (closes its
+            // recv), which ends the loop; the thread's `send` also fails once
+            // the ready Receiver drops. Join so the thread's Arc<EncodeCtx> is
+            // released before ours (no objc use-after-free race).
+            if let Some(mut pipe) = self.pipeline.borrow_mut().take() {
+                let join = pipe.join.take();
+                drop(pipe); // drops tx_req + rx_ready → thread loop ends
+                if let Some(j) = join {
+                    let _ = j.join();
+                }
             }
         }
     }
