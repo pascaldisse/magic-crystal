@@ -137,10 +137,6 @@ impl RealmScenes {
         materialize_state(&self.snapshot()?.entities, world)
     }
 
-    pub(crate) fn scenes(&self) -> &BTreeMap<String, SceneDocument> {
-        &self.scenes
-    }
-
     pub(crate) fn scenes_mut(&mut self) -> &mut BTreeMap<String, SceneDocument> {
         &mut self.scenes
     }
@@ -298,11 +294,8 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, String> {
 }
 
 fn validate_scene_name(name: &str) -> Result<(), String> {
-    if name.is_empty()
-        || Path::new(name)
-            .components()
-            .any(|part| !matches!(part, Component::Normal(_)))
-    {
+    let parts: Vec<Component<'_>> = Path::new(name).components().collect();
+    if name.is_empty() || parts.len() != 1 || !matches!(parts[0], Component::Normal(_)) {
         return Err(format!("invalid scene name {name:?}"));
     }
     Ok(())

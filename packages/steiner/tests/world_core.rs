@@ -1,11 +1,11 @@
-use crystal::EcsWorld;
-use serde_json::json;
+use crystal::{EcsWorld, Op, OpBatch, SetOp};
+use serde_json::{json, Map, Value};
 use std::{
     fs,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
-use steiner::RealmScenes;
+use steiner::{read_journal, RealmScenes, Recorder, WorldCore, WorldCoreParams};
 
 static NEXT_REALM: AtomicU64 = AtomicU64::new(1);
 
@@ -59,9 +59,39 @@ impl TestRealm {
     }
 }
 
+impl TestRealm {
+    fn scene_text(&self, name: &str) -> String {
+        fs::read_to_string(self.root.join("scenes").join(format!("{name}.json"))).unwrap()
+    }
+}
+
 impl Drop for TestRealm {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.root);
+    }
+}
+
+fn params() -> WorldCoreParams {
+    WorldCoreParams {
+        seed: 0x5eed,
+        event_capacity: 32,
+        ..WorldCoreParams::default()
+    }
+}
+
+fn set_mesh(color: &str, dev: bool) -> OpBatch {
+    OpBatch {
+        dev,
+        from: Some("ordeal".to_owned()),
+        ops: vec![Op::Set(SetOp {
+            id: "box".to_owned(),
+            component: "mesh".to_owned(),
+            value: json!({
+                "parts": [{ "shape": "box", "size": [2, 2, 2], "color": color }]
+            }),
+            extra: Map::new(),
+        })],
+        extra: Map::new(),
     }
 }
 
@@ -82,4 +112,121 @@ fn boot_from_superscene_materializes_every_scene_into_crystal() {
     assert_eq!(realm.materialize_into(&mut ecs).unwrap(), 2);
     assert!(ecs.entity_for_gaia("box").is_some());
     assert!(ecs.entity_for_gaia("pillar").is_some());
+}
+
+#[test]
+fn runtime_set_mutates_live_crystal_without_touching_disk() {
+    let fixture = TestRealm::two_scene();
+    let before = fixture.scene_text("a");
+    let mut core = WorldCore::open(&fixture.root, params()).unwrap();
+
+    let report = core.apply(set_mesh("#00aa00", false)).unwrap();
+
+    assert_eq!(report.applied.len(), 1);
+    assert_eq!(report.entropy, 1);
+    assert_eq!(
+        core.component("box", "mesh").unwrap()["parts"][0]["color"],
+        json!("#00aa00")
+    );
+    assert_eq!(
+        fixture.scene_text("a"),
+        before,
+        "runtime batch stays live-only"
+    );
+}
+
+#[test]
+fn set_lands_in_steiner_and_replays_to_identical_state() {
+    let fixture = TestRealm::two_scene();
+    let mut core = WorldCore::open(&fixture.root, params()).unwrap();
+    core.apply(set_mesh("#00aa00", false)).unwrap();
+
+    let decoded = read_journal(core.journal_bytes()).expect("decode authority ledger");
+    assert_eq!(decoded.entries.len(), 1);
+    assert_eq!(decoded.entries[0].tick, 1);
+    assert!(matches!(&decoded.entries[0].ops[0], Op::Set(set) if set.id == "box"));
+    let (replayed, _) = Recorder::replay(core.journal_bytes(), None).unwrap();
+    assert_eq!(replayed.state_map(), core.state());
+
+    let events = core.events_json(0, 32);
+    assert_eq!(events["latest"], json!(1));
+    assert_eq!(events["events"][0]["op"], json!("set"));
+    assert_eq!(events["events"][0]["entropy"], json!(1));
+}
+
+#[test]
+fn reset_rereads_scene_and_restores_disk_truth() {
+    let fixture = TestRealm::two_scene();
+    let mut core = WorldCore::open(&fixture.root, params()).unwrap();
+    core.apply(set_mesh("#00aa00", false)).unwrap();
+    assert_eq!(
+        core.component("box", "mesh").unwrap()["parts"][0]["color"],
+        json!("#00aa00")
+    );
+
+    let report = core
+        .apply(OpBatch {
+            from: Some("ordeal".to_owned()),
+            ops: vec![serde_json::from_value(json!({ "op": "reset", "scene": "a" })).unwrap()],
+            ..OpBatch::default()
+        })
+        .unwrap();
+
+    assert!(report
+        .applied
+        .iter()
+        .any(|op| matches!(op, Op::Other { op, .. } if op == "event")));
+    assert!(report
+        .applied
+        .iter()
+        .any(|op| matches!(op, Op::Other { op, .. } if op == "despawn")));
+    assert!(report
+        .applied
+        .iter()
+        .any(|op| matches!(op, Op::Other { op, .. } if op == "spawn")));
+    assert_eq!(
+        core.component("box", "mesh").unwrap()["parts"][0]["color"],
+        json!("#aa0000")
+    );
+    let (replayed, _) = Recorder::replay(core.journal_bytes(), None).unwrap();
+    assert_eq!(
+        replayed.state_map(),
+        core.state(),
+        "reset expansion is replay truth"
+    );
+}
+
+#[test]
+fn dev_noop_keeps_authored_bytes_stable() {
+    let fixture = TestRealm::two_scene();
+    let before = fixture.scene_text("a");
+    let mut core = WorldCore::open(&fixture.root, params()).unwrap();
+
+    core.apply(set_mesh("#aa0000", true)).unwrap();
+
+    assert_eq!(fixture.scene_text("a"), before);
+}
+
+#[test]
+fn dev_set_persists_diff_to_owning_scene_only() {
+    let fixture = TestRealm::two_scene();
+    let scene_b_before = fixture.scene_text("b");
+    let mut core = WorldCore::open(&fixture.root, params()).unwrap();
+
+    core.apply(set_mesh("#0066ff", true)).unwrap();
+
+    let authored: Value = serde_json::from_str(&fixture.scene_text("a")).unwrap();
+    assert_eq!(
+        authored["box"]["mesh"]["parts"][0]["color"],
+        json!("#0066ff")
+    );
+    assert!(
+        authored["box"].get("scene").is_none(),
+        "runtime claim stays out of authored data"
+    );
+    assert_eq!(
+        fixture.scene_text("b"),
+        scene_b_before,
+        "unrelated scene is byte-stable"
+    );
 }
