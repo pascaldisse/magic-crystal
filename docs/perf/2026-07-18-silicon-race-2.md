@@ -22,11 +22,12 @@
   - `wall` → encode→commit→wait; immediate per-call dispatch/synchronization included.
   - `sync/submit` → `wall − encode − timeline`; derived control quantity.
 - Correctness gate → full output GPU-vs-CPU max absolute delta `1–3×10⁻⁶` across every shape.
-- Raw source + result → `tools/silicon-race-2/baselines.swift` · `proof/2026-07-18-silicon-race-2-baselines.txt` · commit `7de8e3b`.
+- Raw source + primary result → `tools/silicon-race-2/baselines.swift` · `proof/2026-07-18-silicon-race-2-baselines.txt` · commit `7de8e3b`.
+- Post-report process repeats → `proof/2026-07-18-silicon-race-2-baselines-repeat-{2,3}.txt`; sustained variability preserved, not averaged away.
 
 ## Full matrix — part × silicon × measured ms
 
-`UNVERIFIED` = no network dispatch; never latency-inferred into a silicon claim.
+`UNVERIFIED` = no network dispatch; never latency-inferred into a silicon claim. Values below = primary process run; repeatability table follows.
 
 | part | batch | silicon/path | per-call ms | throughput, items/s | HOW execution verified |
 |---|---:|---|---:|---:|---|
@@ -67,6 +68,19 @@
 | tiny | 2048 | 0.070375 | 0.050333 | 0.205376 | 0.326084 |
 | tiny | 4096 | 0.068542 | 0.061583 | 0.217083 | 0.347208 |
 | Pleroma | 307200 | 2.471000 | 4.302625 | 5.636625 | 12.410250 |
+
+### Pleroma process-repeat spread
+
+| process run | CPU ms | GPU encode ms | GPU timeline ms | sync/submit ms | GPU wall ms | 60-Hz wall gate |
+|---|---:|---:|---:|---:|---:|---|
+| primary | 198.570417 | 2.471000 | 4.302625 | 5.636625 | 12.410250 | PASS in isolation |
+| repeat 2 | 206.351666 | 2.996833 | 4.711708 | 11.681834 | 19.390375 | **FAIL** |
+| repeat 3 | 199.792875 | 2.541875 | 6.362167 | 9.701249 | 18.605291 | **FAIL** |
+
+- CPU spread → `198.57–206.35 ms`.
+- GPU timeline spread → `4.30–6.36 ms`.
+- Immediate wall spread → `12.41–19.39 ms`; 60-Hz pass `1/3` process runs → sustained synchronous gate **FAIL**.
+- Tiny crossover unchanged in repeats → CPU through 2048; GPU at 4096.
 
 ## R-B · Metal 4 door report
 
@@ -124,16 +138,17 @@ Raw source + walls → `tools/silicon-race-2/metal4-door.swift` · `tools/silico
 - Batch 64 → CPU `0.0165 ms`; GPU wall `0.3050 ms` → CPU `18.5×` lower latency.
 - Batch 2048 → CPU `0.3117 ms`; GPU wall `0.3261 ms` → practical tie; CPU still `4.5%` lower.
 - Batch 4096 → GPU wall `0.3472 ms`; CPU `0.6121 ms` → GPU `1.76×` faster.
-- 60–120 Hz → every measured tiny path inside `16.67/8.33 ms`; CPU consumes `0.20–7.34%` of 120-Hz frame; synchronous GPU call consumes `3.60–4.17%`.
+- 60–120 Hz → every measured tiny path inside `16.67/8.33 ms`; CPU consumes `0.19–7.38%` of 120-Hz frame; synchronous GPU call consumes `3.60–4.78%` across process runs.
 - Neural cores beating either → **UNVERIFIED**; no MTL4 network dispatch.
 - Current honest choice → CPU ≤2048 bodies; GPU at 4096 only when synchronous wall latency, not raw device time, governs.
 
 ### Pleroma class · 307200 pixels
 
-- CPU → `198.570 ms` → dead for frame path.
-- GPU → `4.303 ms` device · `12.410 ms` immediate call wall → 60-Hz fit in isolation; only `4.260 ms` left for all other frame work; 120-Hz miss.
-- GPU wall vs CPU → `16.0×` faster.
-- GPU encode/allocation/synchronization gap → `8.108 ms` beyond device work; renderer-side pooling/async scheduling opportunity, **UNVERIFIED here**.
+- CPU → `198.57–206.35 ms` → dead for frame path.
+- GPU device → `4.30–6.36 ms`; inside 60-Hz device budget.
+- GPU immediate wall → `12.41–19.39 ms`; 60-Hz pass once, fail twice; 120-Hz miss always → sustained synchronous gate **FAIL**.
+- GPU wall vs CPU → `10.6–16.0×` faster; still insufficiently stable for frame contract.
+- GPU encode/allocation/synchronization gap → `8.108–14.679 ms` beyond device work; renderer-side pooling/async scheduling opportunity, **UNVERIFIED here**.
 - ANE acceptance · latency · overlap with dummy GPU work · fallback behavior → **all UNVERIFIED** at package wall.
 
 ### Voice
@@ -150,12 +165,13 @@ Raw source + walls → `tools/silicon-race-2/metal4-door.swift` · `tools/silico
 - Neural-core power/utilization → **UNVERIFIED**; privilege wall.
 - Pleroma parity/quality → not asked; arbitrary weights; performance shape only.
 - MPSGraph wall gap attribution → aggregate only; allocation vs driver vs wait split **UNVERIFIED**.
+- Pleroma process variability cause → **UNVERIFIED**; spread retained as gate evidence.
 
 ## Source trail
 
 - API shape/recon → `client-rs/research/metal4-neural-recon.md`.
 - Timing pattern → `tools/metal4-probe/main.swift` in R-Direct lane.
-- Baseline raw → `proof/2026-07-18-silicon-race-2-baselines.txt`.
+- Baseline raw → `proof/2026-07-18-silicon-race-2-baselines.txt` · `proof/2026-07-18-silicon-race-2-baselines-repeat-{2,3}.txt`.
 - MTL4 runtime raw → `proof/2026-07-18-silicon-race-2-metal4-door.txt`.
 - Pipeline negative raw → `proof/2026-07-18-silicon-race-2-metal4-negative.txt`.
 - Package wall raw → `proof/2026-07-18-silicon-race-2-package-wall.txt`.
