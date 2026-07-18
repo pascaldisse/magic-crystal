@@ -1172,10 +1172,31 @@ impl OffscreenTarget {
 /// feeds `/scry`, and the http/debug servicing on the render thread. Measured
 /// in the render loop (not `NetPresent`, which only sees the GPU stages) and
 /// merged into `/budget` so the throughput gap is finally VISIBLE, not implied.
+/// NEURAL-LIVE S14 (shift 14): the sub-breakdown INSIDE the ~7 ms world
+/// advance — one timer per stage of `advance_world`, so the thief is split
+/// (skin·tick vs gather vs splice vs upload) before it is cut. Filled by
+/// `advance_world` into `Renderer::last_world_stages`, drained by the loop.
+#[derive(Default, Clone, Copy)]
+struct WorldStages {
+    /// `command_bodies_walked` + `tick_with_ops` (skin the bodies, advance solver).
+    skin: f64,
+    /// `dynamic_leaf_triangles_for_eye` (gather the dynamic partition's tris).
+    gather: f64,
+    /// `splice.update` — dynamic refit/rebuild + CPU merge onto the static tree.
+    splice: f64,
+    /// `integrator.update_bvh` — (re)build the GPU node/tri buffers.
+    upload: f64,
+}
+
 #[derive(Default)]
 struct OutsideBudget {
     /// player.step + set_view_pose + advance_world (skin·tick·splice·upload).
     world: Vec<f64>,
+    /// S14 sub-breakdown of `world` (skin·tick / gather / splice / upload).
+    w_skin: Vec<f64>,
+    w_gather: Vec<f64>,
+    w_splice: Vec<f64>,
+    w_upload: Vec<f64>,
     /// the per-frame offscreen copy_texture_to_buffer + map submit (the
     /// measurement tax — S13.2 makes it on-demand, so this collapses to ~0).
     readback: Vec<f64>,
@@ -1196,6 +1217,14 @@ impl OutsideBudget {
         self.frames += 1;
     }
 
+    /// S14: record the sub-stage breakdown of the frame's world advance.
+    fn record_world(&mut self, s: WorldStages) {
+        self.w_skin.push(s.skin);
+        self.w_gather.push(s.gather);
+        self.w_splice.push(s.splice);
+        self.w_upload.push(s.upload);
+    }
+
     /// The `"outside"` block spliced into `/budget` (median/p95 per segment).
     fn json(&self) -> String {
         format!(
@@ -1205,6 +1234,18 @@ impl OutsideBudget {
             pct(&self.readback, 0.5), pct(&self.readback, 0.95),
             pct(&self.http, 0.5), pct(&self.http, 0.95),
             pct(&self.loop_total, 0.5), pct(&self.loop_total, 0.95),
+        )
+    }
+
+    /// S14: the `"world_stages"` block (median/p95 per advance sub-stage).
+    fn world_stages_json(&self) -> String {
+        format!(
+            "\"world_stages\":{{\"skin\":[{:.3},{:.3}],\"gather\":[{:.3},{:.3}],\
+             \"splice\":[{:.3},{:.3}],\"upload\":[{:.3},{:.3}]}}",
+            pct(&self.w_skin, 0.5), pct(&self.w_skin, 0.95),
+            pct(&self.w_gather, 0.5), pct(&self.w_gather, 0.95),
+            pct(&self.w_splice, 0.5), pct(&self.w_splice, 0.95),
+            pct(&self.w_upload, 0.5), pct(&self.w_upload, 0.95),
         )
     }
 }
@@ -1721,6 +1762,10 @@ struct Renderer {
     last_readback_ms: f64,
     /// N0.j S13 THE OUTSIDE-9ms HUNT: the non-net frame-loop budget.
     outside: OutsideBudget,
+    /// S14: the last frame's `advance_world` sub-stage breakdown (skin/gather/
+    /// splice/upload), filled by `advance_world`, drained by the loop into
+    /// `outside.record_world`.
+    last_world_stages: WorldStages,
     /// DAS BLUTBÄNDIGEN — B0 data door state. `None` when the master switch is
     /// off; `Some` carries the world/scene params + last-good snapshot the live
     /// scene/shader bends re-materialize and journal against.
@@ -1950,6 +1995,7 @@ impl Renderer {
             ),
             last_readback_ms: 0.0,
             outside: OutsideBudget::default(),
+            last_world_stages: WorldStages::default(),
             bloodbend: None,
             net_present_enabled,
             #[cfg(target_os = "macos")]
@@ -2298,10 +2344,13 @@ impl Renderer {
     }
 
     fn advance_world(&mut self, body_speed: f32, walker: Option<WalkerPose>, push_ops: &[Op]) {
+        // S14: time each sub-stage of the ~7 ms advance so the thief is split.
+        self.last_world_stages = WorldStages::default();
         let has_bodies = !self.scene.bodies.is_empty();
         if self.scene.dynamics.entities().is_empty() && !has_bodies {
             return; // a still realm never pays the living-layer cost
         }
+        let t_skin = Instant::now();
         // RITE V·V1 — drive the embodied bodies from the walker's velocity: the
         // commanded speed feeds each body's SAMA state machine, its pose re-skins
         // the body per tick. A walking body changes the dynamic partition every
@@ -2311,6 +2360,7 @@ impl Renderer {
         // displacement, instead of gaiting in place off the broadcast.
         let bodies_animating = self.scene.command_bodies_walked(body_speed, walker);
         self.scene.tick_with_ops(push_ops);
+        self.last_world_stages.skin = t_skin.elapsed().as_secs_f64() * 1000.0;
         let models = self.scene.dynamics.model_matrices();
         if models == self.last_models && !bodies_animating {
             return; // nothing moved — keep accumulating
@@ -2318,16 +2368,22 @@ impl Renderer {
         // OWN-EYE CULL — the window camera IS the walker's own eye every frame
         // (`set_view_pose` and this tick's `walker` share one pose, wired in the
         // run loop below), so a walker-attached body never renders inside it.
+        let t_gather = Instant::now();
         let dynamic_tris = self.scene.dynamic_leaf_triangles_for_eye(
             self.camera.eye,
             scrying_glass::scene::OWN_EYE_EPSILON_M,
             self.draw_own_body,
         );
+        self.last_world_stages.gather = t_gather.elapsed().as_secs_f64() * 1000.0;
+        let t_splice = Instant::now();
         self.splice.update(&self.static_bvh, &dynamic_tris);
+        self.last_world_stages.splice = t_splice.elapsed().as_secs_f64() * 1000.0;
+        let t_upload = Instant::now();
         self.integrator
             .update_bvh(&self.device, &self.splice.merged);
         self.retina_epoch = self.retina_epoch.wrapping_add(1);
         self.retina_cache.clear();
+        self.last_world_stages.upload = t_upload.elapsed().as_secs_f64() * 1000.0;
         // The node/tri buffers changed — rebuild the bind groups (they bind them)
         // and drop the stale samples (moved geometry invalidates the mean).
         self.reset_surface_accum();
@@ -2982,12 +3038,17 @@ impl Renderer {
         if let Some(np) = &self.net_present {
             let base = np.budget_json();
             let outside = self.outside.json();
+            let stages = self.outside.world_stages_json();
             return match base.strip_suffix('}') {
-                Some(head) => format!("{head},{outside}}}"),
+                Some(head) => format!("{head},{outside},{stages}}}"),
                 None => base,
             };
         }
-        format!("{{\"frames\":0,\"note\":\"net-present off\",{}}}", self.outside.json())
+        format!(
+            "{{\"frames\":0,\"note\":\"net-present off\",{},{}}}",
+            self.outside.json(),
+            self.outside.world_stages_json()
+        )
     }
 
     fn debug_state_json(&self) -> String {
@@ -4155,6 +4216,8 @@ fn run_offscreen(config: ScryingGlassConfig, render_scene: RenderScene) -> ! {
         renderer
             .outside
             .record(world_ms, readback_ms, http_ms, loop_total_ms);
+        let stages = renderer.last_world_stages;
+        renderer.outside.record_world(stages);
         deadline += render_interval;
         let now = Instant::now();
         if deadline > now {
