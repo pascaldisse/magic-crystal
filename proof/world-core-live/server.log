@@ -1,0 +1,21 @@
+[package] scrying-glass v0.1.0 registered
+[world] /Users/pascaldisse/projects/magic-crystal-worldcore/proof/world-core-live/world scene(s)=["court", "gallery"] entities=5 chains=3 clusters=10 transmute=3.1ms
+[worker-window] GAIA_NATIVE_WORKER_WINDOW=true: window built focused=false focusable=false (never-key) title="GAIA — Scrying Glass [worker]"
+[embodiment] spawn eye=Vec3(0.0, 3.0, 10.0) yaw=0 floor_triangles=56 tick_dt=0.033333335
+[pleroma] BVH nodes=83 triangles=120 (static 120 + dynamic 0) build=0.8ms; 0 dynamic entit(ies) — living layer
+[pleroma] traced integrator spp=2 bounces=4 rr_start=2 — first_light is dead
+[wgpu] traced 320x240 → upscale → surface 960x640 (bilinear); Bgra8UnormSrgb
+[bloodbend] 🩸 watching 3 scene file(s) + /Users/pascaldisse/projects/magic-crystal-worldcore/packages/scrying-glass/src/integrator.wgsl @ 500ms poll
+[frame] trace 320x240 → surface 480x320: median 1.80ms mean 1.85ms/frame (spp=2, 60-frame sample)
+[scry] GET http://127.0.0.1:8441/scry (alias: /screenshot; optional pos/yaw/pitch/fov/w/h)
+[world-core] POST http://127.0.0.1:8441/op · GET /world · GET /events
+[embodiment] GET http://127.0.0.1:8441/pose · POST http://127.0.0.1:8441/walk {keys,yaw?,pitch?,ticks?}
+[scrying-glass] child webview overlay created; render, capture, PNG, and HTTP run off the main thread
+[world-core] entropy=1 latest=1 applied=1 Steiner frames=1
+[world-core] entropy=2 latest=10 applied=9 Steiner frames=2
+[world-core] entropy=3 latest=11 applied=1 Steiner frames=3
+[bloodbend] 📜 journaled previous scene → debug/bloodbend-journal/scene-1784391163608
+[bloodbend] ✅ BEND APPLIED · scene · +0 added [] · ~1 changed ["proof_box"] · -0 removed []
+[activation] t=1784391163872ms event=Reopen has_visible_windows=true
+[activation] t=1784391170171ms event=Reopen has_visible_windows=true
+[wgpu-input] passthrough click x=331.9 y=87.8

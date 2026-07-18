@@ -12,6 +12,7 @@ pub mod integrator;
 pub mod physics;
 pub mod player;
 pub mod presence;
+pub mod retina;
 pub mod scene;
 pub mod upscaler;
 pub mod upscaler_dataset;

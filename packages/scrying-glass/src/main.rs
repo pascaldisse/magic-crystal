@@ -14,22 +14,26 @@ use std::{
 use scrying_glass::player::{Ground, Key, Player, PlayerParams};
 use scrying_glass::{input, player};
 
-use crystal::{Core, GaiaPackage, ImpulseOp, Op, load_world_dir};
+use serde_json::json;
+use crystal::{Core, GaiaPackage, ImpulseOp, Op, OpBatch, load_world_dir};
 use glam::Vec3;
 use scrying_glass::ScryingGlassPackage;
 use scrying_glass::bloodbend::{self, Bend, Bloodbend, BloodbendParams};
-use scrying_glass::bvh::{Bvh, BvhParams, DEFAULT_DEGRADE_RATIO, DynamicSplice, RefitParams};
+use scrying_glass::bvh::{Bvh, BvhParams, DynamicSplice, RefitParams};
 use scrying_glass::denoiser::deserialize_weights as deserialize_denoiser_weights;
 use scrying_glass::denoiser_gpu::GpuDenoiser;
 use scrying_glass::integrator::{
-    Integrator, IntegratorParams, IntegratorUniform, resolve as resolve_accum, split_aov,
+    Integrator, IntegratorParams, IntegratorUniform, TemporalParams, resolve as resolve_accum,
+    split_aov,
     trace_headless, trace_headless_aov,
 };
 use scrying_glass::scene::{
     Camera, RenderScene, SceneParameters, SunDefaults, SunLight, WalkerPose,
 };
+use scrying_glass::retina::{self, GeometryCache as RetinaGeometryCache, Layers as RetinaLayers};
 use scrying_glass::upscaler::deserialize_weights as deserialize_upscaler_weights;
 use scrying_glass::upscaler_gpu::GpuUpscaler;
+use steiner::{AppliedBatch, WorldCore, WorldCoreParams, parse_op_batch};
 use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewUrl};
 
 const DEFAULT_NATIVE_PORT: u16 = 8430;
@@ -40,6 +44,10 @@ const CAPTURE_SLOT_COUNT: usize = 3;
 struct ScryingGlassConfig {
     window_width: f64,
     window_height: f64,
+    /// God's render canvas. Trace, accumulation, temporal, and offscreen
+    /// present resources are permanently this size; only the OS surface moves.
+    native_canvas_width: u32,
+    native_canvas_height: u32,
     panel_width: f64,
     panel_height: f64,
     panel_margin: f64,
@@ -54,14 +62,11 @@ struct ScryingGlassConfig {
     refit: RefitParams,
     /// Accumulation frames a /scry moving-eye capture integrates for a crisp shot.
     capture_frames: u32,
-    /// RESOLUTION OF GOD — the internal traced resolution (the whole path trace
-    /// runs at exactly this size), independent of the window surface. The blit
-    /// upscales this to the surface each frame.
-    render_width: u32,
-    render_height: u32,
-    /// Interim upscale mode uploaded to the blit: 0 = bilinear (default),
-    /// 1 = nearest. The clean seam for the neural upscaler (VIII-3).
-    upscale_mode: u32,
+    /// LIGHT-NOT-DOTS: temporal accumulation with reprojection on the live
+    /// present path (GAIA_NATIVE_TEMPORAL, default ON). When off the legacy
+    /// reset-on-move accum path runs (the escape hatch).
+    temporal_enabled: bool,
+    temporal: TemporalParams,
     /// FPS COUNTER BURST — HUD toggle (GAIA_NATIVE_HUD, default ON) and its
     /// rolling-median sample window (GAIA_NATIVE_HUD_WINDOW, default 30).
     hud_enabled: bool,
@@ -72,6 +77,12 @@ struct ScryingGlassConfig {
     /// itself, a future third-person mode). Off is the normal weld: her body
     /// vanishes only from the exact eye it is attached to.
     draw_own_body: bool,
+    /// Native realm authority: Steiner seed, bounded event view, HTTP limits.
+    world_core: WorldCoreParams,
+    authority_timeout: Duration,
+    event_default_limit: usize,
+    event_limit_max: usize,
+    max_request_bytes: usize,
     /// WORKER WINDOW (`GAIA_NATIVE_WORKER_WINDOW`, default off/false — Nekromant
     /// case #1 fix): a worker instance's window is built non-activating/
     /// never-key (`focused(false)` + `focusable(false)`, which on macOS rides
@@ -138,6 +149,8 @@ impl ScryingGlassConfig {
         let config = Self {
             window_width: number("GAIA_NATIVE_WIDTH", default_window_width)?,
             window_height: number("GAIA_NATIVE_HEIGHT", default_window_height)?,
+            native_canvas_width: integer("GAIA_NATIVE_CANVAS_W", 640)?,
+            native_canvas_height: integer("GAIA_NATIVE_CANVAS_H", 480)?,
             panel_width: number("SPIKE_PANEL_WIDTH", 300.0)?,
             panel_height: number("SPIKE_PANEL_HEIGHT", 154.0)?,
             panel_margin: number("SPIKE_PANEL_MARGIN", 24.0)?,
@@ -171,7 +184,6 @@ impl ScryingGlassConfig {
                 ],
                 camera_yaw: number("GAIA_NATIVE_CAMERA_YAW", 0.0)? as f32,
                 camera_pitch: number("GAIA_NATIVE_CAMERA_PITCH", 0.0)? as f32,
-                cluster_error_threshold: number("GAIA_NATIVE_CLUSTER_ERROR", 1.0)? as f32,
                 tick_dt: number("GAIA_NATIVE_TICK_DT", 1.0 / 60.0)?,
                 sun: SunDefaults {
                     sun_color: std::env::var("GAIA_NATIVE_SUN_COLOR")
@@ -201,35 +213,31 @@ impl ScryingGlassConfig {
             refit: RefitParams {
                 degrade_ratio: number(
                     "GAIA_NATIVE_BVH_REFIT_DEGRADE",
-                    DEFAULT_DEGRADE_RATIO as f64,
+                    RefitParams::default().degrade_ratio as f64,
                 )? as f32,
                 max_refits: integer("GAIA_NATIVE_BVH_REFIT_MAX", 0)?,
             },
             capture_frames: integer("GAIA_NATIVE_CAPTURE_FRAMES", 48)?,
-            // The trace runs small (~8× fewer rays than a 1920×1280 surface),
-            // then upscales to the window. Both dims are explicit params.
-            render_width: integer("GAIA_NATIVE_RENDER_W", 640)?,
-            render_height: integer("GAIA_NATIVE_RENDER_H", 480)?,
-            upscale_mode: match std::env::var("GAIA_NATIVE_UPSCALE") {
-                Ok(value) => match value.trim().to_ascii_lowercase().as_str() {
-                    "bilinear" => 0,
-                    "nearest" => 1,
-                    // THE ONE RENDER PATH — neural = new value in this param
-                    // family. The chartered trace→denoise→upscale resolve. It is
-                    // the DEFAULT resolve for /scry A/B captures; the 60-fps
-                    // surface present stays bilinear (the neural resolve is
-                    // ~26× over the 16.67 ms wall at production res — see
-                    // docs/perf/2026-07-17-onepath-budget.md — so it is the
-                    // capture-surface A/B, not the live present, until the
-                    // Architect's pixel/net ruling lands).
-                    "neural" => 2,
-                    other => {
-                        return Err(format!(
-                            "GAIA_NATIVE_UPSCALE must be bilinear, nearest, or neural, got {other:?}"
-                        ));
-                    }
-                },
-                Err(_) => 0,
+            temporal_enabled: match std::env::var("GAIA_NATIVE_TEMPORAL") {
+                Ok(value) => value.parse::<bool>().map_err(|_| {
+                    format!("GAIA_NATIVE_TEMPORAL must be true or false, got {value:?}")
+                })?,
+                // THE DESIGN IS THE LAW (Architect, 07-18): the shipped present
+                // path is trace → THE NET → screen and nothing else. The temporal
+                // accumulation machinery is LAB EQUIPMENT (training ground-truth
+                // generator + history-buffer substrate) — default OFF; its
+                // hand-heuristics (gates/clamps/thresholds) never ship. Until the
+                // net lands in the present path, the window shows the one
+                // integrator's young samples — the truth, not a stand-in.
+                Err(_) => false,
+            },
+            temporal: TemporalParams {
+                alpha_min: number("GAIA_NATIVE_TEMPORAL_ALPHA_MIN", 0.1)? as f32,
+                depth_tol: number("GAIA_NATIVE_TEMPORAL_DEPTH_TOL", 0.05)? as f32,
+                normal_tol: number("GAIA_NATIVE_TEMPORAL_NORMAL_TOL", 0.85)? as f32,
+                clamp_k: number("GAIA_NATIVE_TEMPORAL_CLAMP_K", 1.5)? as f32,
+                max_history: integer("GAIA_NATIVE_TEMPORAL_MAX_HISTORY", 512)?,
+                still_px: number("GAIA_NATIVE_TEMPORAL_STILL_PX", 0.05)? as f32,
             },
             hud_enabled,
             hud_window: integer("GAIA_NATIVE_HUD_WINDOW", 30)? as usize,
@@ -239,11 +247,20 @@ impl ScryingGlassConfig {
                 })?,
                 Err(_) => false,
             },
+            world_core: WorldCoreParams {
+                seed: integer("GAIA_NATIVE_WORLD_SEED", 0x5eed)? as u64,
+                event_capacity: integer("GAIA_NATIVE_EVENT_CAPACITY", 2_000)? as usize,
+                ..WorldCoreParams::default()
+            },
+            authority_timeout: Duration::from_millis(u64::from(integer(
+                "GAIA_NATIVE_OP_TIMEOUT_MS",
+                5_000,
+            )?)),
+            event_default_limit: integer("GAIA_NATIVE_EVENT_DEFAULT_LIMIT", 200)? as usize,
+            event_limit_max: integer("GAIA_NATIVE_EVENT_LIMIT_MAX", 500)? as usize,
+            max_request_bytes: integer("GAIA_NATIVE_HTTP_MAX_BYTES", 1 << 20)? as usize,
             worker_window,
         };
-        if config.render_width == 0 || config.render_height == 0 {
-            return Err("GAIA_NATIVE_RENDER_W and GAIA_NATIVE_RENDER_H must be positive".into());
-        }
         if config.window_width <= 0.0
             || config.window_height <= 0.0
             || config.panel_width <= 0.0
@@ -251,9 +268,16 @@ impl ScryingGlassConfig {
             || config.panel_margin < 0.0
             || config.fps <= 0.0
             || config.native_port == 0
+            || config.native_canvas_width == 0
+            || config.native_canvas_height == 0
+            || config.world_core.event_capacity == 0
+            || config.authority_timeout.is_zero()
+            || config.event_default_limit == 0
+            || config.event_limit_max == 0
+            || config.max_request_bytes == 0
         {
             return Err(
-                "window dimensions, FPS, and GAIA_NATIVE_PORT must be positive (margin may be zero)"
+                "window/canvas dimensions, FPS, port, authority/event/request limits must be positive (margin may be zero)"
                     .into(),
             );
         }
@@ -390,10 +414,35 @@ fn write_response(
 ) -> std::io::Result<()> {
     write!(
         stream,
-        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n{extra_headers}\r\n",
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: content-type\r\nCache-Control: no-store\r\nConnection: close\r\n{extra_headers}\r\n",
         body.len()
     )?;
     stream.write_all(body)
+}
+
+fn respond_json(stream: &mut TcpStream, status: &str, value: serde_json::Value) {
+    match serde_json::to_vec_pretty(&value) {
+        Ok(body) => {
+            let _ = write_response(
+                stream,
+                status,
+                "application/json; charset=utf-8",
+                &body,
+                "",
+            );
+        }
+        Err(error) => {
+            let _ = write_response(
+                stream,
+                "500 Internal Server Error",
+                "application/json; charset=utf-8",
+                json!({ "ok": false, "error": error.to_string() })
+                    .to_string()
+                    .as_bytes(),
+                "",
+            );
+        }
+    }
 }
 
 fn respond_frame(stream: &mut TcpStream, frame: &CapturedFrame) {
@@ -414,18 +463,37 @@ fn respond_frame(stream: &mut TcpStream, frame: &CapturedFrame) {
     }
 }
 
-/// Shared state the HTTP organs read: the live surface frame, the moving-eye
-/// render channel, and — for the Embodiment — the walking body + its floor.
+enum WorldRequest {
+    Apply {
+        batch: OpBatch,
+        reply: mpsc::Sender<Result<AppliedBatch, String>>,
+    },
+    Snapshot {
+        reply: mpsc::Sender<Result<serde_json::Value, String>>,
+    },
+    Events {
+        since: u64,
+        limit: usize,
+        reply: mpsc::Sender<serde_json::Value>,
+    },
+}
+
+/// HTTP ↔ render-authority channels + embodied debug state.
 struct HttpContext {
     latest: LatestFrame,
-    scry: mpsc::Sender<ScryRequest>,
+    scry: mpsc::Sender<RenderRequest>,
+    world: mpsc::Sender<WorldRequest>,
+    authority_timeout: Duration,
+    event_default_limit: usize,
+    event_limit_max: usize,
+    max_request_bytes: usize,
     player: Arc<Mutex<Player>>,
     ground: Arc<Ground>,
     tick_dt: f32,
 }
 
-/// Read a full HTTP request (headers + any body) honouring Content-Length.
-fn read_request(stream: &mut TcpStream) -> Option<(String, String)> {
+/// Read one bounded HTTP request, including its Content-Length body.
+fn read_request(stream: &mut TcpStream, max_bytes: usize) -> Option<(String, String)> {
     let mut buffer = Vec::with_capacity(4096);
     let mut chunk = [0_u8; 4096];
     let header_end = loop {
@@ -437,8 +505,8 @@ fn read_request(stream: &mut TcpStream) -> Option<(String, String)> {
         if let Some(index) = buffer.windows(4).position(|w| w == b"\r\n\r\n") {
             break index + 4;
         }
-        if buffer.len() > 1 << 20 {
-            return None; // 1 MiB header guard
+        if buffer.len() > max_bytes {
+            return None;
         }
     };
     let headers = String::from_utf8_lossy(&buffer[..header_end]).into_owned();
@@ -452,6 +520,9 @@ fn read_request(stream: &mut TcpStream) -> Option<(String, String)> {
                 .flatten()
         })
         .unwrap_or(0);
+    if header_end.checked_add(content_length)? > max_bytes {
+        return None;
+    }
     while buffer.len() < header_end + content_length {
         let read = stream.read(&mut chunk).ok()?;
         if read == 0 {
@@ -470,7 +541,7 @@ fn handle_http(mut stream: TcpStream, ctx: &HttpContext) {
     let latest = &ctx.latest;
     let scry = &ctx.scry;
     let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-    let Some((headers, body)) = read_request(&mut stream) else {
+    let Some((headers, body)) = read_request(&mut stream, ctx.max_request_bytes) else {
         return;
     };
     let first_line = headers.lines().next().unwrap_or_default().to_owned();
@@ -478,6 +549,143 @@ fn handle_http(mut stream: TcpStream, ctx: &HttpContext) {
     let method = tokens.next().unwrap_or_default();
     let target = tokens.next().unwrap_or_default();
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
+
+    if method == "OPTIONS" {
+        let _ = write_response(
+            &mut stream,
+            "204 No Content",
+            "text/plain; charset=utf-8",
+            b"",
+            "Allow: GET, POST, OPTIONS\r\n",
+        );
+        return;
+    }
+    if path == "/op" && method == "POST" {
+        let value = match serde_json::from_str::<serde_json::Value>(&body) {
+            Ok(value) => value,
+            Err(error) => {
+                respond_json(
+                    &mut stream,
+                    "400 Bad Request",
+                    json!({ "ok": false, "error": format!("op body must be JSON: {error}") }),
+                );
+                return;
+            }
+        };
+        let batch = match parse_op_batch(value) {
+            Ok(batch) => batch,
+            Err(error) => {
+                respond_json(
+                    &mut stream,
+                    "400 Bad Request",
+                    json!({ "ok": false, "error": error }),
+                );
+                return;
+            }
+        };
+        let (reply, receive) = mpsc::channel();
+        if ctx
+            .world
+            .send(WorldRequest::Apply { batch, reply })
+            .is_err()
+        {
+            respond_json(
+                &mut stream,
+                "503 Service Unavailable",
+                json!({ "ok": false, "error": "world authority unavailable" }),
+            );
+            return;
+        }
+        match receive.recv_timeout(ctx.authority_timeout) {
+            Ok(Ok(report)) => respond_json(
+                &mut stream,
+                "200 OK",
+                json!({
+                    "ok": true,
+                    "applied": report.applied,
+                    "entropy": report.entropy,
+                    "latest": report.latest,
+                }),
+            ),
+            Ok(Err(error)) => respond_json(
+                &mut stream,
+                "400 Bad Request",
+                json!({ "ok": false, "error": error }),
+            ),
+            Err(_) => respond_json(
+                &mut stream,
+                "504 Gateway Timeout",
+                json!({ "ok": false, "error": "world authority timed out" }),
+            ),
+        }
+        return;
+    }
+    if path == "/world" && method == "GET" {
+        let (reply, receive) = mpsc::channel();
+        if ctx.world.send(WorldRequest::Snapshot { reply }).is_err() {
+            respond_json(
+                &mut stream,
+                "503 Service Unavailable",
+                json!({ "ok": false, "error": "world authority unavailable" }),
+            );
+            return;
+        }
+        match receive.recv_timeout(ctx.authority_timeout) {
+            Ok(Ok(snapshot)) => respond_json(&mut stream, "200 OK", snapshot),
+            Ok(Err(error)) => respond_json(
+                &mut stream,
+                "500 Internal Server Error",
+                json!({ "ok": false, "error": error }),
+            ),
+            Err(_) => respond_json(
+                &mut stream,
+                "504 Gateway Timeout",
+                json!({ "ok": false, "error": "world authority timed out" }),
+            ),
+        }
+        return;
+    }
+    if path == "/events" && method == "GET" {
+        let query_value = |key: &str| {
+            query.split('&').find_map(|pair| {
+                let (name, value) = pair.split_once('=')?;
+                (name == key).then_some(value)
+            })
+        };
+        let since = query_value("since")
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(0);
+        let limit = query_value("limit")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(ctx.event_default_limit)
+            .min(ctx.event_limit_max);
+        let (reply, receive) = mpsc::channel();
+        if ctx
+            .world
+            .send(WorldRequest::Events {
+                since,
+                limit,
+                reply,
+            })
+            .is_err()
+        {
+            respond_json(
+                &mut stream,
+                "503 Service Unavailable",
+                json!({ "ok": false, "error": "world authority unavailable" }),
+            );
+            return;
+        }
+        match receive.recv_timeout(ctx.authority_timeout) {
+            Ok(events) => respond_json(&mut stream, "200 OK", events),
+            Err(_) => respond_json(
+                &mut stream,
+                "504 Gateway Timeout",
+                json!({ "ok": false, "error": "world authority timed out" }),
+            ),
+        }
+        return;
+    }
 
     // Embodiment debug organs (param-gated by their presence, no keyboard needed):
     // GET /pose returns the body's eye pose; POST /walk injects held keys for N ticks.
@@ -506,6 +714,23 @@ fn handle_http(mut stream: TcpStream, ctx: &HttpContext) {
     }
     // GET /scry — the true name (GRIMOIRE: a screenshot is a scrying).
     // GET /screenshot is kept as an alias for tool compatibility.
+    if path == "/retina" {
+        let params = match parse_retina_query(query) {
+            Ok(params) => params,
+            Err(error) => { let _ = write_response(&mut stream, "400 Bad Request", "text/plain; charset=utf-8", error.as_bytes(), ""); return; }
+        };
+        let (reply_tx, reply_rx) = mpsc::channel();
+        if scry.send(RenderRequest::Retina { params, reply: reply_tx }).is_err() {
+            let _ = write_response(&mut stream, "503 Service Unavailable", "text/plain; charset=utf-8", b"render thread unavailable\n", "");
+            return;
+        }
+        match reply_rx.recv_timeout(Duration::from_secs(5)) {
+            Ok(Ok(json)) => { let _ = write_response(&mut stream, "200 OK", "application/json; charset=utf-8", json.as_bytes(), ""); }
+            Ok(Err(error)) => { let _ = write_response(&mut stream, "500 Internal Server Error", "text/plain; charset=utf-8", error.as_bytes(), ""); }
+            Err(_) => { let _ = write_response(&mut stream, "504 Gateway Timeout", "text/plain; charset=utf-8", b"retina trace timed out\n", ""); }
+        }
+        return;
+    }
     if path != "/scry" && path != "/screenshot" {
         let _ = write_response(
             &mut stream,
@@ -550,10 +775,10 @@ fn handle_http(mut stream: TcpStream, ctx: &HttpContext) {
     };
     let (reply_tx, reply_rx) = mpsc::channel();
     if scry
-        .send(ScryRequest {
+        .send(RenderRequest::Scry(ScryRequest {
             params,
             reply: reply_tx,
-        })
+        }))
         .is_err()
     {
         let _ = write_response(
@@ -763,7 +988,10 @@ fn start_screenshot_server(port: u16, ctx: HttpContext) -> Result<(), String> {
         })
         .map_err(|error| format!("spawn scrying HTTP server: {error}"))?;
     eprintln!(
-        "[scry] GET http://127.0.0.1:{port}/scry (alias: /screenshot; optional pos/yaw/pitch/fov/w/h)"
+        "[scry] GET http://127.0.0.1:{port}/scry (alias: /screenshot; optional pos/yaw/pitch/fov/w/h; lab-only chain: lab=teacher-benchmark)"
+    );
+    eprintln!(
+        "[world-core] POST http://127.0.0.1:{port}/op · GET /world · GET /events"
     );
     eprintln!(
         "[embodiment] GET http://127.0.0.1:{port}/pose · POST http://127.0.0.1:{port}/walk {{keys,yaw?,pitch?,ticks?}}"
@@ -877,6 +1105,9 @@ struct Renderer {
     /// per tick when the set is unchanged, rebuilds only on set change / bound
     /// degradation. Its `merged` tree is what gets uploaded.
     splice: DynamicSplice,
+    /// `/retina` CPU trees + source IDs; cache invalidates with scene geometry.
+    retina_cache: RetinaGeometryCache,
+    retina_epoch: u64,
     /// The dynamic model transforms uploaded last frame; when they change the
     /// BVH is re-spliced and accumulation resets (the honest 2spp-live tradeoff).
     last_models: Vec<[f32; 16]>,
@@ -888,20 +1119,32 @@ struct Renderer {
     int_params: IntegratorParams,
     /// Accumulation frames a /scry moving-eye capture integrates.
     capture_frames: u32,
-    /// RESOLUTION OF GOD — the internal traced resolution. The path trace and
-    /// the accumulation buffer live at this size; the blit upscales to surface.
-    render_width: u32,
-    render_height: u32,
-    /// Upscale mode uploaded to the blit (0 bilinear, 1 nearest).
-    upscale_mode: u32,
-    /// Persistent window accumulation at the TRACE resolution: progressive
-    /// while the eye is still, reset the instant it moves or the surface resizes.
+    /// God's fixed render canvas. Trace, accumulation, temporal buffers, and
+    /// offscreen present remain this size across every window resize.
+    canvas_width: u32,
+    canvas_height: u32,
+    /// Persistent accumulation at God's fixed canvas resolution.
     surface_accum: wgpu::Buffer,
     surface_compute_bg: wgpu::BindGroup,
     surface_blit_bg: wgpu::BindGroup,
     samples_before: u32,
-    /// (eye, yaw, pitch, width, height) the current accumulation belongs to.
-    last_view: Option<([f32; 3], f32, f32, u32, u32)>,
+    /// LIGHT-NOT-DOTS live temporal accumulation state (see `render`).
+    temporal_enabled: bool,
+    temporal_params: TemporalParams,
+    /// Ping-pong PACKED frame buffers (radiance + primary gbuffer, 2 cells/px)
+    /// and history (rgb + accumulated frame count). Parity flips each frame.
+    /// Owned here to keep the GPU buffers alive for the lifetime of `t_bind`.
+    #[allow(dead_code)]
+    t_packed: [wgpu::Buffer; 2],
+    #[allow(dead_code)]
+    t_hist: [wgpu::Buffer; 2],
+    t_bind: [wgpu::BindGroup; 2],
+    /// Frame parity for the ping-pong and the previous-frame camera uniform
+    /// (None until the first temporal frame has run / after an invalidation).
+    t_parity: usize,
+    t_prev: Option<IntegratorUniform>,
+    /// Eye pose the current fixed-canvas accumulation belongs to.
+    last_view: Option<([f32; 3], f32, f32)>,
     offscreen: OffscreenTarget,
     pixel_order: PixelOrder,
     capture_sender: mpsc::Sender<CaptureReady>,
@@ -920,10 +1163,11 @@ impl Renderer {
         bvh_params: &BvhParams,
         refit_params: RefitParams,
         capture_frames: u32,
-        render_width: u32,
-        render_height: u32,
-        upscale_mode: u32,
         draw_own_body: bool,
+        temporal_enabled: bool,
+        temporal_params: TemporalParams,
+        canvas_width: u32,
+        canvas_height: u32,
     ) -> Result<Self, String> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let target = unsafe {
@@ -1015,34 +1259,40 @@ impl Renderer {
         let sky_top = scene.sky_top;
         let sky_horizon = scene.sky_horizon;
 
-        // The accumulation buffer is sized to the INTERNAL trace resolution
-        // (RESOLUTION OF GOD) — the offscreen readback target stays at the
-        // surface resolution (it captures the upscaled window image).
-        let surface_accum = integrator.make_accum(&device, render_width, render_height);
+        // ★ THE RESOLUTION IS 640×480: all rendering resources live at the
+        // fixed IRON canvas. The window surface is display-only.
+        let surface_accum = integrator.make_accum(&device, canvas_width, canvas_height);
         let surface_compute_bg = integrator.compute_bind_group(&device, &surface_accum);
         let surface_blit_bg = integrator.blit_bind_group(&device, &surface_accum);
-        let offscreen = OffscreenTarget::new(&device, format, config.width, config.height);
+        let t_packed = [
+            integrator.make_temporal_packed(&device, canvas_width, canvas_height),
+            integrator.make_temporal_packed(&device, canvas_width, canvas_height),
+        ];
+        let t_hist = [
+            integrator.make_temporal_buffer(&device, canvas_width, canvas_height),
+            integrator.make_temporal_buffer(&device, canvas_width, canvas_height),
+        ];
+        let t_bind = [
+            integrator.temporal_bind_group(
+                &device,
+                &t_packed[0],
+                &t_packed[1],
+                &t_hist[0],
+                &t_hist[1],
+            ),
+            integrator.temporal_bind_group(
+                &device,
+                &t_packed[1],
+                &t_packed[0],
+                &t_hist[1],
+                &t_hist[0],
+            ),
+        ];
+        let offscreen = OffscreenTarget::new(&device, format, canvas_width, canvas_height);
         eprintln!(
-            "[wgpu] traced {render_width}x{render_height} → upscale → surface {}x{} ({}); {format:?}",
-            config.width,
-            config.height,
-            match upscale_mode {
-                1 => "nearest",
-                // Neural is selected: the LIVE surface still presents bilinear
-                // (the neural resolve is ~26× over the 16.67 ms wall — the
-                // honest budget), and neural becomes the DEFAULT /scry A/B
-                // resolve so the accounting is visible per screenshot.
-                2 => "bilinear (live) · neural default on /scry A/B",
-                _ => "bilinear",
-            },
+            "[wgpu] traced God's canvas {canvas_width}x{canvas_height}; surface {}x{} = nearest integer display scale ({format:?})",
+            config.width, config.height,
         );
-        if upscale_mode == 2 {
-            eprintln!(
-                "[onepath] GAIA_NATIVE_UPSCALE=neural — the chartered trace→denoise→upscale resolve \
-                 is the /scry capture A/B (GET /scry?resolve=neural|bilinear|nearest). The 60-fps \
-                 present stays bilinear until the budget wall is ruled (docs/perf/2026-07-17-onepath-budget.md)."
-            );
-        }
         Ok(Self {
             surface,
             device,
@@ -1055,6 +1305,8 @@ impl Renderer {
             refit_params,
             draw_own_body,
             splice,
+            retina_cache: RetinaGeometryCache::default(),
+            retina_epoch: 0,
             last_models,
             camera,
             sun,
@@ -1062,13 +1314,19 @@ impl Renderer {
             sky_horizon,
             int_params,
             capture_frames,
-            render_width,
-            render_height,
-            upscale_mode,
+            canvas_width,
+            canvas_height,
             surface_accum,
             surface_compute_bg,
             surface_blit_bg,
             samples_before: 0,
+            temporal_enabled,
+            temporal_params,
+            t_packed,
+            t_hist,
+            t_bind,
+            t_parity: 0,
+            t_prev: None,
             last_view: None,
             offscreen,
             pixel_order,
@@ -1172,6 +1430,21 @@ impl Renderer {
         bloodbend::bend_applied("scene", &diff.summary());
     }
 
+    /// Re-project authoritative crystal state through the one render scene path.
+    fn rebuild_world_core(
+        &mut self,
+        world_core: &WorldCore,
+        scene_params: &SceneParameters,
+    ) -> Result<(), String> {
+        let mut core = Core::default();
+        ScryingGlassPackage.register(&mut core);
+        world_core.materialize_into(&mut core.world)?;
+        let scene = RenderScene::from_ecs(core.world, scene_params)
+            .map_err(|error| format!("materialize authority state: {error}"))?;
+        self.rebuild_scene(scene);
+        Ok(())
+    }
+
     /// The scene tier of the blast-radius ladder (law 4): swap the render scene,
     /// rebuild the static BVH + dynamic splice over the new leaf triangles, re-
     /// upload the acceleration structure, refresh sun/sky, and reset the window
@@ -1189,6 +1462,8 @@ impl Renderer {
             self.refit_params,
         );
         self.integrator.update_bvh(&self.device, &self.splice.merged);
+        self.retina_epoch = self.retina_epoch.wrapping_add(1);
+        self.retina_cache.clear();
         self.last_models = self.scene.dynamics.model_matrices();
         self.sun = self.scene.sun;
         self.sky_top = self.scene.sky_top;
@@ -1254,26 +1529,25 @@ impl Renderer {
         }
     }
 
-    /// Rebuild the window accumulation buffer (zeroed) for the current surface
-    /// size and drop the accumulated samples — the reset gesture on move/resize.
+    /// Rebuild the fixed-canvas accumulation buffer and drop its samples.
     fn reset_surface_accum(&mut self) {
         let accum = self
             .integrator
-            .make_accum(&self.device, self.render_width, self.render_height);
+            .make_accum(&self.device, self.canvas_width, self.canvas_height);
         self.surface_compute_bg = self.integrator.compute_bind_group(&self.device, &accum);
         self.surface_blit_bg = self.integrator.blit_bind_group(&self.device, &accum);
         self.surface_accum = accum;
         self.samples_before = 0;
     }
 
-    /// MEASURE (RESOLUTION OF GOD, ordeal item 3): the honest per-frame GPU cost
-    /// of the path trace at the CURRENT internal resolution. Dispatches `frames`
-    /// accumulation passes into a throwaway accum from the live spawn camera,
-    /// force-flushing the GPU (`poll(wait)`) after each so the timing is real
-    /// GPU work, not an async submit. Returns (median_ms, mean_ms). Runs once at
-    /// startup off the frame loop, so it never perturbs live frames.
+    /// MEASURE: honest per-frame GPU cost at God's fixed render canvas.
+    /// Dispatches `frames` accumulation passes into a throwaway
+    /// accum from the live spawn camera, force-flushing the GPU
+    /// (`poll(wait)`) after each so the timing is real GPU work, not an
+    /// async submit. Returns (median_ms, mean_ms). Runs once at startup off
+    /// the frame loop, so it never perturbs live frames.
     fn measure_trace_ms(&mut self, frames: u32) -> (f64, f64) {
-        let (width, height) = (self.render_width, self.render_height);
+        let (width, height) = (self.canvas_width, self.canvas_height);
         let accum = self.integrator.make_accum(&self.device, width, height);
         let compute_bg = self.integrator.compute_bind_group(&self.device, &accum);
         let mut samples_before = 0u32;
@@ -1430,6 +1704,8 @@ impl Renderer {
         self.splice.update(&self.static_bvh, &dynamic_tris);
         self.integrator
             .update_bvh(&self.device, &self.splice.merged);
+        self.retina_epoch = self.retina_epoch.wrapping_add(1);
+        self.retina_cache.clear();
         // The node/tri buffers changed — rebuild the bind groups (they bind them)
         // and drop the stale samples (moved geometry invalidates the mean).
         self.reset_surface_accum();
@@ -1444,14 +1720,8 @@ impl Renderer {
             self.config.width = size.width;
             self.config.height = size.height;
             self.surface.configure(&self.device, &self.config);
-            self.offscreen = OffscreenTarget::new(
-                &self.device,
-                self.config.format,
-                self.config.width,
-                self.config.height,
-            );
-            self.reset_surface_accum();
-            self.last_view = None;
+            // The surface alone changed. God's canvas, accumulation, and
+            // offscreen capture remain untouched.
         }
     }
 
@@ -1463,14 +1733,8 @@ impl Renderer {
         self.camera.pitch = pitch;
     }
 
-    fn view_key(&self) -> ([f32; 3], f32, f32, u32, u32) {
-        (
-            self.camera.eye.to_array(),
-            self.camera.yaw,
-            self.camera.pitch,
-            self.config.width,
-            self.config.height,
-        )
+    fn view_key(&self) -> ([f32; 3], f32, f32) {
+        (self.camera.eye.to_array(), self.camera.yaw, self.camera.pitch)
     }
 
     /// Submit ONE traced frame (dispatch → offscreen/surface blit → capture
@@ -1487,17 +1751,18 @@ impl Renderer {
     fn render(&mut self, size: PhysicalSize<u32>) -> Option<wgpu::SubmissionIndex> {
         self.resize(size);
 
-        // Reset accumulation the instant the eye moves (progressive while still).
+        // LIGHT-NOT-DOTS: with temporal accumulation the eye moving is NOT a
+        // reset — the resolve reprojects last frame's light into the new view.
+        // Only the legacy escape-hatch path throws the samples away on move.
         let key = self.view_key();
-        if self.last_view != Some(key) {
+        if !self.temporal_enabled && self.last_view != Some(key) {
             self.reset_surface_accum();
-            self.last_view = Some(key);
         }
+        self.last_view = Some(key);
 
-        // RESOLUTION OF GOD: the path trace runs at the INTERNAL resolution;
-        // the blit upscales it to the surface. `width`/`height` here are the
-        // trace dims (accum + dispatch); the surface is a separate size.
-        let (width, height) = (self.render_width, self.render_height);
+        // The canvas is God's fixed render resolution; the mutable surface is
+        // display-only and receives a nearest integer-scale blit.
+        let (width, height) = (self.canvas_width, self.canvas_height);
         let (surface_w, surface_h) = (self.config.width, self.config.height);
         let mut uniform = IntegratorUniform::build(
             &self.camera,
@@ -1512,19 +1777,28 @@ impl Renderer {
             &self.int_params,
             None,
         );
-        // Aspect must track the SURFACE, not the (possibly differently-shaped)
-        // trace buffer — otherwise the upscale would stretch the image. The
-        // low-res buffer then holds a surface-aspect image (anisotropic pixels),
-        // which the upscale restores to the window's true aspect.
-        let (right, up, _forward) = self.camera.basis();
-        let surface_aspect = surface_w as f32 / surface_h.max(1) as f32;
-        let half = (self.camera.fov_y_radians * 0.5).tan();
-        let right = right * (half * surface_aspect);
-        let up = up * half;
-        uniform.right = [right.x, right.y, right.z, 0.0];
-        uniform.up = [up.x, up.y, up.z, 0.0];
-        // Tell the blit the true surface + upscale mode (params.xy stays trace dims).
-        uniform.surface = [surface_w, surface_h, self.upscale_mode, 0];
+        // `IntegratorUniform::build` already derives camera aspect from the
+        // fixed canvas. The shader letterboxes/pillarboxes this result using
+        // nearest integer display scaling; it never re-renders for the window.
+        uniform.surface = [surface_w, surface_h, 1, 0];
+
+        // LIGHT-NOT-DOTS: hand the resolve the previous frame's camera + dials.
+        if self.temporal_enabled {
+            let t = &self.temporal_params;
+            uniform.temporal = [t.alpha_min, t.depth_tol, t.normal_tol, t.clamp_k];
+            match self.t_prev {
+                Some(prev) => {
+                    uniform.prev_eye = prev.eye;
+                    uniform.prev_right = prev.right;
+                    uniform.prev_up = prev.up;
+                    uniform.prev_forward = prev.forward;
+                    uniform.temporal_flags = [1, t.max_history, t.still_px.to_bits(), 0];
+                }
+                None => {
+                    uniform.temporal_flags = [0, t.max_history, t.still_px.to_bits(), 0];
+                }
+            }
+        }
 
         let surface_frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
@@ -1543,15 +1817,30 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("traced frame + capture"),
             });
-        // One accumulation frame, then present the running mean to both targets.
-        self.integrator.dispatch(
-            &self.queue,
-            &mut encoder,
-            &uniform,
-            &self.surface_compute_bg,
-            width,
-            height,
-        );
+        // LIGHT-NOT-DOTS: temporal path traces THIS frame + reprojects/blends
+        // last frame's accumulated light into the accum the blit reads; the
+        // legacy path dispatches one accumulation frame in place. Either way the
+        // blit below presents `surface_accum` unchanged.
+        if self.temporal_enabled {
+            self.integrator.dispatch_temporal(
+                &self.queue,
+                &mut encoder,
+                &uniform,
+                &self.surface_compute_bg,
+                &self.t_bind[self.t_parity],
+                width,
+                height,
+            );
+        } else {
+            self.integrator.dispatch(
+                &self.queue,
+                &mut encoder,
+                &uniform,
+                &self.surface_compute_bg,
+                width,
+                height,
+            );
+        }
         self.integrator.blit(
             &mut encoder,
             &self.offscreen.view,
@@ -1623,6 +1912,13 @@ impl Renderer {
         }
         let submission = self.queue.submit(Some(encoder.finish()));
         self.samples_before += self.int_params.spp;
+        // LIGHT-NOT-DOTS: this frame's camera becomes next frame's reprojection
+        // source, and the ping-pong parity flips (hist_out→hist_prev, curr_gbuf
+        // →gbuf_prev). Only after temporal actually ran.
+        if self.temporal_enabled {
+            self.t_prev = Some(uniform);
+            self.t_parity ^= 1;
+        }
         if let Some(frame) = surface_frame {
             self.queue.present(frame);
         }
@@ -1633,8 +1929,8 @@ impl Renderer {
     /// arbitrary pose to a per-request offscreen target and read it back. Runs on
     /// the render thread; the surface loop's own accumulation is untouched.
     fn capture_pose(&mut self, params: &ScryParams) -> Result<CapturedFrame, String> {
-        let width = params.width.unwrap_or(self.config.width).max(1);
-        let height = params.height.unwrap_or(self.config.height).max(1);
+        let width = self.canvas_width;
+        let height = self.canvas_height;
         let fov = match params.fov {
             Some(degrees) => {
                 if !(degrees > 0.0 && degrees < 180.0) {
@@ -1653,13 +1949,13 @@ impl Renderer {
             far: self.camera.far,
         };
 
-        // THE ONE RENDER PATH — resolve select. `resolve=neural` (or the
-        // window default GAIA_NATIVE_UPSCALE=neural) captures the chartered
-        // trace→denoise→upscale→present sequence; 0/1 stay the plain blit.
-        let resolve = params.resolve.unwrap_or(self.upscale_mode);
-        if resolve == 2 {
-            return self.capture_pose_neural(&camera, width, height);
+        // ITEM 16 (de-charter): the trace→denoise→upscale chain exists only as
+        // an explicitly named teacher/benchmark LAB surface. Neither a missing
+        // query parameter nor a `resolve` selector can enter it.
+        if params.teacher_benchmark {
+            return self.capture_pose_teacher_benchmark(&camera, width, height);
         }
+        // Fixed canvas capture is the same nearest present path as the window.
 
         // OWN-EYE CULL — the persistent `self.integrator` buffers already carry
         // the OWN-eye-culled geometry (`advance_world` keeps them in lockstep
@@ -1689,7 +1985,7 @@ impl Renderer {
         // Whatever happens below (success or an early `?` error), put the
         // persistent own-eye-culled buffers back before this function returns
         // — the live window's next frame must never see the foreign geometry.
-        let result = self.capture_pose_bilinear(&camera, width, height);
+        let result = self.capture_pose_fixed(&camera, width, height);
         if foreign_splice.is_some() {
             self.integrator
                 .update_bvh(&self.device, &self.splice.merged);
@@ -1697,10 +1993,38 @@ impl Renderer {
         result
     }
 
-    /// The plain bilinear/nearest `/scry` dispatch + readback — split out of
-    /// [`Renderer::capture_pose`] so its OWN-EYE CULL restore (above) always
-    /// runs, on every exit path (including the `?`-propagated errors below).
-    fn capture_pose_bilinear(
+    /// `/retina`: exact primary rays over the tracer's post-transmute leaf
+    /// geometry; no framebuffer, radiance, or secondary-ray path is involved.
+    fn capture_retina(&mut self, params: &RetinaParams) -> Result<String, String> {
+        let width = params.width;
+        let height = params.height;
+        let fov = match params.pose.fov {
+            Some(degrees) if degrees > 0.0 && degrees < 180.0 => degrees.to_radians(),
+            Some(_) => return Err("fov must be between 0 and 180 degrees".into()),
+            None => self.camera.fov_y_radians,
+        };
+        let camera = Camera {
+            eye: params.pose.pos.map(Vec3::from_array).unwrap_or(self.camera.eye),
+            yaw: params.pose.yaw.unwrap_or(self.camera.yaw), pitch: params.pose.pitch.unwrap_or(self.camera.pitch),
+            fov_y_radians: fov, near: self.camera.near, far: self.camera.far,
+        };
+        let culls_own_body = self.scene.retina_culls_own_body(camera.eye, scrying_glass::scene::OWN_EYE_EPSILON_M, self.draw_own_body);
+        let scene = &self.scene;
+        let (bvh, ordered_tags) = self.retina_cache.get_or_build(
+            self.retina_epoch, culls_own_body, &self.bvh_params,
+            || scene.retina_triangles_for_eye(camera.eye, scrying_glass::scene::OWN_EYE_EPSILON_M, self.draw_own_body),
+        );
+        let base = retina::trace(bvh, ordered_tags, &camera, width, height, params.layers);
+        let fovea = params.fovea.iter().map(|level| serde_json::json!({
+            "center": level.center, "radius": level.radius, "scale": level.scale,
+            "image": retina::trace_window(bvh, ordered_tags, &camera, width.saturating_mul(level.scale), height.saturating_mul(level.scale), params.layers, level.center, level.radius),
+        })).collect::<Vec<_>>();
+        serde_json::to_string(&serde_json::json!({"base": base, "fovea": fovea})).map_err(|error| error.to_string())
+    }
+
+    /// Fixed-canvas `/scry` dispatch + readback — split out of
+    /// [`Renderer::capture_pose`] so its OWN-EYE CULL restore always runs.
+    fn capture_pose_fixed(
         &mut self,
         camera: &Camera,
         width: u32,
@@ -1743,7 +2067,26 @@ impl Renderer {
             samples_before += self.int_params.spp;
         }
 
-        // Present the converged mean to a fresh sRGB target, then read it back.
+        // Present the converged mean to a fresh fixed-canvas sRGB target.
+        let mut uniform = IntegratorUniform::build(
+            camera,
+            &self.sun,
+            self.sky_top,
+            self.sky_horizon,
+            width,
+            height,
+            self.integrator.node_count,
+            self.integrator.tri_count,
+            samples_before,
+            &self.int_params,
+            None,
+        );
+        uniform.surface = [width, height, 1, 0];
+        self.queue.write_buffer(
+            &self.integrator.uniform_buf,
+            0,
+            bytemuck::bytes_of(&uniform),
+        );
         let target = OffscreenTarget::new(&self.device, self.config.format, width, height);
         let mut encoder = self
             .device
@@ -1814,18 +2157,15 @@ impl Renderer {
         })
     }
 
-    /// THE ONE RENDER PATH — capture a pose through the chartered neural
-    /// resolve: trace(low, 1 spp) → GPU denoise → GPU neural upscale → present
-    /// (1:1 blit) → readback. The EXACT sequence proven correct headless in
-    /// `examples/onepath_proof.rs` and by the viii2/viii3 ordeals, run here on
-    /// the render thread for a live A/B against the plain bilinear/nearest
-    /// capture (`GET /scry?resolve=bilinear` vs `?resolve=neural`). Off the
-    /// 60-fps surface loop — the neural resolve is ~26× over the frame wall at
-    /// production res (docs/perf/2026-07-17-onepath-budget.md), so this is the
-    /// accounting-visible capture surface, not the live present. Traces the
-    /// STATIC BVH (geometry-only AOV guide + radiance); dynamics are absent
-    /// from the capture, which is honest for a resolve-quality A/B.
-    fn capture_pose_neural(
+    /// TEACHER/BENCHMARK LAB SURFACE (ITEM 16): trace(low, 1 spp) → GPU
+    /// denoise → GPU neural upscale → 1:1 present → readback. This historical
+    /// chain is de-chartered: only `GET /scry?lab=teacher-benchmark` enters it;
+    /// no present-path or resolve default can select it. The sequence remains
+    /// available for the headless proofs in `examples/onepath_proof.rs` and the
+    /// viii2/viii3 ordeals. It traces the STATIC BVH (geometry-only AOV guide +
+    /// radiance); dynamics are absent, appropriate for a resolve-quality lab
+    /// comparison and never represented as live output.
+    fn capture_pose_teacher_benchmark(
         &mut self,
         camera: &Camera,
         width: u32,
@@ -1922,7 +2262,7 @@ impl Renderer {
         // capture uses, so the A/B differs only in the resolve.
         let cells: Vec<[f32; 4]> = neural.iter().map(|c| [c.x, c.y, c.z, 1.0]).collect();
         let present = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("neural present accum"),
+            label: Some("teacher benchmark present accum"),
             size: (cells.len() * 16).max(16) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
@@ -1954,10 +2294,14 @@ impl Renderer {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("neural scry present + capture"),
+                label: Some("teacher benchmark present + capture"),
             });
-        self.integrator
-            .blit(&mut encoder, &target.view, &blit_bg, "neural scry present");
+        self.integrator.blit(
+            &mut encoder,
+            &target.view,
+            &blit_bg,
+            "teacher benchmark present",
+        );
         let slot = &target.slots[0];
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
@@ -1994,10 +2338,10 @@ impl Renderer {
         let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
         done_rx
             .recv()
-            .map_err(|error| format!("neural scry readback channel closed: {error}"))??;
+            .map_err(|error| format!("teacher benchmark readback channel closed: {error}"))??;
         let mapped = buffer
             .get_mapped_range(..)
-            .map_err(|error| format!("neural scry framebuffer map: {error}"))?;
+            .map_err(|error| format!("teacher benchmark framebuffer map: {error}"))?;
         let row_bytes = (width * BYTES_PER_PIXEL) as usize;
         let mut rgba = Vec::with_capacity(row_bytes * height as usize);
         for row in mapped
@@ -2029,16 +2373,79 @@ struct ScryParams {
     yaw: Option<f32>,
     pitch: Option<f32>,
     fov: Option<f32>,
-    width: Option<u32>,
-    height: Option<u32>,
-    /// The resolve to capture with: 0 bilinear, 1 nearest, 2 neural. Absent =
-    /// the window's GAIA_NATIVE_UPSCALE default. THE ONE RENDER PATH A/B knob.
-    resolve: Option<u32>,
+    /// Explicit lab gate for the de-chartered teacher/benchmark chain.
+    teacher_benchmark: bool,
 }
 
 struct ScryRequest {
     params: ScryParams,
     reply: mpsc::Sender<Result<CapturedFrame, String>>,
+}
+
+enum RenderRequest {
+    Scry(ScryRequest),
+    Retina { params: RetinaParams, reply: mpsc::Sender<Result<String, String>> },
+}
+
+#[derive(Clone, Debug)]
+struct FoveaParams {
+    center: [f32; 2],
+    radius: f32,
+    scale: u32,
+}
+
+#[derive(Clone, Debug)]
+struct RetinaParams {
+    pose: ScryParams,
+    width: u32,
+    height: u32,
+    layers: RetinaLayers,
+    fovea: Vec<FoveaParams>,
+}
+
+fn parse_retina_query(query: &str) -> Result<RetinaParams, String> {
+    let mut pose = ScryParams::default();
+    let mut width = 64;
+    let mut height = 64;
+    let mut layers = RetinaLayers { depth: true, normal: true, entity_id: true, material_id: true, world_pos: true };
+    let mut fovea = Vec::new();
+    for pair in query.split('&').filter(|part| !part.is_empty()) {
+        let (key, value) = pair.split_once('=').ok_or_else(|| format!("query segment {pair:?} must be key=value"))?;
+        if key == "fovea" {
+            for level in value.split(';') {
+                let values = level.split(',').collect::<Vec<_>>();
+                if values.len() != 4 { return Err("fovea must be center_x,center_y,radius,scale (semicolon separates levels)".into()); }
+                let center = [parse_finite_f32(values[0], "fovea.center_x")?, parse_finite_f32(values[1], "fovea.center_y")?];
+                let radius = parse_finite_f32(values[2], "fovea.radius")?;
+                let scale = values[3].parse::<u32>().map_err(|_| format!("fovea.scale must be a positive integer, got {:?}", values[3]))?;
+                if !(0.0..=1.0).contains(&center[0]) || !(0.0..=1.0).contains(&center[1]) || !(radius > 0.0 && radius <= 1.0) || scale == 0 { return Err("fovea needs center in 0..=1, radius in 0..=1, scale > 0".into()); }
+                fovea.push(FoveaParams { center, radius, scale });
+            }
+            continue;
+        }
+        if key == "layers" {
+            layers = RetinaLayers::default();
+            for layer in value.split(',') {
+                match layer { "depth" => layers.depth = true, "normal" => layers.normal = true, "entity-id" | "entity_id" => layers.entity_id = true, "material-id" | "material_id" => layers.material_id = true, "world-pos" | "world_pos" => layers.world_pos = true, "motion" => return Err("motion is UNVERIFIED: no previous-frame plumbing".into()), other => return Err(format!("unknown retina layer {other:?}")) }
+            }
+            continue;
+        }
+        if key == "w" || key == "h" {
+            let dimension = value
+                .parse::<u32>()
+                .ok()
+                .filter(|dimension| *dimension > 0)
+                .ok_or_else(|| format!("{key} must be a positive integer, got {value:?}"))?;
+            if key == "w" { width = dimension; } else { height = dimension; }
+            continue;
+        }
+        let one = parse_scry_query(pair)?;
+        if one.pos.is_some() { pose.pos = one.pos; }
+        if one.yaw.is_some() { pose.yaw = one.yaw; }
+        if one.pitch.is_some() { pose.pitch = one.pitch; }
+        if one.fov.is_some() { pose.fov = one.fov; }
+    }
+    Ok(RetinaParams { pose, width, height, layers, fovea })
 }
 
 fn parse_finite_f32(value: &str, name: &str) -> Result<f32, String> {
@@ -2073,36 +2480,12 @@ fn parse_scry_query(query: &str) -> Result<ScryParams, String> {
             "yaw" => params.yaw = Some(parse_finite_f32(value, "yaw")?),
             "pitch" => params.pitch = Some(parse_finite_f32(value, "pitch")?),
             "fov" => params.fov = Some(parse_finite_f32(value, "fov")?),
-            "resolve" => {
-                params.resolve = Some(match value.trim().to_ascii_lowercase().as_str() {
-                    "bilinear" => 0,
-                    "nearest" => 1,
-                    "neural" => 2,
-                    other => {
-                        return Err(format!(
-                            "resolve must be bilinear, nearest, or neural, got {other:?}"
-                        ));
-                    }
-                });
-            }
-            "w" => {
-                params.width = Some(
-                    value
-                        .parse::<u32>()
-                        .ok()
-                        .filter(|width| *width > 0)
-                        .ok_or_else(|| format!("w must be a positive integer, got {value:?}"))?,
-                )
-            }
-            "h" => {
-                params.height = Some(
-                    value
-                        .parse::<u32>()
-                        .ok()
-                        .filter(|height| *height > 0)
-                        .ok_or_else(|| format!("h must be a positive integer, got {value:?}"))?,
-                )
-            }
+            "lab" => match value.trim().to_ascii_lowercase().as_str() {
+                "teacher-benchmark" => params.teacher_benchmark = true,
+                other => {
+                    return Err(format!("lab must be teacher-benchmark, got {other:?}"));
+                }
+            },
             other => return Err(format!("unknown scry parameter {other:?}")),
         }
     }
@@ -2168,8 +2551,17 @@ fn main() {
         core.package("scrying-glass").unwrap().name,
         core.package("scrying-glass").unwrap().version
     );
-    let loaded = load_world_dir(&config.world_path, &mut core.world)
-        .unwrap_or_else(|error| panic!("load GAIA_WORLD {}: {error}", config.world_path.display()));
+    let world_core = WorldCore::open(&config.world_path, config.world_core.clone())
+        .unwrap_or_else(|error| panic!("open GAIA_WORLD {}: {error}", config.world_path.display()));
+    world_core
+        .materialize_into(&mut core.world)
+        .unwrap_or_else(|error| panic!("materialize crystal authority: {error}"));
+    let scene_names: Vec<String> = world_core
+        .realm()
+        .scene_names()
+        .map(str::to_owned)
+        .collect();
+    let entity_count = world_core.realm().authored_entity_count();
     let chain_start = Instant::now();
     let render_scene = RenderScene::from_ecs(std::mem::take(&mut core.world), &config.scene)
         .unwrap_or_else(|error| panic!("materialize GAIA world render: {error}"));
@@ -2183,9 +2575,9 @@ fn main() {
     // (printed, never gated — Rite III ordeal item 5).
     eprintln!(
         "[world] {} scene(s)={:?} entities={} chains={} clusters={} transmute={chain_millis:.1}ms",
-        loaded.path.display(),
-        loaded.scenes,
-        loaded.entity_count,
+        config.world_path.display(),
+        scene_names,
+        entity_count,
         render_scene.chains.len(),
         cluster_count,
     );
@@ -2267,8 +2659,16 @@ fn main() {
 
             // The Embodiment: the world's own leaf triangles become the floor
             // (exact geometry, view-independent — never a camera's coarse cut),
-            // and the world spawn pose becomes a walking body.
-            let ground = Arc::new(Ground::from_positions(&render_scene.leaf_positions()));
+            // and the world spawn pose becomes a walking body. IRON SWEEP:
+            // floor cutoff / probe count / column epsilon are `PlayerParams`
+            // fields (env-overridable), so `player_params` is read before the
+            // floor set is built and threaded through explicitly — defaults
+            // reproduce the old `Ground::from_positions` behavior exactly.
+            let player_params = PlayerParams::from_env().map_err(std::io::Error::other)?;
+            let ground = Arc::new(Ground::from_positions_with_params(
+                &render_scene.leaf_positions(),
+                &player_params,
+            ));
             // The spawn eye pose defaults to the world's own spawn component; each
             // axis + yaw may be overridden by an explicit env param so the window
             // the Architect opens faces the realm (item 4 vantage). No frozen
@@ -2300,7 +2700,6 @@ fn main() {
             let spawn_yaw =
                 spawn_axis("GAIA_NATIVE_SPAWN_YAW", render_scene.camera.yaw)
                     .map_err(std::io::Error::other)?;
-            let player_params = PlayerParams::from_env().map_err(std::io::Error::other)?;
             let player = Arc::new(Mutex::new(Player::new(
                 player_params,
                 spawn_eye,
@@ -2321,10 +2720,11 @@ fn main() {
                 &config.bvh,
                 config.refit,
                 config.capture_frames,
-                config.render_width,
-                config.render_height,
-                config.upscale_mode,
                 config.draw_own_body,
+                config.temporal_enabled,
+                config.temporal,
+                config.native_canvas_width,
+                config.native_canvas_height,
             )
             .map_err(std::io::Error::other)?;
             // DAS BLUTBÄNDIGEN — B0 DATA DOOR. Seed the live bend state from the
@@ -2347,26 +2747,29 @@ fn main() {
                 )
             });
             {
-                // MEASURE (item 3): print the honest GPU trace cost at the
-                // configured internal resolution before the frame loop starts.
+                // MEASURE: print fixed God's-canvas trace cost.
                 let mut renderer = renderer;
                 renderer.bloodbend = bloodbend_state;
                 let (median, mean) = renderer.measure_trace_ms(60);
                 eprintln!(
-                    "[frame] trace {}x{} → surface {}x{}: median {median:.2}ms mean {mean:.2}ms/frame (spp={}, 60-frame sample)",
-                    config.render_width,
-                    config.render_height,
-                    config.window_width as u32,
-                    config.window_height as u32,
+                    "[frame] trace {}x{} God's canvas: median {median:.2}ms mean {mean:.2}ms/frame (spp={}, 60-frame sample)",
+                    renderer.canvas_width,
+                    renderer.canvas_height,
                     config.integrator.spp,
                 );
                 let renderer_moved = renderer;
-                let (scry_tx, scry_rx) = mpsc::channel::<ScryRequest>();
+                let (scry_tx, scry_rx) = mpsc::channel::<RenderRequest>();
+                let (world_tx, world_rx) = mpsc::channel::<WorldRequest>();
                 start_screenshot_server(
                     native_port,
                     HttpContext {
                         latest,
                         scry: scry_tx,
+                        world: world_tx,
+                        authority_timeout: config.authority_timeout,
+                        event_default_limit: config.event_default_limit,
+                        event_limit_max: config.event_limit_max,
+                        max_request_bytes: config.max_request_bytes,
                         player: player.clone(),
                         ground: ground.clone(),
                         tick_dt,
@@ -2382,12 +2785,17 @@ fn main() {
                 let hud_overlay = overlay.clone();
                 let hud_enabled = config.hud_enabled;
                 let hud_window = config.hud_window;
+                let authority_scene_params = config.scene.clone();
                 thread::Builder::new()
                     .name("gaia-render".into())
                     .spawn(move || {
                         let mut renderer = renderer_moved;
+                        let mut world_core = world_core;
                         run_render_loop(
                             &mut renderer,
+                            &mut world_core,
+                            &authority_scene_params,
+                            &world_rx,
                             &window,
                             &render_player,
                             &render_ground,
@@ -2442,12 +2850,15 @@ fn main() {
 #[allow(clippy::too_many_arguments)]
 fn run_render_loop(
     renderer: &mut Renderer,
+    world_core: &mut WorldCore,
+    authority_scene_params: &SceneParameters,
+    world_rx: &mpsc::Receiver<WorldRequest>,
     window: &tauri::Window,
     render_player: &Arc<Mutex<Player>>,
     render_ground: &Arc<Ground>,
     tick_dt: f32,
     render_interval: Duration,
-    scry_rx: &mpsc::Receiver<ScryRequest>,
+    scry_rx: &mpsc::Receiver<RenderRequest>,
     bend_rx: Option<&mpsc::Receiver<Bend>>,
     running: &Arc<AtomicBool>,
     hud_overlay: &tauri::webview::Webview<tauri::Wry>,
@@ -2483,12 +2894,53 @@ fn run_render_loop(
         // Service the map callbacks of the frame completed last iteration
         // (non-blocking) — keeps the /scry capture ring draining.
         let _ = renderer.device.poll(wgpu::PollType::Poll);
+        // Incantations apply + journal on the render owner, then rebuild the
+        // derived scene before HTTP receives success.
+        while let Ok(request) = world_rx.try_recv() {
+            match request {
+                WorldRequest::Apply { batch, reply } => {
+                    let result = world_core.apply(batch).and_then(|report| {
+                        let rebuild = report.applied.iter().any(|op| match op {
+                            Op::Set(_) => true,
+                            Op::Other { op, .. } => {
+                                matches!(op.as_str(), "spawn" | "despawn" | "clear")
+                            }
+                            _ => false,
+                        });
+                        if rebuild {
+                            renderer.rebuild_world_core(world_core, authority_scene_params)?;
+                        }
+                        eprintln!(
+                            "[world-core] entropy={} latest={} applied={} Steiner frames={}",
+                            report.entropy,
+                            report.latest,
+                            report.applied.len(),
+                            world_core.journal_frame_count().unwrap_or(0),
+                        );
+                        Ok(report)
+                    });
+                    let _ = reply.send(result);
+                }
+                WorldRequest::Snapshot { reply } => {
+                    let _ = reply.send(world_core.snapshot_json());
+                }
+                WorldRequest::Events {
+                    since,
+                    limit,
+                    reply,
+                } => {
+                    let _ = reply.send(world_core.events_json(since, limit));
+                }
+            }
+        }
         // Service moving-eye requests off the frame loop's hot path.
         // /scry's wait_indefinitely also completes `pending` — each scry
         // momentarily collapses the overlap; harmless (verification organ).
         while let Ok(request) = scry_rx.try_recv() {
-            let frame = renderer.capture_pose(&request.params);
-            let _ = request.reply.send(frame);
+            match request {
+                RenderRequest::Scry(request) => { let _ = request.reply.send(renderer.capture_pose(&request.params)); }
+                RenderRequest::Retina { params, reply } => { let _ = reply.send(renderer.capture_retina(&params)); }
+            }
         }
         // DAS BLUTBÄNDIGEN — drain the file-watch. Coalesce a burst of mtime
         // bumps into ONE apply per surface this frame (an editor may touch a

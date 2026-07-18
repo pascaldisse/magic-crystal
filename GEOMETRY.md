@@ -1,5 +1,21 @@
 # Geometry — hybrid polygon/voxel/SDF architecture (rust-port)
 
+> **SUPERSEDED 2026-07-18** by RENDER.md §1 (two-act law: trace → THE NET →
+> screen — Architect, whip 168, spec-concordance item 5). This entire
+> document is the PRE-PIVOT deferred-raster ruling: it assumes a rasterized
+> G-buffer as the convergence point for all geometry backends, and §5
+> explicitly SKIPS hardware ray tracing as "a second renderer alongside the
+> deferred rasterizer." That premise is dead — RENDER.md §1 makes tracing
+> the ONLY geometry door ("the ray door, not the raster door"); there is no
+> raster path left to converge into. RENDER.md §1 now owns all normative
+> geometry-pipeline law. Nothing below is normative; kept verbatim as
+> LINEAGE per adversary-charter disclosure discipline (never silent
+> erasure). Do not extend, cite, or implement against this document.
+
+---
+
+## LINEAGE — pre-pivot deferred-raster ruling (superseded 2026-07-18, kept verbatim)
+
 § scope → the rendering/authoring model for ALL solid geometry backends in
 client-rs, superseding "polygons only" as an assumption. Ruling doc, not a
 proposal — content below is settled; extend by appending, not rewriting.

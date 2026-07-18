@@ -1,5 +1,19 @@
 # RITE IX — THE CHAIN TAKES FLESH (proposal · Guardian clone lane draft, 07-17)
 
+> **SUPERSEDED 2026-07-18** (Architect, whip 168, spec-concordance item 11).
+> The view-dependent coarse/fine cluster CUT this rite builds toward
+> ("the Chain's cut," IX-1's "cut follows the flesh") and its "interim
+> until the chain lands" design (OPEN 5: fragments draw full-res
+> un-chained until the chain lands) both presuppose a cluster-raster
+> geometry pipeline with a view-dependent level cut — struck by RENDER.md
+> §1's two-act law. Skinned/dynamic geometry emits RAY-NATIVE into the ONE
+> BVH world exactly like static matter (Rite V precedent, dynamic BVH
+> splice); there is no cut to follow and no interim tier to wait on. The
+> weld this rite names (skinned mesh → shared geometry path, no side door)
+> still stands as INTENT; the CUT MECHANISM below does not. Kept as
+> LINEAGE per adversary-charter disclosure discipline. Nothing below is
+> normative until re-drafted against the two-act law.
+
 Status: PROPOSAL. Prime-Guardian reviews under the Architect's delegation
 (NARUKO.md rulings 07-17, ruling 7: "SKINNED BODIES THROUGH THE CLUSTER
 PIPELINE — the Nanite answer, cost ∝ pixels; 'traced LOD' STRUCK; LODs

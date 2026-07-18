@@ -21,8 +21,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub const MAGIC: [u8; 4] = *b"CBDG";
-/// v2 = chunked (header + pages + directory). v1 was the whole-file blob.
-pub const FORMAT_VERSION: u16 = 2;
+/// v3 = entropy-derived mandatory-METIS bake semantics; v2 was chunked with
+/// fixed-seed/fallback partition semantics; v1 was the whole-file blob.
+pub const FORMAT_VERSION: u16 = 3;
 /// Fixed header size in bytes.
 pub const HEADER_LEN: usize = 24;
 const NO_ROOT: u32 = u32::MAX;
@@ -71,7 +72,7 @@ pub struct Directory {
     pub input_tri_count: u32,
     pub partitioner: String,
     pub levels: Vec<Vec<u32>>,
-    /// Group records (child/parent sets, shared LOD sphere + error).
+    /// Group records (superseded bake-lineage bounds/error + links).
     pub groups: Vec<Group>,
     /// Page index table (order = page id).
     pub pages: Vec<PageRef>,

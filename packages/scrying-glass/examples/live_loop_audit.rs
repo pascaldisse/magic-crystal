@@ -3,10 +3,10 @@
 //! The contradiction: the merged 60-FPS `perf_audit` PASSES (front 11.26 ms /
 //! wide 13.23 ms at 900x600, judged on the CPU/GPU-OVERLAP pipelined wall) yet
 //! the LIVE window's HUD reads 27.5-34.4 ms (~30 fps) at the vista pose. This
-//! harness replicates `run_render_loop`'s EXACT per-frame sequence — NOT the
-//! audit's overlap shape — at the live defaults (640x480, spp 2, NO medium in
-//! the surface path, vista pose) and phase-splits it, then measures the same
-//! frame under the proven overlap lever for the delta.
+//! harness replicates `run_render_loop`'s historical per-frame sequence — NOT
+//! the audit's overlap shape — on an EXPLICIT LAB trace/blit surface (the live
+//! present no longer has an internal resolution or upscale mode), and phase-
+//! splits it before measuring the overlap lever's delta.
 //!
 //! Live serial per-frame (mirrors `Renderer::advance_world` + `Renderer::render`
 //! minus the surface `present`, which a headless host cannot vsync):
@@ -67,7 +67,6 @@ fn naruko_params() -> SceneParameters {
         ],
         camera_yaw: env_f32("GAIA_NATIVE_CAMERA_YAW", 0.0),
         camera_pitch: env_f32("GAIA_NATIVE_CAMERA_PITCH", 0.0),
-        cluster_error_threshold: 1.0,
         tick_dt: 1.0 / 60.0,
         sun: SunDefaults {
             sun_color: "#ffe2b0".into(),
@@ -136,10 +135,12 @@ fn main() {
         panic!("[live-audit] no GPU adapter on this host — cannot measure");
     };
 
-    let w = env_u32("GAIA_NATIVE_RENDER_W", 640);
-    let h = env_u32("GAIA_NATIVE_RENDER_H", 480);
-    let surf_w = env_u32("GAIA_NATIVE_WIDTH", 960);
-    let surf_h = env_u32("GAIA_NATIVE_HEIGHT", 640);
+    // Historical trace/blit accounting lives only on this explicit lab
+    // surface. These dials intentionally cannot configure the native window.
+    let w = env_u32("GAIA_LAB_TRACE_W", 640);
+    let h = env_u32("GAIA_LAB_TRACE_H", 480);
+    let surf_w = env_u32("GAIA_LAB_SURFACE_W", 960);
+    let surf_h = env_u32("GAIA_LAB_SURFACE_H", 640);
     let warmup = env_u32("GAIA_AUDIT_WARMUP", 8);
     let frames = env_u32("GAIA_AUDIT_FRAMES", 80);
     let budget_ms = 1000.0 / 60.0;
@@ -156,7 +157,10 @@ fn main() {
     int_params.max_bounces = env_u32("GAIA_NATIVE_MAX_BOUNCES", 4);
 
     let bvh_params = BvhParams::default();
-    let static_bvh = Bvh::build(&scene.leaf_triangles(), &bvh_params);
+    let static_triangles = scene.leaf_triangles();
+    let t = Instant::now();
+    let static_bvh = Bvh::build(&static_triangles, &bvh_params);
+    let static_build_ms = t.elapsed().as_secs_f64() * 1e3;
 
     // Warm to the composed mid-stride steady state (coexist precedent).
     let body = Body::from_preset(&Preset::nari());
@@ -185,12 +189,13 @@ fn main() {
         far: params.far,
     };
     eprintln!(
-        "[live-audit] {w}x{h} internal, surface {surf_w}x{surf_h}, spp {}, vista eye={:?} yaw={} — {} static / {} dynamic tris, {} bodies",
+        "[live-audit:lab] trace {w}x{h}, benchmark surface {surf_w}x{surf_h}, spp {}, vista eye={:?} yaw={} — {} static / {} dynamic tris, {} static BVH nodes, static build {static_build_ms:.3} ms, {} bodies",
         int_params.spp,
         params.camera_position,
         params.camera_yaw,
-        scene.leaf_triangles().len(),
+        static_triangles.len(),
         scene.dynamic_leaf_triangles().len(),
+        static_bvh.nodes.len(),
         scene.bodies.len(),
     );
 

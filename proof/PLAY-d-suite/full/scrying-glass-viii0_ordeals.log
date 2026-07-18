@@ -1,0 +1,14 @@
+[build-lock] scrying-glass-viii0_ordeals acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running tests/viii0_ordeals.rs (target/debug/deps/viii0_ordeals-167fcf2c73609612)
+
+running 6 tests
+test ban_aov_signature_takes_current_frame_inputs_only ... ok
+test ban_no_temporal_vocabulary_in_the_new_aov_error_module ... ok
+test aov_off_matches_pre_atom_golden_hash ... ok
+test aov_export_is_deterministic_cold_run ... ok
+test reference_accumulation_is_reproducible ... ok
+test error_metric_discriminates_a_real_gpu_difference ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
+

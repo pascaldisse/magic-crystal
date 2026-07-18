@@ -18,14 +18,19 @@ pub mod broadphase;
 pub mod building;
 pub mod collision;
 pub mod constraint;
+pub mod fluid;
+pub mod fluid_kernel;
 pub mod hash;
 pub mod mat3;
 pub mod math;
 pub mod particles;
+pub mod pointgrid;
 pub mod rigid;
 pub mod solver;
 
 pub use collision::{Collider, Contact, ContactMaterial, Triangle};
+pub use fluid_kernel::{poly6, spiky_grad, FluidConfig};
+pub use pointgrid::PointGrid;
 pub use constraint::{
     default_bond_love, Bond, DistanceConstraint, FractureEvent, BALSA_DENSITY, BOND_LOVE_FLOOR,
     STONE_DENSITY,

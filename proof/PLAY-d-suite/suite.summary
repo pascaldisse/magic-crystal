@@ -1,0 +1,14 @@
+[build-lock] acquired after 76s
+package:crystal	rc=0	seconds=11
+package:aether	rc=0	seconds=0
+package:char-editor	rc=0	seconds=20
+package:elements	rc=0	seconds=204
+package:fracture	rc=0	seconds=15
+package:homunculus	rc=0	seconds=1
+package:jormungandr	rc=0	seconds=10
+package:kami	rc=0	seconds=3
+package:oracle	rc=101	seconds=27
+[build-lock] continuation acquired after 55s
+scrying-glass:bloodbend_ordeals	rc=0	seconds=9
+scrying-glass:body_sigil	rc=0	seconds=2
+scrying-glass:floor_fallthrough	rc=0	seconds=12

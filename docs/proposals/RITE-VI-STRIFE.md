@@ -1,5 +1,16 @@
 # RITE VI — STRIFE (proposal · Guardian clone lane draft, 07-16)
 
+> **SUPERSEDED 2026-07-18** (Architect, whip 168, spec-concordance item
+> 4+9). This rite's "elements-as-is (XPBD substrate)" framing (OPEN #1)
+> treats the classical XPBD solver as Rite VI's DESTINATION physics.
+> PHYSICS.md §0 (07-18) reformulates this: Ananke assembles constraints →
+> THE NET solves → state; classical XPBD (`packages/elements`) is
+> TEACHER + LIVE SCAFFOLD until the P-N1 cutover, never the destination.
+> Re-read this rite's solver/XPBD language as scaffold-stage work, not
+> final architecture — the weld (realm → bodies → fracture) and
+> Empedocles love/strife law stand; the SOLVER they assumed permanent
+> does not. Kept as LINEAGE per adversary-charter disclosure discipline.
+
 Status: PROPOSAL. Prime-Guardian reviews; Architect rules. Nothing here
 binds until ruled.
 

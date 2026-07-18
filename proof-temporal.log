@@ -1,0 +1,40 @@
+[package] scrying-glass v0.1.0 registered
+[world] /Users/pascaldisse/projects/magic-crystal-light/packages/scrying-glass/../../worlds/naruko scene(s)=["main"] entities=45 chains=23 clusters=913 transmute=73.2ms
+[embodiment] spawn eye=Vec3(0.0, 7.0, 44.0) yaw=0 floor_triangles=10464 tick_dt=0.016666668
+[pleroma] BVH nodes=15487 triangles=23192 (static 12368 + dynamic 10824) build=13.4ms; 22 dynamic entit(ies) — living layer
+[pleroma] traced integrator spp=2 bounces=4 rr_start=2 — first_light is dead
+[wgpu] traced 640x480 → upscale → surface 1920x1280 (bilinear); Bgra8UnormSrgb
+[frame] trace 640x480 → surface 960x640: median 8.40ms mean 11.94ms/frame (spp=2, 60-frame sample)
+
+thread 'main' (216151) panicked at /Users/pascaldisse/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.11.5/src/app.rs:1425:11:
+Failed to setup app: error encountered during setup hook: bind GAIA_NATIVE_PORT 8433: Address already in use (os error 48)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'main' (216151) panicked at /rustc/4a4ef493e3a1488c6e321570238084b38948f6db/library/core/src/panicking.rs:225:5:
+panic in a function that cannot unwind
+stack backtrace:
+   0:        0x1055e2480 - <std::sys::backtrace::BacktraceLock::print::DisplayBacktrace as core::fmt::Display>::fmt::hcde33371d8bba08b
+   1:        0x1055f23bc - core::fmt::write::h8a52dffc4df6d016
+   2:        0x1055bec68 - std::io::Write::write_fmt::h2fd0abc6933d662d
+   3:        0x1055ca1ec - std::panicking::default_hook::{{closure}}::h1af7615be47c43ab
+   4:        0x1055ca0ec - std::panicking::default_hook::hdcc779fdbf67ae29
+   5:        0x1055ca5e4 - std::panicking::panic_with_hook::h455d3ea9bab4bcbd
+   6:        0x1055ca2c4 - std::panicking::panic_handler::{{closure}}::h2068a0d88ec25e56
+   7:        0x1055c6bf0 - std::sys::backtrace::__rust_end_short_backtrace::h7bea34f9056001ee
+   8:        0x1055b7610 - __rustc[4425a7e20b4c8619]::rust_begin_unwind
+   9:        0x10563f500 - core::panicking::panic_nounwind_fmt::h8c81167db7c868a6
+  10:        0x10563f488 - core::panicking::panic_nounwind::h08cd4682ec06fdd2
+  11:        0x10563f5dc - core::panicking::panic_cannot_unwind::he03186bb60af78b0
+  12:        0x10519cad4 - tao::platform_impl::platform::app_delegate::did_finish_launching::h3b4eeb9268e329ae
+  13:        0x183ce39bc - <unknown>
+  14:        0x183d7008c - <unknown>
+  15:        0x183d6ffd0 - <unknown>
+  16:        0x183cb23d0 - <unknown>
+  17:        0x1854e74a4 - <unknown>
+  18:        0x1881245e8 - <unknown>
+  19:        0x188124380 - <unknown>
+  20:        0x1881229c4 - <unknown>
+  21:        0x1881225d8 - <unknown>
+  22:        0x18550ffbc - <unknown>
+  23:        0x18550fdb4 - <unknown>
+thread caused non-unwinding panic. aborting.

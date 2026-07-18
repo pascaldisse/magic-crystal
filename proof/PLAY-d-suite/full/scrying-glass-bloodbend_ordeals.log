@@ -1,0 +1,15 @@
+[build-lock] scrying-glass-bloodbend_ordeals acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.21s
+     Running tests/bloodbend_ordeals.rs (target/debug/deps/bloodbend_ordeals-60000dec8d5953d5)
+
+running 7 tests
+test journal_snapshots_previous_before_apply ... ok
+test shader_journal_snapshots_previous_before_swap ... ok
+test no_op_bend_skips_journal_and_rebuild ... ok
+test broken_json_is_rejected_and_world_hash_unchanged ... ok
+test toctou_validated_bytes_match_stored_last_good_by_construction ... ok
+test valid_crate_recolor_is_applied_and_reflected ... ok
+test bad_wgsl_keeps_old_pipeline_and_valid_swap_works ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+

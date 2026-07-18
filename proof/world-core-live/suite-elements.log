@@ -1,0 +1,94 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/lib.rs (target/debug/deps/elements-2c071961db34bb8e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/adv_chain.rs (target/debug/deps/adv_chain-97019affb17f5fa7)
+
+running 1 test
+test adv_chain_three_walls ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/adv_margin.rs (target/debug/deps/adv_margin-4be0ab7363625468)
+
+running 2 tests
+test adv_two_sided_overshoot ... ok
+test adv_grid_boundary_superset ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/diag.rs (target/debug/deps/diag-9160f76f81ddff5e)
+
+running 1 test
+test diag_incline ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.87s
+
+     Running tests/ordeals.rs (target/debug/deps/ordeals-78904511bd19d5cc)
+
+running 16 tests
+test ordeal_fracture_weak_link_breaks ... ok
+test ordeal_momentum_gate_catches_injected_leak - should panic ... ok
+test ordeal_restitution_apex_matches_param ... ok
+test ordeal_pendulum_period ... ok
+test ordeal_mixed_radius_bodies_rest_at_derived_gap ... ok
+test ordeal_stack_topple_momentum_drift_bounded ... ok
+test ordeal_energy_behavior_documented ... ok
+test ordeal_box_drop_settles_level_and_still ... ok
+test ordeal_rigid_invariance_under_tumbling ... ok
+test ordeal_chain_length_conservation ... ok
+test ordeal_rigid_energy_honest ... ok
+test ordeal_determinism_rigid_collision ... ok
+test ordeal_determinism_byte_identical ... ok
+test ordeal_stack_at_rest_stability_after_topple ... ok
+test ordeal_stack_topple_replay_is_byte_identical ... ok
+test ordeal_friction_incline_critical_angle ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.62s
+
+     Running tests/pscale_broadphase.rs (target/debug/deps/pscale_broadphase-a66ee907d87eb1ff)
+
+running 4 tests
+test ordeal_grid_query_is_complete ... ok
+test ordeal_broadphase_deterministic ... ok
+test ordeal_broadphase_replay_byte_identical ... ok
+test ordeal_broadphase_pruned_pairs_never_contact has been running for over 60 seconds
+test ordeal_broadphase_pruned_pairs_never_contact ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 91.25s
+
+     Running tests/pscale_ordeals.rs (target/debug/deps/pscale_ordeals-aa991dace00a58e4)
+
+running 5 tests
+test ordeal_per_tick_cost_recorded ... ok
+test ordeal_building_at_rest_stays_at_rest ... ok
+test ordeal_step_profiled_matches_step ... ok
+test ordeal_building_collapse_replay_byte_identical has been running for over 60 seconds
+test ordeal_building_fragments_do_not_interpenetrate has been running for over 60 seconds
+test ordeal_building_collapse_replay_byte_identical ... ok
+test ordeal_building_fragments_do_not_interpenetrate ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 71.61s
+
+     Running tests/vi2_break_ordeals.rs (target/debug/deps/vi2_break_ordeals-475c3dd6d6253ed1)
+
+running 7 tests
+test ordeal_momentum_gate_catches_injected_leak_through_fracture - should panic ... ok
+test ordeal_momentum_through_fracture_bounded ... ok
+test ordeal_default_essence_love_breaks_under_full_scenario ... ok
+test ordeal_equivalent_exchange_mass_exact ... ok
+test ordeal_fracture_threshold_reads_bond_love_not_a_hardcoded_break ... ok
+test ordeal_fragments_do_not_interpenetrate_after_break ... ok
+test ordeal_replay_determinism_drop_break_settle_including_fragments ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+
+   Doc-tests elements
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

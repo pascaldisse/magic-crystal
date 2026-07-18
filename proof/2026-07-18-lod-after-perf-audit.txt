@@ -1,0 +1,83 @@
+nice: setpriority: Permission denied
+   Compiling transmutation v0.1.0 (/Users/pascaldisse/projects/magic-crystal-chain/packages/transmute)
+   Compiling elements v0.1.0 (/Users/pascaldisse/projects/magic-crystal-chain/packages/elements)
+   Compiling seed v0.1.0 (/Users/pascaldisse/projects/magic-crystal-chain/packages/seed)
+   Compiling fracture v0.1.0 (/Users/pascaldisse/projects/magic-crystal-chain/packages/fracture)
+   Compiling scrying-glass v0.1.0 (/Users/pascaldisse/projects/magic-crystal-chain/packages/scrying-glass)
+    Finished `release` profile [optimized] target(s) in 13.16s
+     Running `target/release/examples/perf_audit`
+[audit] realm warmed to tick 202: 12368 static tris, 10824 dynamic tris, 2 bodies, 12 physics binding(s), medium light = sun
+[audit] 900x600, spp 2, bounces 4, 8 warmup + 48 measured frames, budget 16.67 ms (60 FPS law)
+| pose | config | phase | mean ms | std | min | max |
+|------|--------|-------|---------|-----|-----|-----|
+[audit] front DYN-ON splice: 56 refits, 0 rebuilds over 56 frames
+| front | DYN-ON | skin (command_bodies) |    0.219 |  0.017 |    0.197 |    0.290 |
+| front | DYN-ON | tick (physics+kami) |    5.645 |  0.234 |    5.305 |    6.171 |
+| front | DYN-ON | splice (refit/rebuild+merge) |    0.308 |  0.070 |    0.246 |    0.671 |
+| front | DYN-ON | upload (update_bvh+bg) |    0.486 |  0.060 |    0.396 |    0.791 |
+| front | DYN-ON | trace+medium (fused GPU) |   15.210 |  1.695 |   14.009 |   24.559 |
+| front | DYN-ON | readback |    0.504 |  0.449 |    0.364 |    3.320 |
+| front | DYN-ON | TOTAL |   22.373 |        |          |          |  FAIL (44.7 fps)
+[audit] front DYN-ON OVERLAP splice: 56 refits, 0 rebuilds over 56 frames
+| front | DYN-ON OVERLAP (cpu phases) | skin (command_bodies) |    0.255 |  0.016 |    0.212 |    0.309 |
+| front | DYN-ON OVERLAP (cpu phases) | tick (physics+kami) |    5.439 |  0.084 |    5.305 |    5.615 |
+| front | DYN-ON OVERLAP (cpu phases) | splice (refit/rebuild+merge) |    0.293 |  0.032 |    0.246 |    0.387 |
+| front | DYN-ON OVERLAP (cpu phases) | upload (update_bvh+bg) |    0.487 |  0.038 |    0.406 |    0.584 |
+| front | DYN-ON OVERLAP (cpu phases) | TOTAL |    6.473 |        |          |          |  PASS (154.5 fps)
+| front | DYN-ON OVERLAP (wall) | frame (wall, pipelined boundary-to-boundary) |   14.456 |  1.186 |   13.597 |   21.752 |
+| front | DYN-ON OVERLAP (wall) | TOTAL |   14.456 |        |          |          |  PASS (69.2 fps)
+[audit] front hash-identity: serial=0c67fdfcd114fac5 overlap=0c67fdfcd114fac5 MATCH
+| front | STATIC+MED | trace+medium (fused GPU) |   15.302 |  1.038 |   14.855 |   21.722 |
+| front | STATIC+MED | readback |    0.480 |  0.060 |    0.401 |    0.663 |
+| front | STATIC+MED | TOTAL |   15.782 |        |          |          |  PASS (63.4 fps)
+| front | STATIC | trace (no medium, GPU) |   15.521 |  1.817 |   14.893 |   26.226 |
+| front | STATIC | readback |    0.504 |  0.183 |    0.409 |    1.470 |
+| front | STATIC | TOTAL |   16.025 |        |          |          |  PASS (62.4 fps)
+| front | derived | medium march (MED−STATIC trace) |   -0.219 |        |          |          |
+| front | derived | living-world price (ON−STATIC total) |    6.348 |        |          |          |
+[audit] wide DYN-ON splice: 56 refits, 0 rebuilds over 56 frames
+| wide | DYN-ON | skin (command_bodies) |    0.222 |  0.019 |    0.198 |    0.283 |
+| wide | DYN-ON | tick (physics+kami) |    5.560 |  0.171 |    5.314 |    6.275 |
+| wide | DYN-ON | splice (refit/rebuild+merge) |    0.279 |  0.020 |    0.249 |    0.327 |
+| wide | DYN-ON | upload (update_bvh+bg) |    0.493 |  0.035 |    0.418 |    0.588 |
+| wide | DYN-ON | trace+medium (fused GPU) |   16.840 |  1.404 |   16.260 |   26.374 |
+| wide | DYN-ON | readback |    0.485 |  0.358 |    0.384 |    2.921 |
+| wide | DYN-ON | TOTAL |   23.879 |        |          |          |  FAIL (41.9 fps)
+[audit] wide DYN-ON OVERLAP splice: 56 refits, 0 rebuilds over 56 frames
+| wide | DYN-ON OVERLAP (cpu phases) | skin (command_bodies) |    0.266 |  0.027 |    0.187 |    0.349 |
+| wide | DYN-ON OVERLAP (cpu phases) | tick (physics+kami) |    5.488 |  0.071 |    5.368 |    5.693 |
+| wide | DYN-ON OVERLAP (cpu phases) | splice (refit/rebuild+merge) |    0.286 |  0.025 |    0.238 |    0.364 |
+| wide | DYN-ON OVERLAP (cpu phases) | upload (update_bvh+bg) |    0.505 |  0.058 |    0.375 |    0.627 |
+| wide | DYN-ON OVERLAP (cpu phases) | TOTAL |    6.544 |        |          |          |  PASS (152.8 fps)
+| wide | DYN-ON OVERLAP (wall) | frame (wall, pipelined boundary-to-boundary) |   16.201 |  1.054 |   15.714 |   23.003 |
+| wide | DYN-ON OVERLAP (wall) | TOTAL |   16.201 |        |          |          |  PASS (61.7 fps)
+[audit] wide hash-identity: serial=4ce945d30be99887 overlap=4ce945d30be99887 MATCH
+| wide | STATIC+MED | trace+medium (fused GPU) |   16.352 |  1.581 |   15.930 |   27.161 |
+| wide | STATIC+MED | readback |    0.458 |  0.052 |    0.394 |    0.667 |
+| wide | STATIC+MED | TOTAL |   16.810 |        |          |          |  FAIL (59.5 fps)
+| wide | STATIC | trace (no medium, GPU) |   15.270 |  1.361 |   14.790 |   24.322 |
+| wide | STATIC | readback |    0.487 |  0.049 |    0.414 |    0.658 |
+| wide | STATIC | TOTAL |   15.757 |        |          |          |  PASS (63.5 fps)
+| wide | derived | medium march (MED−STATIC trace) |    1.082 |        |          |          |
+| wide | derived | living-world price (ON−STATIC total) |    8.122 |        |          |          |
+[audit] ── VERDICT (budget 16.67 ms) ──
+[audit]   front: DYN-ON serial 22.37 ms · DYN-ON OVERLAP 14.46 ms (PASS, budget 16.67 ms) · STATIC 16.02 ms (PASS) · medium march ≈ -0.22 ms · living-world price ≈ 6.35 ms
+[audit]   wide: DYN-ON serial 23.88 ms · DYN-ON OVERLAP 16.20 ms (PASS, budget 16.67 ms) · STATIC 15.76 ms (PASS) · medium march ≈ 1.08 ms · living-world price ≈ 8.12 ms
+       25.88 real         5.65 user         0.47 sys
+           116916224  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               56601  page reclaims
+                  12  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   6  voluntary context switches
+               10370  involuntary context switches
+         74451344355  instructions retired
+         18802972838  cycles elapsed
+           163512968  peak memory footprint

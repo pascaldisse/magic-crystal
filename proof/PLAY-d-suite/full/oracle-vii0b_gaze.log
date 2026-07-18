@@ -1,0 +1,10 @@
+[build-lock] oracle-vii0b_gaze acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.21s
+     Running tests/vii0b_gaze.rs (target/debug/deps/vii0b_gaze-f4de441572e9d66b)
+
+running 2 tests
+test gaze_facing_away_from_the_patch_does_not_return_it ... ok
+test gaze_facing_the_patch_returns_naruko_first_ground_at_the_derived_range ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

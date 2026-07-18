@@ -1,0 +1,57 @@
+[build-lock] scrying-glass-lib-rerun acquired
+   Compiling scrying-glass v0.1.0 (/Users/pascaldisse/projects/magic-crystal-play/packages/scrying-glass)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.09s
+     Running unittests src/lib.rs (target/debug/deps/scrying_glass-e7587e706cedb9cb)
+
+running 47 tests
+test bvh::tests::empty_build_has_one_leaf ... ok
+test bvh::tests::ray_hits_and_shadow_occludes ... ok
+test bvh::tests::merge_handles_single_leaf_sides ... ok
+test bvh::tests::dynamic_splice_default_gate_fires_on_blowup ... ok
+test denoiser::tests::sha256_matches_nist_test_vector_abc ... ok
+test denoiser::tests::sha256_matches_nist_test_vector_empty ... ok
+test bvh::tests::leaf_indices_cover_every_triangle_once ... ok
+test denoiser::tests::forward_is_pure_and_repeatable ... ok
+test error_metric::tests::empty_images_are_zero_not_nan ... ok
+test error_metric::tests::mae_self_is_exactly_zero ... ok
+test bvh::tests::dynamic_splice_refits_then_rebuilds ... ok
+test error_metric::tests::rmse_and_mae_discriminate_a_real_difference ... ok
+test error_metric::tests::rmse_self_is_exactly_zero ... ok
+test horizon::tests::radius_derives_from_budget_and_fits ... ok
+test horizon::tests::tiny_budget_is_rejected_not_panicked ... ok
+test player::tests::floor_query_ignores_walls_and_finds_top ... ok
+test player::tests::ground_clamp_settles_at_eye_height_and_never_sinks ... ok
+test bvh::tests::refit_matches_rebuild_geometry ... ok
+test player::tests::jump_arc_apex_matches_v_squared_over_two_g ... ok
+test player::tests::walk_covers_speed_times_time_forward ... ok
+test denoiser::tests::weights_roundtrip_through_serialization ... ok
+test bvh::tests::merge_equals_full_rebuild ... ok
+test player::tests::gravity_integration_is_deterministic ... ok
+test bvh::tests::dynamic_splice_default_holds_across_bounded_oscillation ... ok
+test scene::tests::from_ecs_derives_world_space_box_vertices_and_spawn_camera ... ok
+test scene::tests::emissive_sources_read_the_real_lantern ... ok
+test presence::tests::body_transform_tracks_the_pose ... ok
+test presence::tests::join_and_reap_track_the_pose_set ... ok
+test scene::tests::stall_top_flat_surface_is_derived_from_geometry ... ok
+test scene::tests::sun_reads_environment_over_defaults ... ok
+test scene::tests::terrain_placement_offset_is_translation_invariant_at_planetary_tile_magnitude ... ok
+test denoiser::tests::training_reduces_loss_on_a_trivial_identity_task ... ok
+test upscaler::tests::bilinear_upsample_is_exact_identity_at_scale_one ... ok
+test upscaler::tests::forward_is_pure_and_repeatable ... ok
+test upscaler::tests::input_feature_count_is_twentyone ... ok
+test presence::tests::motion_drives_the_gait ... ok
+test upscaler::tests::untrained_net_is_exactly_bilinear ... ok
+test upscaler::tests::weights_roundtrip_through_serialization ... ok
+test presence::tests::splice_byte_deterministic ... ok
+test scene::tests::finest_threshold_reproduces_leaf_geometry ... ok
+test scene::tests::leaf_triangles_split_albedo_and_emission_by_material ... ok
+test scene::tests::naruko_selected_cut_preserves_every_material_band ... ok
+test upscaler::tests::training_reduces_residual_loss_on_a_learnable_task ... ok
+test scene::tests::dynamic_split_leaf_parity_holds ... ok
+test scene::tests::naruko_chain_is_deterministic_and_double_builds_byte_identical ... ok
+test scene::tests::bob_matches_kami_through_the_pipeline ... ok
+test scene::tests::tick_determinism_byte_identical_model_buffer has been running for over 60 seconds
+test scene::tests::tick_determinism_byte_identical_model_buffer ... ok
+
+test result: ok. 47 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 93.73s
+

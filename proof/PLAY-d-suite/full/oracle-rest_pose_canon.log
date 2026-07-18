@@ -1,0 +1,10 @@
+[build-lock] oracle-rest_pose_canon acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.43s
+     Running tests/rest_pose_canon.rs (target/debug/deps/rest_pose_canon-ef95059082796bbd)
+
+running 2 tests
+test senses_read_solver_rested_pose ... ok
+test rest_is_deterministic ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 35.85s
+

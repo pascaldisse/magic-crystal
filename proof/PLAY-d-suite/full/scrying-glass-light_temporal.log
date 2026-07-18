@@ -1,0 +1,12 @@
+[build-lock] scrying-glass-light_temporal acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.45s
+     Running tests/light_temporal.rs (target/debug/deps/light_temporal-869a3ba49fe47a48)
+
+running 4 tests
+test temporal_frame_budget_640x480 ... ok
+test temporal_motion_reprojection_accepts ... ok
+test temporal_teleport_rejects_stale_history ... ok
+test temporal_static_convergence ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.86s
+

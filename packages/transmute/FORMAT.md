@@ -5,16 +5,22 @@
 `read_directory` (residency-scale). See `src/serialize.rs`. Versioned; header
 checked on read.
 
+## SUPERSEDED — level/LOD runtime serialization
+`levels`, group error/bounds, page `level`, and `roots` preserve bake lineage
+only. The live BVH consumes level-0 loss-free leaves in full; no reader may use
+this metadata for camera/projection detail selection. Retained page machinery is
+teacher/lineage material for RENDER.md §1's future ray-footprint residency slot.
+
 ## Why CHUNKED (finding 4)
 A whole-file `bincode(Dag)` blob forces the ENTIRE chain resident to read
 anything — a non-starter at universe scale. v2 is header + independently
-range-readable pages + a bounded directory, so the ROOT (coarsest LOD) loads
-WITHOUT touching the rest and any subtree streams by range read.
+range-readable pages + a bounded directory, so bake lineage and future
+ray-footprint residency research can range-read it without decoding all geometry.
 
 ## Byte layout
 ```
 [0..4)   magic          = b"CBDG"                (ASCII, fixed)
-[4..6)   format_version  : u16 LE                 (current = 2)
+[4..6)   format_version  : u16 LE                 (current = 3)
 [6..8)   flags           : u16 LE                 (0)
 [8..16)  dir_offset      : u64 LE                 (byte offset of the directory)
 [16..20) dir_len         : u32 LE                 (directory length in bytes)
@@ -26,6 +32,8 @@ WITHOUT touching the rest and any subtree streams by range read.
   rejected loudly (`UnsupportedVersion`), never mis-decoded.
 - each **page** is a standalone `bincode(Page)` — decodable from its byte range
   alone, no other page or the directory required.
+- v3 supersedes v2: mandatory METIS with entropy-derived seeds replaces the
+  former fixed-seed/fallback bake semantics; v2 readers reject it loudly.
 - the **directory** is bounded (index-sized, NOT geometry-sized): levels, group
   records, and a `PageRef` table (offset/len/level/cluster-ids/deps).
 
@@ -34,7 +42,7 @@ WITHOUT touching the rest and any subtree streams by range read.
 |---|---|---|
 | `read_header` | 24 B | validate + locate directory |
 | `read_directory` | header + directory range | plan residency, NO geometry |
-| `read_root` | directory + root page(s) | render coarsest LOD immediately |
+| `read_root` | directory + root page(s) | inspect superseded bake lineage |
 | `read_page(&PageRef)` | one page's range | stream a page on GPU request |
 | `Directory::subtree_pages(id)` | directory only | transitive page deps of a subtree |
 | `deserialize` | everything | full in-memory `Dag` (tests / tools) |
@@ -53,7 +61,7 @@ key order), so identical DAGs serialize byte-identically (finding 8).
 | `id` | `u32` | page id = index into `Directory.pages` |
 | `offset` | `u64` | absolute byte offset of the page chunk |
 | `len` | `u32` | page chunk length (range read = `bytes[offset..offset+len]`) |
-| `level` | `u32` | LOD level of the page's clusters |
+| `level` | `u32` | superseded bake-lineage level; never a live selector |
 | `clusters` | `Vec<u32>` | cluster ids stored in this page |
 | `deps` | `Vec<u32>` | page ids this page's clusters depend on (children live there) |
 
@@ -61,9 +69,9 @@ key order), so identical DAGs serialize byte-identically (finding 8).
 | field | type | meaning |
 |---|---|---|
 | `input_tri_count` | `u32` | input mesh tri count (leaf-sum invariant) |
-| `partitioner` | `String` | backend(s) ACTUALLY used: `"metis"`\|`"greedy"`\|`"metis,greedy"` |
-| `levels` | `Vec<Vec<u32>>` | cluster ids per LOD level; `[0]`=leaves, last=root |
-| `groups` | `Vec<Group>` | group records (shared child/parent set + LOD sphere + error) |
+| `partitioner` | `String` | sole mandatory backend: `"metis"` |
+| `levels` | `Vec<Vec<u32>>` | superseded bake lineage; `[0]` = live loss-free leaves |
+| `groups` | `Vec<Group>` | superseded bake-lineage child/parent sets + bounds/error |
 | `pages` | `Vec<PageRef>` | page index table (order = page id) |
 | `roots` | `Vec<u32>` | coarsest-level page ids (load first) |
 | `cluster_page` | `Vec<u32>` | cluster id → owning page id |
@@ -76,8 +84,8 @@ key order), so identical DAGs serialize byte-identically (finding 8).
 | `level` | `u32` | level of the CHILDREN this group consumes |
 | `children` | `Vec<u32>` | child cluster ids sharing this cut |
 | `parents` | `Vec<u32>` | parent cluster ids produced by simplifying the group |
-| `bounds` | `Bounds` | SHARED LOD bounding sphere (merged child geometry) |
-| `error` | `f32` | SHARED monotone LOD error |
+| `bounds` | `Bounds` | superseded bake-lineage sphere (merged child geometry) |
+| `error` | `f32` | superseded bake-lineage monotone simplify error |
 
 ## `Cluster`
 | field | type | meaning |
@@ -90,8 +98,8 @@ key order), so identical DAGs serialize byte-identically (finding 8).
 | `parent_error` | `f32` | switch-UP threshold; `∞` when terminal; == consuming group error |
 | `children` | `Vec<u32>` | child cluster ids (empty for leaves) |
 | `bounds` | `Bounds` | self bounding sphere (frustum CULLING only) |
-| `group` | `Option<u32>` | PRODUCING group (its shared LOD metric); `None` for leaves |
-| `parent_group` | `Option<u32>` | CONSUMING group (shared metric of the switch-up); `None` for root |
+| `group` | `Option<u32>` | producing bake-lineage group; `None` for leaves |
+| `parent_group` | `Option<u32>` | consuming bake-lineage group; `None` for terminal nodes |
 
 ### `Vertex`  (`repr(C)`, 32 B, position at offset 0)
 `position:[f32;3]` · `normal:[f32;3]` · `uv:[f32;2]`
@@ -102,14 +110,10 @@ key order), so identical DAGs serialize byte-identically (finding 8).
 > pipeline (RENDER.md §1). Adding streams changes the `Vertex` layout → a
 > FORMAT_VERSION bump per the policy below.
 
-## Runtime cut rule (why the fields exist)
-Crack-free LOD select (Nanite / RENDER.md §1): draw cluster `c` where
-`parent_error > τ ≥ error`, projecting each error through its group's SHARED
-bounds sphere (`c.group` for the `error` side, `c.parent_group` for the
-`parent_error` side). Because a GROUP simplifies together — one `error`, one
-sphere, one `children` set — every member makes the SAME screen-space decision
-→ no cracks. Per-cluster self-spheres cannot do this, which is why the shared
-sphere lives on `Group`.
+## SUPERSEDED runtime cut rule
+The former `parent_error > τ ≥ error` projection rule is deleted from the
+renderer. Group bounds/error remain serialized only as bake lineage; runtime
+geometry is always the complete level-0 leaf set in the BVH.
 
 ## Invariants (enforced by tests — `src/lib.rs`, `tests/inquisition.rs`)
 - `sum(tri_count over levels[0]) == input_tri_count` (shardize = loss-free partition)

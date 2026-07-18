@@ -1,0 +1,12 @@
+[build-lock] scrying-glass-viii3b_ordeals acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.21s
+     Running tests/viii3b_ordeals.rs (target/debug/deps/viii3b_ordeals-bee86343a9769ed3)
+
+running 4 tests
+test d_ban_no_temporal_vocabulary_in_the_gpu_shader ... ok
+test g_full_neural_path_is_deterministic_end_to_end ... ok
+test a_gpu_inference_is_byte_identical_same_frame_twice ... ok
+test b_and_c_gpu_matches_cpu_within_derived_bound_and_beats_bilinear ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.03s
+

@@ -1,4 +1,4 @@
-# Client feature inventory — rust-port
+# Client feature inventory — FROZEN OLD-CLIENT PARITY LEDGER (never native target spec — spec-concordance item 14, 07-18)
 
 Scope → every text source under `client/`; binary VRM/VRMA payloads listed as assets. Port note: `native Rust` → Bevy/wgpu/Tauri-side capability; `DOM overlay` → retained/rebuilt webview UI; `dies` → browser-only behavior with no native equivalent required.
 

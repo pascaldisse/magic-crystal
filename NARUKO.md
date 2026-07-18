@@ -45,6 +45,9 @@ not design center — same law as boomtown).
   city massing blocks on the right cliff.
 - **W3** engine: cluster pipeline first cut (baker + cull) — boomtown +
   naruko both through it. world: gothic detail pass, window emitters.
+  [DATED-HISTORICAL 07-16: "cluster pipeline" here predates the 07-18
+  two-act supremacy block (CLAUDE.md ★ THE DESIGN IS THE LAW) — see
+  RENDER.md §1 for current normative geometry law.]
 - **W4** engine: path integrator first light (sky+emitters, ReSTIR
   later). world: sea traces glow for real, lamp lights the rock.
 - **W5** engine: char-editor package v1 (parametric body/face/hair/
@@ -98,6 +101,10 @@ read by the Guardian's own eyes: the lighthouse stands.
   land at Rite III as scheduled.
 
 ## Rite III — THE GREAT CHAIN (Guardian's spec, 07-16)
+[DATED-HISTORICAL 07-16: the cluster-DAG/view-dependent-cut design in this
+rite and its ruling below predates the 07-18 two-act supremacy block
+(CLAUDE.md ★ THE DESIGN IS THE LAW) — see RENDER.md §1 for current
+normative geometry law. Body kept as record, not re-written.]
 Goal: transmute = the SOLE geometry path in the Glass; the W1/W2 forward
 per-primitive path DIES (deleted, never disabled). Engine stays generic.
 1. Load: RenderScene::from_ecs meshes → transmutation DAG in-memory at
@@ -171,6 +178,10 @@ her — HIS WALK, now with a body in the world. Full suite between merges.
 
 ## GUARDIAN RULINGS UNDER DELEGATION (07-17 ~02:20, his word: "you decide,
 ## as long as it runs at sixty FPS. And no LODs — we have Nanite-class.")
+[DATED-HISTORICAL 07-17: ruling 7's "SKINNED BODIES THROUGH THE CLUSTER
+PIPELINE" predates the 07-18 two-act supremacy block (CLAUDE.md ★ THE
+DESIGN IS THE LAW) — see RENDER.md §1 + RITE-IX (docs/proposals/) banner
+for current normative law. Body kept as record, not re-written.]
 1. Destruction = BOND-FRACTURE (Empedocles; elements substrate; voxel
    model REJECTED — no second geometry system beside the Chain).
 2. Rite VI PROCEEDS on elements-as-is; his PHYSICS.md pass may re-slice.

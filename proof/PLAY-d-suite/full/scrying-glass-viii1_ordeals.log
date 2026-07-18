@@ -1,0 +1,14 @@
+[build-lock] scrying-glass-viii1_ordeals acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running tests/viii1_ordeals.rs (target/debug/deps/viii1_ordeals-10c8aca440e9e701)
+
+running 6 tests
+test d_ban_every_public_fn_signature_in_denoiser_takes_current_frame_inputs_only ... ok
+test d_ban_denoiser_module_is_picked_up_by_the_forward_proof_grep_gate ... ok
+test a4_committed_weights_bytes_match_pinned_provenance_sha256 ... ok
+test a_inference_is_byte_identical_same_frame_twice_cold ... ok
+test e_senses_unchanged_oracle_sha_equal_pass_on_or_off ... ok
+test b_and_c_denoised_beats_pinned_bound_and_beats_noisy_on_every_validation_frame ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.16s
+

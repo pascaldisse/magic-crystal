@@ -1,0 +1,4 @@
+before-red.png → center(320,240)=(255, 18, 18, 255) · box-face visible
+after-runtime-green.png → center(320,240)=(18, 255, 53, 255) · box-face visible
+after-dev-blue.png → center(320,240)=(18, 53, 255, 255) · box-face visible
+visual read → same centered box + floor + right pillar; face red → green → blue

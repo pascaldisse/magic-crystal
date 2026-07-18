@@ -1,0 +1,56 @@
+[build-lock] package-pleroma acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/lib.rs (target/debug/deps/pleroma-acfac95b224a7bf2)
+
+running 19 tests
+test color::tests::black_is_zero ... ok
+test color::tests::short_hex_expands ... ok
+test color::tests::white_is_linear_one ... ok
+test color::tests::mid_gray_decodes_below_half ... ok
+test color::tests::unknown_is_none ... ok
+test geometry::tests::box_face_normal ... ok
+test geometry::tests::box_from_inside ... ok
+test geometry::tests::box_miss ... ok
+test geometry::tests::plane_hit_and_parallel ... ok
+test geometry::tests::sphere_from_inside_flips_normal ... ok
+test geometry::tests::sphere_front_hit ... ok
+test geometry::tests::sphere_miss ... ok
+test sampler::tests::distinct_keys_differ ... ok
+test sampler::tests::uniform_is_stable_and_in_range ... ok
+test vec::tests::dot_cross_hand_values ... ok
+test vec::tests::onb_is_orthonormal ... ok
+test sampler::tests::cosine_pdf_matches_and_hemisphere_respected ... ok
+test sampler::tests::uniform_mean_near_half ... ok
+test sampler::tests::cosine_average_is_two_thirds ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/medium_ordeals.rs (target/debug/deps/medium_ordeals-82bacabfac147731)
+
+running 2 tests
+test ordeal_steam_localized ... ok
+test ordeal_equivalent_exchange ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+
+     Running tests/ordeals.rs (target/debug/deps/ordeals-bb8d6105686cf834)
+
+running 8 tests
+test radiance_is_public ... ok
+test ordeal_mirror_image ... ok
+test ordeal_energy ... ok
+test ordeal_metallic_furnace ... ok
+test ordeal_furnace ... ok
+test ordeal_metallic_energy ... ok
+test ordeal_determinism ... ok
+test ordeal_direct_analytic ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+   Doc-tests pleroma
+
+running 1 test
+test packages/pleroma/src/lib.rs - (line 18) ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s
+

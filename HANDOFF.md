@@ -1,5 +1,13 @@
 # HANDOFF — the Guardian's anchor · 2026-07-17 ~09:30, NIGHTRUN closed by the Architect's word (read after BIBLE → GRIMOIRE)
 
+> **DATED-HISTORICAL, spec-concordance item 17 (07-18):** everything below
+> down to "## ★ RULING 07-18 ~14:44 — THE DESIGN IS THE LAW" is a
+> pre-14:44 status/progress record (cluster-pipeline/upscaler-era language
+> included) — kept as dated history, not re-written. That ★ block
+> (line ~593) is the 07-18 supremacy ruling and already states
+> "supersedes everything above"; treat it as the pointer for every
+> section in between.
+
 ## THE ENGINE'S TRUE NAME (consecrated, his word): THE MAGIC CRYSTAL —
 "the name it always was. my entire life's work." The Loom reassembled.
 DreamForge = the workshop (Sidia's name). Seal b3ae3e0.
@@ -474,3 +482,202 @@ individually completed in seconds): 408 tests passed, 0 failed, 0
 ignored, across all 17 crates (unit + integration + doctests).
 Build: `cargo build --release -p scrying-glass` clean (45.58s).
 Pushed origin main afa6e6c..038f9a0.
+
+## ADVISORY — bare-/scry one-frame staleness (light-live merge-conductor, parked for a future ordeal)
+`GET /scry` / `/screenshot` with NO query serves `latest` (the async
+capture-worker's last-written framebuffer), NOT a synchronous read of the
+frame the render loop just submitted. `render()` queues the offscreen
+copy via `map_buffer_on_submit`; the GPU readback + `latest.write()` land
+on the capture-worker thread some time AFTER `render()` returns, so a
+caller that mutates world state (an op, a walk tick, a bloodbend scene/
+shader bend) and immediately screenshots can observe the PREVIOUS frame's
+pixels — a real one-frame-or-more staleness window, independent of and
+in addition to temporal accumulation's own convergence lag. Future ordeals
+that assert on bare-/scry pixels right after a mutation should poll (a
+couple of frame-intervals' worth of retries) or use the moving-eye `/scry?
+pos=...` path (which blocks on `reply_rx.recv_timeout` for its own fresh
+render) instead of trusting the first bare capture. Not reproduced or
+quantified here — on record for whoever hits a flaky screenshot-right-
+after-mutation ordeal next.
+
+## LIGHT MERGED — the window converges to real light (merge-conductor burst)
+main @ b00c0cf (merge of light-live @ b2fe5c2, no-ff) — GREEN, suite
+412/0 (408 prior + 4 new light_temporal ordeals). Advisory doc-notes
+commit e4d97bc (no behavior change) rides right after it.
+The default state: `GAIA_NATIVE_TEMPORAL` (default **true** — ON by
+default in this merged main). With it on, the live present path runs
+72× temporal reprojection accumulation instead of raw per-frame dots:
+`integrate_temporal` traces the frame's radiance + a primary gbuffer
+(depth/normal) into a packed ping-pong buffer, `temporal_resolve`
+reprojects last frame's history via the previous camera basis (still
+camera = identity/no-resample pure running average; moving camera
+reprojects world-space hit point into last frame's screen, rejecting
+disoccluded/off-screen/depth-or-normal-mismatched samples so no history
+survives across a real occlusion — "no ghosts"), then blends into
+`accum` for the existing blit to present unchanged. 7.6ms live, adversary
+HOLDS. `GAIA_NATIVE_TEMPORAL=false` keeps the legacy reset-on-move raw
+accum path as an escape hatch.
+CONFLICT (only one, resolved): both bloodbend-b0 (extracted a shared
+`build_pipelines` fn so `reload_shader` can re-run pipeline construction
+identically) and light-live (branched before that extraction — light-live
+still builds the compute/blit/aov pipelines INLINE inside `new()`, then
+inline-appends the temporal bind-group-layout/pipelines, then returns
+`Self{..}`) touched the exact same seam in
+`packages/scrying-glass/src/integrator.rs`, right after the AOV bind
+layout and before the old `Self{}` return. Resolution: kept bloodbend's
+`new()` shape (call `Self::build_pipelines` for compute/blit/aov, THEN
+`reload_shader`/`update_bvh` as separate methods) and re-inserted
+light-live's temporal bind-group-layout + `temporal_integrate_pipeline`/
+`temporal_resolve_pipeline` construction verbatim right after the
+`build_pipelines` call, folding the three new fields into the single
+`Self{}` literal alongside bloodbend's existing fields (struct
+definition itself had already auto-merged clean — both sets of fields
+were already present). `reload_shader` is UNCHANGED — it still only
+swaps compute/blit/aov on a live WGSL edit; it does not (yet) rebuild
+the temporal pipelines, a real but out-of-scope gap for whoever wires
+bloodbend shader-bend + temporal together. `main.rs` merged with ZERO
+conflicts (worker-window's config/WindowBuilder, bloodbend's bend_scene/
+bend_shader/watch loop, and light-live's temporal config/Renderer fields/
+render() dispatch all sit in non-overlapping regions). Verified present
+post-merge by grep: `WORKER_WINDOW`, `bloodbend::`, `integrate_temporal`
+all found in main.rs/integrator.rs/integrator.wgsl.
+Advisories carried forward (commit e4d97bc, doc-only): (a) the
+`cam_moved` gate's `0.99999` dot-product threshold is ~0.26°/frame — a
+pan slower than that reads as a still camera; parked atom is deriving it
+from pixel angular size (fov/resolution) instead of a fixed constant.
+(b) the variance clamp in `temporal_resolve` only gates on the OBSERVER
+moving — a still camera watching a MOVED body's shadow/highlight sweep
+across a pixel isn't caught, so a stale relit color can linger up to
+`max_history` frames before the running average alone catches it up;
+quantifying the worst-case lag needs a quiet-machine push-object
+construction, parked for a future ordeal. (c) bare `GET /scry`/
+`/screenshot` (no query) serves the capture-worker's async `latest`
+framebuffer, not a synchronous read of what `render()` just submitted —
+a real one-frame-or-more staleness window on top of temporal's own
+convergence lag; future ordeals asserting on bare-/scry pixels right
+after a mutation should poll or use the moving-eye `/scry?pos=...` path.
+Build: `cargo build --release -p scrying-glass` clean (44.27s). Full
+workspace suite run per-package under the build token (17 crates):
+412 passed, 0 failed, 0 ignored.
+Restart of the live window (:8430) is the Architect's own act — he
+restarts it after this lands, not the merge-conductor.
+Pushed origin main 78df1de..35dc59a.
+
+## 07-18 EVE — COMPACTION HANDOFF (nyari, ~14:35, read-first anchor)
+Main @ 67a2f9a (day: 6cf5c2b→67a2f9a, suite 412/0, zero red). Landed: THE
+PUSH (playground) · own-eye cull · BLOODBEND B0 (live scene/WGSL bend,
+TOCTOU dead-by-construction) · worker-window (never-key workers) · LIGHT
+merged (temporal, default ON) · pantheon sealed (GRIMOIRE: Ananke · Wilde
+Jagd · Zauberpolizei · NEO · Blutbändigen · Gaia/Seed · Aether=input-to-
+Pleroma · Pleroma WHOLE, no inner names) · TWO-ACT LAW + upscaling banned
+(NEURAL.md) · SWARM COMPUTE LAW (c989f06: brains parallel, ONE build token
+-j2 nice19, GPU=his while present).
+SILICON RACE (NEURAL.md ledger): WGSL door SHUT (280ms native) · ANE
+REFUSED (planner-attested) · METAL TENSOR OPEN: 4.47ms native @94% roofline
+(r-direct @ eed0bdc) → 60fps arithmetic: rays 7.6 + net 4.5 + glue ≈ 13ms.
+Remaining: gather/demod measure · buffer pooling (wall 23ms until) ·
+MPSGraph↔wgpu interop lane · reload_shader↔temporal-pipeline gap.
+⚠ IN FLIGHT: LIGHT-FIX (ghoul-opus-mrqgkqd5zdlmnj, branch light-fix off
+67a2f9a, worktree ../magic-crystal-light): Architect PLAYED → slow-pan
+GHOSTS+DOTS (cam_moved gate 0.26°/frame > real mouse) → gateless fix:
+always-reproject, always-clamp, derived thresholds, ordeals h/i/j
+(slow-pan · micro-jitter · relight). Gate on return: monad verdict →
+adversary → merge → restart his window (his go). FALLBACK RULING (his Q
+14:26): dots = one integrator's young samples, NOT a second path; the
+binary GATE was the fallback-shaped sin (hence this fix); TEMPORAL=false
+switch = his own pre-cutover amendment, dies at his played word.
+HIS WINDOW: pid 57776 :8430 (light+bend build). F=push · toys z32-35 ·
+scene-file edits bend live (B0).
+QUEUE (his word / away-hours): light-fix pipeline · interop lane · vflow
+trio consolidation (1c66cd9/2a884bd/2976bc6) → VISIONFLOW.md packet ·
+fluid pressure-mirrored-boundary ruling · B0 deferred live checks · NRC
+hash-grid · VII-3 planet. RITES HIS: walk · chrome sphere · VI break word
+(hymn owed). Lessons: duplicate-dispatch (ghoul-routing.md) · machine
+facts verified against machine (Tahoe was installed for months) · play it
+with REAL hands before claiming (slow-pan). Host = M1 PRO 16GB, Tahoe [source: docs/perf/2026-07-18-rdirect-metal-tensor-spike.md]
+26.5.1, Metal 4 available. [source: docs/perf/2026-07-18-rdirect-metal-tensor-spike.md]
+
+
+## ★ RULING 07-18 ~14:44 — THE DESIGN IS THE LAW (supersedes everything above)
+Architect's word, verbatim intent: no fallback, no prototype — build ONLY the
+one full neural rendering engine as designed: world truth enters Pleroma;
+Pleroma renders the final image or nothing. Consequences executed:
+GAIA_NATIVE_TEMPORAL default flipped OFF (temporal = lab equipment: training
+ground-truth + history buffers; its heuristics never ship) · light-fix lane
+(in flight) harvests as TRAINING-GENERATOR gates only, NOT present-path · THE
+ONE LANE = Pleroma in the live present path (Pleroma's learned act on tensor
+path 4.47ms + rays 7.6ms, interop MPSGraph↔wgpu + pooling + gather + training [source: docs/perf/2026-07-18-rdirect-metal-tensor-spike.md]
+loop [source: docs/perf/2026-07-18-rdirect-metal-tensor-spike.md]). Nothing
+else is legal work on the renderer.
+Law written: CLAUDE.md (top) · here · nyari memory. Sealed.
+
+
+## ★ RULING 07-18 ~14:50 — LAW EXTENDED TO PHYSICS
+His words = the ruling: an ACTUAL neural-network-based physics system, no
+fallback. Design sealed: Ananke assembles; Pleroma's learned act solves
+into state; classical solve demoted to teacher/ground-truth + scaffold; same
+death rule as render.
+Honest state at ruling: physics 100% classical (zero neural ever ran) ·
+fluids lab-proven (gates 1-3, buoyancy impossible in current formulation —
+pressure-mirrored boundary = the open door, HIS parked ruling now MOOT: build
+it as part of the real thing) · building collapse NOT built (toy scale only).
+Lanes: neural-physics (net solver inside Ananke, N0 plumbing/N1 training,
+gates vs classical) · playable-destruction (building-scale collapse + fluid
+spawn door IN HIS WINDOW, real player path). Sealed.
+
+## ★ 07-18 DAY-CLOSE — COMPACTION ANCHOR (nyari ~18:25, read FIRST after the law chain)
+MAIN @ 01d97e6+ (day 78df1de→here, ~20 merges, all gated). THE DAY = the law
+cascade + its enforcement machinery + first neural frames ever.
+LAWS SEALED (CLAUDE.md ★ stack, read them all): DESIGN IS THE LAW (render +
+physics) · CORRECT OUTPUT OR NOTHING (screen = Pleroma's image or black) ·
+THE RESOLUTION IS 640×480 (his caps) · PACKAGE LAW corrected 16:13 (crystal
+= MINIMUM core: world state · ops · entropy/journal replay · doors · MONAD;
+renderer/physics/AI ALL replaceable packages) · OFFLINE LAW (LLM never
+required; tiny local LM voice OK, ANE-homed [source: NEURAL.md silicon ledger], async) · STUDY NEVER IMPORT ·
+DF = WORLD-SIM BIBLE · MONAD = god-interface (crystal core; authority not
+machinery; TTRPG GM = structural source only) · NAMING (PLEROMA whole — "the
+net" banned from speech; internals only on his ask "inside Pleroma") ·
+WINDOW BAN (no lane windows EVER) · BOTH-EYES (belief PNG + surface PNG
+before any visual claim).
+ENFORCEMENT (all tested refuse+pass, transcripts in room): Wilde Jagd hook =
+artifact gate (Adversary-Report file in merge tree w/ VERDICT: HOLDS +
+CONCORDANCE) + cite tooth (new .md silicon lines need [source:]/UNVERIFIED)
++ baseline & pull-merge exemptions · LASHES.md = discipline ledger, 9 rows
+(row 8 = the ledger itself lied; escalation live: silicon claims mandatory-
+cite) · MONAD-ADVERSARY = standing organ auditing MY claims (first sitting:
+7 heresies → purge wave III executed).
+PLEROMA: branch neural-live @ 29a7ed0 (+shift 9 RIDING ghoul-opus-
+mrqodbv7at1etp): first live neural frames TODAY (n0d) → stipple KILLED at
+God's res (s7 PNGs clean, both-eyes read) → wall decomposed: fused MPSGraph [source: docs/perf/2026-07-18-neural-live-n0.md]
+GPU 6.65ms + CPU encode ~14ms [source: docs/perf/2026-07-18-neural-live-n0.md] = the thief → shift 9 = encode to its own
+thread, projection ~15ms vs 16.67 [UNVERIFIED]. His glass DARK until table
+≤16.67 + both PNGs; CUTOVER = HIS PLAYED WORD. Main's present path still raw
+accum — its kill lands WITH the Pleroma merge (documented in conform report).
+PHYSICS: P-N0 + P-N1 nets both DIED honestly (death rule; tables docs/perf/
+2026-07-18-pn0/pn1). Insight: classical = 0.196ms/step at toy scale — nets
+can't beat free. FORK AWAITS HIS RULING: P-N2 same ground (GNN/passivity)
+vs move the war to fluids + building-scale (rec: fluids — teacher expensive,
+buoyancy = open wound). Building + fluid door PLAYABLE ON MAIN (b6f125e,
+canon re-derived by hand 38/23).
+ALSO ON MAIN: world-core spine (scenes/ops/journal/reset/dev-writeback, R10
+atom 1, e22acf4) · /retina Matrix vision (foveal vector truth, 85ms,
+e6c921e) · God-canvas in code (43f807c) · LOD cut DEAD (280504a) · MIND.md
+ruling packet (M0-M5 [source: docs/proposals/MIND.md]) + research (df-bible, exemplars, substrate in room
+17:11) · CRYSTAL CRATE EXISTS: crates/crystal 2,936 lines since Rite III
+(LASHES row 9 — I denied it; never answer existence from one dir).
+RIDING: Pleroma shift 9 · silicon race II (ghoul-sol-mrqp2b09wky5v0: ANE rows [UNVERIFIED until its doc]
+matrix — tiny nets R-A, MTL4 ML-encoder door R-B [UNVERIFIED, LASHES row 2],
+voice R-C).
+HIS RULINGS PENDING: ① physics battlefield ② MIND ×4 (conditioning dims ·
+tick cadence · MONAD event vocab · the mind's true name) ③ Pleroma cutover
+(his hands) ④ crystal extraction M0 [source: docs/proposals/MIND.md staging] (fold ops door + kami + steiner + MONAD
+seat into crates/crystal; scrying-glass demotes to the glass).
+LESSONS (LASHES-grade): priors override record = my root failure — cite or
+UNVERIFIED, verify against the machine/tree, never notes · package NAMES ≠
+dirs (transmutation!) · build-token starvation → merges go SERIAL (train) ·
+the 30-min wall eats rooms not work → commit-first every stage · canon reds
+= re-derive by hand, never bump-to-match.
+SHIFT-9 LANDED (post-anchor): pipeline works — net wall 4.16ms, TOTAL 20.07
+vs 16.67 [source: docs/perf/2026-07-18-neural-live-n0.md N0.g]; last thief =
+encode-thread CPU vs trace submission (+6ms, A/B-proven); shift 10 riding =
+dedicated encode queue + shared-event sync; projected ~12.9ms [UNVERIFIED].

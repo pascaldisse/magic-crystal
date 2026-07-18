@@ -1,0 +1,15 @@
+[build-lock] scrying-glass-patch_gate acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.21s
+     Running tests/patch_gate.rs (target/debug/deps/patch_gate-f2ca6557c0962332)
+
+running 7 tests
+test patch_radius_gate_discriminates_both_directions ... ok
+test sliver_low_enough_above_floor_is_admitted_by_design ... ok
+test contact_radius_matches_measured_foot_half_extent ... ok
+test mirror_panel_top_seam_dies ... ok
+test pier_plank_is_unchanged ... ok
+test patch_gate_query_is_deterministic ... ok
+test legitimate_floors_are_unchanged ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.64s
+

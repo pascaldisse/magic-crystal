@@ -1,0 +1,17 @@
+[build-lock] package-fracture acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running unittests src/lib.rs (target/debug/deps/fracture-cbe3f72ffe0271c7)
+
+running 3 tests
+test tests::fragments_split_the_chain_in_two ... ok
+test tests::fragment_dag_round_trips_transmute ... ok
+test tests::ordeal_fragment_chains_byte_deterministic ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests fracture
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

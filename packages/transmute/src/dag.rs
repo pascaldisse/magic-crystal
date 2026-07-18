@@ -1,10 +1,11 @@
-//! Transmutation: mesh → shards (leaves) → group → simplify → re-shardize →
-//! parents-reference-children → repeat to root. The result is the Great Chain
+//! Transmutation: mesh → shards (loss-free leaves) → group → simplify →
+//! re-shardize → parents-reference-children. The result is the Great Chain
 //! (RENDER.md §1, the sole geometry pipeline, offline/import half).
 //!
-//! Follows research/nanite-recon.md: ≤max_triangles-tri shards, adjacency
-//! groups, ratio-simplify per group, DAG with monotone error so a runtime cut
-//! `parentError > τ ≥ clusterError` is crack-free. CPU-only (this lane).
+//! SUPERSEDED — hierarchy error and level records are bake lineage for future
+//! ray-footprint residency research, not live geometry selection. The renderer
+//! consumes only the loss-free leaves; no camera/projection threshold exists.
+//! CPU-only (this lane).
 //!
 //! CRACK-FREE INVARIANTS (the reason the group machinery exists):
 //!  - BOUNDARY LOCKING (finding 1): positions shared across two groups are
@@ -18,7 +19,7 @@
 //!    collapsed, so seams survive simplification.
 
 use crate::mesh::{Mesh, Vertex, POSITION_OFFSET, VERTEX_STRIDE};
-use crate::partition::{AdjacencyGraph, Partitioner};
+use crate::partition::{AdjacencyGraph, MetisPartitioner, PartitionEntropy};
 use meshopt::{SimplifyOptions, VertexDataAdapter};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -46,6 +47,8 @@ pub enum TransmuteError {
     TrianglesNotMultiple(usize),
     /// A ratio/weight/tolerance is not finite or out of its documented range.
     OutOfRange(&'static str),
+    /// The sole METIS partitioner rejected the canonical graph; no fallback exists.
+    Partition(String),
 }
 
 impl std::fmt::Display for TransmuteError {
@@ -69,6 +72,7 @@ impl std::fmt::Display for TransmuteError {
                 "max_triangles {t} must be a multiple of {TRI_MULTIPLE} (meshopt contract)"
             ),
             TransmuteError::OutOfRange(w) => write!(f, "param `{w}` is out of range or non-finite"),
+            TransmuteError::Partition(error) => write!(f, "partition failed: {error}"),
         }
     }
 }
@@ -193,8 +197,12 @@ pub struct TransmuteParams {
     pub target_error: f32,
     /// Safety cap on DAG levels.
     pub max_levels: usize,
-    /// Stop once a level has this many clusters or fewer (root).
+    /// Stop once a bake-lineage level has this many clusters or fewer.
     pub min_clusters: usize,
+    /// ENTROPY origin of the world whose canonical geometry is being baked.
+    pub world_seed: u64,
+    /// ENTROPY coordinate at which this bake is requested.
+    pub entropy: u64,
 }
 
 impl Default for TransmuteParams {
@@ -207,6 +215,8 @@ impl Default for TransmuteParams {
             target_error: 1.0,
             max_levels: 32,
             min_clusters: 1,
+            world_seed: 0,
+            entropy: 0,
         }
     }
 }
@@ -232,15 +242,14 @@ impl TransmuteParams {
     }
 }
 
-/// Bounding sphere as center + radius (cheap runtime cull metric AND the shared
-/// LOD metric when it lives on a `Group`).
+/// Bounding sphere retained with bake lineage; runtime BVH uses leaf triangles.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Bounds {
     pub center: [f32; 3],
     pub radius: f32,
 }
 
-/// One node of the Great Chain: self-contained geometry + LOD error + links.
+/// One Great Chain node: self-contained geometry + bake-lineage error + links.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Cluster {
     pub id: u32,
@@ -257,7 +266,7 @@ pub struct Cluster {
     pub children: Vec<u32>,
     /// Self bounding sphere (frustum culling).
     pub bounds: Bounds,
-    /// Group that PRODUCED this cluster (its shared LOD metric lives there).
+    /// Group that produced this cluster in superseded bake lineage.
     /// `None` for leaves (produced by shardization, error 0).
     pub group: Option<u32>,
     /// Group that CONSUMES this cluster as a child (its shared metric drives the
@@ -271,9 +280,9 @@ impl Cluster {
     }
 }
 
-/// An explicit group record (finding 2). Every member cluster — the children it
-/// consumes AND the parents it produces — shares this ONE bounds sphere + error,
-/// so they all cross the same screen-space threshold: crack-free by construction.
+/// An explicit bake-lineage group (finding 2). Its children and produced
+/// re-shards retain one bounds/error record for offline lineage analysis; this
+/// metadata has no live screen-space selection role.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Group {
     pub id: u32,
@@ -283,9 +292,9 @@ pub struct Group {
     pub children: Vec<u32>,
     /// Parent cluster ids produced by simplifying this group.
     pub parents: Vec<u32>,
-    /// SHARED LOD bounds sphere (the merged child geometry's sphere).
+    /// Shared bounds from the merged child geometry; bake lineage only.
     pub bounds: Bounds,
-    /// SHARED monotone LOD error (>= every child group's error).
+    /// Shared monotone simplify error; bake lineage only.
     pub error: f32,
 }
 
@@ -296,11 +305,12 @@ pub struct Dag {
     pub clusters: Vec<Cluster>,
     /// Explicit group records; `groups[id as usize].id == id`.
     pub groups: Vec<Group>,
-    /// Cluster ids per level; level 0 = leaves (finest), last = root(s).
+    /// Serialized bake lineage; level 0 is the live, loss-free leaf geometry.
+    /// Higher entries are superseded lineage, never a runtime detail choice.
     pub levels: Vec<Vec<u32>>,
     /// Triangle count of the input mesh (leaf sum invariant).
     pub input_tri_count: u32,
-    /// Partitioner backend(s) actually used ("metis" | "greedy" | "metis,greedy").
+    /// Sole mandatory partitioner; always the literal `"metis"`.
     pub partitioner: String,
 }
 
@@ -542,6 +552,35 @@ fn build_adjacency(clusters: &[&Cluster], pos_quant: f32) -> AdjacencyGraph {
     }
 }
 
+/// Hash canonical triangle identity, not addresses or input order. This is the
+/// geometry term in `hash(world_seed, entropy, canonical_geometry_identity)`
+/// supplied to METIS for every partition invocation.
+fn canonical_geometry_identity(clusters: &[&Cluster], pos_quant: f32) -> u64 {
+    let mut triangles = Vec::<[[i64; 3]; 3]>::new();
+    for cluster in clusters {
+        for tri in cluster.indices.chunks_exact(3) {
+            let mut key = [
+                pos_key(cluster.vertices[tri[0] as usize].position, pos_quant),
+                pos_key(cluster.vertices[tri[1] as usize].position, pos_quant),
+                pos_key(cluster.vertices[tri[2] as usize].position, pos_quant),
+            ];
+            key.sort_unstable();
+            triangles.push(key);
+        }
+    }
+    triangles.sort_unstable();
+    let mut h = 0xcbf2_9ce4_8422_2325u64;
+    for triangle in triangles {
+        for corner in triangle {
+            for coordinate in corner {
+                h ^= coordinate as u64;
+                h = h.wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        }
+    }
+    h
+}
+
 /// Everything a single accepted level contributes, held OUT of the DAG until the
 /// progress check passes (finding 3 — staged commit, never a half-mutated DAG).
 struct StagedLevel {
@@ -550,7 +589,6 @@ struct StagedLevel {
     /// (child_id, parent_error, parent_group_id) to stamp on the children.
     child_links: Vec<(u32, f32, u32)>,
     next_ids: Vec<u32>,
-    backend: Option<&'static str>,
     progressed: bool,
 }
 
@@ -559,7 +597,7 @@ struct StagedLevel {
 pub fn transmute(
     mesh: &Mesh,
     params: &TransmuteParams,
-    partitioner: &dyn Partitioner,
+    partitioner: &MetisPartitioner,
 ) -> Result<Dag, TransmuteError> {
     params.validate()?;
 
@@ -572,7 +610,6 @@ pub fn transmute(
     let mut clusters: Vec<Cluster> = Vec::new();
     let mut groups: Vec<Group> = Vec::new();
     let mut levels: Vec<Vec<u32>> = Vec::new();
-    let mut backends: BTreeSet<&'static str> = BTreeSet::new();
 
     // ---- Level 0: leaves ----
     let mut level_ids: Vec<u32> = Vec::new();
@@ -616,7 +653,7 @@ pub fn transmute(
             partitioner,
             clusters.len() as u32,
             groups.len() as u32,
-        );
+        )?;
 
         // Progress gate: only accept a level that actually shrinks the front.
         if !staged.progressed
@@ -629,9 +666,6 @@ pub fn transmute(
         }
 
         // COMMIT: append clusters + groups, stamp children, push the level.
-        if let Some(bk) = staged.backend {
-            backends.insert(bk);
-        }
         clusters.extend(staged.new_clusters);
         groups.extend(staged.new_groups);
         for (child, perr, pg) in staged.child_links {
@@ -643,24 +677,12 @@ pub fn transmute(
         level += 1;
     }
 
-    let partitioner = if backends.is_empty() {
-        partitioner.name().to_string()
-    } else {
-        // Canonical order per FORMAT.md ("metis,greedy"), not BTreeSet's alpha
-        // order ("greedy,metis") — advisory.
-        ["metis", "greedy"]
-            .into_iter()
-            .filter(|b| backends.contains(b))
-            .collect::<Vec<_>>()
-            .join(",")
-    };
-
     Ok(Dag {
         clusters,
         groups,
         levels,
         input_tri_count: mesh.tri_count() as u32,
-        partitioner,
+        partitioner: "metis".to_string(),
     })
 }
 
@@ -673,13 +695,21 @@ fn stage_level(
     level: u32,
     pos_quant: f32,
     params: &TransmuteParams,
-    partitioner: &dyn Partitioner,
+    partitioner: &MetisPartitioner,
     mut next_cluster_id: u32,
     mut next_group_id: u32,
-) -> StagedLevel {
+) -> Result<StagedLevel, TransmuteError> {
     let nparts = prev.len().div_ceil(params.group_size.max(1)).max(1);
     let graph = build_adjacency(prev_ref, pos_quant);
-    let partition = partitioner.partition(&graph, nparts);
+    let partition = partitioner.partition(
+        &graph,
+        nparts,
+        PartitionEntropy {
+            world_seed: params.world_seed,
+            entropy: params.entropy,
+            geometry_identity: canonical_geometry_identity(prev_ref, pos_quant),
+        },
+    )?;
 
     // ONE canonical coordinate per position key for the whole level (finding 1),
     // computed before any group welds so every touching group snaps identically.
@@ -715,7 +745,6 @@ fn stage_level(
         new_groups: Vec::new(),
         child_links: Vec::new(),
         next_ids: Vec::new(),
-        backend: Some(partition.backend),
         progressed: false,
     };
 
@@ -799,7 +828,7 @@ fn stage_level(
         });
     }
 
-    staged
+    Ok(staged)
 }
 
 /// Simplify a welded group toward `target_index_count`, LOCKING shared-boundary

@@ -1,0 +1,48 @@
+[build-lock] package-seed acquired
+   Compiling cc v1.2.67
+   Compiling meshopt v0.6.2
+   Compiling transmutation v0.1.0 (/Users/pascaldisse/projects/magic-crystal-play/packages/transmute)
+   Compiling seed v0.1.0 (/Users/pascaldisse/projects/magic-crystal-play/packages/seed)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.12s
+     Running unittests src/lib.rs (target/debug/deps/seed-e90d19cab6745945)
+
+running 3 tests
+test terrain_sigil::tests::defaults_match_terrain_params_default_when_nothing_overridden ... ok
+test terrain_sigil::tests::tile_size_override_re_derives_dependent_dials ... ok
+test terrain_sigil::tests::deny_unknown_fields_rejects_a_typo ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ordeals.rs (target/debug/deps/ordeals-cfe793448f09276d)
+
+running 6 tests
+test fbm_defaults_in_range ... ok
+test ordeal_isolation_region_regenerates_alone ... ok
+test ordeal_density_scatter_ratio ... ok
+test ordeal_poisson_min_distance_exhaustive ... ok
+test ordeal_determinism_two_runs_and_iteration_order ... ok
+test ordeal_noise_statistics ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.78s
+
+     Running tests/terrain_ordeals.rs (target/debug/deps/terrain_ordeals-a5d3c4ad8acc71b3)
+
+running 9 tests
+test height_field_is_a_pure_function_of_world_xz ... ok
+test ordeal_different_seed_different_mesh ... ok
+test ordeal_tile_seed_and_coord_key_i64_distinguish_coordinates ... ok
+test ordeal_local_vertex_spacing_stable_at_large_tile_coordinate ... ok
+test ordeal_no_storage_cold_rebuild ... ok
+test ordeal_regeneration_determinism ... ok
+test ordeal_tile_isolation ... ok
+test ordeal_seam_all_four_directions_byte_identical ... ok
+test ordeal_seam_large_tile_coordinate ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+   Doc-tests seed
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

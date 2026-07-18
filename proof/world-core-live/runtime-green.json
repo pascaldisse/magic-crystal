@@ -1,0 +1,1 @@
+{"dev":false,"from":"curl-live-proof","ops":[{"op":"set","id":"proof_box","component":"mesh","value":{"parts":[{"shape":"box","size":[5,4,4],"color":"#20ff40","emissive":"#08ff20"}]}}]}

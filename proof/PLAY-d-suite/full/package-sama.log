@@ -1,0 +1,27 @@
+[build-lock] package-sama acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running unittests src/lib.rs (target/debug/deps/sama-8e106125778aaf17)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ordeals.rs (target/debug/deps/ordeals-e79c22970279686c)
+
+running 7 tests
+test ordeal_look_at_clamps_and_error ... ok
+test v0_sama_idle_tick0_is_bind_pose ... ok
+test ordeal_state_machine_timing_and_continuity ... ok
+test ordeal_walk_parity_with_canon ... ok
+test ordeal_gait_walk_determinism ... ok
+test ordeal_determinism_byte_identical ... ok
+test ordeal_both_morphologies_valid ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Doc-tests sama
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

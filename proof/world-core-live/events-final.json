@@ -1,0 +1,207 @@
+{
+  "entropy": 3,
+  "events": [
+    {
+      "component": "mesh",
+      "entropy": 1,
+      "from": "curl-live-proof",
+      "id": "proof_box",
+      "op": "set",
+      "seq": 1,
+      "t": 1784391162922,
+      "value": {
+        "parts": [
+          {
+            "color": "#20ff40",
+            "emissive": "#08ff20",
+            "shape": "box",
+            "size": [
+              5,
+              4,
+              4
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "data": {
+        "scene": "court"
+      },
+      "entropy": 2,
+      "from": "curl-live-proof",
+      "name": "reset",
+      "op": "event",
+      "seq": 2,
+      "t": 1784391163203
+    },
+    {
+      "entropy": 2,
+      "from": "curl-live-proof",
+      "id": "env",
+      "op": "despawn",
+      "seq": 3,
+      "t": 1784391163203
+    },
+    {
+      "entropy": 2,
+      "from": "curl-live-proof",
+      "id": "proof_box",
+      "op": "despawn",
+      "seq": 4,
+      "t": 1784391163203
+    },
+    {
+      "entropy": 2,
+      "from": "curl-live-proof",
+      "id": "proof_floor",
+      "op": "despawn",
+      "seq": 5,
+      "t": 1784391163203
+    },
+    {
+      "entropy": 2,
+      "from": "curl-live-proof",
+      "id": "spawn",
+      "op": "despawn",
+      "seq": 6,
+      "t": 1784391163203
+    },
+    {
+      "components": {
+        "environment": {
+          "fog": {
+            "color": "#151126",
+            "density": 0.002
+          },
+          "sky": {
+            "horizon": "#282044",
+            "preset": "night",
+            "top": "#090914"
+          }
+        },
+        "scene": {
+          "name": "court"
+        }
+      },
+      "entropy": 2,
+      "from": "curl-live-proof",
+      "id": "env",
+      "op": "spawn",
+      "seq": 7,
+      "t": 1784391163203
+    },
+    {
+      "components": {
+        "mesh": {
+          "parts": [
+            {
+              "color": "#ff2020",
+              "emissive": "#ff0808",
+              "shape": "box",
+              "size": [
+                5,
+                4,
+                4
+              ]
+            }
+          ]
+        },
+        "scene": {
+          "name": "court"
+        },
+        "transform": {
+          "position": [
+            0,
+            2,
+            0
+          ]
+        }
+      },
+      "entropy": 2,
+      "from": "curl-live-proof",
+      "id": "proof_box",
+      "op": "spawn",
+      "seq": 8,
+      "t": 1784391163203
+    },
+    {
+      "components": {
+        "mesh": {
+          "parts": [
+            {
+              "color": "#302b40",
+              "shape": "box",
+              "size": [
+                30,
+                1,
+                30
+              ]
+            }
+          ]
+        },
+        "scene": {
+          "name": "court"
+        },
+        "transform": {
+          "position": [
+            0,
+            -0.5,
+            0
+          ]
+        }
+      },
+      "entropy": 2,
+      "from": "curl-live-proof",
+      "id": "proof_floor",
+      "op": "spawn",
+      "seq": 9,
+      "t": 1784391163203
+    },
+    {
+      "components": {
+        "scene": {
+          "name": "court"
+        },
+        "spawn": {
+          "position": [
+            0,
+            3,
+            10
+          ],
+          "yaw": 0
+        }
+      },
+      "entropy": 2,
+      "from": "curl-live-proof",
+      "id": "spawn",
+      "op": "spawn",
+      "seq": 10,
+      "t": 1784391163203
+    },
+    {
+      "component": "mesh",
+      "entropy": 3,
+      "from": "curl-live-proof",
+      "id": "proof_box",
+      "op": "set",
+      "seq": 11,
+      "t": 1784391163236,
+      "value": {
+        "parts": [
+          {
+            "color": "#2050ff",
+            "emissive": "#0820ff",
+            "shape": "box",
+            "size": [
+              5,
+              4,
+              4
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "latest": 11
+}
