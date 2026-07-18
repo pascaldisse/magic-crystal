@@ -1,0 +1,542 @@
+$ curl -sS http://127.0.0.1:8441/op -H "content-type: application/json" --data-binary @proof/world-core-live/runtime-green.json
+{
+  "applied": [
+    {
+      "component": "mesh",
+      "id": "proof_box",
+      "op": "set",
+      "value": {
+        "parts": [
+          {
+            "color": "#20ff40",
+            "emissive": "#08ff20",
+            "shape": "box",
+            "size": [
+              5,
+              4,
+              4
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "entropy": 1,
+  "latest": 1,
+  "ok": true
+}
+$ curl -sS http://127.0.0.1:8441/world
+{
+  "counter": 1,
+  "entities": {
+    "env": {
+      "environment": {
+        "fog": {
+          "color": "#151126",
+          "density": 0.002
+        },
+        "sky": {
+          "horizon": "#282044",
+          "preset": "night",
+          "top": "#090914"
+        }
+      },
+      "scene": {
+        "name": "court"
+      }
+    },
+    "gallery_pillar": {
+      "mesh": {
+        "parts": [
+          {
+            "color": "#315cff",
+            "emissive": "#102070",
+            "height": 4,
+            "radius": 1.2,
+            "shape": "cylinder"
+          }
+        ]
+      },
+      "scene": {
+        "name": "gallery"
+      },
+      "transform": {
+        "position": [
+          7,
+          2,
+          0
+        ]
+      }
+    },
+    "proof_box": {
+      "mesh": {
+        "parts": [
+          {
+            "color": "#20ff40",
+            "emissive": "#08ff20",
+            "shape": "box",
+            "size": [
+              5,
+              4,
+              4
+            ]
+          }
+        ]
+      },
+      "scene": {
+        "name": "court"
+      },
+      "transform": {
+        "position": [
+          0,
+          2,
+          0
+        ]
+      }
+    },
+    "proof_floor": {
+      "mesh": {
+        "parts": [
+          {
+            "color": "#302b40",
+            "shape": "box",
+            "size": [
+              30,
+              1,
+              30
+            ]
+          }
+        ]
+      },
+      "scene": {
+        "name": "court"
+      },
+      "transform": {
+        "position": [
+          0,
+          -0.5,
+          0
+        ]
+      }
+    },
+    "spawn": {
+      "scene": {
+        "name": "court"
+      },
+      "spawn": {
+        "position": [
+          0,
+          3,
+          10
+        ],
+        "yaw": 0
+      }
+    }
+  },
+  "entropy": 1,
+  "world": {
+    "scenes": {
+      "court": {
+        "neighbors": [
+          "gallery"
+        ]
+      },
+      "gallery": {
+        "always": true
+      }
+    },
+    "voidY": -30
+  }
+}
+$ curl -sS "http://127.0.0.1:8441/events?since=0&limit=20"
+{
+  "entropy": 1,
+  "events": [
+    {
+      "component": "mesh",
+      "entropy": 1,
+      "from": "curl-live-proof",
+      "id": "proof_box",
+      "op": "set",
+      "seq": 1,
+      "t": 1784391162922,
+      "value": {
+        "parts": [
+          {
+            "color": "#20ff40",
+            "emissive": "#08ff20",
+            "shape": "box",
+            "size": [
+              5,
+              4,
+              4
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "latest": 1
+}
+$ curl -sS http://127.0.0.1:8441/op -H "content-type: application/json" --data-binary '{"from":"curl-live-proof","ops":[{"op":"reset","scene":"court"}]}'
+{
+  "applied": [
+    {
+      "data": {
+        "scene": "court"
+      },
+      "name": "reset",
+      "op": "event"
+    },
+    {
+      "id": "env",
+      "op": "despawn"
+    },
+    {
+      "id": "proof_box",
+      "op": "despawn"
+    },
+    {
+      "id": "proof_floor",
+      "op": "despawn"
+    },
+    {
+      "id": "spawn",
+      "op": "despawn"
+    },
+    {
+      "components": {
+        "environment": {
+          "fog": {
+            "color": "#151126",
+            "density": 0.002
+          },
+          "sky": {
+            "horizon": "#282044",
+            "preset": "night",
+            "top": "#090914"
+          }
+        },
+        "scene": {
+          "name": "court"
+        }
+      },
+      "id": "env",
+      "op": "spawn"
+    },
+    {
+      "components": {
+        "mesh": {
+          "parts": [
+            {
+              "color": "#ff2020",
+              "emissive": "#ff0808",
+              "shape": "box",
+              "size": [
+                5,
+                4,
+                4
+              ]
+            }
+          ]
+        },
+        "scene": {
+          "name": "court"
+        },
+        "transform": {
+          "position": [
+            0,
+            2,
+            0
+          ]
+        }
+      },
+      "id": "proof_box",
+      "op": "spawn"
+    },
+    {
+      "components": {
+        "mesh": {
+          "parts": [
+            {
+              "color": "#302b40",
+              "shape": "box",
+              "size": [
+                30,
+                1,
+                30
+              ]
+            }
+          ]
+        },
+        "scene": {
+          "name": "court"
+        },
+        "transform": {
+          "position": [
+            0,
+            -0.5,
+            0
+          ]
+        }
+      },
+      "id": "proof_floor",
+      "op": "spawn"
+    },
+    {
+      "components": {
+        "scene": {
+          "name": "court"
+        },
+        "spawn": {
+          "position": [
+            0,
+            3,
+            10
+          ],
+          "yaw": 0
+        }
+      },
+      "id": "spawn",
+      "op": "spawn"
+    }
+  ],
+  "entropy": 2,
+  "latest": 10,
+  "ok": true
+}
+$ curl -sS http://127.0.0.1:8441/op -H "content-type: application/json" --data-binary @proof/world-core-live/dev-blue.json
+{
+  "applied": [
+    {
+      "component": "mesh",
+      "id": "proof_box",
+      "op": "set",
+      "value": {
+        "parts": [
+          {
+            "color": "#2050ff",
+            "emissive": "#0820ff",
+            "shape": "box",
+            "size": [
+              5,
+              4,
+              4
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "entropy": 3,
+  "latest": 11,
+  "ok": true
+}
+$ curl -sS "http://127.0.0.1:8441/events?since=0&limit=50"
+{
+  "entropy": 3,
+  "events": [
+    {
+      "component": "mesh",
+      "entropy": 1,
+      "from": "curl-live-proof",
+      "id": "proof_box",
+      "op": "set",
+      "seq": 1,
+      "t": 1784391162922,
+      "value": {
+        "parts": [
+          {
+            "color": "#20ff40",
+            "emissive": "#08ff20",
+            "shape": "box",
+            "size": [
+              5,
+              4,
+              4
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "data": {
+        "scene": "court"
+      },
+      "entropy": 2,
+      "from": "curl-live-proof",
+      "name": "reset",
+      "op": "event",
+      "seq": 2,
+      "t": 1784391163203
+    },
+    {
+      "entropy": 2,
+      "from": "curl-live-proof",
+      "id": "env",
+      "op": "despawn",
+      "seq": 3,
+      "t": 1784391163203
+    },
+    {
+      "entropy": 2,
+      "from": "curl-live-proof",
+      "id": "proof_box",
+      "op": "despawn",
+      "seq": 4,
+      "t": 1784391163203
+    },
+    {
+      "entropy": 2,
+      "from": "curl-live-proof",
+      "id": "proof_floor",
+      "op": "despawn",
+      "seq": 5,
+      "t": 1784391163203
+    },
+    {
+      "entropy": 2,
+      "from": "curl-live-proof",
+      "id": "spawn",
+      "op": "despawn",
+      "seq": 6,
+      "t": 1784391163203
+    },
+    {
+      "components": {
+        "environment": {
+          "fog": {
+            "color": "#151126",
+            "density": 0.002
+          },
+          "sky": {
+            "horizon": "#282044",
+            "preset": "night",
+            "top": "#090914"
+          }
+        },
+        "scene": {
+          "name": "court"
+        }
+      },
+      "entropy": 2,
+      "from": "curl-live-proof",
+      "id": "env",
+      "op": "spawn",
+      "seq": 7,
+      "t": 1784391163203
+    },
+    {
+      "components": {
+        "mesh": {
+          "parts": [
+            {
+              "color": "#ff2020",
+              "emissive": "#ff0808",
+              "shape": "box",
+              "size": [
+                5,
+                4,
+                4
+              ]
+            }
+          ]
+        },
+        "scene": {
+          "name": "court"
+        },
+        "transform": {
+          "position": [
+            0,
+            2,
+            0
+          ]
+        }
+      },
+      "entropy": 2,
+      "from": "curl-live-proof",
+      "id": "proof_box",
+      "op": "spawn",
+      "seq": 8,
+      "t": 1784391163203
+    },
+    {
+      "components": {
+        "mesh": {
+          "parts": [
+            {
+              "color": "#302b40",
+              "shape": "box",
+              "size": [
+                30,
+                1,
+                30
+              ]
+            }
+          ]
+        },
+        "scene": {
+          "name": "court"
+        },
+        "transform": {
+          "position": [
+            0,
+            -0.5,
+            0
+          ]
+        }
+      },
+      "entropy": 2,
+      "from": "curl-live-proof",
+      "id": "proof_floor",
+      "op": "spawn",
+      "seq": 9,
+      "t": 1784391163203
+    },
+    {
+      "components": {
+        "scene": {
+          "name": "court"
+        },
+        "spawn": {
+          "position": [
+            0,
+            3,
+            10
+          ],
+          "yaw": 0
+        }
+      },
+      "entropy": 2,
+      "from": "curl-live-proof",
+      "id": "spawn",
+      "op": "spawn",
+      "seq": 10,
+      "t": 1784391163203
+    },
+    {
+      "component": "mesh",
+      "entropy": 3,
+      "from": "curl-live-proof",
+      "id": "proof_box",
+      "op": "set",
+      "seq": 11,
+      "t": 1784391163236,
+      "value": {
+        "parts": [
+          {
+            "color": "#2050ff",
+            "emissive": "#0820ff",
+            "shape": "box",
+            "size": [
+              5,
+              4,
+              4
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "latest": 11
+}

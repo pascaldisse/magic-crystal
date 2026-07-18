@@ -9,21 +9,17 @@ Cross-refs: GRIMOIRE.md (the Pleroma, sealed, no inner names) · NEURAL.md
 (two-act law, upscaling-dead ruling, silicon verdicts) · GEOMETRY.md (hybrid
 polygon/voxel/SDF, representation-blind G-buffer).
 
-## The frame — two acts, no seam
+## The frame — one render, no seam
 ```
-trace (Ananke's rays) → THE NET → screen
+world truth → Pleroma → final image or nothing
 ```
-The Pleroma is ONE system, two acts, never two named things (GRIMOIRE.md,
-sealed 07-18).
-- **Act 1 — the rays**: one integrator emits sparse traced radiance +
-  G-buffer features (depth/normal/albedo/material — representation-blind,
-  GEOMETRY.md) as byproducts of the SAME rays. Never a separate pass.
-- **Act 2 — THE NET**: consumes full-res geometry features (primary
-  visibility is cheap) + sparse traced radiance + temporal history jointly,
-  RENDERS THE ONLY IMAGE at screen resolution, directly. No chained stages —
-  chains make irreversible decisions on partial information at every seam
-  (the argument that killed separate-denoiser chains industry-wide; DLSS-RR
-  precedent as evidence, not authority — NEURAL.md).
+Pleroma is ONE system, never named inner things (GRIMOIRE.md, sealed 07-18).
+Inside Pleroma: sampling and judgment jointly consume full-resolution geometry
+features (primary visibility is cheap), sparse traced radiance, and temporal
+history; rays emit evidence/byproducts (depth/normal/albedo/material —
+representation-blind, GEOMETRY.md), never a separate pass or picture. No
+chained seams make irreversible partial decisions (DLSS-RR precedent =
+evidence, not authority — NEURAL.md).
 No forward path. No raster lighting. No cluster-raster geometry pipeline
 (deleted as normative here — LINEAGE appendix). No probe/reflection-map
 pass. No upscaling as a concept: nothing is ever made small then enlarged;
@@ -34,12 +30,12 @@ internal resolution (NEURAL.md, "UPSCALING IS DEAD").
 COST ∝ RAYS — the evidence budget — comes NATIVE from tracing: BVH
 traversal is ~log(N) per ray, and the ray budget is a FREE PARAMETER the
 machine affords — never scene complexity, never a screen grid walked by a
-raster pass. Pixels exist only as THE NET's output grid (Architect,
+raster pass. Pixels exist only as Pleroma's output grid (Architect,
 07-18: "we don't use pixels" — raster vocabulary banned from cost laws).
 This is WHY no cluster-cull/HZB/visibility-buffer machinery is needed to
 bound cost: the ray door already bounds cost by evidence gathered.
 Corollary for the design slot below: RESIDENCY ∝ RAY BUDGET · CONTENT ∝
-SSD · THE IMAGE BELONGS TO THE NET. It must never again be re-derived from a cluster raster (the
+SSD · THE IMAGE BELONGS TO PLEROMA. It must never again be re-derived from a cluster raster (the
 heresy this file is being purged of).
 
 The BVH intersector is not a future trait — it is BUILT and LIVE
@@ -101,19 +97,14 @@ future residency system (design slot above).
   what actually shipped. SDF/voxel geometry still exists as an authoring
   representation (GEOMETRY.md) but it CONTOURS INTO the BVH rather than
   being traced by a second intersector.
-- **Sampling** (lives INSIDE Act 1, not a reconstruction stage): ReSTIR-class
-  reuse (direct many-lights + GI reuse) is the published answer to infinite
-  lights at low-sample budgets (9-166× MSE win) — it makes the SAMPLES
-  Act 1 hands to THE NET smarter per ray, it does not reconstruct an image
-  itself. Rides the BVH intersector; not yet built.
-- **Reconstruction belongs to Act 2 only.** Screen-space reuse, world
-  radiance caches, and temporal accumulation are legal INSIDE Act 1 (more
-  signal per ray) or as THE NET's own history input (NEURAL.md: "temporal
-  accumulation = substrate, not a stage") — never as a hand-built chained
-  stage standing between rays and screen. Hand-rolled temporal
-  gates/clamps/heuristics (the light-live reprojection machinery,
-  `integrate_temporal`/`temporal_resolve`) are LAB EQUIPMENT: training-data
-  and history-buffer generators / teachers for THE NET, not a shipped path
+- **Inside Pleroma: sampling and judgment.** ReSTIR-class reuse (direct
+  many-lights + GI reuse) makes sparse evidence smarter per ray; it never
+  reconstructs an image itself. It rides the BVH intersector; not yet built.
+  Screen-space reuse, world radiance caches, and temporal accumulation are
+  Pleroma's evidence/history substrate (NEURAL.md), never hand-built seams
+  between world truth and glass. Hand-rolled temporal gates/clamps/heuristics
+  (`integrate_temporal`/`temporal_resolve`) are LAB EQUIPMENT: training-data
+  and history-buffer generators / teachers for Pleroma, not a shipped path
   (NEURAL.md, "THE DESIGN IS THE LAW"). `GAIA_NATIVE_TEMPORAL` defaults OFF
   on main for this reason.
 - **Anti-goals** (Lumen sucks-list, unchanged): no seconds-lag on global
@@ -145,24 +136,23 @@ future residency system (design slot above).
   transcode must be bit-repack cheap (never JPEG-family).
 
 ## 4 · Presentation
-THE NET renders directly at screen resolution — there is no separate
-"internal resolution → upscale to native" dial (that concept is dead,
-NEURAL.md). The only dials are on Act 1: ray budget (samples/frame),
-bounce count, cache freshness. Denoising is not a presentation stage
-either — it is subsumed into Act 2's joint reconstruction; the standalone
+Pleroma renders directly at screen resolution — no separate "internal
+resolution → upscale to native" dial (that concept is dead, NEURAL.md). The
+only dials are ray budget (samples/frame), bounce count, cache freshness.
+Denoising belongs inside Pleroma's judgment; the standalone
 SVGF-class/learned denoiser explored earlier (VIII-1/VIII-2/VIII-3) is LAB
 EQUIPMENT — a teacher/baseline, never the shipped resolve.
 
 ## 5 · Capability traits (hardware-agnostic law)
-| trait | current (M1 Pro, live) | later silicon |
+| trait | current (M1 Pro, live) [source: NEURAL.md §Silicon race verdicts] | later silicon |
 |---|---|---|
 | intersector | BVH, `DynamicSplice` refit-not-rebuild (live, `bvh.rs`) | + HW ray accel where available |
 | geometry residency | none yet (design slot, §1) | MTLIO page streaming |
 | sparse texture residency | software indirection (live) | + Metal sparse fast path |
 | streaming IO | MTLIOCommandQueue (macOS 13+) | DirectStorage / io_uring |
-| reconstruction (Act 2) | Metal tensor (MPSGraph GEMM), portable-baseline wgpu compute MLP | Metal 4 MTLTensor / ML-command-encoder, ANE offload if a model ever fits (currently refused, §6) |
+| reconstruction (Pleroma's learned act) | Metal tensor (MPSGraph GEMM), portable-baseline wgpu compute MLP [source: NEURAL.md §Silicon race verdicts] | Metal 4 MTLTensor / ML-command-encoder, ANE offload if a model ever fits (currently refused, §6) [source: NEURAL.md §Silicon race verdicts] |
 Deleted rows (heresy, now LINEAGE-only): raster backend (hw-vis/sw-vis),
-upscaler (MetalFX interop slot) — no such stage exists in the two-act law.
+upscaler (MetalFX interop slot) — no separate seam exists in the one-render law.
 Quality adapts by CONTINUOUS dials on rays and net capacity, never by
 switching systems.
 
@@ -175,18 +165,21 @@ Silicon race verdicts (host M1 Pro, NEURAL.md ledger, full method in
 - ANE/CoreML: **NO** — refuses the net above ~16k px; where it does run it
   is never faster than CPU; native falls back to GPU-GEMM (~27.5ms). Does
   not free the GPU.
-- **Metal tensor (MPSGraph GEMM, batched matmul over all pixels at once):
-  DOOR REOPENS.** 4.47ms f32 @ native 960×640, ~94% of the fp32 roofline
+- **Metal tensor (MPSGraph GEMM, batched matmul over all pixels at once) [source: docs/perf/2026-07-18-rdirect-metal-tensor-spike.md]:
+  DOOR REOPENS.** 4.47ms f32 @ native 960×640 [pre-law lab measurement
+  @960×640; remeasure at 640×480 canvas owed], ~94% of the fp32 roofline
   (~5.0 of ~5.3 TFLOPS), parity 1.6e-7 vs CPU reference, 63× the WGSL
+  [source: docs/perf/2026-07-18-rdirect-metal-tensor-spike.md]
   per-thread door. Same net, same weights — the win is weight-reuse via
   simdgroup-matrix tiling turning a memory-bound per-thread problem into a
   compute-bound GEMM.
 - 60fps arithmetic on the measured pieces: **rays 7.6ms** (live-measured,
-  light-live merge's `integrate_temporal`/reprojection pass — that
-  machinery is now LAB EQUIPMENT per §2, figure carried forward as the
-  Act-1 ray-cost baseline; re-measure once Act 1 sheds temporal-only
-  bookkeeping) **+ net 4.47ms** (Metal tensor, GEMM only) **≈ ~13ms** of the
-  16.67ms/60fps budget, before elementwise glue.
+  light-live merge's `integrate_temporal`/reprojection machinery — now LAB
+  EQUIPMENT, figure carried forward as sparse-evidence cost baseline;
+  re-measure once Pleroma sheds temporal-only bookkeeping) **+ Pleroma's
+  learned act 4.47ms** (Metal tensor, GEMM only) **≈ ~13ms** of the
+  16.67ms/60fps budget, before elementwise glue. [source:
+  docs/perf/2026-07-18-rdirect-metal-tensor-spike.md]
 - Honest gaps (§ of the spike doc, not yet measured): feature-gather +
   undo_log_demod elementwise passes (unmeasured, expected cheap — WGSL's
   large per-pixel transcendental floor was a per-THREAD problem the GEMM

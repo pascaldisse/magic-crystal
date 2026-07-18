@@ -1,0 +1,29 @@
+{
+  "entropy": 1,
+  "events": [
+    {
+      "component": "mesh",
+      "entropy": 1,
+      "from": "curl-live-proof",
+      "id": "proof_box",
+      "op": "set",
+      "seq": 1,
+      "t": 1784391162922,
+      "value": {
+        "parts": [
+          {
+            "color": "#20ff40",
+            "emissive": "#08ff20",
+            "shape": "box",
+            "size": [
+              5,
+              4,
+              4
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "latest": 1
+}

@@ -52,12 +52,8 @@ pub struct IntegratorUniform {
     /// rgb = the light's colour tint (multiplied outside the scalar scatter);
     /// w = light KIND (0 = directional sun/moon, 1 = point emitter glow).
     pub med_light_color: [f32; 4],
-    /// RESOLUTION OF GOD — the window surface being drawn: surface_w,
-    /// surface_h, upscale_mode (0 = bilinear, 1 = nearest), unused. `params`
-    /// carries the (smaller) internal traced resolution; the blit upscales
-    /// `params.xy` → `surface.xy`. `build` defaults it to the trace dims
-    /// (identity upscale) so every non-window caller is unchanged; the window
-    /// render loop overrides it with the true surface + mode.
+    /// Display target: target_w, target_h, nearest=1, unused. Rendering stays
+    /// at `params.xy`; the shader applies nearest integer display scaling only.
     pub surface: [u32; 4],
     // ── LIGHT-NOT-DOTS: temporal accumulation with reprojection ──
     /// Previous frame's eye (xyz) for reprojection.
@@ -86,10 +82,22 @@ pub struct TemporalParams {
     pub depth_tol: f32,
     /// Minimum normal agreement (cosine) for accepting reprojected history.
     pub normal_tol: f32,
-    /// Neighbourhood variance clamp width (±k·sigma) applied under motion.
+    /// Neighbourhood variance clamp width (±k·sigma). Applied EVERY frame now
+    /// (gateless), so a still-camera relight re-converges too.
     pub clamp_k: f32,
     /// Hard cap on accumulated frame count (avoids unbounded 1/n stagnation).
     pub max_history: u32,
+    /// Sub-pixel image-motion budget (in PIXELS) below which a frame is treated
+    /// as numerically STILL: identity reproject + pure 1/n running average +
+    /// clamp off (deep, exact convergence). ABOVE it the frame reprojects, floors
+    /// alpha, and clamps. This must be NEAR ZERO, not a generous sub-pixel box:
+    /// a SUSTAINED sub-pixel pan (0.1°/frame is already >0.05px at trace res)
+    /// smears just as badly under identity reproject as a fast one, because the
+    /// displacement GROWS every frame while a 1/n average keeps old frames
+    /// weighted — that was the Architect's ghost. 0.05px only snaps true stillness
+    /// (float noise) and a tremor that oscillates in place. Derived against the
+    /// pixel angular size in the shader — replaces the frozen 0.99999 gate.
+    pub still_px: f32,
 }
 
 impl Default for TemporalParams {
@@ -100,6 +108,7 @@ impl Default for TemporalParams {
             normal_tol: 0.85,
             clamp_k: 1.5,
             max_history: 512,
+            still_px: 0.05,
         }
     }
 }
@@ -272,9 +281,8 @@ impl IntegratorUniform {
                 }
                 None => [0.0; 4],
             },
-            // Default: surface == trace resolution (identity upscale). The
-            // window loop overrides this after building.
-            surface: [width, height, 0, 0],
+            // Default: canvas-sized nearest identity present.
+            surface: [width, height, 1, 0],
             // Temporal defaults: history invalid (identity — output = current),
             // so every non-temporal caller is byte-unchanged. The window loop
             // overrides these when temporal accumulation is enabled.
@@ -1085,7 +1093,7 @@ pub fn trace_headless_temporal(
         } else {
             0
         };
-        uniform.temporal_flags = [valid, temporal.max_history, 0, 0];
+        uniform.temporal_flags = [valid, temporal.max_history, temporal.still_px.to_bits(), 0];
         let parity = i % 2;
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("headless temporal"),

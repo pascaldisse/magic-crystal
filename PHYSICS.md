@@ -1,12 +1,47 @@
-# PHYSICS — DreamForge unified physics spec (DRAFT for Pascal's ruling, 2026-07-16)
+# PHYSICS — DreamForge unified physics spec (rewritten 2026-07-18, neural-physics law)
 
-Status: DRAFT. Primary design input: docs/PHYSICS-ENGINE-REFERENCE.md
-(Pascal's reference — "not to copy... make out of it whatever you like").
-Evidence: research/{physics,softbody,destruction-survey,neural}-recon.md +
-RayFire mining. Laws: own UNIFIED engine, one solver, rigid+soft+bending+
-destruction+gas, with AND without voxels, "crysis+teardown+mercenaries+
-just cause+hl2 BUT BETTER" — inspiration only, everything built ours.
-Never-optimize applies: content scale never forces authoring compromises.
+Status: LAW, not draft. Supersedes the 2026-07-16 XPBD-primary draft (kept
+verbatim as LINEAGE, bottom). Architect's ruling (07-18 14:50, CLAUDE.md ★
+EXTENDED TO PHYSICS): same law as rendering — ONE NEURAL PHYSICS ENGINE.
+
+## 0 · The normative path (07-18)
+```
+Ananke assembles constraints; Pleroma's learned act solves into state
+```
+- **Assembly — Ananke**: builds the constraint graph each tick (contacts,
+  joints, distance, volume/bend, actuated rest-length — the kernel set §1
+  below still names the VOCABULARY of constraints; what changes is the
+  learned act reading them).
+- **Pleroma's learned act** consumes the assembled graph, PRODUCES STATE
+  directly. No chained stand-in between assembly and state.
+- **Classical XPBD (`packages/elements`) = TEACHER + LIVE SCAFFOLD, not the
+  destination.** The world keeps moving under the classical solver until
+  cutover — it is not dead code, it is the ground truth Pleroma's learned act
+  trains against AND the thing that keeps physics running every tick before it
+  exists. Eviction date = Pleroma's learned act arrival: classical solving is
+  retired from the live path when Pleroma's learned act wins its chair by
+  measurement (P-N1 milestone — death rule, CLAUDE.md ★: "a learned act that
+  loses to the classical solve it replaces at equal quality dies"). Until
+  P-N1, every classical-solver line below (§1-§8) describes the SCAFFOLD,
+  not a competing normative design.
+- **DELETED as normative** (violate sealed laws, struck 07-18):
+  - SPH-primary fluid (§4) — fluids are OWED IN HIS WINDOW (CLAUDE.md ★)
+    via the net, not as a standing particle solver design.
+  - Render-pose interpolation (§7 "render interpolates between poses") —
+    violates the interpolation ban (CLAUDE.md ★ absolutes: "neural
+    interpolation BANNED"; the ban is general, not neural-only — no
+    stand-in frame between solved states).
+  - Far-field physics LOD (§7 "active = exact, far = coarse/sleeping",
+    §9 "far-field physics LOD") — violates NO LODs (CLAUDE.md ★
+    absolutes, cluster law extended to physics: no discrete detail tiers
+    keyed to distance/importance).
+- §1-§10 below (the 07-16 draft body) are LINEAGE: the classical-solver
+  design they describe survives ONLY as the teacher/scaffold definition
+  above, never as the destination architecture.
+
+---
+
+## LINEAGE — 2026-07-16 XPBD-primary draft (kept verbatim, classical solver now scaffold-only per §0 above)
 
 ## 0 · Divergences from the reference (named, deliberate)
 - Reference offers Rapier/Salva as starting points → OVERRIDDEN: own

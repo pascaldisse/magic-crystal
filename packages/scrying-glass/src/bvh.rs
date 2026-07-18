@@ -105,6 +105,16 @@ pub struct Bvh {
     pub tris: Vec<GpuTri>,
 }
 
+/// Exact primary-ray surface record. `tri_index` indexes [`Bvh::tris`] in the
+/// leaf order actually traversed by the native tracer.
+#[derive(Clone, Copy, Debug)]
+pub struct PrimaryHit {
+    pub tri_index: usize,
+    pub distance: f32,
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
+}
+
 #[derive(Clone, Copy)]
 struct BuildTri {
     tri: GpuTri,
@@ -129,6 +139,50 @@ fn gpu_tri(t: &LeafTriangle) -> GpuTri {
         albedo: [t.albedo[0], t.albedo[1], t.albedo[2], t.metallic],
         emission: [t.emission[0], t.emission[1], t.emission[2], t.roughness],
     }
+}
+
+fn ray_box(o: [f32; 3], d: [f32; 3], min: [f32; 3], max: [f32; 3], near: f32, far: f32) -> bool {
+    let mut lo = near;
+    let mut hi = far;
+    for axis in 0..3 {
+        if d[axis].abs() < 1e-20 {
+            if o[axis] < min[axis] || o[axis] > max[axis] { return false; }
+        } else {
+            let inv = 1.0 / d[axis];
+            let a = (min[axis] - o[axis]) * inv;
+            let b = (max[axis] - o[axis]) * inv;
+            lo = lo.max(a.min(b));
+            hi = hi.min(a.max(b));
+            if hi < lo { return false; }
+        }
+    }
+    true
+}
+
+fn ray_triangle(o: [f32; 3], d: [f32; 3], tri: GpuTri) -> Option<(f32, [f32; 3])> {
+    let sub = |a: [f32; 4], b: [f32; 4]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    let cross = |a: [f32; 3], b: [f32; 3]| [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    let dot = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let e1 = sub(tri.v1, tri.v0);
+    let e2 = sub(tri.v2, tri.v0);
+    let p = cross(d, e2);
+    let det = dot(e1, p);
+    if det.abs() < 1e-8 { return None; }
+    let inv_det = 1.0 / det;
+    let tvec = [o[0] - tri.v0[0], o[1] - tri.v0[1], o[2] - tri.v0[2]];
+    let u = dot(tvec, p) * inv_det;
+    if !(0.0..=1.0).contains(&u) { return None; }
+    let q = cross(tvec, e1);
+    let v = dot(d, q) * inv_det;
+    if v < 0.0 || u + v > 1.0 { return None; }
+    let distance = dot(e2, q) * inv_det;
+    if !distance.is_finite() { return None; }
+    let mut normal = cross(e1, e2);
+    let length = dot(normal, normal).sqrt();
+    if length <= 1e-12 { return None; }
+    normal = [normal[0] / length, normal[1] / length, normal[2] / length];
+    if dot(normal, d) > 0.0 { normal = [-normal[0], -normal[1], -normal[2]]; }
+    Some((distance, normal))
 }
 
 fn tri_bounds(t: &LeafTriangle) -> ([f32; 3], [f32; 3], [f32; 3]) {
@@ -202,6 +256,39 @@ impl Bvh {
         let tris = build.iter().map(|b| b.tri).collect();
         let src = build.iter().map(|b| b.src).collect();
         (Bvh { nodes, tris }, src)
+    }
+
+    /// Trace one primary ray through this exact BVH. This is the same packed
+    /// triangle/node representation uploaded to `integrator.wgsl`; it returns
+    /// geometry truth only (no lighting, no secondary rays).
+    pub fn primary_hit(&self, origin: [f32; 3], direction: [f32; 3], near: f32, far: f32) -> Option<PrimaryHit> {
+        if self.nodes.is_empty() { return None; }
+        let mut best = far;
+        let mut out = None;
+        let mut stack = vec![0usize];
+        while let Some(index) = stack.pop() {
+            let node = self.nodes[index];
+            if !ray_box(origin, direction, node.min, node.max, near, best) { continue; }
+            if node.count == 0 {
+                stack.push(node.left_first as usize);
+                stack.push(node.left_first as usize + 1);
+                continue;
+            }
+            for offset in 0..node.count as usize {
+                let tri_index = node.left_first as usize + offset;
+                let tri = self.tris[tri_index];
+                if let Some((distance, normal)) = ray_triangle(origin, direction, tri) && distance >= near && distance < best {
+                    best = distance;
+                    out = Some(PrimaryHit {
+                        tri_index,
+                        distance,
+                        position: [origin[0] + direction[0] * distance, origin[1] + direction[1] * distance, origin[2] + direction[2] * distance],
+                        normal,
+                    });
+                }
+            }
+        }
+        out
     }
 
     /// Half the surface area of the root AABB. NOT a valid refit-degradation
@@ -444,7 +531,17 @@ pub struct RefitParams {
     pub max_refits: u32,
 }
 
+/// `RefitParams::degrade_ratio` default — measured by the 300-tick +
+/// 1200-tick trace-drift sweep (`examples/refit_degrade.rs`): `1 + 10 ×` the
+/// maximum benign gated-ratio excursion. Public so every door uses this one
+/// IRON parameter rather than duplicating its derived value.
+pub const DEFAULT_DEGRADE_RATIO: f32 = 1.7030;
+
 impl Default for RefitParams {
+    /// Defaults measured by the 300-tick + 1200-tick trace-drift sweep
+    /// (`examples/refit_degrade.rs`). The degrade ratio is
+    /// `1 + 10 × max benign excursion above 1.0`; §
+    /// `docs/perf/2026-07-17-refit-degrade-derivation.md` revision 2.
     fn default() -> Self {
         Self {
             degrade_ratio: DEFAULT_DEGRADE_RATIO,
@@ -452,18 +549,6 @@ impl Default for RefitParams {
         }
     }
 }
-
-/// `RefitParams::degrade_ratio` default — derived by the 300-tick + 1200-tick
-/// (20 full gait cycles) trace-drift sweep (`examples/refit_degrade.rs`),
-/// reporting the EXACT ratio `DynamicSplice::update`'s gate divides by
-/// (`current total-node-half-area sum / the sum at the last rebuild`), not a
-/// same-tick proxy. See `docs/perf/2026-07-17-refit-degrade-derivation.md`
-/// (revision 2 — the first derivation measured a different, structurally-
-/// pinned ratio and is superseded). The sweep's drift gate never bit, so this
-/// is the excursion-form fallback: `1 + 10 × (max observed benign gated-ratio
-/// excursion above 1.0)`. `pub` so `main.rs`'s env-var default can reference
-/// this constant instead of re-typing the literal.
-pub const DEFAULT_DEGRADE_RATIO: f32 = 1.7030;
 
 /// The persistent two-level splice (LEVER 1: refit-not-rebuild). Holds the
 /// cached STATIC tree, a PERSISTENT dynamic tree, its build permutation, and the

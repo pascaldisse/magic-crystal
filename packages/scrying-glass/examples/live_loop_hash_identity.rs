@@ -1,5 +1,6 @@
 //! LIVE-LOOP HASH-IDENTITY ORDEAL — the LEVER 2 semantics gate for the
-//! PRODUCTION window loop shape (window-playable lane).
+//! window loop scheduling shape, exercised on an EXPLICIT LAB trace surface.
+//! The native present has no internal-resolution dial.
 //!
 //! Proves that wiring the CPU/GPU overlap into `run_render_loop` is a
 //! SCHEDULING change only — frame N still traces exactly frame N's splice, so
@@ -91,8 +92,8 @@ fn main() {
         panic!("[hash-identity] no GPU adapter on this host — cannot run the ordeal");
     };
 
-    let w = env_u32("GAIA_NATIVE_RENDER_W", 640);
-    let h = env_u32("GAIA_NATIVE_RENDER_H", 480);
+    let w = env_u32("GAIA_LAB_TRACE_W", 640);
+    let h = env_u32("GAIA_LAB_TRACE_H", 480);
     let frames = env_u32("GAIA_ORDEAL_FRAMES", 24);
     let accum_bytes = (w as u64) * (h as u64) * 16;
 

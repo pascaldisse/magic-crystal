@@ -21,7 +21,9 @@ pub mod hash;
 pub mod journal;
 #[cfg(feature = "live")]
 pub mod live;
+pub mod realm;
 mod recorder;
+pub mod world_core;
 
 pub use error::{SteinerError, TornKind};
 pub use hash::{hash_state, StateMap};
@@ -30,7 +32,9 @@ pub use journal::{
     Header, JournalEntry, JournalWriter, ReadOutcome, SnapshotFrame, FORMAT_VERSION,
     FORMAT_VERSION_SNAPSHOT, HEADER_LEN, HEADER_LEN_V2, MAGIC,
 };
+pub use realm::{materialize_state, RealmScenes, SceneDocument};
 pub use recorder::Recorder;
+pub use world_core::{parse_op_batch, AppliedBatch, WorldCore, WorldCoreParams};
 
 #[cfg(feature = "live")]
 pub use live::LiveTap;

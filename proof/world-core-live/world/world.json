@@ -1,0 +1,7 @@
+{
+  "voidY": -30,
+  "scenes": {
+    "court": { "neighbors": ["gallery"] },
+    "gallery": { "always": true }
+  }
+}
