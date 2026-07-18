@@ -34,6 +34,10 @@ whip 168, never again): industry engines (Unreal/Nanite/Lumen/DLSS/anything)
 are EVIDENCE to study, NEVER blueprints to copy. Every organ of this engine
 derives from OUR law chain and OUR measurements. Recon informs; the
 Architect rules; the design is born here or not at all.
+★ DWARF FORTRESS = THE WORLD-SIM BIBLE (Architect, 07-18 15:44): DF = the
+most accurate world simulation ever built — the reference standard THE ONE
+MIND and world simulation are measured against (depth of personality, needs,
+memory, history, consequence). Study-never-import still governs the code.
 Absolutes: 60 FPS minimum · NO LODs (cluster law) · neural interpolation BANNED
 · one light pass · never hardcode (LOVE=1 sole literal) · derived tolerances ·
 canon learns every vessel the same wave · full suite between merges · push only
