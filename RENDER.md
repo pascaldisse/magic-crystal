@@ -31,11 +31,15 @@ traced samples are a RAY BUDGET (samples/frame the machine affords), not an
 internal resolution (NEURAL.md, "UPSCALING IS DEAD").
 
 ## 1 · Geometry — the ray door, not the raster door
-Cost ∝ pixels comes NATIVE from tracing: BVH traversal is ~log(N) per ray,
-and ray count ∝ pixel/sample budget — not scene complexity walked through a
-screen-space raster pass. This is WHY no cluster-cull/HZB/visibility-buffer
-machinery is needed to bound cost: the ray door already gives cost-∝-pixels
-for free. It must never again be re-derived from a cluster raster (the
+COST ∝ RAYS — the evidence budget — comes NATIVE from tracing: BVH
+traversal is ~log(N) per ray, and the ray budget is a FREE PARAMETER the
+machine affords — never scene complexity, never a screen grid walked by a
+raster pass. Pixels exist only as THE NET's output grid (Architect,
+07-18: "we don't use pixels" — raster vocabulary banned from cost laws).
+This is WHY no cluster-cull/HZB/visibility-buffer machinery is needed to
+bound cost: the ray door already bounds cost by evidence gathered.
+Corollary for the design slot below: RESIDENCY ∝ RAY BUDGET · CONTENT ∝
+SSD · THE IMAGE BELONGS TO THE NET. It must never again be re-derived from a cluster raster (the
 heresy this file is being purged of).
 
 The BVH intersector is not a future trait — it is BUILT and LIVE
@@ -116,7 +120,7 @@ future residency system (design slot above).
   light changes — light changes visibly propagate within ~100ms, fully
   converge in ~1s · small emissives = first-class emitters (ReSTIR samples
   them) · no thin-wall leaking class (geometry IS the field the BVH holds)
-  · no quality ladder to a second system — dials: rays/pixel, bounces,
+  · no quality ladder to a second system — dials: rays (evidence budget), bounces,
   cache freshness, net capacity.
 
 ## 3 · Textures — virtual, software-indirected (unchanged, orthogonal to the purge)
@@ -143,7 +147,7 @@ future residency system (design slot above).
 ## 4 · Presentation
 THE NET renders directly at screen resolution — there is no separate
 "internal resolution → upscale to native" dial (that concept is dead,
-NEURAL.md). The only dials are on Act 1: rays/pixel (sample budget),
+NEURAL.md). The only dials are on Act 1: ray budget (samples/frame),
 bounce count, cache freshness. Denoising is not a presentation stage
 either — it is subsumed into Act 2's joint reconstruction; the standalone
 SVGF-class/learned denoiser explored earlier (VIII-1/VIII-2/VIII-3) is LAB
