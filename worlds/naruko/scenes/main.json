@@ -424,5 +424,24 @@
   },
   "naruko_first_ground": {
     "terrain": { "seed": 20260717, "tile_x": 0, "tile_y": 2 }
+  },
+  "bldg_tower": {
+    "transform": { "position": [8.0, 3.3, 33.0] },
+    "mesh": { "parts": [
+      { "shape": "box", "size": [3.2, 2.2, 3.2], "position": [0, -2.2, 0], "color": "#7a6a58", "roughness": 0.9 },
+      { "shape": "box", "size": [3.2, 2.2, 3.2], "position": [0, 0, 0], "color": "#8a7a6a", "roughness": 0.9 },
+      { "shape": "box", "size": [3.2, 2.2, 3.2], "position": [0, 2.2, 0], "color": "#9a8a78", "roughness": 0.9 }
+    ] },
+    "body": { "shape": "box", "size": [3.2, 6.6, 3.2], "density": 300, "resolution": [6, 11, 6], "contact_radius": 0.06, "bonded": true, "love": 1.0, "compliance": 1e-7, "settle": 90, "anchor_base": true }
+  },
+  "bldg_basin": {
+    "transform": { "position": [8.0, 0.0, 24.0] },
+    "mesh": { "parts": [
+      { "shape": "box", "size": [3.6, 0.2, 3.6], "position": [0, 0.1, 0], "color": "#3a3a3a", "roughness": 0.6 },
+      { "shape": "box", "size": [3.6, 1.0, 0.2], "position": [0, 0.6, 1.7], "color": "#3a3a3a", "roughness": 0.6 },
+      { "shape": "box", "size": [3.6, 1.0, 0.2], "position": [0, 0.6, -1.7], "color": "#3a3a3a", "roughness": 0.6 },
+      { "shape": "box", "size": [0.2, 1.0, 3.6], "position": [1.7, 0.6, 0], "color": "#3a3a3a", "roughness": 0.6 },
+      { "shape": "box", "size": [0.2, 1.0, 3.6], "position": [-1.7, 0.6, 0], "color": "#3a3a3a", "roughness": 0.6 }
+    ] }
   }
 }
