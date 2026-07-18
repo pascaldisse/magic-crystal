@@ -29,6 +29,7 @@ use scrying_glass::integrator::{
 use scrying_glass::scene::{
     Camera, RenderScene, SceneParameters, SunDefaults, SunLight, WalkerPose,
 };
+use scrying_glass::retina::{self, Layers as RetinaLayers};
 use scrying_glass::upscaler::deserialize_weights as deserialize_upscaler_weights;
 use scrying_glass::upscaler_gpu::GpuUpscaler;
 use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewUrl};
@@ -444,7 +445,7 @@ fn respond_frame(stream: &mut TcpStream, frame: &CapturedFrame) {
 /// render channel, and — for the Embodiment — the walking body + its floor.
 struct HttpContext {
     latest: LatestFrame,
-    scry: mpsc::Sender<ScryRequest>,
+    scry: mpsc::Sender<RenderRequest>,
     player: Arc<Mutex<Player>>,
     ground: Arc<Ground>,
     tick_dt: f32,
@@ -532,6 +533,23 @@ fn handle_http(mut stream: TcpStream, ctx: &HttpContext) {
     }
     // GET /scry — the true name (GRIMOIRE: a screenshot is a scrying).
     // GET /screenshot is kept as an alias for tool compatibility.
+    if path == "/retina" {
+        let params = match parse_retina_query(query) {
+            Ok(params) => params,
+            Err(error) => { let _ = write_response(&mut stream, "400 Bad Request", "text/plain; charset=utf-8", error.as_bytes(), ""); return; }
+        };
+        let (reply_tx, reply_rx) = mpsc::channel();
+        if scry.send(RenderRequest::Retina { params, reply: reply_tx }).is_err() {
+            let _ = write_response(&mut stream, "503 Service Unavailable", "text/plain; charset=utf-8", b"render thread unavailable\n", "");
+            return;
+        }
+        match reply_rx.recv_timeout(Duration::from_secs(5)) {
+            Ok(Ok(json)) => { let _ = write_response(&mut stream, "200 OK", "application/json; charset=utf-8", json.as_bytes(), ""); }
+            Ok(Err(error)) => { let _ = write_response(&mut stream, "500 Internal Server Error", "text/plain; charset=utf-8", error.as_bytes(), ""); }
+            Err(_) => { let _ = write_response(&mut stream, "504 Gateway Timeout", "text/plain; charset=utf-8", b"retina trace timed out\n", ""); }
+        }
+        return;
+    }
     if path != "/scry" && path != "/screenshot" {
         let _ = write_response(
             &mut stream,
@@ -576,10 +594,10 @@ fn handle_http(mut stream: TcpStream, ctx: &HttpContext) {
     };
     let (reply_tx, reply_rx) = mpsc::channel();
     if scry
-        .send(ScryRequest {
+        .send(RenderRequest::Scry(ScryRequest {
             params,
             reply: reply_tx,
-        })
+        }))
         .is_err()
     {
         let _ = write_response(
@@ -1811,6 +1829,27 @@ impl Renderer {
         result
     }
 
+    /// `/retina`: exact primary rays over the tracer's post-transmute leaf
+    /// geometry; no framebuffer, radiance, or secondary-ray path is involved.
+    fn capture_retina(&self, params: &RetinaParams) -> Result<String, String> {
+        let width = params.pose.width.unwrap_or(64).max(1);
+        let height = params.pose.height.unwrap_or(64).max(1);
+        let fov = match params.pose.fov {
+            Some(degrees) if degrees > 0.0 && degrees < 180.0 => degrees.to_radians(),
+            Some(_) => return Err("fov must be between 0 and 180 degrees".into()),
+            None => self.camera.fov_y_radians,
+        };
+        let camera = Camera {
+            eye: params.pose.pos.map(Vec3::from_array).unwrap_or(self.camera.eye),
+            yaw: params.pose.yaw.unwrap_or(self.camera.yaw), pitch: params.pose.pitch.unwrap_or(self.camera.pitch),
+            fov_y_radians: fov, near: self.camera.near, far: self.camera.far,
+        };
+        let (triangles, tags) = self.scene.retina_triangles_for_eye(camera.eye, scrying_glass::scene::OWN_EYE_EPSILON_M, self.draw_own_body);
+        let (bvh, source) = Bvh::build_indexed(&triangles, &self.bvh_params);
+        let ordered_tags = source.into_iter().map(|index| tags[index as usize].clone()).collect::<Vec<_>>();
+        serde_json::to_string(&retina::trace(&bvh, &ordered_tags, &camera, width, height, params.layers)).map_err(|error| error.to_string())
+    }
+
     /// The plain bilinear/nearest `/scry` dispatch + readback — split out of
     /// [`Renderer::capture_pose`] so its OWN-EYE CULL restore (above) always
     /// runs, on every exit path (including the `?`-propagated errors below).
@@ -2155,6 +2194,40 @@ struct ScryRequest {
     reply: mpsc::Sender<Result<CapturedFrame, String>>,
 }
 
+enum RenderRequest {
+    Scry(ScryRequest),
+    Retina { params: RetinaParams, reply: mpsc::Sender<Result<String, String>> },
+}
+
+#[derive(Clone, Debug)]
+struct RetinaParams {
+    pose: ScryParams,
+    layers: RetinaLayers,
+}
+
+fn parse_retina_query(query: &str) -> Result<RetinaParams, String> {
+    let mut pose = ScryParams { width: Some(64), height: Some(64), ..Default::default() };
+    let mut layers = RetinaLayers { depth: true, normal: true, entity_id: true, material_id: true, world_pos: true };
+    for pair in query.split('&').filter(|part| !part.is_empty()) {
+        let (key, value) = pair.split_once('=').ok_or_else(|| format!("query segment {pair:?} must be key=value"))?;
+        if key == "layers" {
+            layers = RetinaLayers::default();
+            for layer in value.split(',') {
+                match layer { "depth" => layers.depth = true, "normal" => layers.normal = true, "entity-id" | "entity_id" => layers.entity_id = true, "material-id" | "material_id" => layers.material_id = true, "world-pos" | "world_pos" => layers.world_pos = true, "motion" => return Err("motion is UNVERIFIED: no previous-frame plumbing".into()), other => return Err(format!("unknown retina layer {other:?}")) }
+            }
+            continue;
+        }
+        let one = parse_scry_query(pair)?;
+        if one.pos.is_some() { pose.pos = one.pos; }
+        if one.yaw.is_some() { pose.yaw = one.yaw; }
+        if one.pitch.is_some() { pose.pitch = one.pitch; }
+        if one.fov.is_some() { pose.fov = one.fov; }
+        if one.width.is_some() { pose.width = one.width; }
+        if one.height.is_some() { pose.height = one.height; }
+    }
+    Ok(RetinaParams { pose, layers })
+}
+
 fn parse_finite_f32(value: &str, name: &str) -> Result<f32, String> {
     let parsed: f32 = value
         .parse()
@@ -2477,7 +2550,7 @@ fn main() {
                     config.integrator.spp,
                 );
                 let renderer_moved = renderer;
-                let (scry_tx, scry_rx) = mpsc::channel::<ScryRequest>();
+                let (scry_tx, scry_rx) = mpsc::channel::<RenderRequest>();
                 start_screenshot_server(
                     native_port,
                     HttpContext {
@@ -2563,7 +2636,7 @@ fn run_render_loop(
     render_ground: &Arc<Ground>,
     tick_dt: f32,
     render_interval: Duration,
-    scry_rx: &mpsc::Receiver<ScryRequest>,
+    scry_rx: &mpsc::Receiver<RenderRequest>,
     bend_rx: Option<&mpsc::Receiver<Bend>>,
     running: &Arc<AtomicBool>,
     hud_overlay: &tauri::webview::Webview<tauri::Wry>,
@@ -2603,8 +2676,10 @@ fn run_render_loop(
         // /scry's wait_indefinitely also completes `pending` — each scry
         // momentarily collapses the overlap; harmless (verification organ).
         while let Ok(request) = scry_rx.try_recv() {
-            let frame = renderer.capture_pose(&request.params);
-            let _ = request.reply.send(frame);
+            match request {
+                RenderRequest::Scry(request) => { let _ = request.reply.send(renderer.capture_pose(&request.params)); }
+                RenderRequest::Retina { params, reply } => { let _ = reply.send(renderer.capture_retina(&params)); }
+            }
         }
         // DAS BLUTBÄNDIGEN — drain the file-watch. Coalesce a burst of mtime
         // bumps into ONE apply per surface this frame (an editor may touch a
