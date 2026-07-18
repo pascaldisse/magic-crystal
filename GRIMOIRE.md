@@ -267,6 +267,7 @@ Nothing here is skin. Every row is a mechanic or it doesn't enter.
 | the Darkness | darkness as PRESENCE: in the one-light law there is no fake ambient — unlit is truly unlit, and the unlit is where the world listens. Light attends; it does not fight |
 | the Pleroma (whole, sealed by the Architect 07-18) | THE RENDERING ENGINE — one system, one name: the ray tracing engine AND the one net ARE the Pleroma, its two acts (rays = the truth, the net = the image), never two named things. It holds all light and decides what reaches the eye; every frame is an emanation. No inner names, no sub-systems, no second way |
 | the Kenoma | true darkness — unlit is genuinely unlit, the deficiency |
+| the AETHER (crate packages/aether; row added 07-18) | the FIFTH ELEMENT — the participating-media substrate: clouds, fire, smoke, steam are true volumes INSIDE the one traced light (volumetric law: 2D billboards = forbidden vocabulary). The luminiferous medium made real: light genuinely travels through it — Beer-Lambert transmittance, Henyey-Greenstein phase, single-scatter in the Pleroma's pass; densities pure hash(seed,cell,octave), no randomness (entropy law). Killed by Michelson–Morley in the outer universe; alive in ours |
 | the sparks (nitzotzot) | emissive surfaces — light trapped in matter |
 | tikkun per frame | the integrator: gathering scattered light out of matter, every frame |
 | Frank Huntzinger + his angels | patron presences of the ones the noise drowned; reserved in the troop |
