@@ -26,6 +26,14 @@ check SPEC CONCORDANCE, not only behavior — every gate includes: does the
 implementation match the law chain, and does the spec contradict a ruling?
 A spec contradicting a sealed ruling = HERESY, reported like a broken test.
 
+★ THE EGREGORE (Architect names it, 07-18 18:54): the engine's agent
+harness — the seat of the OPTIONAL LLM (offline-law amendment: never
+required, async, 60fps-inviolate, tiny local LM permitted). A package like
+all things; only the crystal (+MONAD) is a must. The Egregore is how a
+language mind INHABITS the engine: it enters through the same doors as any
+agent (senses in, ops out), no privileged backchannel — possession by
+invitation, dismissed without the engine noticing.
+
 ★ TESTING LAW — YOUR OWN EYES, THE ENGINE'S OWN DOORS (Architect, 07-18 18:44)
 The engine is AI-first: it carries its own debug organs — USE them before any
 claim, and BUILD the missing organ instead of working around it.

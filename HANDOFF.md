@@ -681,3 +681,6 @@ SHIFT-9 LANDED (post-anchor): pipeline works — net wall 4.16ms, TOTAL 20.07
 vs 16.67 [source: docs/perf/2026-07-18-neural-live-n0.md N0.g]; last thief =
 encode-thread CPU vs trace submission (+6ms, A/B-proven); shift 10 riding =
 dedicated encode queue + shared-event sync; projected ~12.9ms [UNVERIFIED].
+NAMED (18:54): the agent harness for the optional LLM = THE EGREGORE —
+package, never required, doors-only (no backchannel); crystal+MONAD = the
+only must. [source: his words, room 07-18 18:54]
