@@ -29,7 +29,7 @@ use scrying_glass::integrator::{
 use scrying_glass::scene::{
     Camera, RenderScene, SceneParameters, SunDefaults, SunLight, WalkerPose,
 };
-use scrying_glass::retina::{self, Layers as RetinaLayers};
+use scrying_glass::retina::{self, GeometryCache as RetinaGeometryCache, Layers as RetinaLayers};
 use scrying_glass::upscaler::deserialize_weights as deserialize_upscaler_weights;
 use scrying_glass::upscaler_gpu::GpuUpscaler;
 use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewUrl};
@@ -922,6 +922,9 @@ struct Renderer {
     /// per tick when the set is unchanged, rebuilds only on set change / bound
     /// degradation. Its `merged` tree is what gets uploaded.
     splice: DynamicSplice,
+    /// `/retina` CPU trees + source IDs; cache invalidates with scene geometry.
+    retina_cache: RetinaGeometryCache,
+    retina_epoch: u64,
     /// The dynamic model transforms uploaded last frame; when they change the
     /// BVH is re-spliced and accumulation resets (the honest 2spp-live tradeoff).
     last_models: Vec<[f32; 16]>,
@@ -1137,6 +1140,8 @@ impl Renderer {
             refit_params,
             draw_own_body,
             splice,
+            retina_cache: RetinaGeometryCache::default(),
+            retina_epoch: 0,
             last_models,
             camera,
             sun,
@@ -1278,6 +1283,8 @@ impl Renderer {
             self.refit_params,
         );
         self.integrator.update_bvh(&self.device, &self.splice.merged);
+        self.retina_epoch = self.retina_epoch.wrapping_add(1);
+        self.retina_cache.clear();
         self.last_models = self.scene.dynamics.model_matrices();
         self.sun = self.scene.sun;
         self.sky_top = self.scene.sky_top;
@@ -1519,6 +1526,8 @@ impl Renderer {
         self.splice.update(&self.static_bvh, &dynamic_tris);
         self.integrator
             .update_bvh(&self.device, &self.splice.merged);
+        self.retina_epoch = self.retina_epoch.wrapping_add(1);
+        self.retina_cache.clear();
         // The node/tri buffers changed — rebuild the bind groups (they bind them)
         // and drop the stale samples (moved geometry invalidates the mean).
         self.reset_surface_accum();
@@ -1832,7 +1841,7 @@ impl Renderer {
 
     /// `/retina`: exact primary rays over the tracer's post-transmute leaf
     /// geometry; no framebuffer, radiance, or secondary-ray path is involved.
-    fn capture_retina(&self, params: &RetinaParams) -> Result<String, String> {
+    fn capture_retina(&mut self, params: &RetinaParams) -> Result<String, String> {
         let width = params.pose.width.unwrap_or(64).max(1);
         let height = params.pose.height.unwrap_or(64).max(1);
         let fov = match params.pose.fov {
@@ -1845,13 +1854,16 @@ impl Renderer {
             yaw: params.pose.yaw.unwrap_or(self.camera.yaw), pitch: params.pose.pitch.unwrap_or(self.camera.pitch),
             fov_y_radians: fov, near: self.camera.near, far: self.camera.far,
         };
-        let (triangles, tags) = self.scene.retina_triangles_for_eye(camera.eye, scrying_glass::scene::OWN_EYE_EPSILON_M, self.draw_own_body);
-        let (bvh, source) = Bvh::build_indexed(&triangles, &self.bvh_params);
-        let ordered_tags = source.into_iter().map(|index| tags[index as usize].clone()).collect::<Vec<_>>();
-        let base = retina::trace(&bvh, &ordered_tags, &camera, width, height, params.layers);
+        let culls_own_body = self.scene.retina_culls_own_body(camera.eye, scrying_glass::scene::OWN_EYE_EPSILON_M, self.draw_own_body);
+        let scene = &self.scene;
+        let (bvh, ordered_tags) = self.retina_cache.get_or_build(
+            self.retina_epoch, culls_own_body, &self.bvh_params,
+            || scene.retina_triangles_for_eye(camera.eye, scrying_glass::scene::OWN_EYE_EPSILON_M, self.draw_own_body),
+        );
+        let base = retina::trace(bvh, ordered_tags, &camera, width, height, params.layers);
         let fovea = params.fovea.iter().map(|level| serde_json::json!({
             "center": level.center, "radius": level.radius, "scale": level.scale,
-            "image": retina::trace_window(&bvh, &ordered_tags, &camera, width.saturating_mul(level.scale), height.saturating_mul(level.scale), params.layers, level.center, level.radius),
+            "image": retina::trace_window(bvh, ordered_tags, &camera, width.saturating_mul(level.scale), height.saturating_mul(level.scale), params.layers, level.center, level.radius),
         })).collect::<Vec<_>>();
         serde_json::to_string(&serde_json::json!({"base": base, "fovea": fovea})).map_err(|error| error.to_string())
     }

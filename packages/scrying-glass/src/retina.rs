@@ -5,9 +5,49 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
-use crate::{bvh::Bvh, scene::{Camera, RetinaTag}};
+use crate::{bvh::{Bvh, BvhParams}, scene::{Camera, LeafTriangle, RetinaTag}};
 
 pub const EMPTY_ID: u32 = u32::MAX;
+
+/// CPU BVH cache for Matrix-retina data. Scene epoch + own-body culling are
+/// the full geometry key; pose, resolution, and foveal windows reuse it.
+#[derive(Default)]
+pub struct GeometryCache {
+    entries: Vec<CachedGeometry>,
+    builds: u64,
+}
+
+struct CachedGeometry {
+    epoch: u64,
+    culls_own_body: bool,
+    bvh: Bvh,
+    tags: Vec<RetinaTag>,
+}
+
+impl GeometryCache {
+    pub fn clear(&mut self) { self.entries.clear(); }
+
+    /// Lazy by construction: a hit does not materialize triangles or build a BVH.
+    pub fn get_or_build<F>(&mut self, epoch: u64, culls_own_body: bool, params: &BvhParams, build: F) -> (&Bvh, &[RetinaTag])
+    where F: FnOnce() -> (Vec<LeafTriangle>, Vec<RetinaTag>), {
+        if let Some(index) = self.entries.iter().position(|entry| entry.epoch == epoch && entry.culls_own_body == culls_own_body) {
+            let entry = &self.entries[index];
+            return (&entry.bvh, &entry.tags);
+        }
+        self.entries.retain(|entry| entry.epoch == epoch);
+        let (triangles, tags) = build();
+        debug_assert_eq!(triangles.len(), tags.len());
+        let (bvh, source) = Bvh::build_indexed(&triangles, params);
+        let tags = source.into_iter().map(|index| tags[index as usize].clone()).collect();
+        self.entries.push(CachedGeometry { epoch, culls_own_body, bvh, tags });
+        self.builds += 1;
+        let entry = self.entries.last().expect("just pushed retina geometry");
+        (&entry.bvh, &entry.tags)
+    }
+
+    #[cfg(test)]
+    fn builds(&self) -> u64 { self.builds }
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Layers {
@@ -99,5 +139,75 @@ pub fn trace_window(bvh: &Bvh, tags: &[RetinaTag], camera: &Camera, width: u32, 
         ray_model: "native-bvh-primary", miss_depth: -1.0,
         depth, normal, entity_id, material_id, world_pos,
         entity_table: table(entities), material_table: table(materials),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn triangle(z: f32) -> LeafTriangle {
+        LeafTriangle::lambertian([[-1.0, -1.0, z], [1.0, -1.0, z], [0.0, 1.0, z]], [0.5; 3], [0.0; 3])
+    }
+
+    #[test]
+    fn geometry_cache_reuses_epoch_and_invalidates_on_change() {
+        let mut cache = GeometryCache::default();
+        let params = BvhParams::default();
+        let (bvh, tags) = cache.get_or_build(7, false, &params, || (vec![triangle(-3.0)], vec![RetinaTag { entity_id: "wall".into(), material_id: "stone".into() }]));
+        assert_eq!(bvh.tris.len(), 1);
+        assert_eq!(tags[0].entity_id, "wall");
+        let (_, tags) = cache.get_or_build(7, false, &params, || panic!("cache hit must not rebuild"));
+        assert_eq!(tags[0].material_id, "stone");
+        assert_eq!(cache.builds(), 1);
+        let (bvh, _) = cache.get_or_build(8, false, &params, || (vec![triangle(-5.0)], vec![RetinaTag { entity_id: "far-wall".into(), material_id: "stone".into() }]));
+        assert_eq!(bvh.tris.len(), 1);
+        assert_eq!(cache.builds(), 2);
+    }
+
+    /// Headless ordeal for the HTTP handler's CPU core: actual Naruko geometry,
+    /// same primary-ray layers and JSON serialization, with the old per-pull
+    /// build contrasted against a warmed scene-epoch cache.
+    #[test]
+    fn naruko_retina_cache_latency_and_truth() {
+        use std::{path::Path, time::Instant};
+        use glam::Vec3;
+        use crate::{scene::{Camera, RenderScene}, upscaler_dataset::naruko_params};
+
+        let mut core = crystal::Core::default();
+        let world = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../worlds/naruko");
+        crystal::load_world_dir(&world, &mut core.world).expect("load Naruko");
+        let scene = RenderScene::from_ecs(std::mem::take(&mut core.world), &naruko_params()).expect("materialize Naruko");
+        let camera = Camera { eye: Vec3::new(0.0, 1.7, 44.0), yaw: 0.0, pitch: 0.0, fov_y_radians: 60.0_f32.to_radians(), near: 0.05, far: 1000.0 };
+        let layers = Layers { depth: true, normal: true, entity_id: true, material_id: true, world_pos: true };
+        let params = BvhParams::default();
+        let pulls = 4;
+        let mut before = Vec::with_capacity(pulls);
+        let mut old_depth = None;
+        for _ in 0..pulls {
+            let start = Instant::now();
+            let (triangles, tags) = scene.retina_triangles_for_eye(camera.eye, crate::scene::OWN_EYE_EPSILON_M, false);
+            let (bvh, source) = Bvh::build_indexed(&triangles, &params);
+            let tags = source.into_iter().map(|index| tags[index as usize].clone()).collect::<Vec<_>>();
+            let image = trace(&bvh, &tags, &camera, 64, 64, layers);
+            serde_json::to_vec(&image).expect("retina JSON");
+            old_depth = Some(image.depth);
+            before.push(start.elapsed().as_secs_f64() * 1e3);
+        }
+        let mut cache = GeometryCache::default();
+        let mut after = Vec::with_capacity(pulls);
+        let mut cached_depth = None;
+        for _ in 0..pulls {
+            let start = Instant::now();
+            let (bvh, tags) = cache.get_or_build(1, false, &params, || scene.retina_triangles_for_eye(camera.eye, crate::scene::OWN_EYE_EPSILON_M, false));
+            let image = trace(bvh, tags, &camera, 64, 64, layers);
+            serde_json::to_vec(&image).expect("retina JSON");
+            cached_depth = Some(image.depth);
+            after.push(start.elapsed().as_secs_f64() * 1e3);
+        }
+        assert_eq!(old_depth, cached_depth, "cache must preserve Naruko primary-ray depth exactly");
+        assert_eq!(cache.builds(), 1, "four same-epoch pulls must build once");
+        let mean = |samples: &[f64]| samples.iter().sum::<f64>() / samples.len() as f64;
+        eprintln!("[retina latency] Naruko 64x64 core old-per-pull={:.3}ms cached-warm={:.3}ms", mean(&before), mean(&after));
     }
 }

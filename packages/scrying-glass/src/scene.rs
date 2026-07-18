@@ -1141,7 +1141,14 @@ impl RenderScene {
 
     /// Exact post-transmute primary triangles paired with authored source IDs.
     /// Tags ride beside the tracer input; rendering remains untouched.
+    /// Whether this eye omits walker-attached body geometry; the retina cache's
+    /// complete eye-dependent geometry key.
+    pub fn retina_culls_own_body(&self, eye: Vec3, epsilon: f32, force_draw: bool) -> bool {
+        !force_draw && self.last_walker_eye.is_some_and(|walker| eye.distance(walker) <= epsilon)
+    }
+
     pub fn retina_triangles_for_eye(&self, eye: Vec3, epsilon: f32, force_draw: bool) -> (Vec<LeafTriangle>, Vec<RetinaTag>) {
+        let culls_own_body = self.retina_culls_own_body(eye, epsilon, force_draw);
         let mut triangles = Vec::new();
         let mut tags = Vec::new();
         for chain in &self.chains {
@@ -1155,8 +1162,7 @@ impl RenderScene {
             triangles.extend(leaf);
         }
         for body in &self.bodies {
-            let own = !force_draw && body.follows_walker() && self.last_walker_eye.is_some_and(|walker| eye.distance(walker) <= epsilon);
-            if !own {
+            if !(culls_own_body && body.follows_walker()) {
                 tags.extend(std::iter::repeat_with(|| RetinaTag { entity_id: body.gaia_id.clone(), material_id: format!("body:{}", body.preset) }).take(body.world_tris.len()));
                 triangles.extend_from_slice(&body.world_tris);
             }
