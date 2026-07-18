@@ -326,6 +326,89 @@ kernel void bias_relu(
         }
     }
 
+    /// SHIFT 17 CUT A — fused GPU demod. The undo-log-demod kernel, bit-identical
+    /// to `rdirect_demod.wgsl`'s PRESENTED path (mode 0) and the CPU reference,
+    /// but encoded onto the NET's OWN command queue right after that set's
+    /// forward — no wgpu-render-queue hop, so the demod no longer contends as a
+    /// separate cross-queue submission behind the net GPU (N0.m's p95 tail).
+    /// Belief-eye (mode 1) stays on the wgpu `DemodPass` (the /scry debug door).
+    const DEMOD_FUSED_MSL: &str = r#"
+#include <metal_stdlib>
+using namespace metal;
+kernel void demod_fused(
+    const device float*  net_out [[buffer(0)]],
+    const device float4* aov     [[buffer(1)]],
+    device float4*       present [[buffer(2)]],
+    constant uint&       n       [[buffer(3)]],
+    uint i [[thread_position_in_grid]]) {
+  if (i >= n) { return; }
+  float3 albedo = aov[2u*i + 0u].xyz;
+  float3 dl = float3(net_out[3u*i+0u], net_out[3u*i+1u], net_out[3u*i+2u]);
+  float3 divisor = (dot(albedo, albedo) > 1e-8f) ? albedo + float3(1e-3f) : float3(1.0f);
+  float3 e = max(exp(dl) - float3(1.0f), float3(0.0f));
+  present[i] = float4(e * divisor, 1.0f);
+}
+"#;
+
+    /// SHIFT 17 CUT A — the native fused-demod resources: the compiled pipeline
+    /// plus, PER SET, the shared MTLBuffers the demod binds (net output, native
+    /// AOV, present accum). `aov`/`present` are the SAME MTLBuffers wgpu wraps
+    /// (trace writes the AOV, the present blit reads the accum) — one physical
+    /// buffer, two views. `out` is cloned from the pool's per-set output. Built
+    /// once by `attach_demod`, encoded per frame by `encode_commit_demod` onto
+    /// the net queue (after `commit_net` commits that set's forward).
+    struct DemodNative {
+        pipeline: Retained<ProtocolObject<dyn MTLComputePipelineState>>,
+        aov_mtls: Vec<Retained<ProtocolObject<dyn MTLBuffer>>>,
+        present_mtls: Vec<Retained<ProtocolObject<dyn MTLBuffer>>>,
+        out_mtls: Vec<Retained<ProtocolObject<dyn MTLBuffer>>>,
+        n: u32,
+    }
+    // SAFETY: built on the render thread, encoded on the render thread only
+    // (commit_net); the MTLBuffers outlive it (held here + in the pool).
+    unsafe impl Send for DemodNative {}
+    unsafe impl Sync for DemodNative {}
+
+    impl DemodNative {
+        /// Encode the fused demod for `set` onto a FRESH command buffer off the
+        /// net queue and commit it (no wait). Runs AFTER that set's forward on
+        /// the same queue (FIFO), so it reads the freshly-written net output +
+        /// this frame's AOV and writes the present accum. Returns the committed
+        /// buffer so the caller can wait it one frame downstream. Render-thread
+        /// only.
+        #[allow(unsafe_op_in_unsafe_fn)]
+        unsafe fn encode_commit_demod(
+            &self,
+            queue: &ProtocolObject<dyn MTLCommandQueue>,
+            set: usize,
+        ) -> Retained<ProtocolObject<dyn MTLCommandBuffer>> {
+            let cmd = queue
+                .commandBuffer()
+                .expect("rdirect_live: demod commandBuffer alloc failed");
+            let enc = cmd
+                .computeCommandEncoder()
+                .expect("rdirect_live: demod computeCommandEncoder");
+            enc.setComputePipelineState(&self.pipeline);
+            enc.setBuffer_offset_atIndex(Some(&self.out_mtls[set]), 0, 0);
+            enc.setBuffer_offset_atIndex(Some(&self.aov_mtls[set]), 0, 1);
+            enc.setBuffer_offset_atIndex(Some(&self.present_mtls[set]), 0, 2);
+            let n = self.n;
+            enc.setBytes_length_atIndex(
+                std::ptr::NonNull::new(&n as *const u32 as *mut c_void).unwrap(),
+                std::mem::size_of::<u32>(),
+                3,
+            );
+            let tg = self.pipeline.maxTotalThreadsPerThreadgroup().min(256);
+            enc.dispatchThreads_threadsPerThreadgroup(
+                MTLSize { width: n as usize, height: 1, depth: 1 },
+                MTLSize { width: tg, height: 1, depth: 1 },
+            );
+            enc.endEncoding();
+            cmd.commit();
+            cmd
+        }
+    }
+
     /// S9 double buffering: how many independent tensor-data/output sets the
     /// pipeline rotates through. Two = the render thread consumes set[frame%2]
     /// while the encode thread pre-encodes the OTHER set's next command buffer.
@@ -431,6 +514,12 @@ kernel void bias_relu(
         /// sync/ordeal path (single queue+thread, gather already polled
         /// complete — no cross-queue wait encoded).
         wait_value: Option<u64>,
+        /// SHIFT 17 CUT A — the fused demod command buffer for this set,
+        /// committed by `commit_net` (fused path) right after the forward on the
+        /// same net queue. `None` on the un-fused default (wgpu demod) and the
+        /// sync/ordeal path. Waited one frame downstream to guarantee the
+        /// present accum is ready before the blit.
+        demod_cmd: Option<Retained<ProtocolObject<dyn MTLCommandBuffer>>>,
     }
     // SAFETY: the encode thread builds it, hands sole ownership across the
     // channel to the render thread, which is the only place it is committed.
@@ -480,10 +569,10 @@ kernel void bias_relu(
                         // executable must not internally commit/wait.
                         None,
                     );
-                PreparedNet { base, mps: Some(mps), set, wait_value }
+                PreparedNet { base, mps: Some(mps), set, wait_value, demod_cmd: None }
             } else {
                 s.chain.encode(&base);
-                PreparedNet { base, mps: None, set, wait_value }
+                PreparedNet { base, mps: None, set, wait_value, demod_cmd: None }
             }
         }
     }
@@ -615,6 +704,11 @@ kernel void bias_relu(
         /// S9 pipeline (encode thread). `None` until `start_pipeline`; the
         /// synchronous set-0 path (ordeal/example) requires it stay `None`.
         pipeline: RefCell<Option<Pipeline>>,
+        /// SHIFT 17 CUT A — the native fused-demod resources. `None` until
+        /// `attach_demod` (opt-in via `GAIA_NATIVE_DEMOD_FUSED`). When present,
+        /// `commit_net` runs the demod on the net queue instead of the wgpu
+        /// render queue, killing N0.m's cross-queue demod tail.
+        demod_native: RefCell<Option<DemodNative>>,
     }
 
     impl RdirectLive {
@@ -725,6 +819,7 @@ kernel void bias_relu(
                         Some("1") | Some("true") | Some("on")
                     )),
                     pipeline: RefCell::new(None),
+                    demod_native: RefCell::new(None),
                 })
             }
         }
@@ -942,6 +1037,102 @@ kernel void bias_relu(
             SET_COUNT
         }
 
+        /// SHIFT 17 CUT A — build the native fused-demod resources and return
+        /// the wgpu views of the per-set AOV + present-accum SHARED MTLBuffers.
+        /// Must be called AFTER `from_wgpu_queue` (the pool exists) and BEFORE
+        /// `start_pipeline`. The caller (NetPresent) uses the returned AOV
+        /// buffers as the trace/gather targets and the present buffers as the
+        /// blit sources — they are the SAME MTLBuffers the fused demod binds, so
+        /// the demod writes what the blit reads with no copy. `n` = target
+        /// pixels (= the pool's max_pixels). Opt-in: the caller only invokes this
+        /// when `GAIA_NATIVE_DEMOD_FUSED` is set.
+        pub fn attach_demod(
+            &self,
+            wgpu_device: &wgpu::Device,
+            n: usize,
+        ) -> Result<(Vec<wgpu::Buffer>, Vec<wgpu::Buffer>), String> {
+            let pool = self
+                .pool
+                .as_ref()
+                .ok_or_else(|| "rdirect_live: attach_demod needs the shared pool".to_string())?;
+            let aov_bytes = n * 8 * std::mem::size_of::<f32>(); // AOV_CELL = 2×vec4 = 32B
+            let present_bytes = n * 4 * std::mem::size_of::<f32>(); // vec4 = 16B
+            // SAFETY: objc2 message sends + the wgpu-hal Metal buffer bridge; the
+            // MTLBuffers we clone into wgpu outlive the wgpu buffers (both held
+            // in `DemodNative` and returned as wgpu views retained by NetPresent).
+            unsafe {
+                let mtl_device = self.queue.device();
+                let mut aov_wgpu = Vec::with_capacity(SET_COUNT);
+                let mut present_wgpu = Vec::with_capacity(SET_COUNT);
+                let mut aov_mtls = Vec::with_capacity(SET_COUNT);
+                let mut present_mtls = Vec::with_capacity(SET_COUNT);
+                let mut out_mtls = Vec::with_capacity(SET_COUNT);
+                for set in 0..SET_COUNT {
+                    let aov_mtl = mtl_device
+                        .newBufferWithLength_options(aov_bytes, MTLResourceOptions::StorageModeShared)
+                        .ok_or_else(|| "rdirect_live: demod AOV MTLBuffer alloc failed".to_string())?;
+                    let present_mtl = mtl_device
+                        .newBufferWithLength_options(present_bytes, MTLResourceOptions::StorageModeShared)
+                        .ok_or_else(|| "rdirect_live: demod present MTLBuffer alloc failed".to_string())?;
+                    let aov_hal = wgpu::hal::metal::Device::buffer_from_raw(
+                        aov_mtl.clone(),
+                        aov_bytes as u64,
+                    );
+                    let aov_buf = wgpu_device.create_buffer_from_hal::<wgpu::hal::api::Metal>(
+                        aov_hal,
+                        &wgpu::BufferDescriptor {
+                            label: Some("rdirect fused AOV (shared MTLBuffer)"),
+                            size: aov_bytes as u64,
+                            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                            mapped_at_creation: false,
+                        },
+                    );
+                    let present_hal = wgpu::hal::metal::Device::buffer_from_raw(
+                        present_mtl.clone(),
+                        present_bytes as u64,
+                    );
+                    let present_buf = wgpu_device.create_buffer_from_hal::<wgpu::hal::api::Metal>(
+                        present_hal,
+                        &wgpu::BufferDescriptor {
+                            label: Some("rdirect fused present (shared MTLBuffer)"),
+                            size: present_bytes as u64,
+                            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                            mapped_at_creation: false,
+                        },
+                    );
+                    aov_wgpu.push(aov_buf);
+                    present_wgpu.push(present_buf);
+                    aov_mtls.push(aov_mtl);
+                    present_mtls.push(present_mtl);
+                    out_mtls.push(pool.sets[set].out_mtl.clone());
+                }
+                // Compile the fused-demod pipeline once.
+                let src = NSString::from_str(DEMOD_FUSED_MSL);
+                let lib = mtl_device
+                    .newLibraryWithSource_options_error(&src, None)
+                    .map_err(|e| format!("rdirect_live: demod_fused compile failed: {e:?}"))?;
+                let func = lib
+                    .newFunctionWithName(&NSString::from_str("demod_fused"))
+                    .ok_or_else(|| "rdirect_live: demod_fused function missing".to_string())?;
+                let pipeline = mtl_device
+                    .newComputePipelineStateWithFunction_error(&func)
+                    .map_err(|e| format!("rdirect_live: demod_fused pipeline failed: {e:?}"))?;
+                *self.demod_native.borrow_mut() = Some(DemodNative {
+                    pipeline,
+                    aov_mtls,
+                    present_mtls,
+                    out_mtls,
+                    n: n as u32,
+                });
+                Ok((aov_wgpu, present_wgpu))
+            }
+        }
+
+        /// SHIFT 17 CUT A — is the fused-demod path live (attach_demod ran)?
+        pub fn demod_fused(&self) -> bool {
+            self.demod_native.borrow().is_some()
+        }
+
         /// SYNCHRONOUS forward over buffer set `set`: encode + commit + wait on
         /// the CALLING thread, leaving the result in `output_buffer_set(set)`.
         /// Used by the ordeal/example (pipeline NOT started). Records GPU-only
@@ -1087,7 +1278,7 @@ kernel void bias_relu(
             let pipe = guard
                 .as_mut()
                 .expect("rdirect_live: commit_net before start_pipeline");
-            let current = pipe
+            let mut current = pipe
                 .current
                 .take()
                 .expect("rdirect_live: commit_net without begin_frame");
@@ -1097,6 +1288,20 @@ kernel void bias_relu(
             let commit_ms =
                 objc2::rc::autoreleasepool(|_| unsafe { commit_prepared_nowait(&current) });
             self.last_commit_ms.set(commit_ms);
+            // SHIFT 17 CUT A — fused demod: encode+commit the demod for THIS set
+            // onto its net queue right after the forward (same queue → FIFO, so
+            // it reads the fresh net output + this frame's AOV and writes the
+            // present accum). No wgpu-render-queue hop → no cross-queue tail.
+            {
+                let dn = self.demod_native.borrow();
+                if let Some(dn) = dn.as_ref() {
+                    let queue = &*self.pool.as_ref().unwrap().ctx.net_queues[cur_set];
+                    let cmd = objc2::rc::autoreleasepool(|_| unsafe {
+                        dn.encode_commit_demod(queue, cur_set)
+                    });
+                    current.demod_cmd = Some(cmd);
+                }
+            }
             // Keep the encode a frame ahead: refill the set we just committed.
             let _ = pipe.tx_req.send(cur_set);
             // N0.i S13 A/B: blocking path — wait THIS buffer now, present it this
@@ -1106,6 +1311,11 @@ kernel void bias_relu(
                 let (gpu_ms, wait_ms) = objc2::rc::autoreleasepool(|_| unsafe {
                     let t = std::time::Instant::now();
                     let g = wait_prepared(&current);
+                    // Fused: also wait the demod buffer so the present accum is
+                    // ready before the blit (same queue, runs right after).
+                    if let Some(dc) = &current.demod_cmd {
+                        dc.waitUntilCompleted();
+                    }
                     (g, t.elapsed().as_secs_f64() * 1000.0)
                 });
                 self.last_gpu_ms.set(gpu_ms);
@@ -1123,6 +1333,10 @@ kernel void bias_relu(
                     let (gpu_ms, wait_ms) = objc2::rc::autoreleasepool(|_| unsafe {
                         let t = std::time::Instant::now();
                         let g = wait_prepared(&p);
+                        // Fused: wait its demod too (present accum ready).
+                        if let Some(dc) = &p.demod_cmd {
+                            dc.waitUntilCompleted();
+                        }
                         (g, t.elapsed().as_secs_f64() * 1000.0)
                     });
                     self.last_gpu_ms.set(gpu_ms);

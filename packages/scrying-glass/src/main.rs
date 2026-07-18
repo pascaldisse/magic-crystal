@@ -1333,8 +1333,15 @@ struct NetPresent {
     /// `net_aov[demod_set]` — albedo stays matched to the radiance's frame.
     net_aov: Vec<wgpu::Buffer>,
     /// Surface-res present accum the blit resolves to screen (linear rgb, w=1).
-    present_accum: wgpu::Buffer,
-    present_blit_bg: wgpu::BindGroup,
+    /// SHIFT 17 CUT A: a Vec — len 1 on the default (wgpu) demod path, len
+    /// SET_COUNT on the fused path (the native demod writes present[demod_set]
+    /// one frame ahead of the blit, so each set needs its own accum).
+    present_accum: Vec<wgpu::Buffer>,
+    present_blit_bg: Vec<wgpu::BindGroup>,
+    /// SHIFT 17 CUT A: true when the fused native demod is live (attach_demod
+    /// ran, gated by `GAIA_NATIVE_DEMOD_FUSED`). The wgpu `demod` pass is then
+    /// skipped for the presented eye (belief eye still uses it).
+    fused: bool,
     low_w: u32,
     low_h: u32,
     target_w: u32,
@@ -1394,6 +1401,22 @@ impl NetPresent {
         )
         .map_err(|e| format!("read rdirect weights: {e}"))?;
         let live = RdirectLive::from_wgpu_queue(device, queue, &weights, n)?;
+        // SHIFT 17 CUT A: opt into the fused native demod (encode the demod on
+        // the net's OWN queue right after the forward, killing N0.m's
+        // cross-queue demod tail). MUST run BEFORE `start_pipeline`. Returns the
+        // per-set AOV + present SHARED MTLBuffers wrapped as wgpu (the same
+        // buffers the native demod binds). Default OFF — baseline untouched.
+        let fused = matches!(
+            std::env::var("GAIA_NATIVE_DEMOD_FUSED").as_deref(),
+            Ok("1" | "true" | "on")
+        );
+        let mut fused_aov: Option<Vec<wgpu::Buffer>> = None;
+        let mut fused_present: Option<Vec<wgpu::Buffer>> = None;
+        if fused {
+            let (aov, present) = live.attach_demod(device, n)?;
+            fused_aov = Some(aov);
+            fused_present = Some(present);
+        }
         // S9: spin up the encode thread so the ~14 ms MPSGraph per-frame encode
         // rides a background thread while the render thread does GPU work. After
         // this the net is driven via `begin_frame` (pick set) + `commit_net`
@@ -1413,18 +1436,32 @@ impl NetPresent {
         });
         // N0.i S13: one AOV per buffer set (frame-overlap demod matches albedo
         // to the radiance's frame). Same count as the net's double-buffer sets.
-        let net_aov: Vec<wgpu::Buffer> = (0..live.set_count())
-            .map(|_| integrator.make_aov_buffer(device, target_w, target_h))
-            .collect();
-        let present_accum = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("net-present surface accum"),
-            size: (n as u64).max(1) * 16,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
+        // SHIFT 17 CUT A: on the fused path these ARE the shared MTLBuffers the
+        // native demod reads (trace writes them via wgpu; demod reads them via
+        // Metal) — one physical buffer, two views.
+        let net_aov: Vec<wgpu::Buffer> = fused_aov.unwrap_or_else(|| {
+            (0..live.set_count())
+                .map(|_| integrator.make_aov_buffer(device, target_w, target_h))
+                .collect()
         });
-        let present_blit_bg = integrator.blit_bind_group(device, &present_accum);
+        // SHIFT 17 CUT A: per-set present accum on the fused path (the native
+        // demod writes present[demod_set] a frame ahead of the blit); a single
+        // accum on the default wgpu-demod path (demod→blit are same-frame).
+        let present_accum: Vec<wgpu::Buffer> = fused_present.unwrap_or_else(|| {
+            vec![device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("net-present surface accum"),
+                size: (n as u64).max(1) * 16,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })]
+        });
+        let present_blit_bg: Vec<wgpu::BindGroup> = present_accum
+            .iter()
+            .map(|a| integrator.blit_bind_group(device, a))
+            .collect();
 
         Ok(Self {
+            fused,
             live,
             gather,
             demod,
@@ -1450,6 +1487,16 @@ impl NetPresent {
             frames: 0,
             wall_start: None,
         })
+    }
+
+    /// SHIFT 17 CUT A: the present blit bind group for buffer set `set` (its
+    /// present accum). One accum on the default path; per-set on the fused path.
+    fn present_bg_for(&self, set: usize) -> &wgpu::BindGroup {
+        &self.present_blit_bg[if self.fused { set } else { 0 }]
+    }
+    /// SHIFT 17 CUT A: the present accum buffer for buffer set `set`.
+    fn present_accum_for(&self, set: usize) -> &wgpu::Buffer {
+        &self.present_accum[if self.fused { set } else { 0 }]
     }
 
     /// Trace → gather → forward → undo-log-demod, leaving `present_accum`
@@ -1556,27 +1603,33 @@ impl NetPresent {
         // (demod_set None) — present_accum stays as-is (black on boot).
         let t3 = Instant::now();
         if let Some(dset) = demod_set {
-            let net_out = self
-                .live
-                .output_buffer_set(dset)
-                .expect("net-present pooled output buffer");
-            let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("net demod"),
-            });
-            self.demod.encode(
-                device,
-                queue,
-                &mut enc,
-                net_out,
-                &self.net_aov[dset],
-                &self.present_accum,
-                self.n as u32,
-                false, // presented (undo albedo demod); belief eye is /scry?eye=belief
-            );
-            queue.submit(Some(enc.finish()));
-            let _ = device.poll(wgpu::PollType::wait_indefinitely());
+            // SHIFT 17 CUT A: on the fused path the native demod ALREADY ran on
+            // the net queue (in `commit_net`) and wrote present_accum[dset] — no
+            // wgpu demod, no cross-queue submit+poll here (the tail we killed).
+            if !self.fused {
+                let net_out = self
+                    .live
+                    .output_buffer_set(dset)
+                    .expect("net-present pooled output buffer");
+                let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("net demod"),
+                });
+                self.demod.encode(
+                    device,
+                    queue,
+                    &mut enc,
+                    net_out,
+                    &self.net_aov[dset],
+                    &self.present_accum[0],
+                    self.n as u32,
+                    false, // presented (undo albedo demod); belief eye is /scry?eye=belief
+                );
+                queue.submit(Some(enc.finish()));
+                let _ = device.poll(wgpu::PollType::wait_indefinitely());
+            }
             // S12.5: remember which set the presented frame came from, so a
-            // /scry?eye=belief capture re-demods THAT net output in belief mode.
+            // /scry?eye=belief capture re-demods THAT net output in belief mode,
+            // and (fused) the blit picks present_accum[last_set].
             self.last_set = dset;
         }
         // The present blit resolves present_accum (w=1) 1:1 nearest to screen.
@@ -2804,7 +2857,7 @@ impl Renderer {
         self.integrator.blit(
             &mut encoder,
             &self.offscreen.view,
-            &np.present_blit_bg,
+            np.present_bg_for(np.last_set),
             "net offscreen present",
         );
         if let Some(frame) = &surface_frame {
@@ -2812,7 +2865,7 @@ impl Renderer {
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
             self.integrator
-                .blit(&mut encoder, &view, &np.present_blit_bg, "net surface present");
+                .blit(&mut encoder, &view, np.present_bg_for(np.last_set), "net surface present");
         }
         // N0.j S13.2 KILL THE MEASUREMENT TAX: the per-frame offscreen readback
         // (copy_texture_to_buffer + map submit) fed `latest` so a bare `/scry`
@@ -2936,7 +2989,7 @@ impl Renderer {
             &mut enc,
             net_out,
             &np.net_aov[np.last_set],
-            &np.present_accum,
+            np.present_accum_for(np.last_set),
             np.n as u32,
             true, // BELIEF
         );
@@ -2968,7 +3021,7 @@ impl Renderer {
                 label: Some("belief present + capture"),
             });
         self.integrator
-            .blit(&mut encoder, &target.view, &np.present_blit_bg, "belief present");
+            .blit(&mut encoder, &target.view, np.present_bg_for(np.last_set), "belief present");
         let slot = &target.slots[0];
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
