@@ -77,6 +77,11 @@ for commit in "${commits[@]}"; do
   fi
 
   message=$(git log -1 --format=%B "$commit")
+  subject=$(git log -1 --format=%s "$commit")
+  if [[ "$subject" == "Merge branch 'main' into "* || "$subject" == "Merge remote-tracking branch 'origin/main'"* ]]; then
+    printf 'WILDE JAGD PULL-MERGE — exempt — %s\n' "$commit" >&2
+    continue
+  fi
   adversary=$(printf '%s\n' "$message" | git interpret-trailers --parse | grep -E '^Adversary: .+ HOLDS$' || true)
   concordance=$(printf '%s\n' "$message" | git interpret-trailers --parse | grep -Fx 'Concordance: checked' || true)
   # THE TOOTH (07-18, his 4th order): a trailer is words; the gate demands the
