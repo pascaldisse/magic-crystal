@@ -444,6 +444,12 @@ pub struct RefitParams {
     pub max_refits: u32,
 }
 
+/// `RefitParams::degrade_ratio` default — measured by the 300-tick +
+/// 1200-tick trace-drift sweep (`examples/refit_degrade.rs`): `1 + 10 ×` the
+/// maximum benign gated-ratio excursion. Public so every door uses this one
+/// IRON parameter rather than duplicating its derived value.
+pub const DEFAULT_DEGRADE_RATIO: f32 = 1.7030;
+
 impl Default for RefitParams {
     /// Defaults measured by the 300-tick + 1200-tick trace-drift sweep
     /// (`examples/refit_degrade.rs`). The degrade ratio is
@@ -451,7 +457,7 @@ impl Default for RefitParams {
     /// `docs/perf/2026-07-17-refit-degrade-derivation.md` revision 2.
     fn default() -> Self {
         Self {
-            degrade_ratio: 1.7030,
+            degrade_ratio: DEFAULT_DEGRADE_RATIO,
             max_refits: 0,
         }
     }
