@@ -14,7 +14,8 @@
 //
 // MODE A: weights + inter-layer activations stored f16; the dot-product
 // accumulator stays f32 (the sound fp16 mode, fp16 verdict). THE BAN: every
-// value is a function of THIS frame's buffers alone. BAN-SCOPED
+// value is a function of THIS frame's buffers alone.
+// BAN-SCOPED
 
 enable f16;
 

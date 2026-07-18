@@ -9,7 +9,8 @@
 //
 // THE BAN: every value is a function of THIS frame's buffers alone — the
 // low-res radiance of THIS frame and THIS frame's target-res
-// albedo/normal/depth/motion. No cross-frame anything. BAN-SCOPED
+// albedo/normal/depth/motion. No cross-frame anything.
+// BAN-SCOPED
 
 const MAX_LAYERS: u32 = 16u;
 const MAX_WIDTH: u32 = 64u;
