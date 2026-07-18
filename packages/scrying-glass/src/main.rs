@@ -1392,10 +1392,20 @@ impl NetPresent {
         target_h: u32,
     ) -> Result<Self, String> {
         let n = (target_w as usize) * (target_h as usize);
-        let weights = std::fs::read(
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("data/rdirect-weights-v1.bin"),
-        )
-        .map_err(|e| format!("read rdirect weights: {e}"))?;
+        // STAGE B: DEFAULT WEIGHTS = v2 (N1 SHIP, 5x64 @640×480, ~2× better
+        // held-out). v1 stays on disk, env-selectable for the Architect's A/B:
+        // GAIA_NATIVE_WEIGHTS=v1 | v2 | <relative path under the crate>. A
+        // missing/unreadable file returns Err → net_present_frame Err →
+        // present_black (Pleroma-or-BLACK: this is how "force Pleroma
+        // unavailable" yields a pure-black window).
+        let weights_sel = std::env::var("GAIA_NATIVE_WEIGHTS").unwrap_or_else(|_| "v2".to_string());
+        let weights_file = match weights_sel.as_str() {
+            "v1" => "data/rdirect-weights-v1.bin".to_string(),
+            "v2" => "data/rdirect-weights-v2.bin".to_string(),
+            other => other.to_string(),
+        };
+        let weights = std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join(&weights_file))
+            .map_err(|e| format!("read rdirect weights ({weights_file}): {e}"))?;
         let live = RdirectLive::from_wgpu_queue(device, queue, &weights, n)?;
         // SHIFT 17 CUT A: opt into the fused native demod (encode the demod on
         // the net's OWN queue right after the forward, killing N0.m's
@@ -1750,9 +1760,11 @@ impl NetPresent {
     /// S12.5 `/state` JSON: forward path, canvas res, frame count, weights id.
     fn state_json(&self) -> String {
         let path = if self.live.use_mpsgraph_now() { "mpsgraph" } else { "chain" };
+        // STAGE B: report the selected weights (default v2).
+        let weights = std::env::var("GAIA_NATIVE_WEIGHTS").unwrap_or_else(|_| "v2".to_string());
         format!(
             "{{\"path\":\"{path}\",\"canvas\":[{},{}],\"pixels\":{},\
-             \"frames\":{},\"weights\":\"rdirect-weights-v1\",\
+             \"frames\":{},\"weights\":\"rdirect-weights-{weights}\",\
              \"in_features\":{},\"out_channels\":{},\"max_pixels\":{}}}",
             self.target_w, self.target_h, self.n, self.frames,
             self.live.in_features(), self.live.out_channels(), self.live.max_pixels(),

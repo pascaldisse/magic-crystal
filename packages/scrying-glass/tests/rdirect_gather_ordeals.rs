@@ -33,8 +33,10 @@ use scrying_glass::rdirect_live::RdirectLive;
 use scrying_glass::scene::RenderScene;
 
 fn weights_bytes() -> Vec<u8> {
+    // STAGE D: parity of the SHIPPED default weights (v2) — GPU forward vs the
+    // live CPU reference (deserialize_weights + Mlp, same weights, same math).
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    std::fs::read(root.join("data/rdirect-weights-v1.bin")).expect("committed rdirect weights")
+    std::fs::read(root.join("data/rdirect-weights-v2.bin")).expect("committed rdirect weights")
 }
 
 #[test]
