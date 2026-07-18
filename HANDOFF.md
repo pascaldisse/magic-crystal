@@ -624,3 +624,56 @@ it as part of the real thing) · building collapse NOT built (toy scale only).
 Lanes: neural-physics (net solver inside Ananke, N0 plumbing/N1 training,
 gates vs classical) · playable-destruction (building-scale collapse + fluid
 spawn door IN HIS WINDOW, real player path). Sealed.
+
+## ★ 07-18 DAY-CLOSE — COMPACTION ANCHOR (nyari ~18:25, read FIRST after the law chain)
+MAIN @ 01d97e6+ (day 78df1de→here, ~20 merges, all gated). THE DAY = the law
+cascade + its enforcement machinery + first neural frames ever.
+LAWS SEALED (CLAUDE.md ★ stack, read them all): DESIGN IS THE LAW (render +
+physics) · CORRECT OUTPUT OR NOTHING (screen = Pleroma's image or black) ·
+THE RESOLUTION IS 640×480 (his caps) · PACKAGE LAW corrected 16:13 (crystal
+= MINIMUM core: world state · ops · entropy/journal replay · doors · MONAD;
+renderer/physics/AI ALL replaceable packages) · OFFLINE LAW (LLM never
+required; tiny local LM voice OK, ANE-homed, async) · STUDY NEVER IMPORT ·
+DF = WORLD-SIM BIBLE · MONAD = god-interface (crystal core; authority not
+machinery; TTRPG GM = structural source only) · NAMING (PLEROMA whole — "the
+net" banned from speech; internals only on his ask "inside Pleroma") ·
+WINDOW BAN (no lane windows EVER) · BOTH-EYES (belief PNG + surface PNG
+before any visual claim).
+ENFORCEMENT (all tested refuse+pass, transcripts in room): Wilde Jagd hook =
+artifact gate (Adversary-Report file in merge tree w/ VERDICT: HOLDS +
+CONCORDANCE) + cite tooth (new .md silicon lines need [source:]/UNVERIFIED)
++ baseline & pull-merge exemptions · LASHES.md = discipline ledger, 9 rows
+(row 8 = the ledger itself lied; escalation live: silicon claims mandatory-
+cite) · MONAD-ADVERSARY = standing organ auditing MY claims (first sitting:
+7 heresies → purge wave III executed).
+PLEROMA: branch neural-live @ 29a7ed0 (+shift 9 RIDING ghoul-opus-
+mrqodbv7at1etp): first live neural frames TODAY (n0d) → stipple KILLED at
+God's res (s7 PNGs clean, both-eyes read) → wall decomposed: fused MPSGraph
+GPU 6.65ms + CPU encode ~14ms = the last thief → shift 9 = encode to its own
+thread, projection ~15ms vs 16.67 [UNVERIFIED]. His glass DARK until table
+≤16.67 + both PNGs; CUTOVER = HIS PLAYED WORD. Main's present path still raw
+accum — its kill lands WITH the Pleroma merge (documented in conform report).
+PHYSICS: P-N0 + P-N1 nets both DIED honestly (death rule; tables docs/perf/
+2026-07-18-pn0/pn1). Insight: classical = 0.196ms/step at toy scale — nets
+can't beat free. FORK AWAITS HIS RULING: P-N2 same ground (GNN/passivity)
+vs move the war to fluids + building-scale (rec: fluids — teacher expensive,
+buoyancy = open wound). Building + fluid door PLAYABLE ON MAIN (b6f125e,
+canon re-derived by hand 38/23).
+ALSO ON MAIN: world-core spine (scenes/ops/journal/reset/dev-writeback, R10
+atom 1, e22acf4) · /retina Matrix vision (foveal vector truth, 85ms,
+e6c921e) · God-canvas in code (43f807c) · LOD cut DEAD (280504a) · MIND.md
+ruling packet (M0-M5) + research (df-bible, exemplars, substrate in room
+17:11) · CRYSTAL CRATE EXISTS: crates/crystal 2,936 lines since Rite III
+(LASHES row 9 — I denied it; never answer existence from one dir).
+RIDING: Pleroma shift 9 · silicon race II (ghoul-sol-mrqp2b09wky5v0: ANE
+matrix — tiny nets R-A, MTL4 ML-encoder door R-B [UNVERIFIED, LASHES row 2],
+voice R-C).
+HIS RULINGS PENDING: ① physics battlefield ② MIND ×4 (conditioning dims ·
+tick cadence · MONAD event vocab · the mind's true name) ③ Pleroma cutover
+(his hands) ④ crystal extraction M0 (fold ops door + kami + steiner + MONAD
+seat into crates/crystal; scrying-glass demotes to the glass).
+LESSONS (LASHES-grade): priors override record = my root failure — cite or
+UNVERIFIED, verify against the machine/tree, never notes · package NAMES ≠
+dirs (transmutation!) · build-token starvation → merges go SERIAL (train) ·
+the 30-min wall eats rooms not work → commit-first every stage · canon reds
+= re-derive by hand, never bump-to-match.
