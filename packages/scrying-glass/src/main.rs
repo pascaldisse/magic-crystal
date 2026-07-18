@@ -1847,7 +1847,12 @@ impl Renderer {
         let (triangles, tags) = self.scene.retina_triangles_for_eye(camera.eye, scrying_glass::scene::OWN_EYE_EPSILON_M, self.draw_own_body);
         let (bvh, source) = Bvh::build_indexed(&triangles, &self.bvh_params);
         let ordered_tags = source.into_iter().map(|index| tags[index as usize].clone()).collect::<Vec<_>>();
-        serde_json::to_string(&retina::trace(&bvh, &ordered_tags, &camera, width, height, params.layers)).map_err(|error| error.to_string())
+        let base = retina::trace(&bvh, &ordered_tags, &camera, width, height, params.layers);
+        let fovea = params.fovea.iter().map(|level| serde_json::json!({
+            "center": level.center, "radius": level.radius, "scale": level.scale,
+            "image": retina::trace_window(&bvh, &ordered_tags, &camera, width.saturating_mul(level.scale), height.saturating_mul(level.scale), params.layers, level.center, level.radius),
+        })).collect::<Vec<_>>();
+        serde_json::to_string(&serde_json::json!({"base": base, "fovea": fovea})).map_err(|error| error.to_string())
     }
 
     /// The plain bilinear/nearest `/scry` dispatch + readback — split out of
@@ -2200,16 +2205,37 @@ enum RenderRequest {
 }
 
 #[derive(Clone, Debug)]
+struct FoveaParams {
+    center: [f32; 2],
+    radius: f32,
+    scale: u32,
+}
+
+#[derive(Clone, Debug)]
 struct RetinaParams {
     pose: ScryParams,
     layers: RetinaLayers,
+    fovea: Vec<FoveaParams>,
 }
 
 fn parse_retina_query(query: &str) -> Result<RetinaParams, String> {
     let mut pose = ScryParams { width: Some(64), height: Some(64), ..Default::default() };
     let mut layers = RetinaLayers { depth: true, normal: true, entity_id: true, material_id: true, world_pos: true };
+    let mut fovea = Vec::new();
     for pair in query.split('&').filter(|part| !part.is_empty()) {
         let (key, value) = pair.split_once('=').ok_or_else(|| format!("query segment {pair:?} must be key=value"))?;
+        if key == "fovea" {
+            for level in value.split(';') {
+                let values = level.split(',').collect::<Vec<_>>();
+                if values.len() != 4 { return Err("fovea must be center_x,center_y,radius,scale (semicolon separates levels)".into()); }
+                let center = [parse_finite_f32(values[0], "fovea.center_x")?, parse_finite_f32(values[1], "fovea.center_y")?];
+                let radius = parse_finite_f32(values[2], "fovea.radius")?;
+                let scale = values[3].parse::<u32>().map_err(|_| format!("fovea.scale must be a positive integer, got {:?}", values[3]))?;
+                if !(0.0..=1.0).contains(&center[0]) || !(0.0..=1.0).contains(&center[1]) || !(radius > 0.0 && radius <= 1.0) || scale == 0 { return Err("fovea needs center in 0..=1, radius in 0..=1, scale > 0".into()); }
+                fovea.push(FoveaParams { center, radius, scale });
+            }
+            continue;
+        }
         if key == "layers" {
             layers = RetinaLayers::default();
             for layer in value.split(',') {
@@ -2225,7 +2251,7 @@ fn parse_retina_query(query: &str) -> Result<RetinaParams, String> {
         if one.width.is_some() { pose.width = one.width; }
         if one.height.is_some() { pose.height = one.height; }
     }
-    Ok(RetinaParams { pose, layers })
+    Ok(RetinaParams { pose, layers, fovea })
 }
 
 fn parse_finite_f32(value: &str, name: &str) -> Result<f32, String> {

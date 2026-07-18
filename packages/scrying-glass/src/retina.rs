@@ -21,6 +21,8 @@ pub struct Layers {
 #[derive(Serialize)]
 pub struct RetinaImage {
     pub resolution: [u32; 2],
+    /// `[center_x, center_y, radius]` in base-image normalized coordinates.
+    pub sample_window: [f32; 3],
     pub eye: [f32; 3],
     pub yaw: f32,
     pub pitch: f32,
@@ -46,6 +48,12 @@ pub struct RetinaImage {
 /// One deterministic feature pass through the packed native BVH. `tags` is in
 /// Bvh leaf order (the `src` permutation from `Bvh::build_indexed` applied).
 pub fn trace(bvh: &Bvh, tags: &[RetinaTag], camera: &Camera, width: u32, height: u32, layers: Layers) -> RetinaImage {
+    trace_window(bvh, tags, camera, width, height, layers, [0.5, 0.5], 1.0)
+}
+
+/// Trace a normalized square image-plane window. A small window rendered at a
+/// higher resolution is a real foveal level, not an upsampled base grid.
+pub fn trace_window(bvh: &Bvh, tags: &[RetinaTag], camera: &Camera, width: u32, height: u32, layers: Layers, center: [f32; 2], radius: f32) -> RetinaImage {
     let cells = (width as usize) * (height as usize);
     let mut depth = layers.depth.then(|| vec![-1.0; cells]);
     let mut normal = layers.normal.then(|| vec![[0.0; 3]; cells]);
@@ -59,8 +67,10 @@ pub fn trace(bvh: &Bvh, tags: &[RetinaTag], camera: &Camera, width: u32, height:
     let aspect = width as f32 / height.max(1) as f32;
     for y in 0..height {
         for x in 0..width {
-            let sx = ((x as f32 + 0.5) / width as f32 * 2.0 - 1.0) * half * aspect;
-            let sy = (1.0 - (y as f32 + 0.5) / height as f32 * 2.0) * half;
+            let base_x = center[0] + (((x as f32 + 0.5) / width as f32) - 0.5) * radius;
+            let base_y = center[1] + (((y as f32 + 0.5) / height as f32) - 0.5) * radius;
+            let sx = (base_x * 2.0 - 1.0) * half * aspect;
+            let sy = (1.0 - base_y * 2.0) * half;
             let direction = (forward + right * sx + up * sy).normalize_or_zero().to_array();
             let index = y as usize * width as usize + x as usize;
             let Some(hit) = bvh.primary_hit(camera.eye.to_array(), direction, camera.near, camera.far) else { continue };
@@ -84,7 +94,7 @@ pub fn trace(bvh: &Bvh, tags: &[RetinaTag], camera: &Camera, width: u32, height:
         table
     };
     RetinaImage {
-        resolution: [width, height], eye: camera.eye.to_array(), yaw: camera.yaw,
+        resolution: [width, height], sample_window: [center[0], center[1], radius], eye: camera.eye.to_array(), yaw: camera.yaw,
         pitch: camera.pitch, fov_deg: camera.fov_y_radians.to_degrees(),
         ray_model: "native-bvh-primary", miss_depth: -1.0,
         depth, normal, entity_id, material_id, world_pos,
