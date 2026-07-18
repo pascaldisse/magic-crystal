@@ -263,9 +263,23 @@ fn main() {
         hidden_layers: env_u32("GAIA_RDIRECT_LAYERS", 5) as usize,
         hidden_width: env_u32("GAIA_RDIRECT_WIDTH", 64) as usize,
     };
-    let mut mlp = Mlp::new_random(config, INIT_SEED);
+    // RESUME: load the v2 checkpoint and continue (training runs in <=300s
+    // segments; each invocation does `epochs` more steps from a passed offset).
+    let resume = matches!(std::env::var("GAIA_RDIRECT_RESUME").as_deref(), Ok("1" | "true"));
+    let wpath = data_dir.join("rdirect-weights-v2.bin");
+    let mut mlp = if resume && wpath.exists() {
+        let m = scrying_glass::rdirect::deserialize_weights(&std::fs::read(&wpath).unwrap())
+            .expect("resume v2 weights");
+        eprintln!("[v2] RESUMED from {}", wpath.display());
+        m
+    } else {
+        Mlp::new_random(config, INIT_SEED)
+    };
     let lr0 = env_f32("GAIA_RDIRECT_LR", 0.002);
     let epochs = env_u32("GAIA_RDIRECT_EPOCHS", 140);
+    // global schedule position: frac = (epoch_start + e) / epoch_total.
+    let epoch_start = env_u32("GAIA_RDIRECT_EPOCH_START", 0);
+    let epoch_total = env_u32("GAIA_RDIRECT_EPOCH_TOTAL", epochs).max(1);
     let batch = env_u32("GAIA_RDIRECT_BATCH", 64) as usize;
     let subsample = env_u32("GAIA_RDIRECT_SUBSAMPLE", 50_000) as usize; // px/frame/epoch
     let ckpt_every = env_u32("GAIA_RDIRECT_CKPT", 20);
@@ -280,17 +294,18 @@ fn main() {
         config, mlp.macs()
     );
 
-    let wpath = data_dir.join("rdirect-weights-v2.bin");
     let write_ckpt = |mlp: &Mlp| {
         std::fs::write(&wpath, serialize_weights(mlp)).unwrap();
     };
 
-    let mut rng = Rng(INIT_SEED ^ 0xABCD_1234);
+    // seed the epoch RNG off the global position so resumed segments draw
+    // fresh subsets (data = f(seed), never the same subset twice).
+    let mut rng = Rng(INIT_SEED ^ 0xABCD_1234 ^ ((epoch_start as u64) << 20));
     let t_train = Instant::now();
     let mut sub_in: Vec<[f32; INPUT_FEATURES]> = Vec::with_capacity(per_epoch);
     let mut sub_tg: Vec<[f32; OUTPUT_CHANNELS]> = Vec::with_capacity(per_epoch);
     for epoch in 0..epochs {
-        let frac = epoch as f32 / epochs.max(1) as f32;
+        let frac = (epoch_start + epoch) as f32 / epoch_total as f32;
         adam.set_lr(lr0 / (1.0 + 2.0 * frac));
         // fresh random subset this epoch (deterministic — data = f(seed))
         sub_in.clear();
@@ -303,7 +318,8 @@ fn main() {
         let loss = train_epoch_prepared(&mut mlp, &mut adam, &sub_in, &sub_tg, batch);
         if epoch % 10 == 0 || epoch + 1 == epochs {
             println!(
-                "[v2] epoch {epoch}/{epochs} train_mse(out-space)={loss:.6} (elapsed {:.1}s)",
+                "[v2] epoch {}/{} (seg {epoch}/{epochs}) train_mse(out-space)={loss:.6} (elapsed {:.1}s)",
+                epoch_start + epoch, epoch_total,
                 t_train.elapsed().as_secs_f64()
             );
         }
