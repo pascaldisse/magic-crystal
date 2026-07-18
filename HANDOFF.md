@@ -553,4 +553,4 @@ workspace suite run per-package under the build token (17 crates):
 412 passed, 0 failed, 0 ignored.
 Restart of the live window (:8430) is the Architect's own act — he
 restarts it after this lands, not the merge-conductor.
-Pushed origin main 78df1de..e86f92e.
+Pushed origin main 78df1de..35dc59a.
