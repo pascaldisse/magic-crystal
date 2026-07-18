@@ -688,3 +688,7 @@ RACE II CLOSED on main (321f5e9): matrix final — CPU<=2048/GPU>=4096 tiny,
 Pleroma-shape GPU 4.3-6.4ms; encoder door nearly free (10us encode) but
 package wall precise: metal-package-builder needs undocumented Manifest.json
 → locus UNVERIFIED, parked [source: docs/perf/2026-07-18-silicon-race-2.md].
+CANON SEALED (21:19): the OG story = docs/design/THE-MAGIC-CRYSTAL.md —
+intro real-time (never pre-rendered), map = INFINITE CANVAS always, worlds
+= f(seed), shard = interaction layer (speaks back, tutorial), two wizard
+factions (Edan Connor / Zareb Aiden), protagonist name OPEN.
