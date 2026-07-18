@@ -97,6 +97,15 @@ pub fn install_player_input(player: Arc<Mutex<Player>>) -> Result<(), String> {
                     // PLAYGROUND — F is the PUSH key: edge-fire a shove of the
                     // body the view ray is aimed at (consumed by the render
                     // loop, same Op::Impulse route an agent op would take).
+                    //
+                    // ADVISORY (merge-conductor #12): this handler runs once
+                    // per NSEventType::KeyDown, but macOS auto-repeats KeyDown
+                    // at the OS repeat rate while F stays held — so a held F
+                    // re-fires push_pending (and the impulse) at that rate,
+                    // not once per physical press. Documented as-is: whether
+                    // that reads as "rapid shove" (feature) or needs an
+                    // edge-only gate (isARepeat) is a gameplay-feel call
+                    // parked for the Architect, not fixed here.
                     if let Ok(mut player) = player.lock() {
                         player.push_pending = true;
                     }

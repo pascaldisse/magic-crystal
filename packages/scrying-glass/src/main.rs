@@ -1084,12 +1084,15 @@ impl Renderer {
     /// unchanged; the instant one changes (a bobbing lantern, every tick) the
     /// BVH re-splices and accumulation resets — so a continuously moving world
     /// renders live at `spp` samples/frame (no ghosting), and pauses converge.
-    /// PLAYGROUND — push reach (m) and speed (m/s, the Op::Impulse velocity
-    /// delta) read from the environment, never hardcoded: `GAIA_PUSH_REACH`
-    /// (default 4 m — arm's length plus a step) and `GAIA_PUSH_SPEED`
+    /// PLAYGROUND — push reach (m), speed (m/s, the Op::Impulse velocity
+    /// delta) and aim radius (m, perpendicular tolerance off the view ray)
+    /// read from the environment, never hardcoded: `GAIA_PUSH_REACH`
+    /// (default 4 m — arm's length plus a step), `GAIA_PUSH_SPEED`
     /// (default 5 m/s — a few m/s, enough to topple a rigid stack and, on a
-    /// weakly-bonded crate, tear it apart).
-    fn push_params() -> (f32, f32) {
+    /// weakly-bonded crate, tear it apart) and `GAIA_PUSH_AIM_RADIUS`
+    /// (default 0.9 m — a crate's own reach radius, so the crosshair need
+    /// not be pixel-perfect on a 0.8 m box).
+    fn push_params() -> (f32, f32, f32) {
         let num = |name: &str, default: f32| {
             std::env::var(name)
                 .ok()
@@ -1097,7 +1100,11 @@ impl Renderer {
                 .filter(|v| v.is_finite() && *v > 0.0)
                 .unwrap_or(default)
         };
-        (num("GAIA_PUSH_REACH", 4.0), num("GAIA_PUSH_SPEED", 5.0))
+        (
+            num("GAIA_PUSH_REACH", 4.0),
+            num("GAIA_PUSH_SPEED", 5.0),
+            num("GAIA_PUSH_AIM_RADIUS", 0.9),
+        )
     }
 
     /// PLAYGROUND — build the push op for a view ray: pick the nearest
@@ -1107,17 +1114,22 @@ impl Renderer {
     /// the realm has no physics. This is the WHOLE push door: the F key / a
     /// locked click / the `/push` organ all funnel through the identical
     /// Op::Impulse an agent would send.
+    ///
+    /// ADVISORY (merge-conductor #12): `examples/playground_push.rs` carries
+    /// its own `pick()` — a byte-for-byte copy of this ray/AIM_RADIUS logic,
+    /// kept verbatim on purpose so the example proves the window's actual
+    /// door rather than a stub. Extracting a shared fn was considered and
+    /// parked: the example lives outside the crate's public surface (no
+    /// clean import path today) and a shared helper would need its own
+    /// pub(crate) plumbing for one call site. Noted as copy-drift risk on
+    /// record — if `build_push_ops` changes, `pick()` must change with it.
     fn build_push_ops(&self, eye: Vec3, yaw: f32, pitch: f32) -> Vec<Op> {
         let Some(physics) = self.scene.physics() else {
             return Vec::new();
         };
-        let (reach, speed) = Self::push_params();
+        let (reach, speed, aim_radius) = Self::push_params();
         let cos_pitch = pitch.cos();
         let dir = Vec3::new(-yaw.sin() * cos_pitch, pitch.sin(), -yaw.cos() * cos_pitch);
-        // A body counts as "aimed at" when its centroid lies within this
-        // perpendicular distance of the ray — a crate's own reach radius, so
-        // the crosshair need not be pixel-perfect on a 0.8 m box.
-        const AIM_RADIUS: f32 = 0.9;
         let mut best: Option<(f32, String)> = None;
         for (gaia_id, centroid) in physics.push_targets() {
             let c = Vec3::new(centroid[0] as f32, centroid[1] as f32, centroid[2] as f32);
@@ -1127,7 +1139,7 @@ impl Renderer {
                 continue; // behind the eye or past arm's reach
             }
             let perp = (v - dir * t).length();
-            if perp > AIM_RADIUS {
+            if perp > aim_radius {
                 continue; // the ray does not pass through this body
             }
             if best.as_ref().is_none_or(|(bt, _)| t < *bt) {
