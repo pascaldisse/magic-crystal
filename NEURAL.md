@@ -115,3 +115,23 @@ fp16/fused GPU kernel = next atom.
   measure · buffer pooling (157MB intermediates; wall 23ms until pooled) ·
   wgpu↔MPSGraph interop lane · reload_shader↔temporal-pipeline gap.
   (r-direct @ eed0bdc, docs/perf/2026-07-18-rdirect-metal-tensor-spike.md)
+
+## UNIFIED WORLD-NET LEDGER (07-18, searched — the challenger category, kept honest)
+The Architect's question "do we need 2 networks?" = the actual frontier.
+Category EXISTS: GameNGen (Doom inside one diffusion net, 20fps, single TPU)
+· Genie 3 (DeepMind 08-2025: text→interactive 3D world, ONE net, 24fps@720p
+real-time on datacenter silicon, coherence ~minutes, drifts/hallucinates)
+· DIAMOND/Oasis lineage. Verdicts vs OUR laws: (1) budget — 24fps@720p on
+TPUs vs our 60fps@native on M1 Pro; (2) ULTRADETERMINISM — dreamed worlds
+drift; state ≠ f(seed,entropy,journal); breaks replay BY CONSTRUCTION;
+(3) shipped SOTA (DLSS-RR, 1000+ titles) = our exact shape: one net fuses
+the lossy reconstruction seams, real rays kept as evidence, physics
+separate. Neural physics field shape = per-contact/per-body GNNs (Allen 23
+rigid contact · ContactNets · NeurIPS-24 SDF-scaled) = P-N0's shape.
+Multi-task truth (corrected from overclaim): negative transfer is COMMON
+and capacity-dependent, not universal (ICLR-20; independent small nets
+often superior — conditional).
+STANDING RULE: unified world-net = NAMED CHALLENGER, not heresy — re-search
+this ledger when silicon/scale moves; death rule decides chairs, never
+ideology. Two nets, one engine remains the buildable design under M1@60 +
+replay law.
