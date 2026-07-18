@@ -944,23 +944,32 @@ fn accum_radiance(tx: u32, ty: u32, tw: u32, th: u32) -> vec3<f32> {
 
 @fragment
 fn blit_fs(in: BlitOut) -> @location(0) vec4<f32> {
-  // God's canvas is never resampled. Centre it in the OS surface and repeat
-  // each canvas texel by an integer factor; unused surface pixels stay black.
-  let tw = u.params.x;
-  let th = u.params.y;
+  // THE PURGE / CONFORM (law 43f807c): params.xy = the Pleroma canvas (640×480);
+  // surface.xy = the window. The canvas is presented LETTERBOXED at the largest
+  // NEAREST-INTEGER scale that fits the surface — centered, with BLACK bars
+  // around it. NEVER full-bleed stretched to surface-res. Runtime present is
+  // Pleroma's canvas letterboxed, or (outside it) black.
+  let tw = max(u.params.x, 1u);
+  let th = max(u.params.y, 1u);
   let sw = max(u.surface.x, 1u);
   let sh = max(u.surface.y, 1u);
-  let scale = max(1u, min(sw / tw, sh / th));
-  let display_w = tw * scale;
-  let display_h = th * scale;
-  let origin_x = (i32(sw) - i32(display_w)) / 2;
-  let origin_y = (i32(sh) - i32(display_h)) / 2;
-  let pixel_x = i32(floor(in.position.x)) - origin_x;
-  let pixel_y = i32(floor(in.position.y)) - origin_y;
-  if (pixel_x < 0 || pixel_y < 0 || pixel_x >= i32(display_w) || pixel_y >= i32(display_h)) {
+  // Largest integer scale that fits both axes (never below 1:1).
+  var scale = min(sw / tw, sh / th);
+  if (scale < 1u) { scale = 1u; }
+  let dw = tw * scale;                 // displayed canvas width  (surface px)
+  let dh = th * scale;                 // displayed canvas height (surface px)
+  let ox = (sw - min(dw, sw)) / 2u;    // left black bar (integer, centered)
+  let oy = (sh - min(dh, sh)) / 2u;    // top  black bar
+  let px = u32(max(in.position.x, 0.0));
+  let py = u32(max(in.position.y, 0.0));
+  // Outside the centered canvas rect → BLACK bars (the letterbox).
+  if (px < ox || py < oy || px >= ox + dw || py >= oy + dh) {
     return vec4<f32>(0.0, 0.0, 0.0, 1.0);
   }
-  let rgb = accum_radiance(u32(pixel_x) / scale, u32(pixel_y) / scale, tw, th);
+  // Inside → the canvas pixel at nearest-integer scale (crisp, no interpolation).
+  let cx = (px - ox) / scale;
+  let cy = (py - oy) / scale;
+  let rgb = accum_radiance(cx, cy, tw, th);
   // Linear radiance out; the *Srgb target encodes to display space.
   return vec4<f32>(rgb, 1.0);
 }

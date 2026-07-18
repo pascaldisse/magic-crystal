@@ -19,13 +19,17 @@ use crystal::{Core, GaiaPackage, ImpulseOp, Op, OpBatch, load_world_dir};
 use glam::Vec3;
 use scrying_glass::ScryingGlassPackage;
 use scrying_glass::bloodbend::{self, Bend, Bloodbend, BloodbendParams};
-use scrying_glass::bvh::{Bvh, BvhParams, DynamicSplice, RefitParams};
+use scrying_glass::bvh::{Bvh, BvhParams, DEFAULT_DEGRADE_RATIO, DynamicSplice, RefitParams};
 use scrying_glass::denoiser::deserialize_weights as deserialize_denoiser_weights;
 use scrying_glass::denoiser_gpu::GpuDenoiser;
+// THE PURGE (Architect, whip 170) deleted these from the LIVE PRESENT path;
+// main's post-purge ITEM 16 de-charter kept them as an explicitly-gated lab
+// surface (`capture_pose_teacher_benchmark`, `?lab=teacher-benchmark` only,
+// never default-reachable) for examples/onepath_proof.rs + the viii2/viii3
+// ordeals — so the import stays, narrowed to that one cordoned caller.
 use scrying_glass::integrator::{
     Integrator, IntegratorParams, IntegratorUniform, TemporalParams, resolve as resolve_accum,
-    split_aov,
-    trace_headless, trace_headless_aov,
+    split_aov, trace_headless, trace_headless_aov,
 };
 // NEURAL-LIVE N0.c construction scaffold: the ONE net presented per live frame.
 #[cfg(target_os = "macos")]
@@ -242,6 +246,10 @@ impl ScryingGlassConfig {
                 max_refits: integer("GAIA_NATIVE_BVH_REFIT_MAX", 0)?,
             },
             capture_frames: integer("GAIA_NATIVE_CAPTURE_FRAMES", 48)?,
+            // render_width/render_height/upscale_mode are GONE (CONFORM's
+            // God-canvas rename unified them into native_canvas_width/height
+            // above; THE PURGE independently deleted the GAIA_NATIVE_UPSCALE
+            // resolve A/B — both land on the same one-canvas, Pleroma-only shape).
             temporal_enabled: match std::env::var("GAIA_NATIVE_TEMPORAL") {
                 Ok(value) => value.parse::<bool>().map_err(|_| {
                     format!("GAIA_NATIVE_TEMPORAL must be true or false, got {value:?}")
@@ -284,12 +292,11 @@ impl ScryingGlassConfig {
             event_limit_max: integer("GAIA_NATIVE_EVENT_LIMIT_MAX", 500)? as usize,
             max_request_bytes: integer("GAIA_NATIVE_HTTP_MAX_BYTES", 1 << 20)? as usize,
             worker_window,
-            net_present: match std::env::var("GAIA_NATIVE_NET_PRESENT") {
-                Ok(value) => value.parse::<bool>().map_err(|_| {
-                    format!("GAIA_NATIVE_NET_PRESENT must be true or false, got {value:?}")
-                })?,
-                Err(_) => false,
-            },
+            // THE PURGE: the GAIA_NATIVE_NET_PRESENT scaffold is DELETED —
+            // Pleroma IS the render, not an option. Always on; runtime states
+            // are Pleroma-image or BLACK only (macOS; non-macOS has no Pleroma
+            // rig so it presents black by law).
+            net_present: true,
             offscreen: match std::env::var("GAIA_NATIVE_OFFSCREEN") {
                 Ok(value) => value.parse::<bool>().map_err(|_| {
                     format!("GAIA_NATIVE_OFFSCREEN must be true or false, got {value:?}")
@@ -826,7 +833,7 @@ fn handle_http(mut stream: TcpStream, ctx: &HttpContext) {
 
     // Parse the query (pose overrides and/or the S12.5 eye selector). An empty
     // query yields the default params (the bare live-frame request).
-    let mut params = match parse_scry_query(query) {
+    let params = match parse_scry_query(query) {
         Ok(params) => params,
         Err(error) => {
             let _ = write_response(
@@ -839,28 +846,12 @@ fn handle_http(mut stream: TcpStream, ctx: &HttpContext) {
             return;
         }
     };
-    // S12.5: `eye=presented` alone (no pose/resolve/size override) serves the
-    // live net-present frame — same as an empty query. Only the belief eye and
-    // real pose captures round-trip to the render thread.
-    let no_capture_override = params.pos.is_none()
-        && params.yaw.is_none()
-        && params.pitch.is_none()
-        && params.fov.is_none()
-        && params.resolve.is_none()
-        && params.width.is_none()
-        && params.height.is_none();
-    // N0.j S13.2 ON-DEMAND READBACK: a bare `/scry` (or `eye=presented` with no
-    // pose override) is served by reading the CURRENT offscreen texture back to
-    // the CPU on the render thread ONLY when asked — the per-frame readback that
-    // fed `latest` is gone. Flag the request so the loop calls
-    // `capture_presented`. `latest` stays a fallback under the A/B toggle
-    // (`GAIA_NATIVE_PERFRAME_READBACK=1`), read first when populated.
-    if !params.belief && no_capture_override {
-        if let Some(frame) = latest.read().ok().and_then(|frame| frame.clone()) {
-            respond_frame(&mut stream, &frame);
-            return;
-        }
-        params.presented = true;
+    // THE PURGE: `/scry` serves ONLY Pleroma's presented canvas. Try the cached
+    // frame first (populated only under GAIA_NATIVE_PERFRAME_READBACK); else
+    // round-trip to the render thread's on-demand `capture_presented`.
+    if let Some(frame) = latest.read().ok().and_then(|frame| frame.clone()) {
+        respond_frame(&mut stream, &frame);
+        return;
     }
     let (reply_tx, reply_rx) = mpsc::channel();
     if scry
@@ -2577,60 +2568,43 @@ impl Renderer {
                 Err(()) => return self.present_black(),
             }
         }
-        // A surface with no Pleroma is BLACK by law (the raw present is deleted).
-        if self.surface.is_some() {
-            return self.present_black();
+        // No Pleroma → BLACK by law. The classical raw-accum present is DELETED:
+        // a surface shows Pleroma or black, never the 1-spp trace; an offscreen
+        // run with no Pleroma yields a black capture (present_black clears the
+        // offscreen target and returns None when there is no surface).
+        self.present_black()
+    }
+
+    /// THE PURGE (Architect, whip 170): the ONLY non-Pleroma runtime state is
+    /// BLACK. Clears the offscreen capture target to black (so `/scry` reads
+    /// black, never a stale/raw image) and, if a window surface exists, clears
+    /// it to black and presents it. Returns the submission (or None when there
+    /// is no surface). No raw-accum trace, no dots, no evidence — REAL or BLACK.
+    fn present_black(&mut self) -> Option<wgpu::SubmissionIndex> {
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("present black"),
+            });
+        // Black the offscreen capture target (the /scry source).
+        {
+            let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("black offscreen"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &self.offscreen.view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
         }
-
-        // LIGHT-NOT-DOTS: with temporal accumulation the eye moving is NOT a
-        // reset — the resolve reprojects last frame's light into the new view.
-        // Only the legacy escape-hatch path throws the samples away on move.
-        let key = self.view_key();
-        if !self.temporal_enabled && self.last_view != Some(key) {
-            self.reset_surface_accum();
-        }
-        self.last_view = Some(key);
-
-        // The canvas is God's fixed render resolution; the mutable surface is
-        // display-only and receives a nearest integer-scale blit.
-        let (width, height) = (self.canvas_width, self.canvas_height);
-        let (surface_w, surface_h) = (self.config.width, self.config.height);
-        let mut uniform = IntegratorUniform::build(
-            &self.camera,
-            &self.sun,
-            self.sky_top,
-            self.sky_horizon,
-            width,
-            height,
-            self.integrator.node_count,
-            self.integrator.tri_count,
-            self.samples_before,
-            &self.int_params,
-            None,
-        );
-        // `IntegratorUniform::build` already derives camera aspect from the
-        // fixed canvas. The shader letterboxes/pillarboxes this result using
-        // nearest integer display scaling; it never re-renders for the window.
-        uniform.surface = [surface_w, surface_h, 1, 0];
-
-        // LIGHT-NOT-DOTS: hand the resolve the previous frame's camera + dials.
-        if self.temporal_enabled {
-            let t = &self.temporal_params;
-            uniform.temporal = [t.alpha_min, t.depth_tol, t.normal_tol, t.clamp_k];
-            match self.t_prev {
-                Some(prev) => {
-                    uniform.prev_eye = prev.eye;
-                    uniform.prev_right = prev.right;
-                    uniform.prev_up = prev.up;
-                    uniform.prev_forward = prev.forward;
-                    uniform.temporal_flags = [1, t.max_history, t.still_px.to_bits(), 0];
-                }
-                None => {
-                    uniform.temporal_flags = [0, t.max_history, t.still_px.to_bits(), 0];
-                }
-            }
-        }
-
         let surface_frame = match self.surface.as_ref().map(|s| s.get_current_texture()) {
             Some(
                 wgpu::CurrentSurfaceTexture::Success(frame)
@@ -2642,112 +2616,30 @@ impl Renderer {
                 }
                 None
             }
-            // Offscreen mode (surface None) or any transient state → no surface
-            // present; the offscreen present + capture below still runs.
             _ => None,
         };
-
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("traced frame + capture"),
-            });
-        // LIGHT-NOT-DOTS: temporal path traces THIS frame + reprojects/blends
-        // last frame's accumulated light into the accum the blit reads; the
-        // legacy path dispatches one accumulation frame in place. Either way the
-        // blit below presents `surface_accum` unchanged.
-        if self.temporal_enabled {
-            self.integrator.dispatch_temporal(
-                &self.queue,
-                &mut encoder,
-                &uniform,
-                &self.surface_compute_bg,
-                &self.t_bind[self.t_parity],
-                width,
-                height,
-            );
-        } else {
-            self.integrator.dispatch(
-                &self.queue,
-                &mut encoder,
-                &uniform,
-                &self.surface_compute_bg,
-                width,
-                height,
-            );
-        }
-        self.integrator.blit(
-            &mut encoder,
-            &self.offscreen.view,
-            &self.surface_blit_bg,
-            "offscreen present",
-        );
-        // THE PURGE: NO surface present in the classical path. The raw 1-spp
-        // trace reaches the OFFSCREEN capture target only (tooling/scry); a
-        // window is Pleroma-or-black and never sees this blit. `surface_frame`
-        // is always None here (render() early-returns black when a surface
-        // exists), so the raw image can never reach a display.
-
-        if let Some(index) = self.offscreen.claim_slot() {
-            let slot = &self.offscreen.slots[index];
-            encoder.copy_texture_to_buffer(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &self.offscreen.texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                wgpu::TexelCopyBufferInfo {
-                    buffer: &slot.buffer,
-                    layout: wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(self.offscreen.padded_bytes_per_row),
-                        rows_per_image: Some(self.offscreen.height),
+        if let Some(frame) = &surface_frame {
+            let view = frame
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
+            let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("black surface"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
                     },
-                },
-                wgpu::Extent3d {
-                    width: self.offscreen.width,
-                    height: self.offscreen.height,
-                    depth_or_array_layers: 1,
-                },
-            );
-            let sender = self.capture_sender.clone();
-            let buffer = slot.buffer.clone();
-            let callback_buffer = buffer.clone();
-            let busy = slot.busy.clone();
-            let callback_busy = busy.clone();
-            let width = self.offscreen.width;
-            let height = self.offscreen.height;
-            let padded_bytes_per_row = self.offscreen.padded_bytes_per_row;
-            let pixel_order = self.pixel_order;
-            encoder.map_buffer_on_submit(&buffer, wgpu::MapMode::Read, .., move |result| {
-                let capture = CaptureReady {
-                    result: result.map_err(|error| error.to_string()),
-                    buffer: callback_buffer,
-                    width,
-                    height,
-                    padded_bytes_per_row,
-                    pixel_order,
-                    busy: callback_busy,
-                };
-                if let Err(error) = sender.send(capture) {
-                    let capture = error.0;
-                    if capture.result.is_ok() {
-                        capture.buffer.unmap();
-                    }
-                    capture.busy.store(false, Ordering::Release);
-                }
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
             });
         }
         let submission = self.queue.submit(Some(encoder.finish()));
-        self.samples_before += self.int_params.spp;
-        // LIGHT-NOT-DOTS: this frame's camera becomes next frame's reprojection
-        // source, and the ping-pong parity flips (hist_out→hist_prev, curr_gbuf
-        // →gbuf_prev). Only after temporal actually ran.
-        if self.temporal_enabled {
-            self.t_prev = Some(uniform);
-            self.t_parity ^= 1;
-        }
         if let Some(frame) = surface_frame {
             self.queue.present(frame);
         }
@@ -2802,12 +2694,15 @@ impl Renderer {
             }
         }
 
-        // Uniforms: low radiance trace, native AOV, and the 1:1 nearest present
-        // blit — all framed to the SURFACE aspect (mirrors the normal `render`).
+        // CONFORM (law 43f807c) + THE PURGE: frame the trace at the CANVAS's own
+        // aspect (640×480 = 4:3), NOT the window surface. The present blit then
+        // LETTERBOXES this 4:3 canvas at the largest nearest-integer scale into
+        // the window (black bars around it) — so the canvas keeps square pixels
+        // and true geometry, never a full-bleed anamorphic stretch to surface-res.
         let (right, up, _forward) = self.camera.basis();
-        let surface_aspect = surface_w as f32 / surface_h.max(1) as f32;
+        let canvas_aspect = target_w as f32 / target_h.max(1) as f32;
         let half = (self.camera.fov_y_radians * 0.5).tan();
-        let r = right * (half * surface_aspect);
+        let r = right * (half * canvas_aspect);
         let u = up * half;
         let apply_aspect = |uni: &mut IntegratorUniform| {
             uni.right = [r.x, r.y, r.z, 0.0];
@@ -2985,6 +2880,9 @@ impl Renderer {
     /// offscreen and reads it back — the accum-belief PNG owed since n0e. Runs
     /// on the render thread (like `capture_pose`); does not disturb the live
     /// present accum's next frame (it recomputes it). macOS-only / net-present.
+    /// REMAP NOTE: THE PURGE deleted this from its own app-present timeline;
+    /// main kept the S12.5 debug door explicitly gated (`?eye=belief`, never
+    /// default), so it is restored here alongside that gate.
     #[cfg(target_os = "macos")]
     fn capture_belief(&mut self) -> Result<CapturedFrame, String> {
         if self.net_present.is_none() {
@@ -3635,8 +3533,15 @@ impl Renderer {
     }
 }
 
-/// Optional moving-eye overrides parsed from `GET /scry?...`.
-/// All absent = exactly the default spawn-pose capture.
+/// THE PURGE (Architect, whip 170) deleted every heathen scry knob from the
+/// LIVE PRESENT path. REMAP NOTE: main's post-purge evolution reopened a
+/// narrow, explicitly-gated set — `teacher_benchmark` (`?lab=teacher-
+/// benchmark`, the cordoned ITEM 16 lab surface), `belief`/`presented` (the
+/// S12.5 AI debug door, on-demand readback, no re-trace), and pos/yaw/pitch/
+/// fov/width/height (foreign-eye captures for tooling) — none of them
+/// default-reachable; a bare `/scry` still serves only Pleroma's presented
+/// canvas. `resolve` stays parsed for query compatibility but no longer
+/// selects a present path (Pleroma is the only render).
 #[derive(Clone, Debug, Default)]
 struct ScryParams {
     pos: Option<[f32; 3]>,
