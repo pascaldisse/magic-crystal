@@ -1,0 +1,12 @@
+[build-lock] scrying-glass-vii0b_terrain acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running tests/vii0b_terrain.rs (target/debug/deps/vii0b_terrain-d6d79afdc7310198)
+
+running 4 tests
+test terrain_entity_with_a_mesh_component_is_refused ... ok
+test generated_patch_enters_the_walker_floor_at_the_analytic_field_value ... ok
+test no_storage_cold_double_load_is_byte_identical_and_json_carries_no_geometry ... ok
+test render_origin_at_planetary_tile_magnitude_reproduces_the_local_mesh_through_the_real_weld ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.60s
+

@@ -1,0 +1,29 @@
+    Finished `release` profile [optimized] target(s) in 0.52s
+     Running `target/release/examples/fluid_door`
+[door] basin pool: inner (3.2, 3.2) m, wall_height 1 m, spacing 0.14 m, residual film 0.14 m
+[door] residual film: 882 fluid particles
+[door] residual film settled, surface 0.2093 m
+[snapshot] pre-burst -> /Users/pascaldisse/projects/magic-crystal-play/packages/scrying-glass/../../proof/fluid-door-pre-burst.json
+[door] burst: 648 particles, dims Vec3 { x: 2.4, y: 0.8, z: 0.8 } m, center Vec3 { x: 0.0, y: 1.5, z: 1.0 }, velocity Vec3 { x: 0.0, y: -2.5, z: -3.0 } m/s -> total fluid 1530
+
+-- SPLASH (150 ticks) --
+[snapshot] mid-splash -> /Users/pascaldisse/projects/magic-crystal-play/packages/scrying-glass/../../proof/fluid-door-mid-splash.json
+tick  31: surface 1.8066 m, in-basin 1.000, max speed 4.012 m/s, KE 14311.7833 J, max overdensity 0.0000
+tick  56: surface 0.8605 m, in-basin 1.000, max speed 3.346 m/s, KE 3760.7219 J, max overdensity 0.0091
+tick  81: surface 0.5825 m, in-basin 1.000, max speed 0.880 m/s, KE 91.1739 J, max overdensity 0.0055
+tick 106: surface 0.5170 m, in-basin 1.000, max speed 0.475 m/s, KE 9.6970 J, max overdensity 0.0046
+tick 131: surface 0.5077 m, in-basin 1.000, max speed 0.320 m/s, KE 2.6678 J, max overdensity 0.0060
+tick 156: surface 0.4965 m, in-basin 1.000, max speed 0.276 m/s, KE 1.7512 J, max overdensity 0.0050
+[door] peak splash surface 1.8066 m at tick 31 (pre-burst 0.2093 m, wall top 1.00 m)
+
+-- POOL SETTLE (400 ticks) --
+tick 181: surface 0.4851 m, in-basin 1.000, max speed 0.212 m/s, KE 1.3451 J
+tick 261: surface 0.4654 m, in-basin 1.000, max speed 0.196 m/s, KE 0.7380 J
+tick 341: surface 0.4398 m, in-basin 1.000, max speed 0.101 m/s, KE 0.3146 J
+tick 421: surface 0.4238 m, in-basin 1.000, max speed 0.108 m/s, KE 0.3074 J
+tick 501: surface 0.4012 m, in-basin 1.000, max speed 0.161 m/s, KE 0.2987 J
+
+[door] FINAL: surface 0.3913 m, in-basin 1.000, max speed 0.0659 m/s, KE 0.1679 J, flatness (max-min column top) 0.2329 m
+[snapshot] settled -> /Users/pascaldisse/projects/magic-crystal-play/packages/scrying-glass/../../proof/fluid-door-settled.json
+
+FLUID DOOR PROOF PASSED — a param'd volume bursts through the basin's open top, splashes, and settles to a contained pool. (No buoyancy claim: no object was dropped.)

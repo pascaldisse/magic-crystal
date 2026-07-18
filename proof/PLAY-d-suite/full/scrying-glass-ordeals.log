@@ -1,0 +1,12 @@
+[build-lock] scrying-glass-ordeals acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
+     Running tests/ordeals.rs (target/debug/deps/ordeals-9321b77cb68aa0b3)
+
+running 4 tests
+test shadowed_point_receives_no_sun ... ok
+test determinism_same_seed_frames_byte_identical ... ok
+test parity_gpu_tracer_matches_pleroma ... ok
+test specular_parity_gpu_mirror_matches_pleroma ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.94s
+

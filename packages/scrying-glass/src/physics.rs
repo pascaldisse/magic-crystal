@@ -117,6 +117,19 @@ pub struct Body {
     /// the default `0` leaves every EXISTING body (VI-2's impact-break drop
     /// included) byte-unchanged. Ignored when `bonded` is false.
     pub settle: u64,
+    /// PLAYABLE DESTRUCTION — anchor the bonded lattice's LOWEST layer to the
+    /// world (`inv_mass = 0`), the SAME technique `elements::building::erect`
+    /// uses for a load-bearing tower: an anchored base holds the WHOLE static
+    /// load in its base-layer bonds (support-shear) instead of bare
+    /// particle-vs-collider contact, so a resting structure stands rock-solid
+    /// under its own weight (contact alone lets a tall thin lattice creep or
+    /// lean under a stacked load) — yet a hard enough shove on the body
+    /// still tears those same base bonds, same door as any other bonded
+    /// break. Default `false` (every EXISTING bonded declaration keeps
+    /// resting on contact alone, byte-unchanged). Ignored when `bonded` is
+    /// false.
+    #[serde(default)]
+    pub anchor_base: bool,
 }
 
 impl Default for Body {
@@ -134,6 +147,7 @@ impl Default for Body {
             spin: [0.0; 3],
             initial_velocity: [0.0; 3],
             settle: 0,
+            anchor_base: false,
         }
     }
 }
@@ -253,6 +267,24 @@ impl Physics {
                     body.contact_radius,
                 );
                 let cube_size = fracture::lattice_cube_size(dims, counts);
+                if body.anchor_base {
+                    // PLAYABLE DESTRUCTION — pin the lowest lattice layer
+                    // (`iy == 0`, the world-y-minimum row since
+                    // `spawn_bonded_box` centres the lattice about `center`
+                    // with `origin = center - dims/2`) to the world:
+                    // `inv_mass = 0` makes it immovable, so the WHOLE static
+                    // load above rides the base-layer bonds instead of bare
+                    // contact. Same recovery `elements::building::erect`
+                    // uses: spawn order is (ix, iy, iz) nested, so a
+                    // particle's flat index is `ix*(ny*nz) + iy*nz + iz`.
+                    let (nx, ny, nz) = counts;
+                    for ix in 0..nx {
+                        for iz in 0..nz {
+                            let flat = ix * (ny * nz) + iz;
+                            solver.particles.inv_mass[whole[flat]] = 0.0;
+                        }
+                    }
+                }
                 if body.spin != [0.0, 0.0, 0.0] {
                     // Applied ONCE, at spawn, about the same authored
                     // centroid spawn_bonded_box just built the lattice

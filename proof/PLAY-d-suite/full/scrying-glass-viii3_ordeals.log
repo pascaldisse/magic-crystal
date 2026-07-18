@@ -1,0 +1,14 @@
+[build-lock] scrying-glass-viii3_ordeals acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running tests/viii3_ordeals.rs (target/debug/deps/viii3_ordeals-02a7f9d47a72d03b)
+
+running 6 tests
+test f_ban_every_public_fn_signature_in_upscaler_takes_current_frame_inputs_only ... ok
+test f_ban_upscaler_module_is_picked_up_by_the_forward_proof_grep_gate ... ok
+test e_committed_weights_bytes_match_pinned_provenance_sha256 ... ok
+test d_scale_one_degenerates_to_exact_identity ... ok
+test a_inference_is_byte_identical_same_frame_twice_cold ... ok
+test b_and_c_neural_beats_bilinear_and_meets_pinned_bound_on_every_validation_frame ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.67s
+

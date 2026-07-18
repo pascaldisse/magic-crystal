@@ -1,0 +1,13 @@
+[build-lock] scrying-glass-viii2_ordeals acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running tests/viii2_ordeals.rs (target/debug/deps/viii2_ordeals-80c89a18d9f17e0f)
+
+running 5 tests
+test d_ban_no_temporal_vocabulary_in_the_gpu_shader ... ok
+test f_ban_every_public_fn_signature_in_denoiser_gpu_takes_current_frame_inputs_only ... ok
+test e_gpu_uploads_weights_matching_the_hash_pinned_committed_artifact ... ok
+test a_gpu_inference_is_byte_identical_same_frame_twice ... ok
+test b_and_c_gpu_matches_cpu_within_derived_bound_and_beats_noisy ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.07s
+

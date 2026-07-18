@@ -1,0 +1,12 @@
+[build-lock] scrying-glass-body_sigil acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running tests/body_sigil.rs (target/debug/deps/body_sigil-a799eb73edb40e05)
+
+running 4 tests
+test f2_unknown_body_field_is_loud ... ok
+test f2_both_preset_and_shape_refuses_the_realm ... ok
+test f2_shape_body_is_a_rigid_not_a_vessel ... ok
+test f2_preset_body_on_meshed_entity_is_vessel_only ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+

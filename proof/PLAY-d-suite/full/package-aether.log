@@ -1,0 +1,25 @@
+[build-lock] package-aether acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/lib.rs (target/debug/deps/aether-6cc4c7f0edc23b66)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ordeals.rs (target/debug/deps/ordeals-bcbb8448d943b1cf)
+
+running 5 tests
+test ordeal_1_analytic_slab ... ok
+test ordeal_4_determinism ... ok
+test ordeal_5_grid_vs_analytic ... ok
+test ordeal_2_hg_phase_normalized ... ok
+test ordeal_3_energy_budget ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+   Doc-tests aether
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

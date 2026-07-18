@@ -1,0 +1,14 @@
+[build-lock] scrying-glass-horizon acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running tests/horizon.rs (target/debug/deps/horizon-1e09712891791c70)
+
+running 5 tests
+test ordeal4_evicted_tile_leaves_the_collision_world ... ok
+test ordeal1_horizon_materializes_ahead_evicts_behind_under_budget ... ok
+test ordeal3_planetary_magnitude_walk_holds_the_invariants ... ok
+test ordeal2_render_origin_rebases_pose_trace_continuous ... ok
+test ordeal2b_sabotaged_rebase_trips_the_continuity_guard has been running for over 60 seconds
+test ordeal2b_sabotaged_rebase_trips_the_continuity_guard ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 77.12s
+

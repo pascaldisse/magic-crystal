@@ -1,0 +1,55 @@
+[build-lock] package-vessel acquired
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running unittests src/lib.rs (target/debug/deps/vessel-5970defc39423534)
+
+running 4 tests
+test color::tests::short_hex_expands ... ok
+test color::tests::white_black_roundtrip ... ok
+test color::tests::hex_roundtrips_canonical ... ok
+test color::tests::unknown_is_none ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ordeals.rs (target/debug/deps/ordeals-1522a2cdf733557a)
+
+running 11 tests
+test ordeal_deformation_regions ... ok
+test ordeal_both_morphologies_regions_nonempty ... ok
+test ordeal_every_vertex_one_region ... ok
+test ordeal_both_morphologies_no_nan ... ok
+test ordeal_region_coverage_geometric ... ok
+test ordeal_closedness ... ok
+test ordeal_mesh_sanity ... ok
+test ordeal_color_validity ... ok
+test ordeal_weights_normalized ... ok
+test ordeal_determinism ... ok
+test ordeal_colored_determinism ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.54s
+
+     Running tests/rite5.rs (target/debug/deps/rite5-dce64f58209d694e)
+
+running 4 tests
+test v0_nari_palette_is_avatar_canon ... ok
+test v0_bone_vertex_transform_parity ... ok
+test v0_watertight_after_skinning ... ok
+test v0_skinning_is_byte_identical ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/rite5_v2.rs (target/debug/deps/rite5_v2-b127f30f3d160864)
+
+running 4 tests
+test v2_cat_palette_paints_every_region ... ok
+test v2_cat_lowest_vertex_is_a_paw ... ok
+test v2_cat_watertight_after_skinning ... ok
+test v2_cat_skinning_is_byte_identical ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+
+   Doc-tests vessel
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

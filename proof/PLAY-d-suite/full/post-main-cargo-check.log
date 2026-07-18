@@ -1,0 +1,3 @@
+[build-lock] post-main-cargo-check acquired
+    Checking scrying-glass v0.1.0 (/Users/pascaldisse/projects/magic-crystal-play/packages/scrying-glass)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.98s
