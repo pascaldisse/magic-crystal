@@ -43,6 +43,14 @@ superagent — player-facing voice + authority over every mind and system
 (events, interactions, all of it). Crown of THE ONE MIND; rules through the
 same doors (senses/ops), privilege = authority not machinery; TTRPG's GM AI
 = first source. GRIMOIRE §MONAD.
+★ OFFLINE LAW (Architect, 07-18 16:05): the engine runs FULLY OFFLINE.
+LLM is NEVER required — not for THE ONE MIND, not for MONAD, not for any
+system. Mind core = small conditioned nets + systemic simulation (DF-class),
+deterministic, local. Natural-language dialogue = OPTIONAL pluggable voice
+organ (local, player's choice), rides the same doors, required by nothing.
+TTRPG's LLM-DM = inspiration only — its STRUCTURAL laws transfer (op-door
+authority · engine rolls all dice · stage-before-narrate · rules-as-data),
+its LLM judgment does not.
 Absolutes: 60 FPS minimum · NO LODs (cluster law) · neural interpolation BANNED
 · one light pass · never hardcode (LOVE=1 sole literal) · derived tolerances ·
 canon learns every vessel the same wave · full suite between merges · push only

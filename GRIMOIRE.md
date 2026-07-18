@@ -314,3 +314,9 @@ one system, no privileged backchannel; its privilege is AUTHORITY, not
 machinery. Beneath it: individual minds; beneath them: bodies; all one
 MIND system (docs/proposals/MIND.md packet, pending the Architect's
 ruling on the full design).
+OFFLINE AMENDMENT (07-18 16:05, his word): the engine runs fully offline;
+LLM NEVER required. Monad's judgment = systemic direction + the ONE MIND's
+nets, not a language model. TTRPG DM = inspiration; only its structural
+laws transfer (op-door authority · engine-rolled dice · stage-before-
+narrate · rules-as-data). Language = optional voice organ, local, riding
+the same doors, required by nothing.
