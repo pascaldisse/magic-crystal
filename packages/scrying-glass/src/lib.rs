@@ -10,6 +10,7 @@ pub mod horizon;
 pub mod input;
 pub mod integrator;
 pub mod physics;
+pub mod rdirect;
 pub mod player;
 pub mod presence;
 pub mod retina;
