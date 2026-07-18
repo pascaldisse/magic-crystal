@@ -638,7 +638,7 @@ impl Solver {
     /// The neighbour set comes from the conservative [`PointGrid`] (cell = h),
     /// a byte-identical superset of the brute all-pairs scan. Returns the
     /// number of fluid particles processed (0 = no fluid, immediate return).
-    fn solve_fluid(&mut self) -> usize {
+    fn solve_fluid(&mut self, particle_cluster: &[Option<ClusterId>]) -> usize {
         let Some(cfg) = self.fluid else {
             return 0;
         };
@@ -649,6 +649,7 @@ impl Solver {
         let rho0 = cfg.rest_density;
         let inv_rho0 = 1.0 / rho0;
         let eps = cfg.cfm_epsilon;
+        let coupling = cfg.solid_coupling;
         let cell = PointGrid::cell_size(h);
         let grid = PointGrid::build(&self.particles.pos, &self.fluid_particles, cell);
 
@@ -660,6 +661,59 @@ impl Solver {
         for &i in fp {
             grid.query_ball(self.particles.pos[i], h, &mut cand);
             neighbours.push(cand.iter().map(|&c| c as usize).collect());
+        }
+
+        // ROUND-9 — FLUID↔SOLID two-way pressure coupling (Akinci 2012). A
+        // submerged rigid/bonded body's particles act as BOUNDARY particles in
+        // the fluid density estimate: each raises nearby fluid pressure `λ`
+        // (fluid cannot enter the body), and the mirrored position correction
+        // pushes the body — the depth-increasing hydrostatic `λ` over the body
+        // surface integrates to a NET buoyant force. Boundary = clustered,
+        // non-fluid particles (rigid/bonded). Empty (and the whole coupling a
+        // no-op) when `coupling <= 0` or no such body exists.
+        let boundary: Vec<usize> = if coupling > 0.0 {
+            (0..particle_cluster.len())
+                .filter(|&i| {
+                    matches!(
+                        particle_cluster[i],
+                        Some(ClusterId::Rigid(_)) | Some(ClusterId::Bonded(_))
+                    )
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let bgrid = if boundary.is_empty() {
+            None
+        } else {
+            Some(PointGrid::build(&self.particles.pos, &boundary, cell))
+        };
+        // Akinci boundary VOLUME mass ψ_b = ρ₀·V_b, V_b = 1/Σ_{b'}W(r_bb') over
+        // the body's own particles — self-calibrated from the boundary packing
+        // so a densely-sampled solid does not over-contribute (no bare literal).
+        // Indexed by particle id (0 for every non-boundary particle).
+        let mut psi = vec![0.0_f64; self.particles.pos.len()];
+        let mut bneigh: Vec<Vec<usize>> = Vec::with_capacity(fp.len());
+        if let Some(bg) = &bgrid {
+            let mut bcand: Vec<u32> = Vec::new();
+            for &b in &boundary {
+                bg.query_ball(self.particles.pos[b], h, &mut bcand);
+                let mut wsum = 0.0_f64;
+                for &cc in &bcand {
+                    let bb = cc as usize;
+                    wsum += poly6((self.particles.pos[b] - self.particles.pos[bb]).length(), h);
+                }
+                psi[b] = if wsum > 0.0 { rho0 / wsum } else { 0.0 };
+            }
+            // Each fluid particle's boundary neighbours (ascending).
+            for &i in fp {
+                bg.query_ball(self.particles.pos[i], h, &mut bcand);
+                bneigh.push(bcand.iter().map(|&c| c as usize).collect());
+            }
+        } else {
+            for _ in fp {
+                bneigh.push(Vec::new());
+            }
         }
 
         let mass = |p: &Particles, j: usize| -> f64 {
@@ -681,6 +735,9 @@ impl Solver {
         let iters = cfg.solver_iterations.max(1);
         let mut lambda = vec![0.0_f64; fp.len()];
         let mut dp = vec![Vec3::ZERO; fp.len()];
+        // ROUND-9: the mirrored boundary reaction, accumulated per pass over
+        // solid particles (indexed by particle id), applied WITH the fluid Δp.
+        let mut solid_dx = vec![Vec3::ZERO; self.particles.pos.len()];
         for _pass in 0..iters {
             // HALF-STEP 1 — λ per fluid particle (from current positions).
             for (a, &i) in fp.iter().enumerate() {
@@ -698,6 +755,17 @@ impl Solver {
                         sum_grad_j2 += g.dot(g);
                     }
                 }
+                // ROUND-9: boundary (solid) particles contribute ψ_b·W to the
+                // density and their gradient to the constraint denominator —
+                // fluid near a submerged body reads DENSER (it cannot penetrate
+                // the body), raising λ against it.
+                for &b in &bneigh[a] {
+                    let r_vec = pi - self.particles.pos[b];
+                    density += psi[b] * poly6(r_vec.length(), h);
+                    let g = spiky_grad(r_vec, h).scale(psi[b] * inv_rho0);
+                    grad_i = grad_i + g;
+                    sum_grad_j2 += g.dot(g);
+                }
                 let mut c_i = density * inv_rho0 - 1.0;
                 // Unilateral liquid constraint: resist compression only, no
                 // cohesion when stretched (else the pool coheres into a dome).
@@ -709,6 +777,9 @@ impl Solver {
             }
             // HALF-STEP 2 — Δp per fluid particle, applied after all are
             // computed (Jacobi: every Δp reads the SAME pre-move positions/λ).
+            for &b in &boundary {
+                solid_dx[b] = Vec3::ZERO;
+            }
             for (a, &i) in fp.iter().enumerate() {
                 let pi = self.particles.pos[i];
                 let li = lambda[a];
@@ -728,12 +799,51 @@ impl Solver {
                     // `solve_fluid_contacts` through the shared contact solve.
                     acc = acc + spiky_grad(r_vec, h).scale(mj * (li + lj));
                 }
-                dp[a] = acc.scale(inv_rho0 * cfg.relax);
+                // ROUND-9: boundary terms — the solid carries no λ of its own
+                // (it is not incompressible), so the pair pressure is li alone.
+                // The fluid gets +term (pushed off the body); the SAME term is
+                // mirrored onto the solid particle (action/reaction), scaled by
+                // `coupling`, so hydrostatic λ over the surface lifts the body.
+                // Fluid–fluid correction first (all fluid share one uniform
+                // mass, so no split is needed among them — Jacobi as before).
+                let mut fluid_dp = acc.scale(inv_rho0 * cfg.relax);
+                // ROUND-9 boundary terms — the solid carries no λ of its own
+                // (it is not incompressible), so the pair pressure is li alone.
+                // Resolve each fluid–solid pair with the SAME stable inverse-mass
+                // SPLIT the contact solver uses (`solve_body_collisions`): the
+                // pressure correction `base` is shared w_i/(w_i+w_b) to the
+                // fluid and w_b/(w_i+w_b) to the solid, so a HEAVY body barely
+                // stirs (w_b→0) and a LIGHT one lifts — both bounded (fractions
+                // ≤ 1), never the runaway a raw mass ratio produced. Momentum-
+                // conserving, mass-discriminating (true Archimedes), stable.
+                let wi = self.particles.inv_mass[i];
+                for &b in &bneigh[a] {
+                    let r_vec = pi - self.particles.pos[b];
+                    let term = spiky_grad(r_vec, h).scale(psi[b] * li);
+                    let base = term.scale(inv_rho0 * cfg.relax);
+                    let wb = self.particles.inv_mass[b];
+                    let wsum = wi + wb;
+                    if wsum <= 0.0 {
+                        continue;
+                    }
+                    fluid_dp = fluid_dp + base.scale(wi / wsum);
+                    solid_dx[b] = solid_dx[b] - base.scale((wb / wsum) * coupling);
+                }
+                dp[a] = fluid_dp;
             }
             // Apply. Anchored fluid particles (none by default) stay put.
             for (a, &i) in fp.iter().enumerate() {
                 if self.particles.inv_mass[i] != 0.0 {
                     self.particles.pos[i] = self.particles.pos[i] + dp[a];
+                }
+            }
+            // ROUND-9: apply the mirrored boundary reaction to the solid
+            // particles (ascending, deterministic). The rigid/bonded shape-
+            // match in the enclosing iteration re-rigidifies these deltas into
+            // whole-body motion; read_back_velocity turns them into velocity.
+            for &b in &boundary {
+                if self.particles.inv_mass[b] != 0.0 {
+                    self.particles.pos[b] = self.particles.pos[b] + solid_dx[b];
                 }
             }
         }
@@ -968,7 +1078,7 @@ impl Solver {
             for _it in 0..cfg.iterations.max(1) {
                 self.solve_distance(dt_sub);
                 self.solve_shape_matching();
-                self.solve_fluid();
+                self.solve_fluid(&particle_cluster);
                 contacts = self.solve_collision_normal();
                 contacts.extend(self.solve_body_collisions(&particle_cluster));
                 // FLUID: the pairwise minimum-separation floor (s_corr's
@@ -1049,7 +1159,7 @@ impl Solver {
                 self.solve_shape_matching();
                 prof.shape_matching += t.elapsed();
                 let t = Instant::now();
-                self.solve_fluid();
+                self.solve_fluid(&particle_cluster);
                 prof.solve_fluid += t.elapsed();
                 let t = Instant::now();
                 contacts = self.solve_collision_normal();

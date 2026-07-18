@@ -105,6 +105,22 @@ pub struct FluidConfig {
     /// viscosity). Tangential friction on these contacts rides the pool's
     /// shared [`crate::collision::ContactMaterial`], not a second dial.
     pub contact_restitution: f64,
+    /// FLUID↔SOLID two-way pressure coupling strength (round-9), dimensionless
+    /// in `[0,1]`. A submerged rigid/bonded body's particles act as Akinci
+    /// (2012) BOUNDARY particles: each contributes `ψ_b = ρ₀·V_b` (with the
+    /// Akinci volume `V_b = 1/Σ_{b'}W(r_bb')`, self-calibrated from the
+    /// boundary's own packing — never a bare literal) to the SPH density of
+    /// every nearby fluid particle. That raises the fluid pressure `λ` against
+    /// the solid (fluid cannot enter the body), and the SAME position
+    /// correction is mirrored back onto the solid particle scaled by this
+    /// factor — so the depth-increasing hydrostatic `λ` integrated over the
+    /// body surface becomes a NET BUOYANT force (Archimedes), the round-8
+    /// escalation (a light body would not rise through the pressure-blind
+    /// contact-only coupling). `1.0` = full two-way reaction; `0.0` disables
+    /// the coupling entirely (the solid is invisible to the fluid density —
+    /// the round-8 contact-only behaviour, used by the sabotage probe to prove
+    /// this gate is non-vacuous). Costs zero when no rigid/bonded body exists.
+    pub solid_coupling: f64,
     /// JACOBI SOR under-relaxation on the per-particle position correction Δp
     /// (Macklin §4, "Algorithm 1" applies the density correction with a
     /// relaxation because ALL particles project simultaneously — the pairwise
@@ -182,6 +198,7 @@ impl Default for FluidConfig {
             min_sep_factor: 0.85,
             min_separation: 0.0, // set by spawn_fluid_box
             contact_restitution: 0.0,
+            solid_coupling: 1.0,
             relax: 0.1,
             solver_iterations: 4,
             compression_only: true,
