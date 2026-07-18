@@ -38,6 +38,11 @@ Architect rules; the design is born here or not at all.
 most accurate world simulation ever built — the reference standard THE ONE
 MIND and world simulation are measured against (depth of personality, needs,
 memory, history, consequence). Study-never-import still governs the code.
+★ MONAD = THE GOD-INTERFACE (Architect, 07-18 15:47): the gamemaster
+superagent — player-facing voice + authority over every mind and system
+(events, interactions, all of it). Crown of THE ONE MIND; rules through the
+same doors (senses/ops), privilege = authority not machinery; TTRPG's GM AI
+= first source. GRIMOIRE §MONAD.
 Absolutes: 60 FPS minimum · NO LODs (cluster law) · neural interpolation BANNED
 · one light pass · never hardcode (LOVE=1 sole literal) · derived tolerances ·
 canon learns every vessel the same wave · full suite between merges · push only

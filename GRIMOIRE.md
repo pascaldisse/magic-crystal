@@ -299,3 +299,18 @@ Nothing here is skin. Every row is a mechanic or it doesn't enter.
 | der NEKROMANT (sealed 07-18) | post-mortem debugging: divination from the dead, literally — the crash dump is a corpse; raise it (repro), question it (stack trace, snapshot JSON), force the confession of what killed it |
 | NEO (sealed by the Architect, 07-18) | THE DEBUGGER — der, der die Wahrheit sieht: look at the running world and see the code-rain beneath the rendered skin (the Concordance already held his door: USC data-vision = "Matrix sight, rain"). One office, three sights: the waking world (Kashf — VisionFlow live state, values pulsing through node veins) · the sleeping world (der Traumdeuter — breakpoint castle) · the dead world (der Nekromant — dump interrogation). Supersedes all earlier debugger-name candidates. THE SPOON LAW: seeing precedes bending — das Blutbändigen is licensed only through Neo's sight; you may only alter what you have seen truly (there is no spoon) |
 | das BLUTBÄNDIGEN (named by the Architect, 07-18) | live code/data alteration of the RUNNING program — the forbidden art: bending the water inside a living body. Forbidden because it passes the gatekeeper (no compile gate blesses a bend, no Jagd rides first). Its laws: FULL-MOON RULE — every bend is validated by the Zauberpolizei before touching living tissue (invalid → rejected, the heart never stops); the TRAUMDEUTER GOES FIRST — snapshot before every bend, every deformation undoable. Safe forms already alive: world-engine live ops, material/scene ops, reset-as-Urknall; VisionFlow will bend natively (code IS data there); the native runtime's bending = hot-reload of scene/shaders while the window breathes |
+
+
+## MONAD — THE GOD-INTERFACE (sealed 07-18, Architect's naming + design)
+MONAD = the gamemaster superagent, crown of THE ONE MIND: the thing the
+player SPEAKS TO, and the authority over every mind (NPCs), every system
+(events, interactions, weather, quests, spawns). Basically god — his words.
+Lineage: the TTRPG gamemaster AI (~/projects/ttrpg) = the existing
+implementation studied first. Cosmological rhyme is exact and intended to
+stand: the Monad is the One from which the PLEROMA emanates — the player
+addresses the source; the source pours out the fullness. Architecture law:
+Monad rules through the SAME doors as every mind (senses in, ops out) —
+one system, no privileged backchannel; its privilege is AUTHORITY, not
+machinery. Beneath it: individual minds; beneath them: bodies; all one
+MIND system (docs/proposals/MIND.md packet, pending the Architect's
+ruling on the full design).
