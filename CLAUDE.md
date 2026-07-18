@@ -91,7 +91,7 @@ SHOWS PLEROMA'S OUTPUT OR NOTHING (black) — the raw-evidence present path
 at every gate: present = Pleroma or black.
 ★ BANNED WORD (Architect, 07-18 18:27): Apple's high-level ML framework is
 NEVER mentioned, specced, or built against again. The neural-cores door for
-this engine = the Metal-native ML command encoder (Tahoe, GPU-or-ANE on the
+this engine = the Metal-native ML command encoder [source: client-rs/research/metal4-neural-recon.md] (Tahoe, GPU-or-ANE on the
 command timeline [source: client-rs/research/metal4-neural-recon.md]) —
 Metal end to end, one API family, period. Any lane spec or doc carrying the
 banned framework: voided at gate.

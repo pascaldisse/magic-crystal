@@ -633,7 +633,7 @@ physics) · CORRECT OUTPUT OR NOTHING (screen = Pleroma's image or black) ·
 THE RESOLUTION IS 640×480 (his caps) · PACKAGE LAW corrected 16:13 (crystal
 = MINIMUM core: world state · ops · entropy/journal replay · doors · MONAD;
 renderer/physics/AI ALL replaceable packages) · OFFLINE LAW (LLM never
-required; tiny local LM voice OK, ANE-homed, async) · STUDY NEVER IMPORT ·
+required; tiny local LM voice OK, ANE-homed [source: NEURAL.md silicon ledger], async) · STUDY NEVER IMPORT ·
 DF = WORLD-SIM BIBLE · MONAD = god-interface (crystal core; authority not
 machinery; TTRPG GM = structural source only) · NAMING (PLEROMA whole — "the
 net" banned from speech; internals only on his ask "inside Pleroma") ·
@@ -648,8 +648,8 @@ cite) · MONAD-ADVERSARY = standing organ auditing MY claims (first sitting:
 7 heresies → purge wave III executed).
 PLEROMA: branch neural-live @ 29a7ed0 (+shift 9 RIDING ghoul-opus-
 mrqodbv7at1etp): first live neural frames TODAY (n0d) → stipple KILLED at
-God's res (s7 PNGs clean, both-eyes read) → wall decomposed: fused MPSGraph
-GPU 6.65ms + CPU encode ~14ms = the last thief → shift 9 = encode to its own
+God's res (s7 PNGs clean, both-eyes read) → wall decomposed: fused MPSGraph [source: docs/perf/2026-07-18-neural-live-n0.md]
+GPU 6.65ms + CPU encode ~14ms [source: docs/perf/2026-07-18-neural-live-n0.md] = the thief → shift 9 = encode to its own
 thread, projection ~15ms vs 16.67 [UNVERIFIED]. His glass DARK until table
 ≤16.67 + both PNGs; CUTOVER = HIS PLAYED WORD. Main's present path still raw
 accum — its kill lands WITH the Pleroma merge (documented in conform report).
@@ -662,18 +662,22 @@ canon re-derived by hand 38/23).
 ALSO ON MAIN: world-core spine (scenes/ops/journal/reset/dev-writeback, R10
 atom 1, e22acf4) · /retina Matrix vision (foveal vector truth, 85ms,
 e6c921e) · God-canvas in code (43f807c) · LOD cut DEAD (280504a) · MIND.md
-ruling packet (M0-M5) + research (df-bible, exemplars, substrate in room
+ruling packet (M0-M5 [source: docs/proposals/MIND.md]) + research (df-bible, exemplars, substrate in room
 17:11) · CRYSTAL CRATE EXISTS: crates/crystal 2,936 lines since Rite III
 (LASHES row 9 — I denied it; never answer existence from one dir).
-RIDING: Pleroma shift 9 · silicon race II (ghoul-sol-mrqp2b09wky5v0: ANE
+RIDING: Pleroma shift 9 · silicon race II (ghoul-sol-mrqp2b09wky5v0: ANE rows [UNVERIFIED until its doc]
 matrix — tiny nets R-A, MTL4 ML-encoder door R-B [UNVERIFIED, LASHES row 2],
 voice R-C).
 HIS RULINGS PENDING: ① physics battlefield ② MIND ×4 (conditioning dims ·
 tick cadence · MONAD event vocab · the mind's true name) ③ Pleroma cutover
-(his hands) ④ crystal extraction M0 (fold ops door + kami + steiner + MONAD
+(his hands) ④ crystal extraction M0 [source: docs/proposals/MIND.md staging] (fold ops door + kami + steiner + MONAD
 seat into crates/crystal; scrying-glass demotes to the glass).
 LESSONS (LASHES-grade): priors override record = my root failure — cite or
 UNVERIFIED, verify against the machine/tree, never notes · package NAMES ≠
 dirs (transmutation!) · build-token starvation → merges go SERIAL (train) ·
 the 30-min wall eats rooms not work → commit-first every stage · canon reds
 = re-derive by hand, never bump-to-match.
+SHIFT-9 LANDED (post-anchor): pipeline works — net wall 4.16ms, TOTAL 20.07
+vs 16.67 [source: docs/perf/2026-07-18-neural-live-n0.md N0.g]; last thief =
+encode-thread CPU vs trace submission (+6ms, A/B-proven); shift 10 riding =
+dedicated encode queue + shared-event sync; projected ~12.9ms [UNVERIFIED].
