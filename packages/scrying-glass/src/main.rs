@@ -2564,14 +2564,22 @@ impl Renderer {
     fn render(&mut self, size: PhysicalSize<u32>) -> Option<wgpu::SubmissionIndex> {
         self.resize(size);
 
-        // NEURAL-LIVE N0.c SCAFFOLD: present the ONE net's frame instead of the
-        // integrator's raw blit. On build failure the flag self-clears and the
-        // normal present below runs (never a black window).
+        // THE PURGE (Architect, whip 170): only Pleroma reaches a surface. There
+        // is NO raw-accum fallback present — a window shows exactly Pleroma's
+        // 640×480 canvas (nearest-integer letterbox) or BLACK. The classical
+        // integrator still runs OFFSCREEN ONLY (teacher/ordeal/parity tooling &
+        // headless /scry); it can never blit to a surface.
         #[cfg(target_os = "macos")]
         if self.net_present_enabled {
-            if let Ok(idx) = self.net_present_frame() {
-                return idx;
+            match self.net_present_frame() {
+                Ok(idx) => return idx,
+                // Pleroma rig could not build/run → BLACK, never the raw path.
+                Err(()) => return self.present_black(),
             }
+        }
+        // A surface with no Pleroma is BLACK by law (the raw present is deleted).
+        if self.surface.is_some() {
+            return self.present_black();
         }
 
         // LIGHT-NOT-DOTS: with temporal accumulation the eye moving is NOT a
@@ -2674,17 +2682,11 @@ impl Renderer {
             &self.surface_blit_bg,
             "offscreen present",
         );
-        if let Some(frame) = &surface_frame {
-            let view = frame
-                .texture
-                .create_view(&wgpu::TextureViewDescriptor::default());
-            self.integrator.blit(
-                &mut encoder,
-                &view,
-                &self.surface_blit_bg,
-                "surface present",
-            );
-        }
+        // THE PURGE: NO surface present in the classical path. The raw 1-spp
+        // trace reaches the OFFSCREEN capture target only (tooling/scry); a
+        // window is Pleroma-or-black and never sees this blit. `surface_frame`
+        // is always None here (render() early-returns black when a surface
+        // exists), so the raw image can never reach a display.
 
         if let Some(index) = self.offscreen.claim_slot() {
             let slot = &self.offscreen.slots[index];
