@@ -1,0 +1,41 @@
+[package] scrying-glass v0.1.0 registered
+[world] /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/../../worlds/naruko scene(s)=["main"] entities=45 chains=23 clusters=913 transmute=77.0ms
+[embodiment] spawn eye=Vec3(0.0, 7.0, 44.0) yaw=0 floor_triangles=10464 tick_dt=0.016666668
+[pleroma] BVH nodes=15487 triangles=23192 (static 12368 + dynamic 10824) build=12.9ms; 22 dynamic entit(ies) — living layer
+[pleroma] traced integrator spp=2 bounces=4 rr_start=2 — first_light is dead
+[wgpu] traced 640x480 → upscale → surface 960x640 (bilinear); Bgra8UnormSrgb
+[frame] trace 640x480 → offscreen 960x640: median 7.70ms mean 8.12ms/frame (spp=2, 60-frame sample)
+[scry] GET http://127.0.0.1:8438/scry (alias: /screenshot; optional pos/yaw/pitch/fov/w/h)
+[embodiment] GET http://127.0.0.1:8438/pose · POST http://127.0.0.1:8438/walk {keys,yaw?,pitch?,ticks?}
+[offscreen] GAIA_NATIVE_OFFSCREEN=true: NO NSWindow — rendering to offscreen 960x640; /scry (?eye=belief|presented), /budget, /state on http://127.0.0.1:8438
+[n0c] net-present rig pooled (God's res): trace 640x480 → net 640x480 → nearest blit → surface 960x640 (307200 px)
+[n0g] frames=60 640x480→640x480 (ms median/p95 vs 16.67): trace 5.73/7.17 gather 0.96/1.90 net[wall 13.24/14.45 gpu 4.82/5.08] demod 0.70/1.20 present 0.11/0.16 TOTAL 20.78/24.36
+[n0g] frames=120 640x480→640x480 (ms median/p95 vs 16.67): trace 5.67/7.06 gather 0.94/1.55 net[wall 13.29/14.16 gpu 4.84/5.08] demod 0.71/1.19 present 0.11/0.16 TOTAL 20.77/23.20
+[n0g] frames=180 640x480→640x480 (ms median/p95 vs 16.67): trace 5.72/7.16 gather 0.95/1.86 net[wall 13.30/14.25 gpu 4.84/5.07] demod 0.71/1.19 present 0.10/0.16 TOTAL 20.81/23.28
+[n0g] frames=240 640x480→640x480 (ms median/p95 vs 16.67): trace 5.72/7.14 gather 0.94/1.81 net[wall 13.31/14.24 gpu 4.84/5.02] demod 0.71/1.07 present 0.10/0.16 TOTAL 20.81/23.15
+[n0g] frames=300 640x480→640x480 (ms median/p95 vs 16.67): trace 5.76/7.41 gather 0.95/1.89 net[wall 13.32/14.29 gpu 4.84/5.04] demod 0.71/1.33 present 0.11/0.16 TOTAL 20.86/24.59
+[n0g] frames=360 640x480→640x480 (ms median/p95 vs 16.67): trace 5.86/7.65 gather 0.96/1.95 net[wall 13.35/14.41 gpu 4.84/5.10] demod 0.72/2.33 present 0.10/0.16 TOTAL 21.03/26.29
+[n0g] frames=420 640x480→640x480 (ms median/p95 vs 16.67): trace 5.84/7.67 gather 0.96/1.94 net[wall 13.33/14.40 gpu 4.84/5.08] demod 0.72/2.14 present 0.10/0.16 TOTAL 21.00/26.16
+[n0g] frames=480 640x480→640x480 (ms median/p95 vs 16.67): trace 5.79/7.61 gather 0.96/1.92 net[wall 13.32/14.38 gpu 4.84/5.07] demod 0.71/2.05 present 0.10/0.16 TOTAL 20.92/25.03
+[n0g] frames=540 640x480→640x480 (ms median/p95 vs 16.67): trace 5.78/7.61 gather 0.96/1.92 net[wall 13.32/14.41 gpu 4.84/5.07] demod 0.72/2.05 present 0.10/0.16 TOTAL 20.94/25.65
+[n0g] frames=600 640x480→640x480 (ms median/p95 vs 16.67): trace 5.76/7.51 gather 0.95/1.90 net[wall 13.32/14.38 gpu 4.84/5.06] demod 0.71/2.03 present 0.10/0.16 TOTAL 20.89/24.90
+[n0g] frames=660 640x480→640x480 (ms median/p95 vs 16.67): trace 5.74/7.51 gather 0.95/1.87 net[wall 13.31/14.29 gpu 4.83/5.04] demod 0.71/2.00 present 0.10/0.16 TOTAL 20.84/24.82
+[n0g] frames=720 640x480→640x480 (ms median/p95 vs 16.67): trace 5.73/7.51 gather 0.95/1.87 net[wall 13.30/14.27 gpu 4.83/5.03] demod 0.71/1.89 present 0.10/0.16 TOTAL 20.82/24.73
+[n0g] frames=780 640x480→640x480 (ms median/p95 vs 16.67): trace 5.73/7.43 gather 0.95/1.86 net[wall 13.29/14.24 gpu 4.83/5.03] demod 0.71/1.77 present 0.10/0.16 TOTAL 20.82/24.59
+[n0g] frames=840 640x480→640x480 (ms median/p95 vs 16.67): trace 5.76/7.56 gather 0.96/1.92 net[wall 13.30/14.27 gpu 4.83/5.03] demod 0.71/2.03 present 0.10/0.16 TOTAL 20.88/24.87
+[n0g] frames=900 640x480→640x480 (ms median/p95 vs 16.67): trace 5.77/7.67 gather 0.96/1.98 net[wall 13.30/14.29 gpu 4.82/5.06] demod 0.71/2.03 present 0.10/0.16 TOTAL 20.92/25.72
+[n0g] frames=960 640x480→640x480 (ms median/p95 vs 16.67): trace 5.75/7.63 gather 0.96/1.94 net[wall 13.30/14.28 gpu 4.82/5.04] demod 0.71/2.01 present 0.10/0.16 TOTAL 20.88/24.92
+[n0g] frames=1020 640x480→640x480 (ms median/p95 vs 16.67): trace 5.75/7.59 gather 0.95/1.92 net[wall 13.29/14.27 gpu 4.82/5.04] demod 0.71/1.90 present 0.10/0.16 TOTAL 20.85/24.85
+[n0g] frames=1080 640x480→640x480 (ms median/p95 vs 16.67): trace 5.74/7.56 gather 0.95/1.91 net[wall 13.29/14.24 gpu 4.82/5.03] demod 0.71/1.85 present 0.10/0.16 TOTAL 20.84/24.81
+[n0g] frames=1140 640x480→640x480 (ms median/p95 vs 16.67): trace 5.74/7.54 gather 0.95/1.90 net[wall 13.28/14.22 gpu 4.82/5.03] demod 0.71/1.81 present 0.10/0.15 TOTAL 20.82/24.73
+[n0g] frames=1200 640x480→640x480 (ms median/p95 vs 16.67): trace 5.73/7.49 gather 0.95/1.87 net[wall 13.28/14.21 gpu 4.82/5.03] demod 0.71/1.78 present 0.10/0.15 TOTAL 20.81/24.69
+[n0g] frames=1260 640x480→640x480 (ms median/p95 vs 16.67): trace 5.72/7.44 gather 0.95/1.86 net[wall 13.27/14.18 gpu 4.82/5.02] demod 0.71/1.77 present 0.10/0.15 TOTAL 20.80/24.59
+[n0g] frames=1320 640x480→640x480 (ms median/p95 vs 16.67): trace 5.72/7.46 gather 0.95/1.89 net[wall 13.27/14.22 gpu 4.81/5.02] demod 0.71/1.81 present 0.10/0.15 TOTAL 20.81/24.62
+[n0g] frames=1380 640x480→640x480 (ms median/p95 vs 16.67): trace 5.73/7.51 gather 0.95/1.94 net[wall 13.28/14.25 gpu 4.81/5.03] demod 0.71/1.90 present 0.10/0.15 TOTAL 20.83/24.82
+[n0g] frames=1440 640x480→640x480 (ms median/p95 vs 16.67): trace 5.73/7.54 gather 0.95/1.94 net[wall 13.28/14.25 gpu 4.81/5.02] demod 0.71/1.90 present 0.10/0.15 TOTAL 20.83/24.82
+[n0g] frames=1500 640x480→640x480 (ms median/p95 vs 16.67): trace 5.73/7.51 gather 0.95/1.93 net[wall 13.27/14.24 gpu 4.81/5.02] demod 0.71/1.88 present 0.10/0.15 TOTAL 20.83/24.73
+[n0g] frames=1560 640x480→640x480 (ms median/p95 vs 16.67): trace 5.73/7.49 gather 0.95/1.92 net[wall 13.27/14.24 gpu 4.81/5.02] demod 0.71/1.89 present 0.10/0.15 TOTAL 20.83/24.71
+[n0g] frames=1620 640x480→640x480 (ms median/p95 vs 16.67): trace 5.73/7.49 gather 0.95/1.92 net[wall 13.28/14.25 gpu 4.81/5.02] demod 0.71/1.85 present 0.10/0.15 TOTAL 20.84/24.69
+[n0g] frames=1680 640x480→640x480 (ms median/p95 vs 16.67): trace 5.74/7.49 gather 0.95/1.90 net[wall 13.27/14.25 gpu 4.81/5.02] demod 0.71/1.83 present 0.10/0.15 TOTAL 20.84/24.62
+[n0g] frames=1740 640x480→640x480 (ms median/p95 vs 16.67): trace 5.74/7.51 gather 0.95/1.89 net[wall 13.27/14.24 gpu 4.81/5.02] demod 0.71/1.83 present 0.10/0.15 TOTAL 20.85/24.61
+[n0g] frames=1800 640x480→640x480 (ms median/p95 vs 16.67): trace 5.75/7.51 gather 0.95/1.86 net[wall 13.27/14.22 gpu 4.81/5.02] demod 0.71/1.81 present 0.10/0.15 TOTAL 20.85/24.59

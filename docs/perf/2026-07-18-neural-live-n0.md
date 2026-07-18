@@ -345,3 +345,108 @@ sync is its own ordeal).
   GAIA_NATIVE_HUD=false GAIA_NATIVE_PORT=8436`, release, world `worlds/naruko`,
   M1 / macOS 26. Tag `[n0g]`. Ownership: encode thread `rdirect-net-encode`
   encodes (no commit); render thread commits + waits; `Drop` joins the thread.
+
+---
+
+# N0.h — S12 queue split + S11 net-wedge fix (SHIFT 11): the deadlock, found and cured
+
+The S12/S12.5 cut (dedicated net `MTLCommandQueue` + `MTLSharedEvent`
+gather→net fence, meant to kill N0.g's +6 ms trace regression) shipped a
+DEADLOCK: both eyes BLACK, net GPU 0.00, `kIOGPUCommandBufferCallbackErrorTimeout`,
+all later submissions ignored. S11 diagnoses it with an instrument, fixes it,
+and measures the fixed pipeline honestly. Live, offscreen 640×480, release,
+M1 / macOS 26, `worlds/naruko`, `GAIA_NATIVE_OFFSCREEN=true`.
+
+## ROOT CAUSE — the stuck value pair (instrumented, `GAIA_NATIVE_NET_TRACE`)
+The instrument prints each net buffer's awaited V, each `signal_gather_ready`
+V, and each committed buffer's `base.status`/error. It showed:
+- Values are PERFECTLY monotonic + paired — encode awaits V=k, signal sets V=k,
+  in strict frame order. Suspects (a)/(c)/(d) (wrong/duplicate/non-monotonic
+  values, cross-set index mismatch) are FALSE.
+- Frame 1 (`set=0`): `base.status=4` (**Completed**) — first net buffer runs.
+- Frame 2 (`set=1`): a PRE-commit probe reads `base.status=5` (**Error/timeout**)
+  BEFORE the render thread even commits it. And `set=0` pre-commit read
+  `status=2` (**Committed**) — proof the buffer was committed at ENCODE time.
+
+Mechanism: **MPSGraph's `encodeToCommandBuffer` internally `commitAndContinue`s**,
+so `base` (carrying our `encodeWaitForEvent(V)`) is COMMITTED on the encode
+thread at ENCODE time — 1–2 frames AHEAD of `signal_gather_ready`. With
+double-buffering (`SET_COUNT=2`) on ONE shared net queue, set-1's `V=2` wait
+lands on the FIFO net queue at startup, AHEAD of set-0's continuation buffer.
+The GPU drains the queue in commit order and STALLS on set-1's unsignaled V=2;
+set-0's continuation is queued behind it, so the render thread's frame-1
+`commit_net` wait can never retire, so frame 2 (which would signal V=2) never
+runs → **circular cross-buffer FIFO deadlock. Stuck pair: base(set=1) awaits
+V=2, times out; V=2's signal is gated behind set-0 work stuck behind that same
+wait.** (S12.5's earlier "CPU-side signal fixes it" post-mortem was WRONG about
+the cause — the CPU signal is fine; the FIFO ordering across two early-committed
+waits on one queue is the wedge.)
+
+## FIX — one dedicated net `MTLCommandQueue` PER SET
+`EncodeCtx.net_queues: Vec<_>` (one per set); `encode(set)` builds its buffer on
+`net_queues[set]`. Cross-set FIFO coupling is gone — set-1's early-committed
+wait can no longer stall set-0's buffers. Within a single set's queue the waits
+are strictly increasing and signaled in frame order (no self-block). The event
+values + signals stay monotonic and paired. Minimal, sound, keeps the S9
+pre-encode pipeline AND the S12 queue split intact. (`setCommitAndContinueEnabled:`
+to stop the early commit was tried first — the selector is absent in this MPS
+build, ObjC exception → abort; per-set queues are the working path.)
+
+## Budget — median / p95 ms · 640×480 · frames=646 · 0 GPU errors · vs 16.67
+`proof/neural-live/s11-offscreen-release.log`, `/budget` `s11-budget.json`:
+
+| stage    | median | p95   | note                                                     |
+|----------|--------|-------|----------------------------------------------------------|
+| trace    | 5.739  | 7.513 | **+6 ms regression GONE** — split cured the contention   |
+| gather   | 0.954  | 1.891 | unchanged                                                |
+| net wall | 13.313 | 14.351| **reappears** — net GPU+commit serial on the fenced queue|
+| net gpu  | 4.833  | 5.051 | fused GEMM+bias+ReLU                                      |
+| demod    | 0.712  | 2.007 | GPU undo-log-demod, one dispatch                         |
+| present  | 0.104  | 0.160 | nearest blit + offscreen capture                         |
+| **TOTAL**| **20.851** | **24.849** | ~48 fps · **1.25× over the wall (4.18 ms short)** |
+
+### What the split actually bought (honest accounting)
+The queue split did exactly what N0.g predicted for trace: **trace 12.65 → 5.74
+ms** — the encode-thread contention is cured (matches the crime report's "trace
+6.14"). But the net stage that N0.g HID on the encode thread (net wall 4.16 ms)
+REAPPEARED on the wall at 13.3 ms: with the dedicated queue + gather→net event
+fence, the net GPU can no longer overlap the next frame's trace on a shared
+timeline, and `commit_net` serially waits it. So the cost merely MOVED from
+trace to net_wall — **TOTAL 20.07 (N0.g) → 20.85 (S11), flat.** The split cures
+the deadlock and the trace regression but does NOT advance 60 fps this shift.
+
+## 60 FPS VERDICT — NOT MET, 4.18 ms short (~48 fps)
+TOTAL 20.85 ms median vs the 16.67 ms wall. The deadlock is DEAD and the frame
+is honest (646 frames, 0 GPU errors, both eyes render). 60 fps is not reached:
+the net GPU (4.83 ms) plus its commit/fence serialization (net_wall 13.3 ms) is
+the standing thief. Recovering N0.g's encode-hidden net_wall WITHOUT the trace
+contention — i.e. letting the fenced net GPU overlap the next trace — is the
+next target (the queue split is the right substrate; the serialization at
+`commit_net` is what to attack). A working 20.85 ms beats the deadlocked 8.
+
+## Parity ordeal — HOLDS (sync path unaffected)
+- `n0b_gather_and_shared_forward_match_cpu` — **ok** (gather + shared forward vs CPU).
+- `n0_gate1_live_net_matches_cpu_reference` — **ok** (live net vs CPU reference).
+Release, `GAIA_NEURAL_LIVE=1`. The pipelined path change (per-set queues) does
+not touch the sync/ordeal path (`pipelined=false`, single queue, no fence).
+
+## Proof — both eyes (READ, pixel words)
+- presented: `proof/neural-live/s11-presented.png` (960×640, live `/scry?eye=presented`).
+- belief: `proof/neural-live/s11-belief.png` (`?eye=belief`, raw net radiance, no albedo).
+- **Pixel words (both, READ — NOT black):** coherent naruko dusk scene — brown
+  crates, translucent mirror glass panel (green-tinted), central dark tower
+  ringed by cyan/pink/violet concentric halos, pale presence spheres (one at the
+  tower mouth, one mid-panel), large glass orb on a green cylindrical pedestal,
+  dark chimneyed factory block with lit windows at right, pink→mauve sky over a
+  purple ground. Belief eye = same geometry, brighter/desaturated (albedo not
+  undone), as designed. Radiance bounded, colours natural → GPU demod wired
+  right. **Both eyes render — the wedge is cured.**
+
+## Source
+- fix + instrument commit `61b1e4c`; measured on the following commit.
+- logs: `s11-offscreen-release.log` (release run), `s11-offscreen.log` (debug
+  repro); `s11-budget.json` / `s11-state.json`; instrument repro
+  `/tmp/s11-fix2.log` (93/93 status=4).
+- env: `GAIA_NEURAL_LIVE=1 GAIA_NATIVE_OFFSCREEN=true GAIA_NATIVE_NET_PRESENT=true
+  GAIA_NATIVE_PORT=8438`, release, world `worlds/naruko`, M1 / macOS 26.
+  Instrument gate: `GAIA_NATIVE_NET_TRACE=1`. Tag `[n0h]`.

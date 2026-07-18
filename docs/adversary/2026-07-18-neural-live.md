@@ -116,3 +116,46 @@ Real target: a FUSED GPU forward that keeps MPSGraph's ~6.6 ms GPU and sheds its
    texture is still N1's charter, not N0's.
 4. **Legacy bilinear default** — the dying `render` path's `upscale_mode=0`
    (not enforced to nearest); harmless once the net path is the only path.
+
+---
+
+## VERDICT — S11 (SHIFT 11): net-wedge fix over the S12 queue split
+
+**HOLDS parity · FIXES the deadlock · 60 fps STILL UNMET (20.85 ms, 4.18 ms short, ~48 fps).**
+
+- **The wedge — MEASURED, cured.** S12/S12.5's dedicated-net-queue +
+  `MTLSharedEvent` fence DEADLOCKED (both eyes black, net GPU 0.00, GPU timeout).
+  Instrumented root cause (`GAIA_NATIVE_NET_TRACE`, see perf N0.h): MPSGraph's
+  `encodeToCommandBuffer` `commitAndContinue`s, committing the net buffer's
+  `encodeWaitForEvent(V)` at ENCODE time, 1–2 frames ahead of the signal; on ONE
+  shared net queue, double-buffering lands set-1's V=2 wait on the FIFO ahead of
+  set-0's continuation → circular cross-buffer FIFO stall. The event VALUES were
+  never wrong (monotonic, paired) — the queue ORDERING was. Fix: one net queue
+  PER SET. Verified 646 frames, 0 GPU errors, both eyes render.
+
+- **Parity** — HOLDS. `n0b_gather_and_shared_forward_match_cpu` ok,
+  `n0_gate1_live_net_matches_cpu_reference` ok (release). The pipelined-path
+  change (per-set queues) does not touch the sync/ordeal path.
+
+- **Absolutes** — 60 FPS: **STILL VIOLATED** (48 fps, 20.85 ms). Honest
+  accounting: the split cured the +6 ms trace regression (trace 12.65 → 5.74 ms)
+  but the net stage N0.g had hidden on the encode thread (net wall 4.16 ms)
+  REAPPEARED on the wall (13.3 ms) — the fenced net GPU no longer overlaps the
+  next trace. Cost MOVED, TOTAL flat (20.07 → 20.85). The deadlock is dead; the
+  frame is real; 60 fps is not bought this shift. NO LODs / no neural upscale /
+  one light pass / no hardcoded res: HOLDS.
+
+## Gaps carried forward (S11)
+1. **60 fps unmet, 4.18 ms short.** The standing thief is now net_wall (13.3 ms
+   = 4.83 GPU + ~8.5 ms commit/fence serialization at `commit_net`). Next
+   target: let the fenced net GPU overlap the next frame's trace (reclaim
+   N0.g's encode-hidden net_wall WITHOUT the trace contention). The per-set
+   queue split is the right substrate; the blocking `commit_net` wait is what
+   to attack.
+2. **commitAndContinue is load-bearing but implicit.** The fix depends on MPS
+   committing base early; if a future MPS build stops (or `setCommitAndContinueEnabled:`
+   becomes available and is set false), the event fence could be simplified to a
+   pure CPU-ordered handoff (the gather `device.poll(wait)` already orders
+   gather→net). Worth a revisit.
+3. Prior gaps 2–4 (default = slower path, static 96×64 weights, legacy bilinear)
+   carry forward unchanged.
