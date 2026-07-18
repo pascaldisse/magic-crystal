@@ -400,14 +400,21 @@ fn ordeal_hydrostatic_endurance() {
 //     (~0.165 m): ZERO mass discrimination — a density-2000 box rests where a
 //     density-200 cork does. That is a displacement artifact, NOT Archimedes.
 //     Default reverted to 1.0 (a factor<1 also breaks gate 1's C≤0-at-spawn).
-// The TRUE remaining lever is a real `λ` FIELD at depth: CONTAINER-boundary
-// Akinci particles so the confined bottom fluid stops reading boundary-
-// deficient and develops λ, plus a confined over-density. Larger effort,
-// escalated — NOT faked here. This ordeal keeps the rise assertion so running
+// ROUND-10 UPDATE — the CONTAINER-BOUNDARY Akinci lever was BUILT and MEASURED
+// (static floor/wall samples feeding the SPH density; FluidConfig::
+// container_boundary, default now false). VERDICT: it DETONATES. With the
+// boundary push ON the pool surface climbs 0.58 -> 3.2 m in 40 ticks and
+// ordeal_hydrostatic_endurance fails at tick 0 — the one-sided immovable
+// boundary pressure injects energy, no stable fixed point under the unilateral
+// compression-only λ + Jacobi relaxation. Kept OFF/inert; see
+// docs/perf/2026-07-18-fluid-container-boundary-verdict.md and
+// container_discrimination_probe for the numbers. A real depth-varying λ field
+// needs bigger, pressure-mirrored/relaxation-tuned machinery — escalated, NOT
+// faked here. This ordeal keeps the mass-discrimination assertion so running
 // it --ignored shows the honest RED; it is NOT part of the green suite.
 // ─────────────────────────────────────────────────────────────────────────
 #[test]
-#[ignore = "OPEN ITEM (gate 4): buoyancy does not emerge — round-9 measured BOTH levers (Akinci two-way coupling live + rho0-below-packing swept) and proved zero mass discrimination (all densities converge to one depth); real fix needs a container-boundary lambda field. EXPECTED RED, escalated, not faked, not in the green suite"]
+#[ignore = "OPEN ITEM (gate 4): buoyancy does not emerge. round-9 measured Akinci two-way coupling + rho0-below-packing (zero mass discrimination); round-10 BUILT + measured the container-boundary lambda lever — it DETONATES (surf 0.58->3.2m over 40 ticks, endurance fails at tick 0), kept OFF by default. Real fix needs pressure-mirrored/relaxation-tuned machinery. EXPECTED RED, escalated, not faked, not in the green suite"]
 fn ordeal_buoyancy_rises() {
     // A TRUE buoyancy gate must test ARCHIMEDES, not a single body's transient
     // PEAK (the old `y_peak - y_start > spacing` assertion — round-9 proved it a

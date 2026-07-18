@@ -77,6 +77,43 @@ fn print_profile(pool: &FluidPool) {
     println!();
 }
 
+// ROUND-10 lean discrimination probe: container-boundary Akinci ON (default).
+// No per-tick nn_stats — just settle, drop, tail-mean rest depth of light vs
+// heavy. Prints per-stage progress so it can never look hung.
+#[test]
+#[ignore = "round-10 container-boundary discrimination probe; run explicitly --ignored --nocapture"]
+fn container_discrimination_probe() {
+    let spec = small_spec();
+    let crate_dims = elements::Vec3::new(0.09, 0.09, 0.09);
+    let settle_depth = |density: f64, container: bool| -> (f64, f64, f64) {
+        let mut pool = fill(spec);
+        pool.solver.fluid.as_mut().unwrap().container_boundary = container;
+        pool.solver.calibrate_fluid_rest_density();
+        for _ in 0..260 { pool.solver.step(); }
+        let surf = surface_height(&pool);
+        let submerge_y = (surf * 0.30).max(crate_dims.y * 0.5 + spec.spacing);
+        let idx = drop_crate(&mut pool, crate_dims, (3, 3, 3), density, submerge_y, 0.0, 0.01);
+        let y0 = body_center_y(&pool, idx);
+        let (mut tail_sum, mut tail_n) = (0.0_f64, 0usize);
+        let total = 400;
+        for t in 0..total {
+            pool.solver.step();
+            if t >= total - 80 { tail_sum += body_center_y(&pool, idx); tail_n += 1; }
+        }
+        (y0, tail_sum / tail_n as f64, surf)
+    };
+    for &container in &[true, false] {
+        let (ls, lr, surf) = settle_depth(200.0, container);
+        eprintln!("[container={container}] light(200) done: start {ls:.4} rest {lr:.4} surf {surf:.4}");
+        let (hs, hr, _) = settle_depth(2000.0, container);
+        eprintln!("[container={container}] heavy(2000) done: start {hs:.4} rest {hr:.4}");
+        println!(
+            "container={container}: light rest {lr:.4}  heavy rest {hr:.4}  DISCRIMINATION light-heavy = {:+.4} m  (need > one spacing {:.4})",
+            lr - hr, spec.spacing
+        );
+    }
+}
+
 #[test]
 #[ignore = "instrumentation probe (round-9): sweeps rho0 factor, prints profile + robust net box rise; run explicitly with --ignored --nocapture"]
 fn profile_sweep() {

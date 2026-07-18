@@ -152,19 +152,23 @@ pub struct FluidConfig {
     /// the round-8 contact-only behaviour, used by the sabotage probe to prove
     /// this gate is non-vacuous). Costs zero when no rigid/bonded body exists.
     pub solid_coupling: f64,
-    /// ROUND-10 — CONTAINER-BOUNDARY (Akinci 2012) coupling toggle. When
-    /// `true` (default) the static pool floor/wall samples in
+    /// ROUND-10 — CONTAINER-BOUNDARY (Akinci 2012) coupling toggle. DEFAULT
+    /// `false` — MEASURED FAILURE, kept as an OFF, non-vacuous lever, not a
+    /// live feature. The intent was: the static pool floor/wall samples in
     /// [`crate::Solver::fluid_boundary`] contribute their `ψ_b·W` to the SPH
     /// density of every nearby fluid particle (and push it inward with the
-    /// same `λ`), so the confined bottom fluid stops reading boundary-
-    /// DEFICIENT and develops a real depth-increasing `λ` field — the
-    /// hydrostatic gradient the round-9 free-surface relaxation could not
-    /// sustain (a free surface just expands; a floored container cannot). This
-    /// is the lever that makes a submerged light body RISE and a heavy one
-    /// SINK (Archimedes / mass discrimination). `false` disables it (the
-    /// round-9 pressureless-bulk behaviour), used by the sabotage probe to
-    /// prove the container gate is non-vacuous. Costs zero when
-    /// `fluid_boundary` is empty. NOT a magnitude — a coupling on/off law.
+    /// same `λ`), so the confined bottom fluid would stop reading boundary-
+    /// DEFICIENT and develop a real depth-increasing `λ` field. ROUND-10
+    /// VERDICT (see `docs/perf/2026-07-18-fluid-container-boundary-verdict.md`
+    /// and the `container_discrimination_probe`): with it ON the pool
+    /// DETONATES — the boundary pressure push injects energy (surface climbs
+    /// 0.58 m → 3.2 m in 40 ticks, `ordeal_hydrostatic_endurance` fails at
+    /// tick 0). The unilateral compression-only λ + immovable one-sided
+    /// boundary push has no stable fixed point; taming it needs a proper
+    /// pressure-mirrored, relaxation-tuned Akinci solve (new machinery,
+    /// escalated). Left `false` so gates 1–3 stay green; `true` reproduces
+    /// the detonation for the sabotage/verdict probe. Costs zero when
+    /// `fluid_boundary` is empty or this is `false`.
     pub container_boundary: bool,
     /// JACOBI SOR under-relaxation on the per-particle position correction Δp
     /// (Macklin §4, "Algorithm 1" applies the density correction with a
@@ -245,7 +249,7 @@ impl Default for FluidConfig {
             min_separation: 0.0, // set by spawn_fluid_box
             contact_restitution: 0.0,
             solid_coupling: 1.0,
-            container_boundary: true,
+            container_boundary: false, // round-10 MEASURED FAILURE: ON detonates the pool (verdict doc). Kept OFF/inert.
             relax: 0.1,
             solver_iterations: 4,
             compression_only: true,
