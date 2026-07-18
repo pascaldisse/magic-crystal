@@ -71,6 +71,12 @@ OS/integer blit (display scaling ≠ rendering; nothing is traced small and
 neurally enlarged — the CANVAS is 640×480, God's resolution, Terry's law).
 Supersedes any 'internal = surface res' instruction in riding lanes —
 enforce at gate.
+★ CORRECT OUTPUT OR NOTHING (Architect, 07-18 16:31, his words twice): ONE
+render: input data (world truth, NOT pixels) → THE NET → the final image.
+Rays = input sampling INSIDE the render, never a step, NEVER a picture. THE
+SCREEN SHOWS THE NET'S OUTPUT OR NOTHING (black) — the raw-evidence present
+path (dots/accum-to-screen) is DEAD; no intermediate ever reaches glass.
+Enforce at every gate: present = net or black.
 Absolutes: 60 FPS minimum · NO LODs (cluster law) · neural interpolation BANNED
 · one light pass · never hardcode (LOVE=1 sole literal) · derived tolerances ·
 canon learns every vessel the same wave · full suite between merges · push only
