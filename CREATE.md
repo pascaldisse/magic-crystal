@@ -8,7 +8,10 @@ gaia-plugin}-recon.md.
 
 ## 1 · Mesh creation — four doors, one data truth
 All modes edit DATA (ops, undoable, remixable); contouring kernel renders
-all of it through the sole cluster pipeline. Nothing bakes, ever.
+all of it through the sole cluster pipeline [DATED-LINEAGE 07-18,
+spec-concordance item 18: "cluster pipeline" is pre-two-act raster
+vocabulary — read as "the sole geometry path, ray-native into the ONE BVH
+world," RENDER.md §1]. Nothing bakes, ever.
 - **A · SDF fields (Dreams door)**: sculpt = EDIT LIST of primitives
   {shape, add/sub, blend k, color} — live re-eval on every edit (Dreams:
   1-100k edits/model; evaluator speed = the whole game). Booleans, smears,

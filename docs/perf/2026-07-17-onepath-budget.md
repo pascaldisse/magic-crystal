@@ -1,5 +1,12 @@
 # THE ONE RENDER PATH — budget measurement + honest verdict
 
+> **DATED-LINEAGE 07-18** (spec-concordance item 18): the chartered path
+> this doc measures — `trace(640×480) → NEURAL DENOISE → NEURAL UPSCALE →
+> present` — is the CHAINED-STAGE design struck by RENDER.md/NEURAL.md's
+> two-act law ("upscaling is dead as a concept"; no denoise/upscale seam).
+> Kept as a dated measurement record (real numbers, real GPU); not the
+> current normative path — see RENDER.md §1 (trace → THE NET → screen).
+
 Lane `one-render-path`. Goal: make the live frame the chartered path
 `trace(640×480) → NEURAL DENOISE → NEURAL UPSCALE → present`, bilinear gone.
 

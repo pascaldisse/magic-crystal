@@ -70,9 +70,13 @@ fucking node with data attached to it")
 - Law 3 CO-LOCATION = CONCURRENCY (keystone): what runs together sits at
   the same depth — parallelism read pre-attentively. The one claim flat
   text cannot match.
-- Law 4 ZOOM = MEANING: semantic LOD; far = clusters/architecture, near =
-  ports/values; no privileged floor (same law as cluster DAG + VT — the
-  whole engine virtualizes by meaning).
+- Law 4 ZOOM = MEANING: semantic zoom (RENAMED 07-18, spec-concordance
+  item 19: "LOD" is forbidden vocabulary and the cluster-DAG rationale it
+  cited is struck by the two-act law — severed; this law stands on its own
+  as a graph-navigation/perception law, not a rendering-detail-tier one);
+  far = clusters/architecture, near = ports/values; no privileged floor
+  (VT virtual-texturing residency remains the analogy — the engine
+  virtualizes by meaning).
 - Law 5 EXECUTION AS WEATHER: the running graph is lit — hot paths storm,
   signals flow as light; debugging = standing inside the living body,
   never reading the corpse of a log.

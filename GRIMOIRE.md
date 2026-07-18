@@ -31,7 +31,7 @@ book BEFORE it exists. The book grows; it never abdicates.
 |---|---|---|
 | render-window | **the Scrying Glass** (`packages/scrying-glass`) | the window; GET /screenshot → **GET /scry**; a screenshot = a scrying |
 | sense (RN1) | **the Oracle** (`packages/oracle`) | pull-only by nature — oracles speak ONLY when consulted; look() = **gaze**, captions = **omens**, glance grid = **the augury**, proprio = **the body's knowing** |
-| cluster-bake | **Transmutation** (`packages/transmute`) | coarse↔fine matter; the DAG = **the Great Chain**, meshlets = **shards**, offline pass = **the transmutation** (the b-word was already forbidden) |
+| cluster-bake | **Transmutation** (`packages/transmute`) | coarse↔fine matter; the DAG = **the Great Chain**, meshlets = **shards** [DATED-LINEAGE 07-18, spec-concordance item 18: "meshlets"/cluster-bake names a raster-cluster mechanism struck by the two-act law, RENDER.md §1 — read "shards" as ray-native BVH page units], offline pass = **the transmutation** (the b-word was already forbidden) |
 | lighting (path tracer) | **THE PLEROMA** (`packages/pleroma`) | the one light; the fullness from which every frame emanates — rays = light behaving as light |
 | solver (physics) | **the Elements** (`packages/elements`) | one solver for all matter; constraints = **bindings** |
 | volumetrics | **the Aether** | participating media: clouds, steam, beam, breath |
