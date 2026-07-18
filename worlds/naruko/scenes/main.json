@@ -432,7 +432,7 @@
       { "shape": "box", "size": [3.2, 2.2, 3.2], "position": [0, 0, 0], "color": "#8a7a6a", "roughness": 0.9 },
       { "shape": "box", "size": [3.2, 2.2, 3.2], "position": [0, 2.2, 0], "color": "#9a8a78", "roughness": 0.9 }
     ] },
-    "body": { "shape": "box", "size": [3.2, 6.6, 3.2], "density": 300, "resolution": [6, 11, 6], "contact_radius": 0.06, "bonded": true, "love": 1.0, "compliance": 1e-7, "settle": 90, "anchor_base": true }
+    "body": { "shape": "box", "size": [3.2, 6.6, 3.2], "density": 2000, "resolution": [6, 11, 6], "contact_radius": 0.06, "bonded": true, "love": 1.0, "compliance": 1e-7, "settle": 40, "anchor_base": true }
   },
   "bldg_basin": {
     "transform": { "position": [8.0, 0.0, 24.0] },
