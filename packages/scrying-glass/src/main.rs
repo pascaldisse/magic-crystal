@@ -1411,9 +1411,12 @@ impl NetPresent {
         // cross-queue demod tail). MUST run BEFORE `start_pipeline`. Returns the
         // per-set AOV + present SHARED MTLBuffers wrapped as wgpu (the same
         // buffers the native demod binds). Default OFF — baseline untouched.
-        let fused = matches!(
+        // SHIFT 18: fused native demod is the DEFAULT (CUT A, +4 fps, kills the
+        // N0.m demod tail). Opt OUT with `GAIA_NATIVE_DEMOD_FUSED=0` for the
+        // baseline wgpu-demod A/B.
+        let fused = !matches!(
             std::env::var("GAIA_NATIVE_DEMOD_FUSED").as_deref(),
-            Ok("1" | "true" | "on")
+            Ok("0" | "false" | "off")
         );
         let mut fused_aov: Option<Vec<wgpu::Buffer>> = None;
         let mut fused_present: Option<Vec<wgpu::Buffer>> = None;

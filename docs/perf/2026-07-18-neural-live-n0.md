@@ -1153,3 +1153,132 @@ internally; they just don't equal the measured wall-clock mean (18.92ms).
   — the print tag was not renamed this shift, an honest cosmetic gap).
 - 0 scrying-glass processes running at shift end (verified: every spawned
   server was `kill`ed via bash `trap ... EXIT` and confirmed with `ps aux`).
+
+---
+
+# N0.n — SHIFT 18: KILL THE TAIL — fused demod on the net queue (CUT A landed, CUT B rejected)
+
+State in: N0.m named the `demod` GPU-contention TAIL (p95 10.46 vs 0.66 med) the
+mean-eater — demod encoded on the wgpu RENDER queue, its GPU work scheduled
+against the net forward on the NET queue (single M1 GPU), so its submission ate a
+cross-queue scheduling tail. Two cuts tried, both flagged, same-binary A/B, sleep
+ON, offscreen 640×480, release, `worlds/naruko`, ≥1000f both arms.
+
+## CUT A — FUSED DEMOD ON THE NET QUEUE (`GAIA_NATIVE_DEMOD_FUSED=1`) — LANDED
+- Native MSL `demod_fused` kernel (bit-identical to `rdirect_demod.wgsl`'s
+  PRESENTED path + the CPU ref), compiled once (`attach_demod`), encoded per
+  frame onto the SET's own net queue right AFTER that set's forward
+  (`commit_net`) — same queue, FIFO, no render-queue hop.
+- Per-set AOV + present accum are now SHARED MTLBuffers (wgpu-wrapped: trace
+  writes the AOV, the blit reads the accum — one physical buffer, two views);
+  the fused demod binds the Metal handles. Present consumes present[demod_set]
+  one frame downstream (unchanged output-or-nothing, 2 frames in flight).
+- Belief eye (`/scry?eye=belief`) stays on the wgpu `DemodPass` (debug door).
+
+### A/B — WALL-CLOCK fps, sleep ON, 2 pairs (thermal-guard)
+| arm            | port | frames | WALL-FPS | mean ms | demod med/p95 | total p95 |
+|----------------|------|--------|----------|---------|---------------|-----------|
+| baseline (OFF) | 8462 | 1524 | 49.86 | 20.06 | 0.639 / **9.929** | 25.976 |
+| fused (ON)     | 8463 | 1641 | **53.74** | **18.61** | 0.053 / **0.111** | 22.096 |
+| baseline (OFF) | 8464 | 1526 | 49.76 | 20.10 | 0.663 / **9.528** | 26.078 |
+| fused (ON)     | 8465 | 1652 | **53.96** | **18.53** | 0.055 / **0.118** | 22.446 |
+
+**CUT A attribution: +4.04 fps (49.81→53.85), −1.51 ms/frame mean.** The
+`demod` p95 TAIL dies **9.5-9.9 → 0.11-0.12 ms (~85×)** — the N0.m mean-eater is
+gone. `total` p95 26.0 → 22.2 ms (−3.8). Honest cost: the demod GPU work moved
+ONTO the net queue's timeline, so `trace` rose 6.1→7.4 med / net_gpu 5.22→5.4
+med / net_wall p95 12.4→13.1 (the single GPU still does the same compute; the
+win is killing the cross-queue SCHEDULING tail, not the compute). Net effect is
+positive because the separate demod submission's arbitration gap cost more than
+the on-queue serialization.
+
+## CUT B — ASYNC TRACE (`GAIA_NATIVE_ASYNC_TRACE=1`) — MEASURED, REJECTED
+Dropped the two intermediate render-thread trace GPU polls (clear+accum, aov) —
+correct by same-queue FIFO, the one gather-fence poll stays (N0.h: the CPU
+signal must be truthful). Hypothesis (N0.m): frees the render thread, lets world
+advance overlap under trace flight.
+
+| arm                  | port | frames | WALL-FPS | vs its base |
+|----------------------|------|--------|----------|-------------|
+| fused + async        | 8466 | 1481 | 48.83 | **−5.1** vs fused |
+| async only           | 8467 | 1405 | 45.66 | **−4.1** vs baseline |
+
+**REJECTED — async trace REGRESSES.** Removing the polls DE-serialized trace
+against the net forward on the single M1 GPU: `gather` ballooned 0.93→9.3 med
+(now carries the merged wait + contention), `net_wait` 0.00→2.8 med, `total`
+12.5→14.4. The intermediate polls were doing useful work — cleanly finishing
+trace before the net contends. This is N0.j's law again (rescheduling without
+CUTTING GPU work hurts on one GPU). WORLD_OVERLAP could not pay: the enabling
+step (non-blocking trace) itself costs more than the overlap it would buy, and
+the world-under-trace overlap needs a resolve_frame split (submit-trace → world
+→ finish) not landed this shift. Flag stays default-OFF.
+
+## 60 FPS THROUGHPUT VERDICT — NOT MET at 53.85 fps wall-clock (18.57 ms/frame mean, S18 default = fused ON), 2 frames in flight
+`60fps throughput NOT MET at 53.85 fps wall-clock (18.57 ms/frame mean, fused
+demod ON — the S18 default, sleep ON), ~1.9 ms short of the 16.67 ms wall;
+per-image latency ≈ 2 frames-in-flight (unchanged). CUT A (fused demod on the
+net queue) is REAL and VERIFIED LIVE: the N0.m demod GPU-contention tail
+(p95 9.5-9.9ms) is killed to p95 0.11ms and wall-clock rises +4.04 fps
+(49.81→53.85) across two same-binary A/B pairs, eyes coherent, parity holds.
+CUT B (async trace) was measured and REJECTED — dropping the trace polls
+de-serializes trace against the net on the single M1 GPU and regresses −4 to −5
+fps. The frame is still GPU-scheduling-bound with two unattacked thieves.`
+Remaining-thief table (fused ON, sleep ON):
+
+| thief                  | ms (median) | ms (tail, p95) | status                                    |
+|------------------------|-------------|-----------------|--------------------------------------------|
+| ~~demod (GPU tail)~~   | 0.05        | 0.11            | **KILLED (CUT A), VERIFIED LIVE** (was 0.64/9.9) |
+| trace (synchronous)    | 7.40        | 15.29           | NOW #1 — rose (shares net-queue timeline); N0.j's async attack REJECTED here |
+| net_gpu (contention)   | 5.37        | 9.45            | UNCHANGED — N0.i's single-GPU tax, unattacked |
+| net_wait (fused)       | 0.00        | 13.16           | the frame-overlap wait absorbs the net+demod GPU flight |
+
+## Gates — ALL HOLD
+- `n0b_gather_and_shared_forward_match_cpu` — ok. `n0_gate1_live_net_matches_cpu_reference` — ok.
+- `rite5` — 17/17 (incl. body/gait/cat byte-identical determinism).
+- `s16_sleep_ordeals` — 4/4 (settled-sleep, wake-test, rest-pose parity, determinism).
+- MOTION gate (fused, sleep ON): `s18-motionA-presented.png` / `s18-motionB-presented.png`
+  (READ) — A: wide platform view, tower with cyan/pink halo rings, glass orb on a
+  green pedestal (right), iridescent presence spheres, brown/red crates; B (after
+  W+D walk): camera moved+turned, tower now left-of-center, tall factory block
+  with lit windows dominates the right, spheres gone from view — coherent naruko
+  dusk both, no black, no wedge, no freeze.
+
+## Proof — both eyes (READ, pixel words — NOT black, fused path)
+- `s18-fused-on-presented.png` — close-range dark tiered tower base against a
+  mauve dusk sky, bright water horizon line below, dark water foreground; night-
+  toned, albedo undone. `s18-fused-on-belief.png` — SAME tower geometry, brighter/
+  desaturated over a cream ground (albedo NOT undone), as designed. The fused
+  native demod renders bit-identical pixels to the wgpu path (same math).
+- `s18-smoke-presented.png` — under-platform view between two support posts, pale
+  moon at horizon, factory block with lit window (early smoke, confirms coherence).
+
+## Source
+- code: `packages/scrying-glass/src/rdirect_live.rs` (`DemodNative`, `attach_demod`,
+  `demod_fused` MSL, `commit_net` fused branch), `src/main.rs` (per-set present,
+  `present_bg_for`, flags). bench: `proof/neural-live/s18-bench.sh` (sleep ON).
+- logs/budgets: `s18-{baseline-off,fused-on,baseline-off2,fused-on2,fused-async,
+  async-only}.{log,budget.json}`, `s18-motion.log` under `proof/neural-live/`.
+- PNGs: `s18-{fused-on,smoke}-{presented,belief}.png`, `s18-motion{A,B}-presented.png`.
+- env: `GAIA_NEURAL_LIVE=1 GAIA_NATIVE_OFFSCREEN=true GAIA_NATIVE_NET_PRESENT=true
+  GAIA_NATIVE_HUD=false GAIA_NATIVE_SLEEP=1`, `GAIA_NATIVE_DEMOD_FUSED=1` (CUT A),
+  `GAIA_NATIVE_ASYNC_TRACE=1` (CUT B, rejected), release, `worlds/naruko`, M1/macOS 26.
+- 0 scrying-glass processes at shift end (every server `kill`ed via `trap … EXIT`,
+  confirmed `ps aux`).
+
+## Adversary — S18 current
+CUT A's win is a SCHEDULING win, not a compute cut: the single M1 GPU still runs
+trace+net+demod's full ~13ms of compute per frame, so 60fps stays ~1.9ms out of
+reach and the next real gain must CUT GPU work (a cheaper trace, or net_gpu
+quality pass — N1), not reschedule it. The fused demod's correctness rests on
+FIFO ordering within one net queue (forward → demod, same queue) AND on the
+gather→net event fence covering the AOV (the AOV is written by trace on the
+render queue, read by demod on the net queue — safe ONLY because the fence
+signals after the gather poll, which is after the AOV; a future edit that signals
+the fence earlier would let demod read a half-written AOV). Per-set present accum
+assumes 2 frames in flight (SET_COUNT=2); deepening the pipe would need more
+present buffers. The +4fps is stable across two same-session pairs but baseline
+here (49.8) ran ~3fps below N0.m's 52.86 (thermal/run variance) — the A/B DELTA
+is same-binary same-session and trustworthy; the ABSOLUTE fps floats with the
+machine. CUT B's rejection is proven only for the poll-collapse form; the full
+resolve_frame-split world-overlap remains untested (and its enabling step already
+regressed, so its ceiling is bounded by whatever it recovers ABOVE that loss).
