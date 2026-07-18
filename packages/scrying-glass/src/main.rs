@@ -1398,14 +1398,15 @@ impl NetPresent {
         // missing/unreadable file returns Err → net_present_frame Err →
         // present_black (Pleroma-or-BLACK: this is how "force Pleroma
         // unavailable" yields a pure-black window).
-        // N2 REAL IMAGE BAR: default = v3 (the memory/recurrence weights that
-        // must EARN a real-image ordeal PASS stamp to present). v2/v1 remain
+        // N3 REAL IMAGE BAR: default = v4 (v3 arch + the spatial FIREFLY LOSS —
+        // must EARN a real-image ordeal PASS stamp to present). v3/v2/v1 remain
         // env-selectable for the Architect's A/B, but ALL of them face the gate.
-        let weights_sel = std::env::var("GAIA_NATIVE_WEIGHTS").unwrap_or_else(|_| "v3".to_string());
+        let weights_sel = std::env::var("GAIA_NATIVE_WEIGHTS").unwrap_or_else(|_| "v4".to_string());
         let weights_file = match weights_sel.as_str() {
             "v1" => "data/rdirect-weights-v1.bin".to_string(),
             "v2" => "data/rdirect-weights-v2.bin".to_string(),
             "v3" => "data/rdirect-weights-v3.bin".to_string(),
+            "v4" => "data/rdirect-weights-v4.bin".to_string(),
             other => other.to_string(),
         };
         let weights_abs = Path::new(env!("CARGO_MANIFEST_DIR")).join(&weights_file);

@@ -251,15 +251,28 @@ impl Mlp {
         input: &[f32],
         target: &[f32; OUTPUT_CHANNELS],
     ) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
+        // MSE delta at the output: dL/d_out = 2(out-target)/N.
+        let output = self.forward(input);
+        let delta0: [f32; OUTPUT_CHANNELS] = std::array::from_fn(|c| {
+            2.0 * (output[c] - target[c]) / OUTPUT_CHANNELS as f32
+        });
+        self.backward_from_delta(input, &delta0)
+    }
+
+    /// Backprop an ARBITRARY output-space gradient (dL/d_out) — lets a caller
+    /// supply a custom loss delta (e.g. MSE + a spatial firefly clamp term, N3).
+    #[allow(clippy::needless_range_loop)]
+    fn backward_from_delta(
+        &self,
+        input: &[f32],
+        delta0: &[f32; OUTPUT_CHANNELS],
+    ) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
         let (pre_activations, activations) = self.forward_train(input);
         let n_layers = self.layers.len();
         let mut w_grads: Vec<Vec<f32>> = self.layers.iter().map(|l| vec![0.0; l.w.len()]).collect();
         let mut b_grads: Vec<Vec<f32>> = self.layers.iter().map(|l| vec![0.0; l.b.len()]).collect();
 
-        let output = activations.last().unwrap();
-        let mut delta: Vec<f32> = (0..OUTPUT_CHANNELS)
-            .map(|c| 2.0 * (output[c] - target[c]) / OUTPUT_CHANNELS as f32)
-            .collect();
+        let mut delta: Vec<f32> = delta0.to_vec();
 
         for li in (0..n_layers).rev() {
             let layer = &self.layers[li];
@@ -796,6 +809,52 @@ pub fn accumulate_backward(
             b_grads[li][k] += bg[li][k] * scale;
         }
     }
+}
+
+/// N3 THE FIREFLY LOSS. Backprop MSE + a SPATIAL FIREFLY CLAMP in one pass.
+/// `out` is the net's forward output for `feat` (caller already has it, so no
+/// extra forward). MSE delta = 2(out-target)/N. Firefly delta: for each channel
+/// an excess `e = out[c] - cap[c]` over the TEACHER's local-neighbourhood cap;
+/// if `e > 0` (net brighter than anything the teacher shows nearby) add a
+/// heavy quadratic penalty `ff_w * e^2`, delta `2*ff_w*e`. Isolated bright
+/// outliers over dark teacher neighbourhoods get crushed; genuine bright edges
+/// (high cap) are untouched. Differentiable, cheap, spatial (cap is precomputed
+/// from the teacher image). Returns (mse_loss, ff_loss) for monitoring.
+#[allow(clippy::too_many_arguments)]
+pub fn accumulate_backward_firefly(
+    mlp: &Mlp,
+    feat: &[f32; HIST_FEATURES],
+    out: &[f32; OUTPUT_CHANNELS],
+    target: &[f32; OUTPUT_CHANNELS],
+    cap: &[f32; OUTPUT_CHANNELS],
+    ff_w: f32,
+    w_grads: &mut [Vec<f32>],
+    b_grads: &mut [Vec<f32>],
+    scale: f32,
+) -> (f64, f64) {
+    let mut delta = [0.0f32; OUTPUT_CHANNELS];
+    let mut mse_loss = 0.0f64;
+    let mut ff_loss = 0.0f64;
+    for c in 0..OUTPUT_CHANNELS {
+        let d = out[c] - target[c];
+        mse_loss += (d * d) as f64;
+        delta[c] = 2.0 * d / OUTPUT_CHANNELS as f32;
+        let e = out[c] - cap[c];
+        if e > 0.0 {
+            ff_loss += (ff_w * e * e) as f64;
+            delta[c] += 2.0 * ff_w * e;
+        }
+    }
+    let (wg, bg) = mlp.backward_from_delta(feat, &delta);
+    for li in 0..w_grads.len() {
+        for k in 0..w_grads[li].len() {
+            w_grads[li][k] += wg[li][k] * scale;
+        }
+        for k in 0..b_grads[li].len() {
+            b_grads[li][k] += bg[li][k] * scale;
+        }
+    }
+    (mse_loss, ff_loss)
 }
 
 /// Allocate zero grad buffers shaped like the MLP.
