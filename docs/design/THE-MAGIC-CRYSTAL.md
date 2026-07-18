@@ -29,6 +29,15 @@ Earth. The player finds the shard. THE SHARD SPEAKS BACK. Tutorial begins.
 6. Two wizard factions = the standing conflict spine (names Edan Connor,
    Zareb Aiden canon; protagonist name OPEN — his word pending).
 
+## THE CRYSTAL'S POWER (Architect, 07-18 21:26)
+The magic crystal AWAKENS THE DIVINE SPARK IN ALL. It makes a diamond
+indestructible; it awakens the soul of every kami. Doctrine: awakening, not
+addition — a thing's magic is its OWN nature perfected to the divine degree
+(hard → indestructible; thing → ensouled). Animism as game law, and as
+engine law: the kami layer IS the souls of things; the crystal is what
+wakes them. Magic system (R19) inherits this rule: enchantment amplifies
+essence, never bolts on foreign properties.
+
 ## THE TUTORIAL (Architect, 07-18 21:21)
 Taught by the ZAUBERPOLIZEI: Pascal & Dariush — the OG two. They drive a
 Lamborghini Diablo SV. NOT a mockoff, THE OG ONE — the real car, faithful,
