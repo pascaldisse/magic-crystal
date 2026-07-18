@@ -1108,6 +1108,9 @@ struct NetTimings {
     trace: f64,
     gather: f64,
     net: f64,
+    /// CUT 2 GPU demod pass (undo-log-demod), split from the surface blit so
+    /// the budget table can name it separately (S3).
+    demod: f64,
     present: f64,
     total: f64,
 }
@@ -1151,6 +1154,7 @@ struct NetPresent {
     /// S3 instrument: the net forward's GPU-only ms (MTLCommandBuffer GPU
     /// timestamps), split from `s_net` (the wall around the blocking call).
     s_net_gpu: Vec<f64>,
+    s_demod: Vec<f64>,
     s_present: Vec<f64>,
     s_total: Vec<f64>,
     frames: u64,
@@ -1226,6 +1230,7 @@ impl NetPresent {
             s_gather: Vec::new(),
             s_net: Vec::new(),
             s_net_gpu: Vec::new(),
+            s_demod: Vec::new(),
             s_present: Vec::new(),
             s_total: Vec::new(),
             frames: 0,
@@ -1353,6 +1358,7 @@ impl NetPresent {
         self.s_gather.push(t.gather);
         self.s_net.push(t.net);
         // s_net_gpu is pushed inside resolve_frame (GPU timestamps live there).
+        self.s_demod.push(t.demod);
         self.s_present.push(t.present);
         self.s_total.push(t.total);
         self.frames += 1;
@@ -1360,7 +1366,7 @@ impl NetPresent {
             eprintln!(
                 "[n0e] frames={} {}x{}→{}x{} (ms median/p95 vs 16.67): \
                  trace {:.2}/{:.2} gather {:.2}/{:.2} net[wall {:.2}/{:.2} gpu {:.2}/{:.2}] \
-                 present {:.2}/{:.2} TOTAL {:.2}/{:.2}",
+                 demod {:.2}/{:.2} present {:.2}/{:.2} TOTAL {:.2}/{:.2}",
                 self.frames,
                 self.low_w,
                 self.low_h,
@@ -1374,6 +1380,8 @@ impl NetPresent {
                 pct(&self.s_net, 0.95),
                 pct(&self.s_net_gpu, 0.5),
                 pct(&self.s_net_gpu, 0.95),
+                pct(&self.s_demod, 0.5),
+                pct(&self.s_demod, 0.95),
                 pct(&self.s_present, 0.5),
                 pct(&self.s_present, 0.95),
                 pct(&self.s_total, 0.5),
@@ -2291,10 +2299,17 @@ impl Renderer {
     #[cfg(target_os = "macos")]
     fn net_present_frame(&mut self) -> Result<Option<wgpu::SubmissionIndex>, ()> {
         let (surface_w, surface_h) = (self.config.width, self.config.height);
+        // RESOLUTION OF GOD (law 0a25530): trace, net AND present all run at the
+        // 640×480 canvas — the net NEVER enlarges a small trace to the window.
+        // low == target == render res; the window gets it by a nearest/integer
+        // display blit only. Anamorphic camera framing (surface aspect below)
+        // maps the canvas onto the window without geometric distortion, exactly
+        // as the normal `render` path does.
         let (low_w, low_h) = (self.render_width, self.render_height);
+        let (target_w, target_h) = (self.render_width, self.render_height);
 
         let rebuild = match &self.net_present {
-            Some(np) => np.target_w != surface_w || np.target_h != surface_h,
+            Some(np) => np.target_w != target_w || np.target_h != target_h,
             None => true,
         };
         if rebuild {
@@ -2304,13 +2319,13 @@ impl Renderer {
                 &self.integrator,
                 low_w,
                 low_h,
-                surface_w,
-                surface_h,
+                target_w,
+                target_h,
             ) {
                 Ok(np) => {
                     eprintln!(
-                        "[n0c] net-present rig pooled: trace {low_w}x{low_h} → net {surface_w}x{surface_h} ({} px)",
-                        (surface_w as usize) * (surface_h as usize)
+                        "[n0c] net-present rig pooled (God's res): trace {low_w}x{low_h} → net {target_w}x{target_h} → nearest blit → surface {surface_w}x{surface_h} ({} px)",
+                        (target_w as usize) * (target_h as usize)
                     );
                     self.net_present = Some(np);
                 }
@@ -2356,8 +2371,8 @@ impl Renderer {
             &self.sun,
             self.sky_top,
             self.sky_horizon,
-            surface_w,
-            surface_h,
+            target_w,
+            target_h,
             self.integrator.node_count,
             self.integrator.tri_count,
             0,
@@ -2365,8 +2380,12 @@ impl Renderer {
             None,
         );
         apply_aspect(&mut uni_target);
+        // Present: params.xy = the 640×480 canvas (present_accum dims);
+        // surface.xy = the window; mode 1 = nearest — the display blit scales
+        // God's res onto any surface with no interpolation (integer when the
+        // window is a whole multiple, nearest otherwise). No neural enlarge.
         let mut blit_uniform = uni_target;
-        blit_uniform.surface = [surface_w, surface_h, 1, 0]; // nearest, 1:1.
+        blit_uniform.surface = [surface_w, surface_h, 1, 0]; // nearest canvas→window.
 
         // Take the rig out to avoid borrowing `self` twice; put it back after.
         let mut np = self.net_present.take().expect("net-present rig present");
@@ -2464,13 +2483,14 @@ impl Renderer {
             self.queue.present(frame);
         }
         let blit_ms = t_present.elapsed().as_secs_f64() * 1000.0;
-        let present_ms = resolve_ms + blit_ms;
-        let total = trace_ms + gather_ms + net_ms + present_ms;
+        // S3: demod (resolve_ms) and the surface blit are now separate columns.
+        let total = trace_ms + gather_ms + net_ms + resolve_ms + blit_ms;
         np.record(NetTimings {
             trace: trace_ms,
             gather: gather_ms,
             net: net_ms,
-            present: present_ms,
+            demod: resolve_ms,
+            present: blit_ms,
             total,
         });
         self.net_present = Some(np);

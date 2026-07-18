@@ -1,0 +1,42 @@
+[package] scrying-glass v0.1.0 registered
+[world] /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/../../worlds/naruko scene(s)=["main"] entities=45 chains=23 clusters=913 transmute=79.7ms
+[worker-window] GAIA_NATIVE_WORKER_WINDOW=true: window built focused=false focusable=false (never-key) title="GAIA — Scrying Glass [worker]"
+[embodiment] spawn eye=Vec3(0.0, 7.0, 44.0) yaw=0 floor_triangles=10464 tick_dt=0.016666668
+[pleroma] BVH nodes=15487 triangles=23192 (static 12368 + dynamic 10824) build=14.3ms; 22 dynamic entit(ies) — living layer
+[pleroma] traced integrator spp=2 bounces=4 rr_start=2 — first_light is dead
+[wgpu] traced 640x480 → upscale → surface 960x640 (bilinear); Bgra8UnormSrgb
+[bloodbend] 🩸 watching 1 scene file(s) + /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/src/integrator.wgsl @ 500ms poll
+[frame] trace 640x480 → surface 480x320: median 11.31ms mean 11.34ms/frame (spp=2, 60-frame sample)
+[scry] GET http://127.0.0.1:8436/scry (alias: /screenshot; optional pos/yaw/pitch/fov/w/h)
+[embodiment] GET http://127.0.0.1:8436/pose · POST http://127.0.0.1:8436/walk {keys,yaw?,pitch?,ticks?}
+[scrying-glass] child webview overlay created; render, capture, PNG, and HTTP run off the main thread
+[n0c] net-present rig pooled (God's res): trace 640x480 → net 640x480 → nearest blit → surface 960x640 (307200 px)
+[n0e] frames=60 640x480→640x480 (ms median/p95 vs 16.67): trace 6.62/8.85 gather 1.04/2.47 net[wall 42.99/46.68 gpu 42.65/46.03] present 0.86/1.47 TOTAL 52.82/56.78
+[n0e] frames=120 640x480→640x480 (ms median/p95 vs 16.67): trace 6.52/8.93 gather 0.99/1.97 net[wall 42.90/47.39 gpu 42.56/46.80] present 0.86/1.64 TOTAL 52.61/57.62
+[n0e] frames=180 640x480→640x480 (ms median/p95 vs 16.67): trace 6.66/9.03 gather 1.00/1.84 net[wall 42.99/47.35 gpu 42.58/46.80] present 0.85/1.63 TOTAL 52.76/58.20
+[n0e] frames=240 640x480→640x480 (ms median/p95 vs 16.67): trace 6.58/9.05 gather 1.00/1.84 net[wall 42.99/47.35 gpu 42.58/46.86] present 0.84/1.55 TOTAL 52.82/57.62
+[n0e] frames=300 640x480→640x480 (ms median/p95 vs 16.67): trace 6.58/9.12 gather 1.00/1.83 net[wall 43.06/47.39 gpu 42.63/47.02] present 0.84/1.55 TOTAL 53.07/57.63
+[n0e] frames=360 640x480→640x480 (ms median/p95 vs 16.67): trace 6.58/9.21 gather 1.00/1.67 net[wall 43.04/47.35 gpu 42.65/47.02] present 0.83/1.54 TOTAL 52.96/57.49
+[n0e] frames=420 640x480→640x480 (ms median/p95 vs 16.67): trace 6.62/9.23 gather 1.00/1.67 net[wall 43.06/47.35 gpu 42.65/47.02] present 0.83/1.55 TOTAL 52.96/57.33
+[n0e] frames=480 640x480→640x480 (ms median/p95 vs 16.67): trace 6.62/9.23 gather 0.99/1.66 net[wall 42.98/47.35 gpu 42.62/46.98] present 0.83/1.56 TOTAL 52.83/57.14
+[n0e] frames=540 640x480→640x480 (ms median/p95 vs 16.67): trace 6.63/9.23 gather 1.00/1.77 net[wall 42.99/47.40 gpu 42.62/46.98] present 0.84/1.68 TOTAL 52.94/57.62
+[n0e] frames=600 640x480→640x480 (ms median/p95 vs 16.67): trace 6.60/9.23 gather 1.00/1.77 net[wall 42.94/47.36 gpu 42.57/46.98] present 0.84/1.75 TOTAL 52.76/57.49
+[n0e] frames=660 640x480→640x480 (ms median/p95 vs 16.67): trace 6.60/9.23 gather 1.01/1.86 net[wall 42.94/47.45 gpu 42.57/47.04] present 0.85/1.83 TOTAL 52.79/57.63
+[n0e] frames=720 640x480→640x480 (ms median/p95 vs 16.67): trace 6.62/9.23 gather 1.01/1.84 net[wall 42.97/47.46 gpu 42.60/47.04] present 0.86/1.84 TOTAL 52.95/57.70
+[n0e] frames=780 640x480→640x480 (ms median/p95 vs 16.67): trace 6.60/9.21 gather 1.01/1.87 net[wall 42.98/47.49 gpu 42.62/47.09] present 0.86/1.83 TOTAL 53.02/57.78
+[n0e] frames=840 640x480→640x480 (ms median/p95 vs 16.67): trace 6.62/9.20 gather 1.01/1.87 net[wall 42.99/47.51 gpu 42.63/47.10] present 0.86/1.80 TOTAL 53.05/57.78
+[n0e] frames=900 640x480→640x480 (ms median/p95 vs 16.67): trace 6.60/9.19 gather 1.01/1.86 net[wall 43.00/47.49 gpu 42.63/47.09] present 0.86/1.77 TOTAL 53.06/57.70
+[n0e] frames=960 640x480→640x480 (ms median/p95 vs 16.67): trace 6.55/9.18 gather 1.01/1.86 net[wall 43.01/47.46 gpu 42.64/47.04] present 0.86/1.75 TOTAL 53.00/57.62
+[n0e] frames=1020 640x480→640x480 (ms median/p95 vs 16.67): trace 6.55/9.20 gather 1.01/1.86 net[wall 42.98/47.43 gpu 42.62/47.02] present 0.86/1.74 TOTAL 52.94/57.60
+[n0e] frames=1080 640x480→640x480 (ms median/p95 vs 16.67): trace 6.56/9.19 gather 1.02/1.86 net[wall 43.00/47.46 gpu 42.64/47.04] present 0.86/1.73 TOTAL 52.96/57.57
+[n0e] frames=1140 640x480→640x480 (ms median/p95 vs 16.67): trace 6.58/9.23 gather 1.02/1.88 net[wall 43.02/47.51 gpu 42.66/47.05] present 0.86/1.82 TOTAL 53.02/57.70
+[n0e] frames=1200 640x480→640x480 (ms median/p95 vs 16.67): trace 6.56/9.23 gather 1.02/1.88 net[wall 43.00/47.48 gpu 42.64/47.03] present 0.86/1.83 TOTAL 52.96/57.69
+[n0e] frames=1260 640x480→640x480 (ms median/p95 vs 16.67): trace 6.56/9.23 gather 1.02/1.88 net[wall 43.00/47.48 gpu 42.64/47.02] present 0.86/1.84 TOTAL 52.98/57.69
+[n0e] frames=1320 640x480→640x480 (ms median/p95 vs 16.67): trace 6.54/9.23 gather 1.02/1.88 net[wall 42.99/47.51 gpu 42.63/47.04] present 0.86/1.85 TOTAL 52.94/57.70
+[n0e] frames=1380 640x480→640x480 (ms median/p95 vs 16.67): trace 6.53/9.22 gather 1.02/1.88 net[wall 43.00/47.51 gpu 42.64/47.04] present 0.86/1.85 TOTAL 52.94/57.69
+[n0e] frames=1440 640x480→640x480 (ms median/p95 vs 16.67): trace 6.53/9.24 gather 1.02/1.88 net[wall 43.00/47.51 gpu 42.64/47.04] present 0.86/1.84 TOTAL 52.94/57.68
+[n0e] frames=1500 640x480→640x480 (ms median/p95 vs 16.67): trace 6.52/9.23 gather 1.02/1.88 net[wall 43.00/47.50 gpu 42.64/47.04] present 0.86/1.83 TOTAL 52.90/57.62
+[n0e] frames=1560 640x480→640x480 (ms median/p95 vs 16.67): trace 6.52/9.23 gather 1.02/1.90 net[wall 43.01/47.51 gpu 42.64/47.04] present 0.86/1.82 TOTAL 52.88/57.61
+[n0e] frames=1620 640x480→640x480 (ms median/p95 vs 16.67): trace 6.53/9.23 gather 1.02/1.88 net[wall 43.01/47.50 gpu 42.64/47.04] present 0.86/1.79 TOTAL 52.90/57.57
+[n0e] frames=1680 640x480→640x480 (ms median/p95 vs 16.67): trace 6.53/9.21 gather 1.02/1.87 net[wall 43.02/47.50 gpu 42.65/47.04] present 0.86/1.75 TOTAL 52.94/57.46
+[n0e] frames=1740 640x480→640x480 (ms median/p95 vs 16.67): trace 6.53/9.22 gather 1.02/1.87 net[wall 43.03/47.51 gpu 42.66/47.05] present 0.86/1.75 TOTAL 52.94/57.60
