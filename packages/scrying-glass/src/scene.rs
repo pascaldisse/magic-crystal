@@ -274,7 +274,23 @@ pub struct RenderScene {
     /// the walker stands on, F1), kept so a walker-ATTACHED body re-grounds under
     /// the walker's roaming xz every tick (`command_bodies_walked`).
     floor: Ground,
+    /// OWN-BODY CULL — the last WalkerPose xz fed to `command_bodies_walked`
+    /// (`None` until the first walker-driven tick). The identity a render's
+    /// `eye` is compared against in `dynamic_leaf_triangles_for_eye`: a
+    /// walker-attached body is the walker's OWN body, so drawing it from that
+    /// exact eye is drawing it inside the camera (the Architect-blinding bug,
+    /// 31bae8b). Any OTHER eye (a moving `/scry?pos=...`, a diorama camera)
+    /// still sees her — only identity with this pose culls.
+    last_walker_eye: Option<Vec3>,
 }
+
+/// OWN-EYE CULL default epsilon (metres) for `dynamic_leaf_triangles_for_eye`:
+/// how close a render `eye` must sit to the last walker pose to count as "the
+/// walker's own eye" (vs. a moving eye that merely visits the same spot).
+/// Sized to swallow f32 pose round-trip noise (sub-millimetre) while staying
+/// far below a single skinned vessel's own scale (metres) — never confusable
+/// with a real moving-eye shot taken from where the walker stands.
+pub const OWN_EYE_EPSILON_M: f32 = 1e-3;
 
 /// The walker's world pose fed to walker-ATTACHED bodies each tick (RITE V FINAL
 /// WELD). `position` is the EYE pose (the body re-grounds under its xz, like
@@ -897,6 +913,9 @@ impl RenderScene {
             // RITE V FINAL WELD — keep this SAME floor so a walker-attached body
             // re-grounds under the walker's roaming xz every tick (one floor, F1).
             floor,
+            // OWN-BODY CULL — no walker pose has driven a tick yet; every body
+            // draws (matches the pre-weld / headless-test fallback path).
+            last_walker_eye: None,
         })
     }
 
@@ -944,6 +963,13 @@ impl RenderScene {
         commanded_speed: f32,
         walker: Option<WalkerPose>,
     ) -> bool {
+        // OWN-BODY CULL — remember THIS tick's walker eye (identity for
+        // `dynamic_leaf_triangles_for_eye`'s own-eye test) before anything else
+        // moves; a headless caller that never passes `walker` leaves it `None`
+        // forever (every body draws — the pre-weld / broadcast-only fallback).
+        if let Some(pose) = walker {
+            self.last_walker_eye = Some(pose.position);
+        }
         // The clock is the living layer's tick count × dt (read BEFORE `tick()`
         // increments it, so frame N uses tick N).
         let t = self.dynamics.clock as f64 * self.dynamics.dt;
@@ -972,6 +998,39 @@ impl RenderScene {
     pub fn dynamic_leaf_triangles(&self) -> Vec<LeafTriangle> {
         let mut out = self.dynamics.leaf_triangles();
         for body in &self.bodies {
+            out.extend_from_slice(&body.world_tris);
+        }
+        out
+    }
+
+    /// [`RenderScene::dynamic_leaf_triangles`] plus the OWN-EYE CULL (RITE V
+    /// FINAL WELD — nari's first-person mesh must not render INSIDE the camera
+    /// that IS her own welded body, the Architect-blinding bug 31bae8b parked):
+    /// a walker-ATTACHED body's triangles are OMITTED when `eye` sits within
+    /// `epsilon` metres of the last walker pose `command_bodies_walked` was fed
+    /// (xz+y identity — the same pose the body tracks), UNLESS `force_draw`
+    /// overrides it. Any OTHER eye — a moving `/scry?pos=...`, a diorama camera,
+    /// no walker pose ever fed — still collects her, unchanged from
+    /// `dynamic_leaf_triangles`. Non-attached bodies (the minded cat) are never
+    /// culled by this rule; `force_draw` is a plain parameter (the call site
+    /// resolves it from `GAIA_NATIVE_DRAW_OWN_BODY`, default off — this fn never
+    /// reads the environment itself).
+    pub fn dynamic_leaf_triangles_for_eye(
+        &self,
+        eye: Vec3,
+        epsilon: f32,
+        force_draw: bool,
+    ) -> Vec<LeafTriangle> {
+        let mut out = self.dynamics.leaf_triangles();
+        for body in &self.bodies {
+            let is_own_eye = !force_draw
+                && body.follows_walker()
+                && self
+                    .last_walker_eye
+                    .is_some_and(|walker_eye| eye.distance(walker_eye) <= epsilon);
+            if is_own_eye {
+                continue;
+            }
             out.extend_from_slice(&body.world_tris);
         }
         out

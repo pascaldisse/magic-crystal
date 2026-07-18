@@ -11,8 +11,8 @@ use glam::Vec3;
 use homunculus::{Pose, Skeleton};
 use sama::{GaitParams, Locomotion, LocomotionParams};
 use scrying_glass::scene::{
-    BodyInstance, LeafTriangle, RenderScene, SceneParameters, SunDefaults, WalkerPose,
-    contact_passing_ticks,
+    BodyInstance, LeafTriangle, OWN_EYE_EPSILON_M, RenderScene, SceneParameters, SunDefaults,
+    WalkerPose, contact_passing_ticks,
 };
 use vessel::{Body, Preset};
 
@@ -901,5 +901,101 @@ fn weld_shadow_follows_the_walked_body() {
     assert!(
         null_diff < floor,
         "her authored spot is now vacated (null): null_diff {null_diff:.2e} >= floor {floor:.4}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// OWN-BODY CULL (weld repair) — the FINAL WELD reattached `follows: "walker"`
+// (31bae8b's interim detach reverted), which puts nari's body back INSIDE the
+// first-person camera unless the render path culls it there. The seam is
+// `RenderScene::dynamic_leaf_triangles_for_eye` (mesh-collection level, the
+// same seam `main.rs`'s `advance_world`/`capture_pose` call): a walker-
+// attached body's triangles are omitted only when the query `eye` sits within
+// epsilon of the exact walker pose last fed to `command_bodies_walked`; any
+// OTHER eye (a moving `/scry?pos=...`, a diorama camera) still collects her,
+// byte-identical to `dynamic_leaf_triangles`.
+// ---------------------------------------------------------------------------
+
+/// ORDEAL — own-eye render EXCLUDES the walker-attached body; a foreign eye
+/// (anywhere else, including the walker's OWN xz at a different y, and the
+/// walker's authored idle pose before any walk) INCLUDES it. `force_draw`
+/// overrides the cull back on even from the exact own eye.
+#[test]
+fn weld_own_eye_cull_excludes_attached_body_foreign_eye_includes_it() {
+    let mut scene = RenderScene::from_ecs(load_naruko().world, &naruko_params()).expect("scene");
+
+    // Before any walker pose ever drives a tick, `last_walker_eye` is `None` —
+    // every eye is "foreign" (the pre-weld / headless fallback): she is drawn
+    // from every angle, byte-identical to the unfiltered inventory.
+    let no_walker_bodies = scene
+        .dynamic_leaf_triangles_for_eye(Vec3::new(0.0, 2.5, 18.0), OWN_EYE_EPSILON_M, false)
+        .len();
+    assert_eq!(
+        no_walker_bodies,
+        scene.dynamic_leaf_triangles().len(),
+        "no walker pose fed yet: every eye collects her (the fallback path)"
+    );
+
+    // Drive one walker-attached tick: her body tracks this exact eye.
+    let walker = WalkerPose {
+        position: Vec3::new(0.0, 2.5, 18.0),
+        yaw: 0.0,
+    };
+    scene.command_bodies_walked(0.0, Some(walker));
+    let unfiltered = scene.dynamic_leaf_triangles().len();
+    let nari_tris = scene
+        .bodies
+        .iter()
+        .find(|b| b.gaia_id == "nari")
+        .unwrap()
+        .world_tris
+        .len();
+    assert!(nari_tris > 0, "nari's body must carry triangles to cull");
+
+    // OWN eye (exactly the walker's pose): her triangles are OMITTED — the
+    // cat (unattached) still draws, so the inventory is short by EXACTLY her count.
+    let own_eye = scene.dynamic_leaf_triangles_for_eye(walker.position, OWN_EYE_EPSILON_M, false);
+    assert_eq!(
+        own_eye.len(),
+        unfiltered - nari_tris,
+        "own-eye render must omit exactly nari's tris, nothing else"
+    );
+
+    // A sub-epsilon nudge off the walker's own eye still counts as "own eye"
+    // (float pose round-trip noise must not leak her back in).
+    let nudged = Vec3::new(
+        walker.position.x + OWN_EYE_EPSILON_M * 0.5,
+        walker.position.y,
+        walker.position.z,
+    );
+    let own_eye_nudged = scene.dynamic_leaf_triangles_for_eye(nudged, OWN_EYE_EPSILON_M, false);
+    assert_eq!(
+        own_eye_nudged.len(),
+        unfiltered - nari_tris,
+        "a sub-epsilon nudge off the walker's own eye is still the own eye"
+    );
+
+    // FOREIGN eye — anywhere clearly off the walker's pose (a moving /scry, a
+    // diorama camera): her body is drawn, inventory matches the unfiltered set.
+    let foreign_eye = Vec3::new(walker.position.x + 5.0, walker.position.y, walker.position.z);
+    let foreign = scene.dynamic_leaf_triangles_for_eye(foreign_eye, OWN_EYE_EPSILON_M, false);
+    assert_eq!(
+        foreign.len(),
+        unfiltered,
+        "a foreign eye (5 m off the walker's own eye) must still see her"
+    );
+
+    // force_draw overrides the cull even from the exact own eye.
+    let forced = scene.dynamic_leaf_triangles_for_eye(walker.position, OWN_EYE_EPSILON_M, true);
+    assert_eq!(
+        forced.len(),
+        unfiltered,
+        "force_draw (GAIA_NATIVE_DRAW_OWN_BODY) must draw her even from the own eye"
+    );
+
+    println!(
+        "[weld-cull] own-eye omits {nari_tris} nari tris ({own_eye_len} of {unfiltered}); \
+         foreign eye + force_draw both keep the full {unfiltered}",
+        own_eye_len = own_eye.len(),
     );
 }

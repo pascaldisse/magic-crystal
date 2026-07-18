@@ -65,6 +65,12 @@ struct ScryingGlassConfig {
     /// rolling-median sample window (GAIA_NATIVE_HUD_WINDOW, default 30).
     hud_enabled: bool,
     hud_window: usize,
+    /// OWN-BODY CULL override (`GAIA_NATIVE_DRAW_OWN_BODY`, default off/false):
+    /// force a walker-attached body (nari) to draw even from its own eye —
+    /// the pre-fix behavior, kept as an escape hatch (debugging the vessel
+    /// itself, a future third-person mode). Off is the normal weld: her body
+    /// vanishes only from the exact eye it is attached to.
+    draw_own_body: bool,
 }
 
 impl ScryingGlassConfig {
@@ -197,6 +203,12 @@ impl ScryingGlassConfig {
             },
             hud_enabled,
             hud_window: integer("GAIA_NATIVE_HUD_WINDOW", 30)? as usize,
+            draw_own_body: match std::env::var("GAIA_NATIVE_DRAW_OWN_BODY") {
+                Ok(value) => value.parse::<bool>().map_err(|_| {
+                    format!("GAIA_NATIVE_DRAW_OWN_BODY must be true or false, got {value:?}")
+                })?,
+                Err(_) => false,
+            },
         };
         if config.render_width == 0 || config.render_height == 0 {
             return Err("GAIA_NATIVE_RENDER_W and GAIA_NATIVE_RENDER_H must be positive".into());
@@ -821,6 +833,15 @@ struct Renderer {
     /// The STATIC BVH — built once over the non-behavior leaf triangles and
     /// cached; only the dynamic partition changes per tick, spliced onto this.
     static_bvh: Bvh,
+    /// The dynamic-partition SAH params (`.dynamic()` derives the splice's own
+    /// `BvhParams`) — kept so `capture_pose` can build a one-off foreign-eye
+    /// splice (OWN-EYE CULL) without disturbing the persistent `splice`/`static_bvh`.
+    bvh_params: BvhParams,
+    /// Refit tuning for the same one-off foreign-eye splice.
+    refit_params: RefitParams,
+    /// OWN-EYE CULL override (`GAIA_NATIVE_DRAW_OWN_BODY`, default off) — see
+    /// `ScryingGlassConfig::draw_own_body`.
+    draw_own_body: bool,
     /// The persistent two-level splice (LEVER 1): refits the dynamic partition
     /// per tick when the set is unchanged, rebuilds only on set change / bound
     /// degradation. Its `merged` tree is what gets uploaded.
@@ -867,6 +888,7 @@ impl Renderer {
         render_width: u32,
         render_height: u32,
         upscale_mode: u32,
+        draw_own_body: bool,
     ) -> Result<Self, String> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let target = unsafe {
@@ -926,6 +948,10 @@ impl Renderer {
         // cost ∝ pixels, not FLOPs).
         let build_start = Instant::now();
         let static_bvh = Bvh::build(&scene.leaf_triangles(), bvh_params);
+        // OWN-EYE CULL doesn't apply yet at construction — no walker pose has
+        // fed `command_bodies_walked` (`scene.last_walker_eye` is `None`), so
+        // this is identical to `dynamic_leaf_triangles_for_eye` here; the first
+        // frame loop's `advance_world` re-splices with the real walker eye.
         let dynamic_tris = scene.dynamic_leaf_triangles();
         let splice = DynamicSplice::build(
             &static_bvh,
@@ -990,6 +1016,9 @@ impl Renderer {
             integrator,
             scene,
             static_bvh,
+            bvh_params: *bvh_params,
+            refit_params,
+            draw_own_body,
             splice,
             last_models,
             camera,
@@ -1177,8 +1206,15 @@ impl Renderer {
         if models == self.last_models && !bodies_animating {
             return; // nothing moved — keep accumulating
         }
-        self.splice
-            .update(&self.static_bvh, &self.scene.dynamic_leaf_triangles());
+        // OWN-EYE CULL — the window camera IS the walker's own eye every frame
+        // (`set_view_pose` and this tick's `walker` share one pose, wired in the
+        // run loop below), so a walker-attached body never renders inside it.
+        let dynamic_tris = self.scene.dynamic_leaf_triangles_for_eye(
+            self.camera.eye,
+            scrying_glass::scene::OWN_EYE_EPSILON_M,
+            self.draw_own_body,
+        );
+        self.splice.update(&self.static_bvh, &dynamic_tris);
         self.integrator
             .update_bvh(&self.device, &self.splice.merged);
         // The node/tri buffers changed — rebuild the bind groups (they bind them)
@@ -1412,6 +1448,51 @@ impl Renderer {
             return self.capture_pose_neural(&camera, width, height);
         }
 
+        // OWN-EYE CULL — the persistent `self.integrator` buffers already carry
+        // the OWN-eye-culled geometry (`advance_world` keeps them in lockstep
+        // with `self.camera.eye`, the walker's own eye). A default `/scry` (no
+        // `pos` override) IS that same eye, so the fast path below needs no
+        // rebuild. An EXPLICIT moving eye (`?pos=...`) may be a FOREIGN eye —
+        // any eye that is not the walker's own must still see her — so when one
+        // is given we build a throwaway splice for THIS capture only and
+        // restore the persistent (own-eye) buffers before returning, so the
+        // live window's next frame is unaffected.
+        let foreign_splice = params.pos.map(|_| {
+            let tris = self.scene.dynamic_leaf_triangles_for_eye(
+                camera.eye,
+                scrying_glass::scene::OWN_EYE_EPSILON_M,
+                self.draw_own_body,
+            );
+            DynamicSplice::build(
+                &self.static_bvh,
+                &tris,
+                &self.bvh_params.dynamic(),
+                self.refit_params,
+            )
+        });
+        if let Some(foreign) = &foreign_splice {
+            self.integrator.update_bvh(&self.device, &foreign.merged);
+        }
+        // Whatever happens below (success or an early `?` error), put the
+        // persistent own-eye-culled buffers back before this function returns
+        // — the live window's next frame must never see the foreign geometry.
+        let result = self.capture_pose_bilinear(&camera, width, height);
+        if foreign_splice.is_some() {
+            self.integrator
+                .update_bvh(&self.device, &self.splice.merged);
+        }
+        result
+    }
+
+    /// The plain bilinear/nearest `/scry` dispatch + readback — split out of
+    /// [`Renderer::capture_pose`] so its OWN-EYE CULL restore (above) always
+    /// runs, on every exit path (including the `?`-propagated errors below).
+    fn capture_pose_bilinear(
+        &mut self,
+        camera: &Camera,
+        width: u32,
+        height: u32,
+    ) -> Result<CapturedFrame, String> {
         let accum = self.integrator.make_accum(&self.device, width, height);
         let compute_bg = self.integrator.compute_bind_group(&self.device, &accum);
         let blit_bg = self.integrator.blit_bind_group(&self.device, &accum);
@@ -1993,6 +2074,7 @@ fn main() {
                 config.render_width,
                 config.render_height,
                 config.upscale_mode,
+                config.draw_own_body,
             )
             .map_err(std::io::Error::other)?;
             {
