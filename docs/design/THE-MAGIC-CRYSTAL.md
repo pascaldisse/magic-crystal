@@ -34,7 +34,7 @@ Taught by the ZAUBERPOLIZEI: Pascal & Dariush — the OG two. They drive a
 Lamborghini Diablo SV. NOT a mockoff, THE OG ONE — the real car, faithful,
 no fake-brand knockoff. (Lineage: the Zauberpolizei catechism = the design
 bible sung as law; the law arrives in a Diablo.) A SHARD OF THE CRYSTAL IS
-IN THE CAR — and it can speak (Knight Rider lineage, honestly earned).
+IN THE CAR — and it can speak — lineage: THE GADGETMOBILE (Inspector Gadget), NOT KITT: backtalk, gadgets, comedy, transformation; a colleague with opinions, not a butler.
 Doctrine forming: the crystal is DISTRIBUTED — every shard is an interface
 node where the crystal touches the world (player's shard, car's shard, ...);
 each speaks with the crystal's voice; MONAD behind all of them, one mind,
