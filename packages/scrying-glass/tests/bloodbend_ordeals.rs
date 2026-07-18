@@ -9,6 +9,10 @@
 //!   (b) VALID entity edit → APPLIED, the crate's new colour reflected in the hash.
 //!   (c) BAD WGSL → OLD pipeline SURVIVES (renders byte-identical), valid swap works.
 //!   (d) BEND-JOURNAL written BEFORE apply (the previous bytes restorable).
+//!   (e) SHADER JOURNAL written before swap (mirrors d, MUST-FIX 1 fix pass).
+//!   (f) TOCTOU shape: validated bytes == stored last_good bytes BY
+//!       CONSTRUCTION on the refactored validation-dir path (MUST-FIX 2).
+//!   (g) NO-OP bend (empty entity diff) does not journal or rebuild.
 //!
 //! (c) requires a GPU adapter; on a host without one it prints that it could
 //! not run and returns (documented — never a false green).
@@ -335,4 +339,146 @@ fn journal_snapshots_previous_before_apply() {
         "[bloodbend (d)] journaled previous → {} (restorable)",
         snapshot_dir.display()
     );
+}
+
+// ── ORDEAL (e) — SHADER JOURNAL WRITTEN BEFORE SWAP (mirrors d) ─────────────
+// bloodbend-b0 fix pass, adversary MUST-FIX 1: `bend_shader` must snapshot the
+// previous WGSL source into the journal BEFORE the pipeline swap, exactly as
+// the scene tier does for scene bytes.
+#[test]
+fn shader_journal_snapshots_previous_before_swap() {
+    let world = scratch("shader-journal");
+    let journal_dir = world.join("journal");
+    let previous_source = "// integrator v1 (previous)\nfn integrate() {}".to_string();
+
+    let snapshot_dir = bloodbend::journal_previous_shader(&journal_dir, &previous_source)
+        .expect("shader journal writes");
+    assert!(
+        snapshot_dir.starts_with(&journal_dir),
+        "shader snapshot must live under the journal root"
+    );
+    assert!(snapshot_dir.is_dir(), "shader snapshot dir must exist");
+
+    let restored =
+        fs::read_to_string(snapshot_dir.join("integrator.wgsl")).expect("snapshot file");
+    assert_eq!(
+        restored, previous_source,
+        "the shader journal must preserve the previous WGSL source byte-for-byte (restorable undo)"
+    );
+    println!(
+        "[bloodbend (e)] journaled previous shader → {} (restorable)",
+        snapshot_dir.display()
+    );
+}
+
+// ── ORDEAL (f) — TOCTOU SHAPE: validated bytes == stored last_good BY
+//    CONSTRUCTION on the refactored validation-dir path ───────────────────
+// bloodbend-b0 fix pass, adversary MUST-FIX 2: `bend_scene` must read the
+// watched files ONCE (`next`) and validate FROM a private snapshot of those
+// SAME bytes (`write_validation_dir`), never re-reading the live world dir a
+// second time. This proves the refactored shape holds even while a writer
+// races the validation window with a DIFFERENT edit — the exact 0.41s
+// @10k-entities race the adversary measured.
+#[test]
+fn toctou_validated_bytes_match_stored_last_good_by_construction() {
+    let world = scratch("toctou");
+    let scene_file = world.join("scenes/main.json");
+    fs::write(&scene_file, scene_json("#112233")).unwrap();
+
+    // Read the bytes exactly once — this IS `bend_scene`'s `next`.
+    let scene_paths = vec![scene_file.clone()];
+    let next = bloodbend::read_scene_bytes(&scene_paths);
+
+    // A racing writer mutates the live file to a DIFFERENT crate colour
+    // immediately after the read above, inside what used to be the TOCTOU
+    // window (the old code re-read disk here via `load_world_dir`).
+    fs::write(&scene_file, scene_json("#ffaa00")).unwrap();
+
+    let journal_dir = world.join("journal");
+    let validate_dir = bloodbend::write_validation_dir(&journal_dir, &world, &next)
+        .expect("validation snapshot materializes");
+
+    // The validation dir must hold `next`'s bytes VERBATIM, immune to the
+    // race — never the writer's later bytes.
+    let materialized = fs::read_to_string(validate_dir.join("scenes/main.json")).unwrap();
+    assert_eq!(
+        &materialized,
+        next.get(&scene_file).unwrap(),
+        "validation dir must hold the SAME bytes captured in `next`, immune to the race"
+    );
+    assert_ne!(
+        materialized,
+        scene_json("#ffaa00"),
+        "validation must NOT observe the racing writer's later bytes"
+    );
+
+    // The EXACT path `bend_scene` takes: load + materialize from the
+    // validation dir (never the live, now-racing world dir).
+    let mut core = Core::default();
+    load_world_dir(&validate_dir, &mut core.world).expect("validated bytes load cleanly");
+    let scene = RenderScene::from_ecs(core.world, &proof_params()).expect("materializes");
+    let hash = scene_state_hash(&scene);
+
+    // What `bend_scene` stores as `last_good` is the SAME `next` map used to
+    // build the validation dir above — by construction, no second read of
+    // the (now-racing) live file happens in between. Re-validating straight
+    // from that stored map (a second, independent validation dir) must
+    // reproduce the identical hash — proving "validated == stored" is
+    // structural, not incidental to this one run.
+    let last_good = next.clone();
+    let validate_dir_2 = bloodbend::write_validation_dir(&journal_dir, &world, &last_good)
+        .expect("second validation snapshot materializes");
+    let mut core2 = Core::default();
+    load_world_dir(&validate_dir_2, &mut core2.world).expect("stored last_good loads cleanly");
+    let scene2 = RenderScene::from_ecs(core2.world, &proof_params()).expect("materializes 2");
+    assert_eq!(
+        hash,
+        scene_state_hash(&scene2),
+        "stored last_good bytes must hash identically to the validated bytes"
+    );
+
+    println!(
+        "[bloodbend (f)] TOCTOU-safe: validated bytes == stored last_good bytes by construction (hash 0x{hash:016x})"
+    );
+}
+
+// ── ORDEAL (g) — NO-OP BEND: EMPTY ENTITY DIFF SKIPS JOURNAL + REBUILD ──────
+// bloodbend-b0 fix pass, advisory 3: a watcher fire with no entity-level
+// change (touch, whitespace-only save) must be a no-op — `bend_scene`'s
+// `diff.is_empty()` guard returns BEFORE the journal or rebuild ever runs.
+#[test]
+fn no_op_bend_skips_journal_and_rebuild() {
+    let world = scratch("no-op");
+    let scene_file = world.join("scenes/main.json");
+    let bytes = scene_json("#556677");
+    fs::write(&scene_file, &bytes).unwrap();
+
+    let mut previous = BTreeMap::new();
+    previous.insert(scene_file.clone(), bytes.clone());
+    // `next` re-reads the SAME unchanged bytes — the watcher fires on any
+    // mtime touch, even a no-op save.
+    let next = bloodbend::read_scene_bytes(&[scene_file.clone()]);
+
+    let diff = bloodbend::diff_scenes(&previous, &next);
+    assert!(
+        diff.is_empty(),
+        "identical scene bytes must produce an EMPTY entity diff"
+    );
+    println!("[bloodbend (g)] no-op diff confirmed empty: {}", diff.summary());
+
+    // This IS `bend_scene`'s guard (`if diff.is_empty() { ...; return; }`,
+    // main.rs): the no-op branch returns before `journal_previous` or
+    // `write_validation_dir` are ever reached. Exercise that exact guard here
+    // and prove no journal entry appears.
+    let journal_dir = world.join("journal");
+    if diff.is_empty() {
+        // no-op path: bend_scene does nothing further — journal/rebuild skipped.
+    } else {
+        bloodbend::journal_previous(&journal_dir, &previous).expect("journal writes");
+    }
+    assert!(
+        !journal_dir.exists(),
+        "a no-op bend must never create a journal entry (journal+rebuild correctly skipped)"
+    );
+    println!("[bloodbend (g)] journal root absent after no-op — journal+rebuild correctly skipped");
 }

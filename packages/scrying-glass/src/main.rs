@@ -1065,11 +1065,46 @@ impl Renderer {
         let previous = bb.last_good.clone();
         let next = bloodbend::read_scene_bytes(&scene_paths);
 
-        // INSPECTION 1 — parse + deserialize through the sigil structs (the
-        // loader's `deny_unknown_fields` is already LOUD).
+        // ADVISORY 3 — no-op bend: the watcher can fire on a touch with no
+        // entity-level change (save-without-edit, whitespace-only diff, a
+        // broken-JSON write that briefly round-trips back to the same text).
+        // Skip journal + rebuild + accumulation-reset entirely; still advance
+        // `last_good` so the NEXT real diff is computed against the freshest
+        // observed bytes.
+        let diff = bloodbend::diff_scenes(&previous, &next);
+        if diff.is_empty() {
+            eprintln!("[bloodbend] no-op bend ignored · scene · entity diff empty");
+            if let Some(bb) = self.bloodbend.as_mut() {
+                bb.last_good = next;
+            }
+            return;
+        }
+
+        // INSPECTION 1+2 — TOCTOU-SAFE (bloodbend-b0 fix pass, adversary
+        // MUST-FIX 2): validate the EXACT bytes just captured in `next` by
+        // materializing them into a private validation dir and loading FROM
+        // THAT — never re-reading the live world dir a second time. `last_good`
+        // is set to this SAME `next` below, so validated bytes == stored
+        // last_good bytes BY CONSTRUCTION; no window remains for a concurrent
+        // write to slip unvalidated bytes into `last_good` (ordeal f).
+        let validate_dir = match bloodbend::write_validation_dir(&journal_dir, &world_path, &next)
+        {
+            Ok(dir) => dir,
+            Err(error) => {
+                bloodbend::police_report("scene", &format!("validation snapshot: {error}"));
+                return;
+            }
+        };
+        // Parse + deserialize through the sigil structs. NOTE: the loader's
+        // `deny_unknown_fields` is loud on a component's OWN fields (e.g.
+        // physics::RigidBody), but the data-driven component model tolerates
+        // an unrecognized COMPONENT KEY on an entity by design — that is a
+        // flagged design question, not a loader bug; do not read this comment
+        // as "any unknown key is rejected".
         let mut core = Core::default();
         ScryingGlassPackage.register(&mut core);
-        if let Err(error) = load_world_dir(&world_path, &mut core.world) {
+        if let Err(error) = load_world_dir(&validate_dir, &mut core.world) {
+            let _ = std::fs::remove_dir_all(&validate_dir);
             bloodbend::police_report("scene", &error);
             return;
         }
@@ -1077,12 +1112,13 @@ impl Renderer {
         let new_scene = match RenderScene::from_ecs(core.world, &scene_params) {
             Ok(scene) => scene,
             Err(error) => {
+                let _ = std::fs::remove_dir_all(&validate_dir);
                 bloodbend::police_report("scene", &format!("materialize: {error}"));
                 return;
             }
         };
+        let _ = std::fs::remove_dir_all(&validate_dir);
 
-        let diff = bloodbend::diff_scenes(&previous, &next);
         // TRAUMDEUTER-VORRITT — snapshot the previous good bytes BEFORE apply.
         match bloodbend::journal_previous(&journal_dir, &previous) {
             Ok(dir) => eprintln!("[bloodbend] 📜 journaled previous scene → {}", dir.display()),
@@ -1137,6 +1173,8 @@ impl Renderer {
             return;
         };
         let path = bb.params.shader_path.clone();
+        let journal_dir = bb.params.journal_dir.clone();
+        let previous_shader = bb.last_good_shader.clone();
         let source = match std::fs::read_to_string(&path) {
             Ok(source) => source,
             Err(error) => {
@@ -1144,10 +1182,38 @@ impl Renderer {
                 return;
             }
         };
+
+        // ADVISORY 3 — no-op bend: identical source (a touch with no edit).
+        if source == previous_shader {
+            eprintln!(
+                "[bloodbend] no-op bend ignored · shader · {} unchanged",
+                path.display()
+            );
+            return;
+        }
+
+        // TRAUMDEUTER-VORRITT — SHADER JOURNAL (bloodbend-b0 fix pass,
+        // adversary MUST-FIX 1): snapshot the previous good WGSL source BEFORE
+        // the swap is attempted, mirroring the scene tier. A journal-write
+        // failure REFUSES the bend — undo lost = no bend.
+        match bloodbend::journal_previous_shader(&journal_dir, &previous_shader) {
+            Ok(dir) => eprintln!("[bloodbend] 📜 journaled previous shader → {}", dir.display()),
+            Err(error) => {
+                bloodbend::police_report(
+                    "shader",
+                    &format!("journal failed, refusing to apply (undo would be lost): {error}"),
+                );
+                return;
+            }
+        }
+
         let format = self.config.format;
         match self.integrator.reload_shader(&self.device, &source, format) {
             Ok(()) => {
                 self.reset_surface_accum();
+                if let Some(bb) = self.bloodbend.as_mut() {
+                    bb.last_good_shader = source;
+                }
                 bloodbend::bend_applied("shader", &format!("{} recompiled", path.display()));
             }
             Err(error) => bloodbend::police_report("shader", &error),

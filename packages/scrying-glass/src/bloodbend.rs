@@ -14,9 +14,21 @@
 //! - TRAUMDEUTER-VORRITT (law 3-adjacent): the PREVIOUS good scene bytes are
 //!   copied into `<journal>/scene-<stamp>/` before the new ones are applied;
 //!   undo = copy that snapshot back over the scene files, the watch re-applies.
+//!   The SHADER tier journals the same way, into `<journal>/shader-<stamp>/
+//!   integrator.wgsl`, before every pipeline swap (fix pass, MUST-FIX 1) — a
+//!   journal-write failure on EITHER tier refuses the bend outright (undo
+//!   lost = no bend).
+//! - TOCTOU-SAFE VALIDATION (fix pass, MUST-FIX 2): the scene bend reads the
+//!   watched files ONCE into `next`; validation runs against a private
+//!   `<journal>/validate-<stamp>/` dir materialized from THOSE SAME bytes
+//!   (`write_validation_dir`), never a second live-disk read, so a concurrent
+//!   write cannot land between "validated" and "stored as last_good" —
+//!   `last_good` is set to the identical `next` map that was validated.
 //! - BLAST-RADIUS LADDER (law 4): the diff (added/removed/changed entity ids)
 //!   is reported; the scene tier rebuilds the render scene + BVH live, the
-//!   window/device/surface/pipelines all persist untouched.
+//!   window/device/surface/pipelines all persist untouched. An EMPTY diff (or
+//!   identical shader source) is a no-op bend: journal/rebuild/accum-reset are
+//!   all skipped (advisory 3).
 //!
 //! IRON: every value is a param with a default. Master switch
 //! `GAIA_NATIVE_BLOODBEND` (default ON — validation makes it safe).
@@ -98,22 +110,34 @@ pub struct Bloodbend {
     pub world_path: PathBuf,
     pub scene_params: crate::scene::SceneParameters,
     pub last_good: BTreeMap<PathBuf, String>,
+    /// TRAUMDEUTER-VORRITT for the SHADER tier: the currently-live WGSL source,
+    /// journaled to `<journal>/shader-<stamp>/integrator.wgsl` before every
+    /// swap — mirrors `last_good`'s role for the scene tier (MUST-FIX 1,
+    /// bloodbend-b0 fix pass).
+    pub last_good_shader: String,
 }
 
 impl Bloodbend {
     /// Seed from the boot state: the currently-loaded scene bytes ARE the first
     /// "last good" — the first bend journals these before applying its change.
+    /// The shader source is seeded the same way: read the watched WGSL path
+    /// (what the live pipeline was actually compiled from at boot in the
+    /// default configuration), falling back to the compiled-in source if the
+    /// file is unreadable.
     pub fn seed(
         params: BloodbendParams,
         world_path: PathBuf,
         scene_params: crate::scene::SceneParameters,
     ) -> Self {
         let last_good = read_scene_bytes(&params.scene_paths);
+        let last_good_shader = fs::read_to_string(&params.shader_path)
+            .unwrap_or_else(|_| crate::integrator::INTEGRATOR_SHADER.to_string());
         Self {
             params,
             world_path,
             scene_params,
             last_good,
+            last_good_shader,
         }
     }
 }
@@ -192,6 +216,84 @@ pub fn journal_previous(
         fs::write(&dest, text).map_err(|e| format!("write journal {}: {e}", dest.display()))?;
     }
     Ok(dir)
+}
+
+/// TRAUMDEUTER-VORRITT for the SHADER tier (MUST-FIX 1, bloodbend-b0 fix
+/// pass): copy the PREVIOUS good WGSL source into
+/// `<journal>/shader-<stamp>/integrator.wgsl` — same journal-dir convention as
+/// the scene tier — BEFORE a swap is attempted. Returns the snapshot dir.
+/// Undo = copy that file back over the watched shader path; the watch
+/// re-applies it. A journal-write failure must REFUSE the bend (matches the
+/// scene-door judgment: undo lost = no bend).
+pub fn journal_previous_shader(journal_dir: &Path, previous: &str) -> Result<PathBuf, String> {
+    let dir = journal_dir.join(format!("shader-{}", stamp()));
+    fs::create_dir_all(&dir).map_err(|e| format!("create journal dir {}: {e}", dir.display()))?;
+    let dest = dir.join("integrator.wgsl");
+    fs::write(&dest, previous).map_err(|e| format!("write journal {}: {e}", dest.display()))?;
+    Ok(dir)
+}
+
+/// TOCTOU FIX (MUST-FIX 2, bloodbend-b0 fix pass): materialize the scene bytes
+/// already captured in `next` into a private validation directory (never
+/// `/tmp`, always under the journal root) and hand THAT directory to the
+/// loader — never the live world dir. The bytes the Zauberpolizei inspects are
+/// then, by construction, the EXACT bytes the caller later stores as
+/// `last_good`; no second disk read of the watched files exists, so no window
+/// remains for a concurrent write to slip unvalidated bytes into `last_good`
+/// (the 0.41s @10k-entities race the adversary measured).
+///
+/// Only the WATCHED surface (`world.json` + `scenes/*.json`, i.e. everything
+/// in `next`) is copied from the in-memory snapshot; `prefabs/` is copied
+/// verbatim from the live world dir — it is not bloodbent and so is not part
+/// of the race this fixes.
+pub fn write_validation_dir(
+    journal_dir: &Path,
+    world_path: &Path,
+    next: &BTreeMap<PathBuf, String>,
+) -> Result<PathBuf, String> {
+    let dir = journal_dir.join(format!("validate-{}", stamp()));
+    fs::create_dir_all(&dir)
+        .map_err(|e| format!("create validation dir {}: {e}", dir.display()))?;
+    for (path, text) in next {
+        let rel = path.strip_prefix(world_path).map_err(|_| {
+            format!(
+                "scene path {} escapes world dir {}",
+                path.display(),
+                world_path.display()
+            )
+        })?;
+        let dest = dir.join(rel);
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("create {}: {e}", parent.display()))?;
+        }
+        fs::write(&dest, text).map_err(|e| format!("write validation {}: {e}", dest.display()))?;
+    }
+    let prefabs_src = world_path.join("prefabs");
+    if prefabs_src.is_dir() {
+        copy_dir_all(&prefabs_src, &dir.join("prefabs"))?;
+    }
+    Ok(dir)
+}
+
+/// Recursive directory copy (std has none built in) — used only to bring the
+/// untouched `prefabs/` library alongside the snapshotted scene bytes inside a
+/// validation dir.
+fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
+    fs::create_dir_all(dst).map_err(|e| format!("create {}: {e}", dst.display()))?;
+    for entry in fs::read_dir(src).map_err(|e| format!("read {}: {e}", src.display()))? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let file_type = entry.file_type().map_err(|e| e.to_string())?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if file_type.is_dir() {
+            copy_dir_all(&from, &to)?;
+        } else {
+            fs::copy(&from, &to)
+                .map_err(|e| format!("copy {} -> {}: {e}", from.display(), to.display()))?;
+        }
+    }
+    Ok(())
 }
 
 /// Diff two scene-file maps at the ENTITY level (law 4 blast-radius report).
