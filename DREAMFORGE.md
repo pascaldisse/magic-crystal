@@ -230,6 +230,17 @@ a stranger reads any function body cold. Metaphor in identifiers only where
 self-explanatory to anyone (breath/heartbeat class). The mythology's home
 is the Grimoire and the Concordance — docs, never identifiers.
 
+## SWARM COMPUTE LAW (Architect, 07-18 — born from 8 parallel rustc eating his machine)
+- Swarm work = WRITING code, ANALYZING, reading, reasoning — unlimited parallel, costs him nothing.
+- COMPILATION = ONE global build slot, machine-wide: before ANY cargo/rustc
+  invocation a lane must take the build token —
+  `while ! mkdir ~/projects/magic-crystal/.build-lock 2>/dev/null; do sleep 15; done`
+  … build with `nice -n 19 cargo … -j 2` … `rmdir` the lock ALWAYS (trap EXIT).
+  Stale lock >30min = steal it. Never two cargos alive at once.
+- GPU = the Architect's while he is at the machine: no instances, no benchmarks,
+  no offline renders, no wgpu devices. GPU lanes queue for his away-hours.
+- His frame time and machine feel outrank every lane, always.
+
 ## Standing process rules
 - Spec-first: no subsystem implementation before its ruling doc is written
   and Pascal has ruled. Recon informs, Pascal rules, nothing adopted by
