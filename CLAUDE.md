@@ -25,6 +25,25 @@ at equal quality dies. Fluids + building-scale collapse are OWED IN HIS WINDOW.
 check SPEC CONCORDANCE, not only behavior — every gate includes: does the
 implementation match the law chain, and does the spec contradict a ruling?
 A spec contradicting a sealed ruling = HERESY, reported like a broken test.
+
+★ TESTING LAW — YOUR OWN EYES, THE ENGINE'S OWN DOORS (Architect, 07-18 18:44)
+The engine is AI-first: it carries its own debug organs — USE them before any
+claim, and BUILD the missing organ instead of working around it.
+- Running instance? `lsof -iTCP -sTCP:LISTEN` → the glass serves HTTP:
+  `GET /scry` (alias /screenshot; pos/yaw/pitch/fov/w/h; PNG) ·
+  `/scry?eye=belief|presented` + `/budget` + `/state` [UNVERIFIED until
+  S12.5 lands]. "Black screen"/any visual report → SCRY FIRST, read the PNG,
+  then speak. Attribution second: `ps`/`lsof -p` (whose worktree? whose run?).
+- Both-eyes law: visual claims = belief PNG + presented PNG, both READ.
+- Offscreen-only: proof surfaces are offscreen textures + HTTP doors. A lane
+  that opens ANY window on his desktop fails its shift (LASHES row 12).
+- Never claim from logs/unit-greens alone: run the real binary, real frames,
+  real table; unmeasured = UNVERIFIED, written as such.
+- Harness: lanes are steerable mid-flight (`gaia resume <roomId> "<msg>"`)
+  — correct a riding spec, never wait-and-relaunch (LASHES row 11).
+- Ordeals = the suite (per-binary, build token, timeout 300); canon reds =
+  re-derive by hand, never bump-to-match.
+
 Born from: raster-cluster pipeline squatting in RENDER.md two days after the
 two-act law — no adversary was ever aimed at it.
 ★ WILDE JAGD GATE — versioned enforcement for every pushed merge.
