@@ -67,11 +67,11 @@ features = [
 
 [target.'cfg(target_os = "macos")'.dependencies.objc2-metal-performance-shaders]
 version = "0.3.2"
-features = ["MPSCore", "MPSCoreTypes", "MPSNDArray"]
+features = ["MPSCore", "MPSCoreTypes", "MPSNDArray", "MPSCommandBuffer"]
 
 [target.'cfg(target_os = "macos")'.dependencies.objc2-metal]
 version = "0.3.2"
-features = ["MTLDevice", "MTLCommandQueue", "MTLBuffer", "MTLResource"]
+features = ["MTLDevice", "MTLCommandQueue", "MTLBuffer", "MTLResource", "MTLCommandBuffer"]
 
 [target.'cfg(target_os = "macos")'.dependencies.objc2]
 version = "0.6"

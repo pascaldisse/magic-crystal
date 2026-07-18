@@ -1136,8 +1136,6 @@ struct NetPresent {
     net_accum: wgpu::Buffer,
     /// Native-res AOV G-buffer (albedo/normal/depth, 2 cells/px).
     net_aov: wgpu::Buffer,
-    /// Mappable copy of `net_aov` for the CPU undo-log-demod (needs the albedo).
-    aov_stage: wgpu::Buffer,
     /// Surface-res present accum the blit resolves to screen (linear rgb, w=1).
     present_accum: wgpu::Buffer,
     present_blit_bg: wgpu::BindGroup,
@@ -1146,12 +1144,13 @@ struct NetPresent {
     target_w: u32,
     target_h: u32,
     n: usize,
-    /// Reused CPU upload scratch (target pixels) — allocated once.
-    present_cells: Vec<[f32; 4]>,
     // Rolling per-stage budget samples for the N0.d table.
     s_trace: Vec<f64>,
     s_gather: Vec<f64>,
     s_net: Vec<f64>,
+    /// S3 instrument: the net forward's GPU-only ms (MTLCommandBuffer GPU
+    /// timestamps), split from `s_net` (the wall around the blocking call).
+    s_net_gpu: Vec<f64>,
     s_present: Vec<f64>,
     s_total: Vec<f64>,
     frames: u64,
@@ -1202,12 +1201,6 @@ impl NetPresent {
             mapped_at_creation: false,
         });
         let net_aov = integrator.make_aov_buffer(device, target_w, target_h);
-        let aov_stage = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("net-present aov readback"),
-            size: net_aov.size(),
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
         let present_accum = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("net-present surface accum"),
             size: (n as u64).max(1) * 16,
@@ -1222,7 +1215,6 @@ impl NetPresent {
             demod,
             net_accum,
             net_aov,
-            aov_stage,
             present_accum,
             present_blit_bg,
             low_w,
@@ -1230,10 +1222,10 @@ impl NetPresent {
             target_w,
             target_h,
             n,
-            present_cells: vec![[0.0f32; 4]; n],
             s_trace: Vec::new(),
             s_gather: Vec::new(),
             s_net: Vec::new(),
+            s_net_gpu: Vec::new(),
             s_present: Vec::new(),
             s_total: Vec::new(),
             frames: 0,
@@ -1309,47 +1301,47 @@ impl NetPresent {
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
         let gather_ms = t1.elapsed().as_secs_f64() * 1000.0;
 
-        // —— STAGE: net (MPSGraph batched-GEMM forward, zero-copy) ——
+        // —— STAGE: net (MPSGraph batched-GEMM forward, zero-copy, NO readback)
+        // CUT 1 (S1 kill): the live path leaves the demod-log radiance ON the
+        // GPU in `output_buffer()` — no per-frame Vec<f32> (640×480×3 floats)
+        // GPU→CPU copy. `forward_shared_gpu` also records the GPU-only ms
+        // (MTLCommandBuffer GPU timestamps) so we split GPU work from the wall
+        // the timer below measures (S3). The Vec path (`forward_shared`) stays
+        // for the offline parity ordeal only.
         let t2 = Instant::now();
-        let out = self.live.forward_shared(self.n).expect("net forward_shared");
+        self.live
+            .forward_shared_gpu(self.n)
+            .expect("net forward_shared_gpu");
         let net_ms = t2.elapsed().as_secs_f64() * 1000.0;
+        let net_gpu_ms = self.live.last_gpu_ms();
 
-        // —— STAGE: resolve (readback albedo → undo log-demod → upload) ——
+        // —— STAGE: resolve (CUT 2 GPU demod — no AOV readback, no CPU loop) ——
+        // One compute dispatch: reads the net output MTLBuffer (zero-copy wgpu
+        // view) + the native AOV albedo, undoes the log-demod, writes
+        // present_accum. Same pixels as the old CPU round-trip, all on the GPU.
         let t3 = Instant::now();
+        let net_out = self
+            .live
+            .output_buffer()
+            .expect("net-present pooled output buffer");
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("net aov readback"),
+            label: Some("net demod"),
         });
-        enc.copy_buffer_to_buffer(&self.net_aov, 0, &self.aov_stage, 0, self.net_aov.size());
-        let (tx, rx) = mpsc::channel();
-        enc.map_buffer_on_submit(&self.aov_stage, wgpu::MapMode::Read, .., move |r| {
-            let _ = tx.send(r.map(|_| ()));
-        });
+        self.demod.encode(
+            device,
+            queue,
+            &mut enc,
+            net_out,
+            &self.net_aov,
+            &self.present_accum,
+            self.n as u32,
+        );
         queue.submit(Some(enc.finish()));
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
-        rx.recv().expect("aov readback chan").expect("map aov");
-        {
-            let mapped = self
-                .aov_stage
-                .get_mapped_range(..)
-                .expect("mapped aov readback");
-            let raw: &[[f32; 4]] = bytemuck::cast_slice(&mapped);
-            for i in 0..self.n {
-                let a = raw[2 * i];
-                let albedo = Vec3::new(a[0], a[1], a[2]);
-                let dl = Vec3::new(out[3 * i], out[3 * i + 1], out[3 * i + 2]);
-                let lin = undo_log_demod_px(dl, albedo);
-                self.present_cells[i] = [lin.x, lin.y, lin.z, 1.0];
-            }
-        }
-        self.aov_stage.unmap();
-        queue.write_buffer(
-            &self.present_accum,
-            0,
-            bytemuck::cast_slice(&self.present_cells),
-        );
         // The present blit resolves present_accum (w=1) 1:1 nearest to screen.
         queue.write_buffer(&integrator.uniform_buf, 0, bytemuck::bytes_of(blit_uniform));
         let resolve_ms = t3.elapsed().as_secs_f64() * 1000.0;
+        self.s_net_gpu.push(net_gpu_ms);
 
         (trace_ms, gather_ms, net_ms, resolve_ms)
     }
@@ -1360,13 +1352,14 @@ impl NetPresent {
         self.s_trace.push(t.trace);
         self.s_gather.push(t.gather);
         self.s_net.push(t.net);
+        // s_net_gpu is pushed inside resolve_frame (GPU timestamps live there).
         self.s_present.push(t.present);
         self.s_total.push(t.total);
         self.frames += 1;
         if self.frames % 60 == 0 {
             eprintln!(
-                "[n0d] frames={} {}x{}→{}x{} (ms median/p95 vs 16.67): \
-                 trace {:.2}/{:.2} gather {:.2}/{:.2} net {:.2}/{:.2} \
+                "[n0e] frames={} {}x{}→{}x{} (ms median/p95 vs 16.67): \
+                 trace {:.2}/{:.2} gather {:.2}/{:.2} net[wall {:.2}/{:.2} gpu {:.2}/{:.2}] \
                  present {:.2}/{:.2} TOTAL {:.2}/{:.2}",
                 self.frames,
                 self.low_w,
@@ -1379,6 +1372,8 @@ impl NetPresent {
                 pct(&self.s_gather, 0.95),
                 pct(&self.s_net, 0.5),
                 pct(&self.s_net, 0.95),
+                pct(&self.s_net_gpu, 0.5),
+                pct(&self.s_net_gpu, 0.95),
                 pct(&self.s_present, 0.5),
                 pct(&self.s_present, 0.95),
                 pct(&self.s_total, 0.5),
@@ -1389,8 +1384,11 @@ impl NetPresent {
 }
 
 /// undo the net's log-demod residual by the native albedo (bit-identical to
-/// `examples/rdirect_live_frame.rs` / VIII-1's `undo_log_demod`).
+/// `examples/rdirect_live_frame.rs` / VIII-1's `undo_log_demod`). CPU parity
+/// reference; the live present path does this on the GPU (`rdirect_demod.wgsl`,
+/// same math), so this stays only as the correctness anchor.
 #[cfg(target_os = "macos")]
+#[allow(dead_code)]
 fn undo_log_demod_px(dl: Vec3, albedo: Vec3) -> Vec3 {
     let divisor = if albedo.length_squared() > 1e-8 {
         albedo + Vec3::splat(ALBEDO_DEMOD_EPS)

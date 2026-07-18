@@ -52,11 +52,13 @@ mod imp {
     use objc2::{AnyThread, Message};
     use objc2_foundation::{NSArray, NSData, NSNumber, NSString};
     use objc2_metal::{
-        MTLBuffer, MTLCommandQueue, MTLCreateSystemDefaultDevice, MTLDevice, MTLResourceOptions,
+        MTLBuffer, MTLCommandBuffer, MTLCommandQueue, MTLCreateSystemDefaultDevice, MTLDevice,
+        MTLResourceOptions,
     };
-    use objc2_metal_performance_shaders::MPSDataType;
+    use objc2_metal_performance_shaders::{MPSCommandBuffer, MPSDataType};
+    use std::cell::Cell;
     use objc2_metal_performance_shaders_graph::{
-        MPSGraph, MPSGraphDevice, MPSGraphExecutable, MPSGraphExecutableExecutionDescriptor,
+        MPSGraph, MPSGraphDevice, MPSGraphExecutable,
         MPSGraphShapedType, MPSGraphTensor, MPSGraphTensorData,
     };
     use std::ffi::c_void;
@@ -100,8 +102,6 @@ mod imp {
         inputs: Retained<NSArray<MPSGraphTensorData>>,
         /// Result array `[out_td]` (out_td wraps `out_mtl` zero-copy).
         results: Retained<NSArray<MPSGraphTensorData>>,
-        /// `waitUntilCompleted = true` → the run blocks; reused every frame.
-        exec_desc: Retained<MPSGraphExecutableExecutionDescriptor>,
     }
 
     /// The live net: an MPSGraph batched-GEMM forward built once at construction
@@ -116,6 +116,10 @@ mod imp {
         in_features: usize,
         out_channels: usize,
         pool: Option<SharedPool>,
+        /// S3 instrument: GPU-only time of the last forward (MTLCommandBuffer
+        /// GPUEndTime − GPUStartTime, ms). The `runWithMTLCommandQueue` API hid
+        /// this; the encode path below owns the command buffer so it reads it.
+        last_gpu_ms: Cell<f64>,
     }
 
     impl RdirectLive {
@@ -209,6 +213,7 @@ mod imp {
                     in_features: INPUT_FEATURES,
                     out_channels: OUTPUT_CHANNELS,
                     pool: None,
+                    last_gpu_ms: Cell::new(0.0),
                 })
             }
         }
@@ -349,11 +354,12 @@ mod imp {
                 );
                 let inputs = NSArray::from_slice(&[&*in_td]);
                 let results = NSArray::from_slice(&[&*out_td]);
-                let exec_desc = MPSGraphExecutableExecutionDescriptor::new();
-                // PROBE: GAIA_NATIVE_NET_ASYNC=true → don't block on the forward
-                // (measure whether the 21ms wall-gap is CPU-encode or GPU-wait).
-                let wait = std::env::var("GAIA_NATIVE_NET_ASYNC").as_deref() != Ok("true");
-                exec_desc.setWaitUntilCompleted(wait);
+                // NOTE: the forward now runs through `encodeToCommandBuffer` on a
+                // command buffer WE own (see `run_executable`) — we commit + wait
+                // manually so GPUStartTime/GPUEndTime are readable (S3). The old
+                // `MPSGraphExecutableExecutionDescriptor` / GAIA_NATIVE_NET_ASYNC
+                // block-toggle is gone; S2 one-frame pipelining, if adopted, drops
+                // the `root.waitUntilCompleted()` in `run_executable` instead.
 
                 self.pool = Some(SharedPool {
                     feature_buf,
@@ -364,7 +370,6 @@ mod imp {
                     executable,
                     inputs,
                     results,
-                    exec_desc,
                 });
             }
             Ok(())
@@ -408,16 +413,39 @@ mod imp {
             // The run is wrapped in an autorelease pool so MPSGraph's per-call
             // intermediate NDArrays (the ~157MB hidden activations) are drained
             // this frame rather than piling into the thread's outer pool.
+            //
+            // S3: we OWN the command buffer (metal4-probe pattern) instead of
+            // `runWithMTLCommandQueue` — that API allocs+commits+waits its own
+            // buffer and gives back only wall time. Here a base MTLCommandBuffer
+            // wrapped as MPSCommandBuffer lets us read GPUStartTime/GPUEndTime
+            // (GPU-only ms) after the wait, separating GPU work from CPU encode.
             objc2::rc::autoreleasepool(|_| unsafe {
+                let base = self
+                    .queue
+                    .commandBuffer()
+                    .ok_or_else(|| "rdirect_live: commandBuffer alloc failed".to_string())?;
+                let mps_cmd = MPSCommandBuffer::commandBufferWithCommandBuffer(&base);
                 let _ = pool
                     .executable
-                    .runWithMTLCommandQueue_inputsArray_resultsArray_executionDescriptor(
-                        &self.queue,
+                    .encodeToCommandBuffer_inputsArray_resultsArray_executionDescriptor(
+                        &mps_cmd,
                         &pool.inputs,
                         Some(&pool.results),
-                        Some(&pool.exec_desc),
+                        // descriptor None: we own commit + wait below, so the
+                        // executable must not internally commit/wait (that hides
+                        // GPU timestamps and races our root wait).
+                        None,
                     );
-            });
+                // encode may commitAndContinue; commit the live root and wait on
+                // it. `base` is the first (and, for this small graph, only)
+                // buffer — its GPU timestamps bound the forward's GPU work.
+                let root = mps_cmd.rootCommandBuffer();
+                mps_cmd.commit();
+                root.waitUntilCompleted();
+                let gpu_ms = (base.GPUEndTime() - base.GPUStartTime()) * 1000.0;
+                self.last_gpu_ms.set(gpu_ms);
+                Ok::<(), String>(())
+            })?;
             Ok(pool)
         }
 
@@ -428,6 +456,14 @@ mod imp {
         pub fn forward_shared_gpu(&self, n: usize) -> Result<(), String> {
             self.run_executable(n)?;
             Ok(())
+        }
+
+        /// S3 instrument: GPU-only ms of the last `forward_shared*` call
+        /// (MTLCommandBuffer GPU timestamps). Compare against the wall time the
+        /// caller measures around the same call to split GPU work from CPU
+        /// encode/readback — the metal4-probe's 4.47ms is this number.
+        pub fn last_gpu_ms(&self) -> f64 {
+            self.last_gpu_ms.get()
         }
 
         /// Ceiling passed at construction (max target pixels per forward).
