@@ -1,447 +1,3831 @@
 {
   "env": {
     "environment": {
-      "sky": { "preset": "night", "top": "#2a1a3e", "horizon": "#d98ba8" },
-      "fog": { "color": "#3d2a5c", "density": 0.008 }
+      "sky": {
+        "preset": "night",
+        "top": "#2a1a3e",
+        "horizon": "#d98ba8"
+      },
+      "fog": {
+        "color": "#3d2a5c",
+        "density": 0.008
+      }
     }
   },
   "world_spawn": {
-    "spawn": { "position": [0, 7, 44], "yaw": 0 }
+    "spawn": {
+      "position": [
+        0,
+        7,
+        44
+      ],
+      "yaw": 0
+    }
   },
   "naruko_terra": {
-    "transform": { "position": [0, 0, 0] },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [400, 0.5, 60], "position": [0, -0.25, 38], "color": "#604276" }
-    ] }
+    "transform": {
+      "position": [
+        0,
+        0,
+        0
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            400,
+            0.5,
+            60
+          ],
+          "position": [
+            0,
+            -0.25,
+            38
+          ],
+          "color": "#604276"
+        }
+      ]
+    }
   },
   "naruko_seawall": {
-    "transform": { "position": [0, 0, 18] },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [120, 1.4, 2], "position": [0, 0.7, 0], "color": "#3a2d4d" }
-    ] }
+    "transform": {
+      "position": [
+        0,
+        0,
+        18
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            120,
+            1.4,
+            2
+          ],
+          "position": [
+            0,
+            0.7,
+            0
+          ],
+          "color": "#3a2d4d"
+        }
+      ]
+    }
   },
   "naruko_seawall_south": {
-    "transform": { "position": [0, 0, 67] },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [400, 1.4, 2], "position": [0, 0.7, 0], "color": "#3a2d4d" }
-    ] }
+    "transform": {
+      "position": [
+        0,
+        0,
+        67
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            400,
+            1.4,
+            2
+          ],
+          "position": [
+            0,
+            0.7,
+            0
+          ],
+          "color": "#3a2d4d"
+        }
+      ]
+    }
   },
   "naruko_seawall_east": {
-    "transform": { "position": [199, 0, 54] },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [2, 1.4, 28], "position": [0, 0.7, 0], "color": "#3a2d4d" }
-    ] }
+    "transform": {
+      "position": [
+        199,
+        0,
+        54
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            2,
+            1.4,
+            28
+          ],
+          "position": [
+            0,
+            0.7,
+            0
+          ],
+          "color": "#3a2d4d"
+        }
+      ]
+    }
   },
   "naruko_seawall_west": {
-    "transform": { "position": [-199, 0, 54] },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [2, 1.4, 28], "position": [0, 0.7, 0], "color": "#3a2d4d" }
-    ] }
+    "transform": {
+      "position": [
+        -199,
+        0,
+        54
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            2,
+            1.4,
+            28
+          ],
+          "position": [
+            0,
+            0.7,
+            0
+          ],
+          "color": "#3a2d4d"
+        }
+      ]
+    }
   },
   "naruko_rim_catch_south": {
-    "transform": { "position": [0, -1.5, 74] },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [560, 0.3, 68], "position": [0, 0, 0], "color": "#1a1440" }
-    ] }
+    "transform": {
+      "position": [
+        0,
+        -1.5,
+        74
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            560,
+            0.3,
+            68
+          ],
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "color": "#1a1440"
+        }
+      ]
+    }
   },
   "naruko_sea": {
-    "transform": { "position": [0, -1.5, -60] },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [2000, 0.3, 1200], "position": [0, 0, -500], "color": "#1a1440" },
-      { "shape": "box", "size": [40, 0.05, 1.2], "position": [-20, 0.2, -30], "color": "#37e0ff", "emissive": "#37e0ff" },
-      { "shape": "box", "size": [1.2, 0.05, 60], "position": [-38, 0.2, -60], "color": "#37e0ff", "emissive": "#37e0ff" },
-      { "shape": "box", "size": [55, 0.05, 1.2], "position": [15, 0.2, -95], "color": "#2bb8d9", "emissive": "#2bb8d9" },
-      { "shape": "box", "size": [1.2, 0.05, 45], "position": [42, 0.2, -55], "color": "#37e0ff", "emissive": "#37e0ff" },
-      { "shape": "box", "size": [70, 0.05, 1.6], "position": [-5, 0.2, 20], "color": "#49f0ff", "emissive": "#49f0ff" },
-      { "shape": "box", "size": [1.4, 0.05, 38], "position": [-12, 0.2, 2], "color": "#37e0ff", "emissive": "#37e0ff" },
-      { "shape": "box", "size": [28, 0.05, 1.0], "position": [-26, 0.2, -12], "color": "#2bb8d9", "emissive": "#2bb8d9" },
-      { "shape": "box", "size": [1.0, 0.05, 26], "position": [24, 0.2, 8], "color": "#49f0ff", "emissive": "#49f0ff" },
-      { "shape": "box", "size": [45, 0.05, 1.2], "position": [8, 0.2, -48], "color": "#37e0ff", "emissive": "#37e0ff" },
-      { "shape": "box", "size": [1.2, 0.05, 70], "position": [-55, 0.2, -25], "color": "#2bb8d9", "emissive": "#2bb8d9" },
-      { "shape": "box", "size": [22, 0.05, 1.0], "position": [-48, 0.2, 34], "color": "#37e0ff", "emissive": "#37e0ff" },
-      { "shape": "box", "size": [1.0, 0.05, 20], "position": [-40, 0.2, 26], "color": "#49f0ff", "emissive": "#49f0ff" },
-      { "shape": "box", "size": [30, 0.05, 1.4], "position": [35, 0.2, -20], "color": "#2bb8d9", "emissive": "#2bb8d9" },
-      { "shape": "box", "size": [4, 0.05, 4], "position": [-20, 0.2, 20], "color": "#49f0ff", "emissive": "#49f0ff" },
-      { "shape": "box", "size": [3, 0.05, 3], "position": [24, 0.2, -4], "color": "#37e0ff", "emissive": "#37e0ff" }
-    ] }
+    "transform": {
+      "position": [
+        0,
+        -1.5,
+        -60
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            2000,
+            0.3,
+            1200
+          ],
+          "position": [
+            0,
+            0,
+            -500
+          ],
+          "color": "#1a1440"
+        },
+        {
+          "shape": "box",
+          "size": [
+            40,
+            0.05,
+            1.2
+          ],
+          "position": [
+            -20,
+            0.2,
+            -30
+          ],
+          "color": "#37e0ff",
+          "emissive": "#37e0ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.2,
+            0.05,
+            60
+          ],
+          "position": [
+            -38,
+            0.2,
+            -60
+          ],
+          "color": "#37e0ff",
+          "emissive": "#37e0ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            55,
+            0.05,
+            1.2
+          ],
+          "position": [
+            15,
+            0.2,
+            -95
+          ],
+          "color": "#2bb8d9",
+          "emissive": "#2bb8d9"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.2,
+            0.05,
+            45
+          ],
+          "position": [
+            42,
+            0.2,
+            -55
+          ],
+          "color": "#37e0ff",
+          "emissive": "#37e0ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            70,
+            0.05,
+            1.6
+          ],
+          "position": [
+            -5,
+            0.2,
+            20
+          ],
+          "color": "#49f0ff",
+          "emissive": "#49f0ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.4,
+            0.05,
+            38
+          ],
+          "position": [
+            -12,
+            0.2,
+            2
+          ],
+          "color": "#37e0ff",
+          "emissive": "#37e0ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            28,
+            0.05,
+            1.0
+          ],
+          "position": [
+            -26,
+            0.2,
+            -12
+          ],
+          "color": "#2bb8d9",
+          "emissive": "#2bb8d9"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.0,
+            0.05,
+            26
+          ],
+          "position": [
+            24,
+            0.2,
+            8
+          ],
+          "color": "#49f0ff",
+          "emissive": "#49f0ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            45,
+            0.05,
+            1.2
+          ],
+          "position": [
+            8,
+            0.2,
+            -48
+          ],
+          "color": "#37e0ff",
+          "emissive": "#37e0ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.2,
+            0.05,
+            70
+          ],
+          "position": [
+            -55,
+            0.2,
+            -25
+          ],
+          "color": "#2bb8d9",
+          "emissive": "#2bb8d9"
+        },
+        {
+          "shape": "box",
+          "size": [
+            22,
+            0.05,
+            1.0
+          ],
+          "position": [
+            -48,
+            0.2,
+            34
+          ],
+          "color": "#37e0ff",
+          "emissive": "#37e0ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.0,
+            0.05,
+            20
+          ],
+          "position": [
+            -40,
+            0.2,
+            26
+          ],
+          "color": "#49f0ff",
+          "emissive": "#49f0ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            30,
+            0.05,
+            1.4
+          ],
+          "position": [
+            35,
+            0.2,
+            -20
+          ],
+          "color": "#2bb8d9",
+          "emissive": "#2bb8d9"
+        },
+        {
+          "shape": "box",
+          "size": [
+            4,
+            0.05,
+            4
+          ],
+          "position": [
+            -20,
+            0.2,
+            20
+          ],
+          "color": "#49f0ff",
+          "emissive": "#49f0ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3,
+            0.05,
+            3
+          ],
+          "position": [
+            24,
+            0.2,
+            -4
+          ],
+          "color": "#37e0ff",
+          "emissive": "#37e0ff"
+        }
+      ]
+    }
   },
   "lighthouse_rock": {
-    "transform": { "position": [0, 0, -120] },
-    "mesh": { "parts": [
-      { "shape": "cylinder", "radius": 22, "height": 14, "position": [0, 5, 0], "color": "#241a30" },
-      { "shape": "cylinder", "radius": 14, "height": 10, "position": [3, 14, 2], "color": "#2b2038" }
-    ] }
+    "transform": {
+      "position": [
+        0,
+        0,
+        -120
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "cylinder",
+          "radius": 22,
+          "height": 14,
+          "position": [
+            0,
+            5,
+            0
+          ],
+          "color": "#241a30"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 14,
+          "height": 10,
+          "position": [
+            3,
+            14,
+            2
+          ],
+          "color": "#2b2038"
+        }
+      ]
+    }
   },
   "lighthouse_tower": {
-    "transform": { "position": [0, 19, -120] },
-    "mesh": { "parts": [
-      { "shape": "cylinder", "radius": 4.5, "height": 34, "position": [0, 17, 0], "color": "#2e2440" },
-      { "shape": "cylinder", "radius": 5.5, "height": 2, "position": [0, 35, 0], "color": "#1c1426" },
-      { "shape": "cone", "radius": 4, "height": 5, "position": [0, 41.5, 0], "color": "#1c1426" }
-    ] }
+    "transform": {
+      "position": [
+        0,
+        19,
+        -120
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "cylinder",
+          "radius": 4.5,
+          "height": 34,
+          "position": [
+            0,
+            17,
+            0
+          ],
+          "color": "#2e2440"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 5.5,
+          "height": 2,
+          "position": [
+            0,
+            35,
+            0
+          ],
+          "color": "#1c1426"
+        },
+        {
+          "shape": "cone",
+          "radius": 4,
+          "height": 5,
+          "position": [
+            0,
+            41.5,
+            0
+          ],
+          "color": "#1c1426"
+        }
+      ]
+    }
   },
   "lighthouse_beacon": {
-    "transform": { "position": [0, 56.5, -120] },
-    "behavior": { "type": "pulse", "speed": 1.4, "amount": 0.12 },
-    "mesh": { "parts": [
-      { "shape": "sphere", "radius": 2.6, "position": [0, 0, 0], "color": "#f3e9ff", "emissive": "#f3e9ff" }
-    ] }
+    "transform": {
+      "position": [
+        0,
+        56.5,
+        -120
+      ]
+    },
+    "behavior": {
+      "type": "pulse",
+      "speed": 1.4,
+      "amount": 0.12
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "sphere",
+          "radius": 2.6,
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "color": "#f3e9ff",
+          "emissive": "#f3e9ff"
+        }
+      ]
+    }
   },
   "signal_ring_a": {
-    "transform": { "position": [0, 56.5, -118] },
-    "behavior": { "type": "pulse", "speed": 1.6, "amount": 0.28 },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [6, 0, 0], "rotation": [0, 0, 1.570796], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [5.795555, 1.552914, 0], "rotation": [0, 0, 1.832596], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [5.196152, 3, 0], "rotation": [0, 0, 2.094395], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [4.242641, 4.242641, 0], "rotation": [0, 0, 2.356194], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [3, 5.196152, 0], "rotation": [0, 0, 2.617994], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [1.552914, 5.795555, 0], "rotation": [0, 0, 2.879793], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [0, 6, 0], "rotation": [0, 0, 3.141593], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [-1.552914, 5.795555, 0], "rotation": [0, 0, 3.403392], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [-3, 5.196152, 0], "rotation": [0, 0, 3.665191], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [-4.242641, 4.242641, 0], "rotation": [0, 0, 3.926991], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [-5.196152, 3, 0], "rotation": [0, 0, 4.18879], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [-5.795555, 1.552914, 0], "rotation": [0, 0, 4.45059], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [-6, 0, 0], "rotation": [0, 0, 4.712389], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [-5.795555, -1.552914, 0], "rotation": [0, 0, 4.974188], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [-5.196152, -3, 0], "rotation": [0, 0, 5.235988], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [-4.242641, -4.242641, 0], "rotation": [0, 0, 5.497787], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [-3, -5.196152, 0], "rotation": [0, 0, 5.759587], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [-1.552914, -5.795555, 0], "rotation": [0, 0, 6.021386], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [0, -6, 0], "rotation": [0, 0, 6.283185], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [1.552914, -5.795555, 0], "rotation": [0, 0, 6.544985], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [3, -5.196152, 0], "rotation": [0, 0, 6.806784], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [4.242641, -4.242641, 0], "rotation": [0, 0, 7.068583], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [5.196152, -3, 0], "rotation": [0, 0, 7.330383], "color": "#d9b3ff", "emissive": "#d9b3ff" },
-      { "shape": "box", "size": [1.566314, 0.55, 0.35], "position": [5.795555, -1.552914, 0], "rotation": [0, 0, 7.592182], "color": "#d9b3ff", "emissive": "#d9b3ff" }
-    ] }
+    "transform": {
+      "position": [
+        0,
+        56.5,
+        -118
+      ]
+    },
+    "behavior": {
+      "type": "pulse",
+      "speed": 1.6,
+      "amount": 0.28
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            6,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            1.570796
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            5.795555,
+            1.552914,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            1.832596
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            5.196152,
+            3,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            2.094395
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            4.242641,
+            4.242641,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            2.356194
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            3,
+            5.196152,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            2.617994
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            1.552914,
+            5.795555,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            2.879793
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            0,
+            6,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            3.141593
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -1.552914,
+            5.795555,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            3.403392
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -3,
+            5.196152,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            3.665191
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -4.242641,
+            4.242641,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            3.926991
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -5.196152,
+            3,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            4.18879
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -5.795555,
+            1.552914,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            4.45059
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -6,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            4.712389
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -5.795555,
+            -1.552914,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            4.974188
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -5.196152,
+            -3,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            5.235988
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -4.242641,
+            -4.242641,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            5.497787
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -3,
+            -5.196152,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            5.759587
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -1.552914,
+            -5.795555,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            6.021386
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            0,
+            -6,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            6.283185
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            1.552914,
+            -5.795555,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            6.544985
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            3,
+            -5.196152,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            6.806784
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            4.242641,
+            -4.242641,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            7.068583
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            5.196152,
+            -3,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            7.330383
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.566314,
+            0.55,
+            0.35
+          ],
+          "position": [
+            5.795555,
+            -1.552914,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            7.592182
+          ],
+          "color": "#d9b3ff",
+          "emissive": "#d9b3ff"
+        }
+      ]
+    }
   },
   "signal_ring_b": {
-    "transform": { "position": [0, 56.5, -117.5] },
-    "behavior": { "type": "pulse", "speed": 1.15, "amount": 0.22 },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [10, 0, 0], "rotation": [0, 0, 1.570796], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [9.659258, 2.58819, 0], "rotation": [0, 0, 1.832596], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [8.660254, 5, 0], "rotation": [0, 0, 2.094395], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [7.071068, 7.071068, 0], "rotation": [0, 0, 2.356194], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [5, 8.660254, 0], "rotation": [0, 0, 2.617994], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [2.58819, 9.659258, 0], "rotation": [0, 0, 2.879793], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [0, 10, 0], "rotation": [0, 0, 3.141593], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [-2.58819, 9.659258, 0], "rotation": [0, 0, 3.403392], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [-5, 8.660254, 0], "rotation": [0, 0, 3.665191], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [-7.071068, 7.071068, 0], "rotation": [0, 0, 3.926991], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [-8.660254, 5, 0], "rotation": [0, 0, 4.18879], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [-9.659258, 2.58819, 0], "rotation": [0, 0, 4.45059], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [-10, 0, 0], "rotation": [0, 0, 4.712389], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [-9.659258, -2.58819, 0], "rotation": [0, 0, 4.974188], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [-8.660254, -5, 0], "rotation": [0, 0, 5.235988], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [-7.071068, -7.071068, 0], "rotation": [0, 0, 5.497787], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [-5, -8.660254, 0], "rotation": [0, 0, 5.759587], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [-2.58819, -9.659258, 0], "rotation": [0, 0, 6.021386], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [0, -10, 0], "rotation": [0, 0, 6.283185], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [2.58819, -9.659258, 0], "rotation": [0, 0, 6.544985], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [5, -8.660254, 0], "rotation": [0, 0, 6.806784], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [7.071068, -7.071068, 0], "rotation": [0, 0, 7.068583], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [8.660254, -5, 0], "rotation": [0, 0, 7.330383], "color": "#b98aff", "emissive": "#b98aff" },
-      { "shape": "box", "size": [2.610524, 0.55, 0.35], "position": [9.659258, -2.58819, 0], "rotation": [0, 0, 7.592182], "color": "#b98aff", "emissive": "#b98aff" }
-    ] }
+    "transform": {
+      "position": [
+        0,
+        56.5,
+        -117.5
+      ]
+    },
+    "behavior": {
+      "type": "pulse",
+      "speed": 1.15,
+      "amount": 0.22
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            10,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            1.570796
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            9.659258,
+            2.58819,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            1.832596
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            8.660254,
+            5,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            2.094395
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            7.071068,
+            7.071068,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            2.356194
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            5,
+            8.660254,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            2.617994
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            2.58819,
+            9.659258,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            2.879793
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            0,
+            10,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            3.141593
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -2.58819,
+            9.659258,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            3.403392
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -5,
+            8.660254,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            3.665191
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -7.071068,
+            7.071068,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            3.926991
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -8.660254,
+            5,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            4.18879
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -9.659258,
+            2.58819,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            4.45059
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -10,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            4.712389
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -9.659258,
+            -2.58819,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            4.974188
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -8.660254,
+            -5,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            5.235988
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -7.071068,
+            -7.071068,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            5.497787
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -5,
+            -8.660254,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            5.759587
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -2.58819,
+            -9.659258,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            6.021386
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            0,
+            -10,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            6.283185
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            2.58819,
+            -9.659258,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            6.544985
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            5,
+            -8.660254,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            6.806784
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            7.071068,
+            -7.071068,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            7.068583
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            8.660254,
+            -5,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            7.330383
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        },
+        {
+          "shape": "box",
+          "size": [
+            2.610524,
+            0.55,
+            0.35
+          ],
+          "position": [
+            9.659258,
+            -2.58819,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            7.592182
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        }
+      ]
+    }
   },
   "signal_ring_c": {
-    "transform": { "position": [0, 56.5, -117] },
-    "behavior": { "type": "pulse", "speed": 0.85, "amount": 0.16 },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [14, 0, 0], "rotation": [0, 0, 1.570796], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [13.522962, 3.623467, 0], "rotation": [0, 0, 1.832596], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [12.124356, 7, 0], "rotation": [0, 0, 2.094395], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [9.899495, 9.899495, 0], "rotation": [0, 0, 2.356194], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [7, 12.124356, 0], "rotation": [0, 0, 2.617994], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [3.623467, 13.522962, 0], "rotation": [0, 0, 2.879793], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [0, 14, 0], "rotation": [0, 0, 3.141593], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [-3.623467, 13.522962, 0], "rotation": [0, 0, 3.403392], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [-7, 12.124356, 0], "rotation": [0, 0, 3.665191], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [-9.899495, 9.899495, 0], "rotation": [0, 0, 3.926991], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [-12.124356, 7, 0], "rotation": [0, 0, 4.18879], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [-13.522962, 3.623467, 0], "rotation": [0, 0, 4.45059], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [-14, 0, 0], "rotation": [0, 0, 4.712389], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [-13.522962, -3.623467, 0], "rotation": [0, 0, 4.974188], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [-12.124356, -7, 0], "rotation": [0, 0, 5.235988], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [-9.899495, -9.899495, 0], "rotation": [0, 0, 5.497787], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [-7, -12.124356, 0], "rotation": [0, 0, 5.759587], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [-3.623467, -13.522962, 0], "rotation": [0, 0, 6.021386], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [0, -14, 0], "rotation": [0, 0, 6.283185], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [3.623467, -13.522962, 0], "rotation": [0, 0, 6.544985], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [7, -12.124356, 0], "rotation": [0, 0, 6.806784], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [9.899495, -9.899495, 0], "rotation": [0, 0, 7.068583], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [12.124356, -7, 0], "rotation": [0, 0, 7.330383], "color": "#9a6cf0", "emissive": "#9a6cf0" },
-      { "shape": "box", "size": [3.654733, 0.55, 0.35], "position": [13.522962, -3.623467, 0], "rotation": [0, 0, 7.592182], "color": "#9a6cf0", "emissive": "#9a6cf0" }
-    ] }
+    "transform": {
+      "position": [
+        0,
+        56.5,
+        -117
+      ]
+    },
+    "behavior": {
+      "type": "pulse",
+      "speed": 0.85,
+      "amount": 0.16
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            14,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            1.570796
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            13.522962,
+            3.623467,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            1.832596
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            12.124356,
+            7,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            2.094395
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            9.899495,
+            9.899495,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            2.356194
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            7,
+            12.124356,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            2.617994
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            3.623467,
+            13.522962,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            2.879793
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            0,
+            14,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            3.141593
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -3.623467,
+            13.522962,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            3.403392
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -7,
+            12.124356,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            3.665191
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -9.899495,
+            9.899495,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            3.926991
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -12.124356,
+            7,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            4.18879
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -13.522962,
+            3.623467,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            4.45059
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -14,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            4.712389
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -13.522962,
+            -3.623467,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            4.974188
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -12.124356,
+            -7,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            5.235988
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -9.899495,
+            -9.899495,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            5.497787
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -7,
+            -12.124356,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            5.759587
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            -3.623467,
+            -13.522962,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            6.021386
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            0,
+            -14,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            6.283185
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            3.623467,
+            -13.522962,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            6.544985
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            7,
+            -12.124356,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            6.806784
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            9.899495,
+            -9.899495,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            7.068583
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            12.124356,
+            -7,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            7.330383
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.654733,
+            0.55,
+            0.35
+          ],
+          "position": [
+            13.522962,
+            -3.623467,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            7.592182
+          ],
+          "color": "#9a6cf0",
+          "emissive": "#9a6cf0"
+        }
+      ]
+    }
   },
   "naruko_pier": {
-    "transform": { "position": [-12, 0, -2] },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [1.5, 0.15, 36], "position": [-2.55, 0.95, 0], "color": "#4a3626" },
-      { "shape": "box", "size": [1.5, 0.15, 36], "position": [-0.85, 0.95, 0], "color": "#4a3626" },
-      { "shape": "box", "size": [1.5, 0.15, 36], "position": [0.85, 0.95, 0], "color": "#4a3626" },
-      { "shape": "box", "size": [1.5, 0.15, 36], "position": [2.55, 0.95, 0], "color": "#4a3626" },
-      { "shape": "cylinder", "radius": 0.35, "height": 3.6, "position": [-2.9, -0.9, 16], "color": "#3a2a1e" },
-      { "shape": "cylinder", "radius": 0.35, "height": 3.6, "position": [2.9, -0.9, 16], "color": "#3a2a1e" },
-      { "shape": "cylinder", "radius": 0.35, "height": 3.6, "position": [-2.9, -0.9, 8], "color": "#3a2a1e" },
-      { "shape": "cylinder", "radius": 0.35, "height": 3.6, "position": [2.9, -0.9, 8], "color": "#3a2a1e" },
-      { "shape": "cylinder", "radius": 0.35, "height": 3.6, "position": [-2.9, -0.9, 0], "color": "#3a2a1e" },
-      { "shape": "cylinder", "radius": 0.35, "height": 3.6, "position": [2.9, -0.9, 0], "color": "#3a2a1e" },
-      { "shape": "cylinder", "radius": 0.35, "height": 3.6, "position": [-2.9, -0.9, -8], "color": "#3a2a1e" },
-      { "shape": "cylinder", "radius": 0.35, "height": 3.6, "position": [2.9, -0.9, -8], "color": "#3a2a1e" },
-      { "shape": "cylinder", "radius": 0.35, "height": 3.6, "position": [-2.9, -0.9, -16], "color": "#3a2a1e" },
-      { "shape": "cylinder", "radius": 0.35, "height": 3.6, "position": [2.9, -0.9, -16], "color": "#3a2a1e" }
-    ] }
+    "transform": {
+      "position": [
+        -12,
+        0,
+        -2
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            1.5,
+            0.15,
+            36
+          ],
+          "position": [
+            -2.55,
+            0.95,
+            0
+          ],
+          "color": "#4a3626"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.5,
+            0.15,
+            36
+          ],
+          "position": [
+            -0.85,
+            0.95,
+            0
+          ],
+          "color": "#4a3626"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.5,
+            0.15,
+            36
+          ],
+          "position": [
+            0.85,
+            0.95,
+            0
+          ],
+          "color": "#4a3626"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.5,
+            0.15,
+            36
+          ],
+          "position": [
+            2.55,
+            0.95,
+            0
+          ],
+          "color": "#4a3626"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.35,
+          "height": 3.6,
+          "position": [
+            -2.9,
+            -0.9,
+            16
+          ],
+          "color": "#3a2a1e"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.35,
+          "height": 3.6,
+          "position": [
+            2.9,
+            -0.9,
+            16
+          ],
+          "color": "#3a2a1e"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.35,
+          "height": 3.6,
+          "position": [
+            -2.9,
+            -0.9,
+            8
+          ],
+          "color": "#3a2a1e"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.35,
+          "height": 3.6,
+          "position": [
+            2.9,
+            -0.9,
+            8
+          ],
+          "color": "#3a2a1e"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.35,
+          "height": 3.6,
+          "position": [
+            -2.9,
+            -0.9,
+            0
+          ],
+          "color": "#3a2a1e"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.35,
+          "height": 3.6,
+          "position": [
+            2.9,
+            -0.9,
+            0
+          ],
+          "color": "#3a2a1e"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.35,
+          "height": 3.6,
+          "position": [
+            -2.9,
+            -0.9,
+            -8
+          ],
+          "color": "#3a2a1e"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.35,
+          "height": 3.6,
+          "position": [
+            2.9,
+            -0.9,
+            -8
+          ],
+          "color": "#3a2a1e"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.35,
+          "height": 3.6,
+          "position": [
+            -2.9,
+            -0.9,
+            -16
+          ],
+          "color": "#3a2a1e"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.35,
+          "height": 3.6,
+          "position": [
+            2.9,
+            -0.9,
+            -16
+          ],
+          "color": "#3a2a1e"
+        }
+      ]
+    }
   },
   "naruko_chain_posts": {
-    "transform": { "position": [0, 0, 18] },
-    "mesh": { "parts": [
-      { "shape": "cylinder", "radius": 0.14, "height": 1.1, "position": [-34, 1.95, 0], "color": "#2a2136" },
-      { "shape": "cylinder", "radius": 0.14, "height": 1.1, "position": [-26, 1.95, 0], "color": "#2a2136" },
-      { "shape": "cylinder", "radius": 0.14, "height": 1.1, "position": [-18, 1.95, 0], "color": "#2a2136" },
-      { "shape": "cylinder", "radius": 0.14, "height": 1.1, "position": [-2, 1.95, 0], "color": "#2a2136" },
-      { "shape": "cylinder", "radius": 0.14, "height": 1.1, "position": [6, 1.95, 0], "color": "#2a2136" },
-      { "shape": "cylinder", "radius": 0.14, "height": 1.1, "position": [14, 1.95, 0], "color": "#2a2136" },
-      { "shape": "cylinder", "radius": 0.14, "height": 1.1, "position": [22, 1.95, 0], "color": "#2a2136" },
-      { "shape": "cylinder", "radius": 0.14, "height": 1.1, "position": [30, 1.95, 0], "color": "#2a2136" }
-    ] }
+    "transform": {
+      "position": [
+        0,
+        0,
+        18
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "cylinder",
+          "radius": 0.14,
+          "height": 1.1,
+          "position": [
+            -34,
+            1.95,
+            0
+          ],
+          "color": "#2a2136"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.14,
+          "height": 1.1,
+          "position": [
+            -26,
+            1.95,
+            0
+          ],
+          "color": "#2a2136"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.14,
+          "height": 1.1,
+          "position": [
+            -18,
+            1.95,
+            0
+          ],
+          "color": "#2a2136"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.14,
+          "height": 1.1,
+          "position": [
+            -2,
+            1.95,
+            0
+          ],
+          "color": "#2a2136"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.14,
+          "height": 1.1,
+          "position": [
+            6,
+            1.95,
+            0
+          ],
+          "color": "#2a2136"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.14,
+          "height": 1.1,
+          "position": [
+            14,
+            1.95,
+            0
+          ],
+          "color": "#2a2136"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.14,
+          "height": 1.1,
+          "position": [
+            22,
+            1.95,
+            0
+          ],
+          "color": "#2a2136"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.14,
+          "height": 1.1,
+          "position": [
+            30,
+            1.95,
+            0
+          ],
+          "color": "#2a2136"
+        }
+      ]
+    }
   },
   "naruko_city_massing": {
-    "transform": { "position": [52, 0, -42] },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [36, 8, 36], "position": [-4, 2, 8], "color": "#1f1729" },
-      { "shape": "box", "size": [26, 14, 26], "position": [10, 5, -4], "color": "#241a30" },
-      { "shape": "box", "size": [9, 16, 9], "position": [-12, 14, 14], "color": "#2b2038" },
-      { "shape": "box", "size": [7, 22, 7], "position": [-3, 17, 6], "color": "#241a30" },
-      { "shape": "box", "size": [1.4, 14, 1.4], "position": [-3, 35, 6], "color": "#2b2038" },
-      { "shape": "cylinder", "radius": 3.5, "height": 18, "position": [4, 15, 16], "color": "#1f1729" },
-      { "shape": "cone", "radius": 3.9, "height": 6, "position": [4, 27, 16], "color": "#241a30" },
-      { "shape": "box", "size": [8, 20, 8], "position": [12, 22, -8], "color": "#2b2038" },
-      { "shape": "box", "size": [1.2, 16, 1.2], "position": [12, 40, -8], "color": "#241a30" },
-      { "shape": "box", "size": [10, 14, 9], "position": [20, 19, 4], "color": "#1f1729" },
-      { "shape": "box", "size": [6, 26, 6], "position": [23, 25, -14], "color": "#241a30" },
-      { "shape": "box", "size": [1.2, 18, 1.2], "position": [23, 47, -14], "color": "#2b2038" },
-      { "shape": "box", "size": [0.7, 1.1, 0.15], "position": [-13.5, 12, 18.6], "color": "#ffb46b", "emissive": "#ffb46b" },
-      { "shape": "box", "size": [0.7, 1.1, 0.15], "position": [-10.5, 16, 18.6], "color": "#ffb46b", "emissive": "#ffb46b" },
-      { "shape": "box", "size": [0.15, 1.1, 0.7], "position": [-16.6, 14, 12], "color": "#ffb46b", "emissive": "#ffb46b" },
-      { "shape": "box", "size": [0.7, 1.1, 0.15], "position": [-4, 20, 9.6], "color": "#ffb46b", "emissive": "#ffb46b" },
-      { "shape": "box", "size": [0.7, 1.1, 0.15], "position": [-2, 24, 9.6], "color": "#ffb46b", "emissive": "#ffb46b" },
-      { "shape": "box", "size": [0.15, 1.1, 0.7], "position": [7.9, 26, -8], "color": "#ffb46b", "emissive": "#ffb46b" },
-      { "shape": "box", "size": [0.7, 1.1, 0.15], "position": [18, 22, 8.6], "color": "#ffb46b", "emissive": "#ffb46b" }
-    ] }
+    "transform": {
+      "position": [
+        52,
+        0,
+        -42
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            36,
+            8,
+            36
+          ],
+          "position": [
+            -4,
+            2,
+            8
+          ],
+          "color": "#1f1729"
+        },
+        {
+          "shape": "box",
+          "size": [
+            26,
+            14,
+            26
+          ],
+          "position": [
+            10,
+            5,
+            -4
+          ],
+          "color": "#241a30"
+        },
+        {
+          "shape": "box",
+          "size": [
+            9,
+            16,
+            9
+          ],
+          "position": [
+            -12,
+            14,
+            14
+          ],
+          "color": "#2b2038"
+        },
+        {
+          "shape": "box",
+          "size": [
+            7,
+            22,
+            7
+          ],
+          "position": [
+            -3,
+            17,
+            6
+          ],
+          "color": "#241a30"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.4,
+            14,
+            1.4
+          ],
+          "position": [
+            -3,
+            35,
+            6
+          ],
+          "color": "#2b2038"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 3.5,
+          "height": 18,
+          "position": [
+            4,
+            15,
+            16
+          ],
+          "color": "#1f1729"
+        },
+        {
+          "shape": "cone",
+          "radius": 3.9,
+          "height": 6,
+          "position": [
+            4,
+            27,
+            16
+          ],
+          "color": "#241a30"
+        },
+        {
+          "shape": "box",
+          "size": [
+            8,
+            20,
+            8
+          ],
+          "position": [
+            12,
+            22,
+            -8
+          ],
+          "color": "#2b2038"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.2,
+            16,
+            1.2
+          ],
+          "position": [
+            12,
+            40,
+            -8
+          ],
+          "color": "#241a30"
+        },
+        {
+          "shape": "box",
+          "size": [
+            10,
+            14,
+            9
+          ],
+          "position": [
+            20,
+            19,
+            4
+          ],
+          "color": "#1f1729"
+        },
+        {
+          "shape": "box",
+          "size": [
+            6,
+            26,
+            6
+          ],
+          "position": [
+            23,
+            25,
+            -14
+          ],
+          "color": "#241a30"
+        },
+        {
+          "shape": "box",
+          "size": [
+            1.2,
+            18,
+            1.2
+          ],
+          "position": [
+            23,
+            47,
+            -14
+          ],
+          "color": "#2b2038"
+        },
+        {
+          "shape": "box",
+          "size": [
+            0.7,
+            1.1,
+            0.15
+          ],
+          "position": [
+            -13.5,
+            12,
+            18.6
+          ],
+          "color": "#ffb46b",
+          "emissive": "#ffb46b"
+        },
+        {
+          "shape": "box",
+          "size": [
+            0.7,
+            1.1,
+            0.15
+          ],
+          "position": [
+            -10.5,
+            16,
+            18.6
+          ],
+          "color": "#ffb46b",
+          "emissive": "#ffb46b"
+        },
+        {
+          "shape": "box",
+          "size": [
+            0.15,
+            1.1,
+            0.7
+          ],
+          "position": [
+            -16.6,
+            14,
+            12
+          ],
+          "color": "#ffb46b",
+          "emissive": "#ffb46b"
+        },
+        {
+          "shape": "box",
+          "size": [
+            0.7,
+            1.1,
+            0.15
+          ],
+          "position": [
+            -4,
+            20,
+            9.6
+          ],
+          "color": "#ffb46b",
+          "emissive": "#ffb46b"
+        },
+        {
+          "shape": "box",
+          "size": [
+            0.7,
+            1.1,
+            0.15
+          ],
+          "position": [
+            -2,
+            24,
+            9.6
+          ],
+          "color": "#ffb46b",
+          "emissive": "#ffb46b"
+        },
+        {
+          "shape": "box",
+          "size": [
+            0.15,
+            1.1,
+            0.7
+          ],
+          "position": [
+            7.9,
+            26,
+            -8
+          ],
+          "color": "#ffb46b",
+          "emissive": "#ffb46b"
+        },
+        {
+          "shape": "box",
+          "size": [
+            0.7,
+            1.1,
+            0.15
+          ],
+          "position": [
+            18,
+            22,
+            8.6
+          ],
+          "color": "#ffb46b",
+          "emissive": "#ffb46b"
+        }
+      ]
+    }
   },
   "naruko_lantern": {
-    "transform": { "position": [-7.5, 0, 20] },
-    "behavior": { "type": "bob", "speed": 0.8, "amplitude": 0.12, "phase": 0 },
-    "mesh": { "parts": [
-      { "shape": "cylinder", "radius": 0.08, "height": 3.2, "position": [0, 1.6, 0], "color": "#3a2a1e" },
-      { "shape": "sphere", "radius": 0.55, "position": [0, 3.5, 0], "color": "#ff9db0", "emissive": "#ff9db0" }
-    ] }
+    "transform": {
+      "position": [
+        -7.5,
+        0,
+        20
+      ]
+    },
+    "behavior": {
+      "type": "bob",
+      "speed": 0.8,
+      "amplitude": 0.12,
+      "phase": 0
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "cylinder",
+          "radius": 0.08,
+          "height": 3.2,
+          "position": [
+            0,
+            1.6,
+            0
+          ],
+          "color": "#3a2a1e"
+        },
+        {
+          "shape": "sphere",
+          "radius": 0.55,
+          "position": [
+            0,
+            3.5,
+            0
+          ],
+          "color": "#ff9db0",
+          "emissive": "#ff9db0"
+        }
+      ]
+    }
   },
   "naruko_stall_massing": {
-    "transform": { "position": [-1, 0, 25] },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [0.25, 2.6, 0.25], "position": [-2.4, 1.3, -1.5], "color": "#3b2c22" },
-      { "shape": "box", "size": [0.25, 2.6, 0.25], "position": [2.4, 1.3, -1.5], "color": "#3b2c22" },
-      { "shape": "box", "size": [0.25, 2.6, 0.25], "position": [-2.4, 1.3, 1.5], "color": "#3b2c22" },
-      { "shape": "box", "size": [0.25, 2.6, 0.25], "position": [2.4, 1.3, 1.5], "color": "#3b2c22" },
-      { "shape": "box", "size": [5.6, 0.3, 4], "position": [0, 2.75, 0], "color": "#3b2c22" },
-      { "shape": "box", "size": [5, 0.9, 1.1], "position": [0, 0.45, 1.9], "color": "#6a4d33", "metallic": 0.6, "roughness": 0.3 }
-    ] }
+    "transform": {
+      "position": [
+        -1,
+        0,
+        25
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            0.25,
+            2.6,
+            0.25
+          ],
+          "position": [
+            -2.4,
+            1.3,
+            -1.5
+          ],
+          "color": "#3b2c22"
+        },
+        {
+          "shape": "box",
+          "size": [
+            0.25,
+            2.6,
+            0.25
+          ],
+          "position": [
+            2.4,
+            1.3,
+            -1.5
+          ],
+          "color": "#3b2c22"
+        },
+        {
+          "shape": "box",
+          "size": [
+            0.25,
+            2.6,
+            0.25
+          ],
+          "position": [
+            -2.4,
+            1.3,
+            1.5
+          ],
+          "color": "#3b2c22"
+        },
+        {
+          "shape": "box",
+          "size": [
+            0.25,
+            2.6,
+            0.25
+          ],
+          "position": [
+            2.4,
+            1.3,
+            1.5
+          ],
+          "color": "#3b2c22"
+        },
+        {
+          "shape": "box",
+          "size": [
+            5.6,
+            0.3,
+            4
+          ],
+          "position": [
+            0,
+            2.75,
+            0
+          ],
+          "color": "#3b2c22"
+        },
+        {
+          "shape": "box",
+          "size": [
+            5,
+            0.9,
+            1.1
+          ],
+          "position": [
+            0,
+            0.45,
+            1.9
+          ],
+          "color": "#6a4d33",
+          "metallic": 0.6,
+          "roughness": 0.3
+        }
+      ]
+    }
   },
   "naruko_chrome_orb": {
-    "transform": { "position": [-12, 0, 12] },
-    "mesh": { "parts": [
-      { "shape": "cylinder", "radius": 0.12, "height": 1.4, "position": [0, 1.72, 0], "color": "#20303a", "metallic": 0.6, "roughness": 0.35 },
-      { "shape": "sphere", "radius": 0.4, "position": [0, 2.82, 0], "color": "#dfe6ee", "metallic": 1.0, "roughness": 0.05 }
-    ] }
+    "transform": {
+      "position": [
+        -12,
+        0,
+        12
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "cylinder",
+          "radius": 0.12,
+          "height": 1.4,
+          "position": [
+            0,
+            1.72,
+            0
+          ],
+          "color": "#20303a",
+          "metallic": 0.6,
+          "roughness": 0.35
+        },
+        {
+          "shape": "sphere",
+          "radius": 0.4,
+          "position": [
+            0,
+            2.82,
+            0
+          ],
+          "color": "#dfe6ee",
+          "metallic": 1.0,
+          "roughness": 0.05
+        }
+      ]
+    }
   },
   "naruko_mirror": {
-    "transform": { "position": [3, 0, 18] },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [0.08, 3.0, 2.0], "position": [0, 2.9, 0], "color": "#e8ecf2", "metallic": 1.0, "roughness": 0.03 }
-    ] }
+    "transform": {
+      "position": [
+        3,
+        0,
+        18
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            0.08,
+            3.0,
+            2.0
+          ],
+          "position": [
+            0,
+            2.9,
+            0
+          ],
+          "color": "#e8ecf2",
+          "metallic": 1.0,
+          "roughness": 0.03
+        }
+      ]
+    }
   },
   "naruko_mirror_minor": {
-    "transform": { "position": [-9, 0, 18] },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [0.08, 3.0, 2.0], "position": [0, 2.9, 0], "color": "#e8ecf2", "metallic": 1.0, "roughness": 0.03 }
-    ] }
+    "transform": {
+      "position": [
+        -9,
+        0,
+        18
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            0.08,
+            3.0,
+            2.0
+          ],
+          "position": [
+            0,
+            2.9,
+            0
+          ],
+          "color": "#e8ecf2",
+          "metallic": 1.0,
+          "roughness": 0.03
+        }
+      ]
+    }
   },
   "naruko_kami_orb": {
-    "transform": { "position": [-1.0, 2.2, 18.1] },
-    "behavior": { "type": "orbit", "center": [-2.6, 2.2, 18.1], "radius": 1.6, "speed": 0.9 },
-    "mesh": { "parts": [
-      { "shape": "sphere", "radius": 0.35, "position": [0, 0, 0], "color": "#37e0ff", "emissive": "#37e0ff" }
-    ] }
+    "transform": {
+      "position": [
+        -1.0,
+        2.2,
+        18.1
+      ]
+    },
+    "behavior": {
+      "type": "orbit",
+      "center": [
+        -2.6,
+        2.2,
+        18.1
+      ],
+      "radius": 1.6,
+      "speed": 0.9
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "sphere",
+          "radius": 0.35,
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "color": "#37e0ff",
+          "emissive": "#37e0ff"
+        }
+      ]
+    }
   },
   "nari": {
-    "transform": { "position": [0, 2.505, 18] },
-    "body": { "preset": "nari", "follows": "walker" }
+    "transform": {
+      "position": [
+        0,
+        2.505,
+        18
+      ]
+    },
+    "body": {
+      "preset": "nari",
+      "follows": "walker"
+    }
   },
   "naruko_cat": {
-    "transform": { "position": [-5, 0.359289, 23] },
-    "body": { "preset": "pink_cat" },
-    "behavior": { "kind": "cat", "home": [-5, 0.359289, 23], "radius": 1.4 }
+    "transform": {
+      "position": [
+        -5,
+        0.359289,
+        23
+      ]
+    },
+    "body": {
+      "preset": "pink_cat"
+    },
+    "behavior": {
+      "kind": "cat",
+      "home": [
+        -5,
+        0.359289,
+        23
+      ],
+      "radius": 1.4
+    }
   },
   "naruko_crate": {
-    "transform": { "position": [-11.15, 4.5, 13] },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#6a4a2c", "roughness": 0.85 }
-    ] },
+    "transform": {
+      "position": [
+        -11.15,
+        4.5,
+        13
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            0.8,
+            0.8,
+            0.8
+          ],
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "color": "#6a4a2c",
+          "roughness": 0.85
+        }
+      ]
+    },
     "body": {
       "shape": "box",
-      "size": [0.8, 0.8, 0.8],
+      "size": [
+        0.8,
+        0.8,
+        0.8
+      ],
       "density": 500,
-      "resolution": [3, 3, 3],
+      "resolution": [
+        3,
+        3,
+        3
+      ],
       "contact_radius": 0.05,
       "rigidity": 1.0
     }
   },
   "naruko_stack_crate_0": {
-    "transform": { "position": [-13.65, 1.475, 13] },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#6a4a2c", "roughness": 0.85 }
-    ] },
+    "transform": {
+      "position": [
+        -13.65,
+        1.475,
+        13
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            0.8,
+            0.8,
+            0.8
+          ],
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "color": "#6a4a2c",
+          "roughness": 0.85
+        }
+      ]
+    },
     "body": {
       "shape": "box",
-      "size": [0.8, 0.8, 0.8],
+      "size": [
+        0.8,
+        0.8,
+        0.8
+      ],
       "density": 500,
-      "resolution": [3, 3, 3],
+      "resolution": [
+        3,
+        3,
+        3
+      ],
       "contact_radius": 0.05,
       "rigidity": 1.0
     }
   },
   "naruko_stack_crate_1": {
-    "transform": { "position": [-13.65, 2.325, 13] },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#6a4a2c", "roughness": 0.85 }
-    ] },
+    "transform": {
+      "position": [
+        -13.65,
+        2.325,
+        13
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            0.8,
+            0.8,
+            0.8
+          ],
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "color": "#6a4a2c",
+          "roughness": 0.85
+        }
+      ]
+    },
     "body": {
       "shape": "box",
-      "size": [0.8, 0.8, 0.8],
+      "size": [
+        0.8,
+        0.8,
+        0.8
+      ],
       "density": 500,
-      "resolution": [3, 3, 3],
+      "resolution": [
+        3,
+        3,
+        3
+      ],
       "contact_radius": 0.05,
       "rigidity": 1.0
     }
   },
   "naruko_stack_crate_2": {
-    "transform": { "position": [-13.65, 3.175, 13] },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#6a4a2c", "roughness": 0.85 }
-    ] },
+    "transform": {
+      "position": [
+        -13.65,
+        3.175,
+        13
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            0.8,
+            0.8,
+            0.8
+          ],
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "color": "#6a4a2c",
+          "roughness": 0.85
+        }
+      ]
+    },
     "body": {
       "shape": "box",
-      "size": [0.8, 0.8, 0.8],
+      "size": [
+        0.8,
+        0.8,
+        0.8
+      ],
       "density": 500,
-      "resolution": [3, 3, 3],
+      "resolution": [
+        3,
+        3,
+        3
+      ],
       "contact_radius": 0.05,
       "rigidity": 1.0
     }
   },
   "naruko_show_mirror": {
-    "transform": { "position": [-6.5, 0, 28] },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [0.18, 6.5, 4.2], "position": [0, 3.4, 0], "rotation": [0, -0.5, 0], "color": "#eef3f8", "metallic": 1.0, "roughness": 0.03 }
-    ] }
+    "transform": {
+      "position": [
+        -6.5,
+        0,
+        28
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            0.18,
+            6.5,
+            4.2
+          ],
+          "position": [
+            0,
+            3.4,
+            0
+          ],
+          "rotation": [
+            0,
+            -0.5,
+            0
+          ],
+          "color": "#eef3f8",
+          "metallic": 1.0,
+          "roughness": 0.03
+        }
+      ]
+    }
   },
   "naruko_show_chrome": {
-    "transform": { "position": [4.5, 0, 29.5] },
-    "mesh": { "parts": [
-      { "shape": "cylinder", "radius": 0.6, "height": 2.4, "position": [0, 1.2, 0], "color": "#20303a", "metallic": 0.6, "roughness": 0.35 },
-      { "shape": "sphere", "radius": 2.1, "position": [0, 3.6, 0], "color": "#eef3f8", "metallic": 1.0, "roughness": 0.02 }
-    ] }
+    "transform": {
+      "position": [
+        4.5,
+        0,
+        29.5
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "cylinder",
+          "radius": 0.6,
+          "height": 2.4,
+          "position": [
+            0,
+            1.2,
+            0
+          ],
+          "color": "#20303a",
+          "metallic": 0.6,
+          "roughness": 0.35
+        },
+        {
+          "shape": "sphere",
+          "radius": 2.1,
+          "position": [
+            0,
+            3.6,
+            0
+          ],
+          "color": "#eef3f8",
+          "metallic": 1.0,
+          "roughness": 0.02
+        }
+      ]
+    }
   },
   "naruko_show_light_a": {
-    "transform": { "position": [1.5, 2.0, 29] },
-    "behavior": { "type": "orbit", "center": [-1.5, 2.0, 29], "radius": 3.0, "speed": 0.5, "phase": 0 },
-    "mesh": { "parts": [
-      { "shape": "sphere", "radius": 0.45, "position": [0, 0, 0], "color": "#b98aff", "emissive": "#b98aff" }
-    ] }
+    "transform": {
+      "position": [
+        1.5,
+        2.0,
+        29
+      ]
+    },
+    "behavior": {
+      "type": "orbit",
+      "center": [
+        -1.5,
+        2.0,
+        29
+      ],
+      "radius": 3.0,
+      "speed": 0.5,
+      "phase": 0
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "sphere",
+          "radius": 0.45,
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "color": "#b98aff",
+          "emissive": "#b98aff"
+        }
+      ]
+    }
   },
   "naruko_show_light_b": {
-    "transform": { "position": [-4.0, 3.6, 29] },
-    "behavior": { "type": "orbit", "center": [-1.5, 3.6, 29], "radius": 2.5, "speed": -0.55, "phase": 3.141593 },
-    "mesh": { "parts": [
-      { "shape": "sphere", "radius": 0.45, "position": [0, 0, 0], "color": "#37e0ff", "emissive": "#37e0ff" }
-    ] }
+    "transform": {
+      "position": [
+        -4.0,
+        3.6,
+        29
+      ]
+    },
+    "behavior": {
+      "type": "orbit",
+      "center": [
+        -1.5,
+        3.6,
+        29
+      ],
+      "radius": 2.5,
+      "speed": -0.55,
+      "phase": 3.141593
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "sphere",
+          "radius": 0.45,
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "color": "#37e0ff",
+          "emissive": "#37e0ff"
+        }
+      ]
+    }
   },
   "naruko_show_light_c": {
-    "transform": { "position": [-1.5, 5.2, 31.8] },
-    "behavior": { "type": "orbit", "center": [-1.5, 5.2, 29], "radius": 2.8, "speed": 0.8, "phase": 1.570796 },
-    "mesh": { "parts": [
-      { "shape": "sphere", "radius": 0.45, "position": [0, 0, 0], "color": "#ff6bb0", "emissive": "#ff6bb0" }
-    ] }
+    "transform": {
+      "position": [
+        -1.5,
+        5.2,
+        31.8
+      ]
+    },
+    "behavior": {
+      "type": "orbit",
+      "center": [
+        -1.5,
+        5.2,
+        29
+      ],
+      "radius": 2.8,
+      "speed": 0.8,
+      "phase": 1.570796
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "sphere",
+          "radius": 0.45,
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "color": "#ff6bb0",
+          "emissive": "#ff6bb0"
+        }
+      ]
+    }
   },
   "playground_stack_0": {
-    "transform": { "position": [-3.0, 0.45, 35.0] },
-    "mesh": { "parts": [ { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#6a4a2c", "roughness": 0.85 } ] },
-    "body": { "shape": "box", "size": [0.8, 0.8, 0.8], "density": 500, "resolution": [2, 2, 2], "contact_radius": 0.05, "rigidity": 1.0 }
+    "transform": {
+      "position": [
+        -3.0,
+        0.45,
+        35.0
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            0.8,
+            0.8,
+            0.8
+          ],
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "color": "#6a4a2c",
+          "roughness": 0.85
+        }
+      ]
+    },
+    "body": {
+      "shape": "box",
+      "size": [
+        0.8,
+        0.8,
+        0.8
+      ],
+      "density": 500,
+      "resolution": [
+        2,
+        2,
+        2
+      ],
+      "contact_radius": 0.05,
+      "rigidity": 1.0
+    }
   },
   "playground_stack_1": {
-    "transform": { "position": [-3.0, 1.30, 35.0] },
-    "mesh": { "parts": [ { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#7a5636", "roughness": 0.85 } ] },
-    "body": { "shape": "box", "size": [0.8, 0.8, 0.8], "density": 500, "resolution": [2, 2, 2], "contact_radius": 0.05, "rigidity": 1.0 }
+    "transform": {
+      "position": [
+        -3.0,
+        1.3,
+        35.0
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            0.8,
+            0.8,
+            0.8
+          ],
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "color": "#7a5636",
+          "roughness": 0.85
+        }
+      ]
+    },
+    "body": {
+      "shape": "box",
+      "size": [
+        0.8,
+        0.8,
+        0.8
+      ],
+      "density": 500,
+      "resolution": [
+        2,
+        2,
+        2
+      ],
+      "contact_radius": 0.05,
+      "rigidity": 1.0
+    }
   },
   "playground_stack_2": {
-    "transform": { "position": [-3.0, 2.15, 35.0] },
-    "mesh": { "parts": [ { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#6a4a2c", "roughness": 0.85 } ] },
-    "body": { "shape": "box", "size": [0.8, 0.8, 0.8], "density": 500, "resolution": [2, 2, 2], "contact_radius": 0.05, "rigidity": 1.0 }
+    "transform": {
+      "position": [
+        -3.0,
+        2.15,
+        35.0
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            0.8,
+            0.8,
+            0.8
+          ],
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "color": "#6a4a2c",
+          "roughness": 0.85
+        }
+      ]
+    },
+    "body": {
+      "shape": "box",
+      "size": [
+        0.8,
+        0.8,
+        0.8
+      ],
+      "density": 500,
+      "resolution": [
+        2,
+        2,
+        2
+      ],
+      "contact_radius": 0.05,
+      "rigidity": 1.0
+    }
   },
   "playground_stack_3": {
-    "transform": { "position": [-3.0, 3.00, 35.0] },
-    "mesh": { "parts": [ { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#7a5636", "roughness": 0.85 } ] },
-    "body": { "shape": "box", "size": [0.8, 0.8, 0.8], "density": 500, "resolution": [2, 2, 2], "contact_radius": 0.05, "rigidity": 1.0 }
+    "transform": {
+      "position": [
+        -3.0,
+        3.0,
+        35.0
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            0.8,
+            0.8,
+            0.8
+          ],
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "color": "#7a5636",
+          "roughness": 0.85
+        }
+      ]
+    },
+    "body": {
+      "shape": "box",
+      "size": [
+        0.8,
+        0.8,
+        0.8
+      ],
+      "density": 500,
+      "resolution": [
+        2,
+        2,
+        2
+      ],
+      "contact_radius": 0.05,
+      "rigidity": 1.0
+    }
   },
   "playground_stack_4": {
-    "transform": { "position": [-3.0, 3.85, 35.0] },
-    "mesh": { "parts": [ { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#6a4a2c", "roughness": 0.85 } ] },
-    "body": { "shape": "box", "size": [0.8, 0.8, 0.8], "density": 500, "resolution": [2, 2, 2], "contact_radius": 0.05, "rigidity": 1.0 }
+    "transform": {
+      "position": [
+        -3.0,
+        3.85,
+        35.0
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            0.8,
+            0.8,
+            0.8
+          ],
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "color": "#6a4a2c",
+          "roughness": 0.85
+        }
+      ]
+    },
+    "body": {
+      "shape": "box",
+      "size": [
+        0.8,
+        0.8,
+        0.8
+      ],
+      "density": 500,
+      "resolution": [
+        2,
+        2,
+        2
+      ],
+      "contact_radius": 0.05,
+      "rigidity": 1.0
+    }
   },
   "playground_break_crate": {
-    "transform": { "position": [-0.8, 0.45, 34.5] },
-    "mesh": { "parts": [ { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#8a3a2c", "roughness": 0.85 } ] },
-    "body": { "shape": "box", "size": [0.8, 0.8, 0.8], "density": 200, "resolution": [3, 3, 3], "contact_radius": 0.05, "bonded": true, "love": 0.5, "compliance": 1e-7, "settle": 90 }
+    "transform": {
+      "position": [
+        -0.8,
+        0.45,
+        34.5
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            0.8,
+            0.8,
+            0.8
+          ],
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "color": "#8a3a2c",
+          "roughness": 0.85
+        }
+      ]
+    },
+    "body": {
+      "shape": "box",
+      "size": [
+        0.8,
+        0.8,
+        0.8
+      ],
+      "density": 200,
+      "resolution": [
+        3,
+        3,
+        3
+      ],
+      "contact_radius": 0.05,
+      "bonded": true,
+      "love": 0.5,
+      "compliance": 1e-07,
+      "settle": 90
+    }
   },
   "playground_pyramid_0": {
-    "transform": { "position": [-2.35, 0.45, 32.0] },
-    "mesh": { "parts": [ { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#6a4a2c", "roughness": 0.85 } ] },
-    "body": { "shape": "box", "size": [0.8, 0.8, 0.8], "density": 500, "resolution": [2, 2, 2], "contact_radius": 0.05, "rigidity": 1.0 }
+    "transform": {
+      "position": [
+        -2.35,
+        0.45,
+        32.0
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            0.8,
+            0.8,
+            0.8
+          ],
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "color": "#6a4a2c",
+          "roughness": 0.85
+        }
+      ]
+    },
+    "body": {
+      "shape": "box",
+      "size": [
+        0.8,
+        0.8,
+        0.8
+      ],
+      "density": 500,
+      "resolution": [
+        2,
+        2,
+        2
+      ],
+      "contact_radius": 0.05,
+      "rigidity": 1.0
+    }
   },
   "playground_pyramid_1": {
-    "transform": { "position": [-1.65, 0.45, 32.0] },
-    "mesh": { "parts": [ { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#6a4a2c", "roughness": 0.85 } ] },
-    "body": { "shape": "box", "size": [0.8, 0.8, 0.8], "density": 500, "resolution": [2, 2, 2], "contact_radius": 0.05, "rigidity": 1.0 }
+    "transform": {
+      "position": [
+        -1.65,
+        0.45,
+        32.0
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            0.8,
+            0.8,
+            0.8
+          ],
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "color": "#6a4a2c",
+          "roughness": 0.85
+        }
+      ]
+    },
+    "body": {
+      "shape": "box",
+      "size": [
+        0.8,
+        0.8,
+        0.8
+      ],
+      "density": 500,
+      "resolution": [
+        2,
+        2,
+        2
+      ],
+      "contact_radius": 0.05,
+      "rigidity": 1.0
+    }
   },
   "playground_pyramid_2": {
-    "transform": { "position": [-2.0, 1.30, 32.0] },
-    "mesh": { "parts": [ { "shape": "box", "size": [0.8, 0.8, 0.8], "position": [0, 0, 0], "color": "#7a5636", "roughness": 0.85 } ] },
-    "body": { "shape": "box", "size": [0.8, 0.8, 0.8], "density": 500, "resolution": [2, 2, 2], "contact_radius": 0.05, "rigidity": 1.0 }
+    "transform": {
+      "position": [
+        -2.0,
+        1.3,
+        32.0
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            0.8,
+            0.8,
+            0.8
+          ],
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "color": "#7a5636",
+          "roughness": 0.85
+        }
+      ]
+    },
+    "body": {
+      "shape": "box",
+      "size": [
+        0.8,
+        0.8,
+        0.8
+      ],
+      "density": 500,
+      "resolution": [
+        2,
+        2,
+        2
+      ],
+      "contact_radius": 0.05,
+      "rigidity": 1.0
+    }
   },
   "naruko_first_ground": {
-    "terrain": { "seed": 20260717, "tile_x": 0, "tile_y": 2 }
+    "terrain": {
+      "seed": 20260717,
+      "tile_x": 0,
+      "tile_y": 2
+    }
   },
   "bldg_tower": {
-    "transform": { "position": [8.0, 3.3, 33.0] },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [3.2, 2.2, 3.2], "position": [0, -2.2, 0], "color": "#7a6a58", "roughness": 0.9 },
-      { "shape": "box", "size": [3.2, 2.2, 3.2], "position": [0, 0, 0], "color": "#8a7a6a", "roughness": 0.9 },
-      { "shape": "box", "size": [3.2, 2.2, 3.2], "position": [0, 2.2, 0], "color": "#9a8a78", "roughness": 0.9 }
-    ] },
-    "body": { "shape": "box", "size": [3.2, 6.6, 3.2], "density": 2000, "resolution": [6, 11, 6], "contact_radius": 0.06, "bonded": true, "love": 1.0, "compliance": 1e-7, "settle": 40, "anchor_base": true }
+    "transform": {
+      "position": [
+        8.0,
+        3.3,
+        33.0
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            3.2,
+            2.2,
+            3.2
+          ],
+          "position": [
+            0,
+            -2.2,
+            0
+          ],
+          "color": "#7a6a58",
+          "roughness": 0.9
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.2,
+            2.2,
+            3.2
+          ],
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "color": "#8a7a6a",
+          "roughness": 0.9
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.2,
+            2.2,
+            3.2
+          ],
+          "position": [
+            0,
+            2.2,
+            0
+          ],
+          "color": "#9a8a78",
+          "roughness": 0.9
+        }
+      ]
+    },
+    "body": {
+      "shape": "box",
+      "size": [
+        3.2,
+        6.6,
+        3.2
+      ],
+      "density": 2000,
+      "resolution": [
+        6,
+        11,
+        6
+      ],
+      "contact_radius": 0.06,
+      "bonded": true,
+      "compliance": 1e-07,
+      "settle": 40,
+      "anchor_base": true
+    }
   },
   "bldg_basin": {
-    "transform": { "position": [8.0, 0.0, 24.0] },
-    "mesh": { "parts": [
-      { "shape": "box", "size": [3.6, 0.2, 3.6], "position": [0, 0.1, 0], "color": "#3a3a3a", "roughness": 0.6 },
-      { "shape": "box", "size": [3.6, 1.0, 0.2], "position": [0, 0.6, 1.7], "color": "#3a3a3a", "roughness": 0.6 },
-      { "shape": "box", "size": [3.6, 1.0, 0.2], "position": [0, 0.6, -1.7], "color": "#3a3a3a", "roughness": 0.6 },
-      { "shape": "box", "size": [0.2, 1.0, 3.6], "position": [1.7, 0.6, 0], "color": "#3a3a3a", "roughness": 0.6 },
-      { "shape": "box", "size": [0.2, 1.0, 3.6], "position": [-1.7, 0.6, 0], "color": "#3a3a3a", "roughness": 0.6 }
-    ] }
+    "transform": {
+      "position": [
+        8.0,
+        0.0,
+        24.0
+      ]
+    },
+    "mesh": {
+      "parts": [
+        {
+          "shape": "box",
+          "size": [
+            3.6,
+            0.2,
+            3.6
+          ],
+          "position": [
+            0,
+            0.1,
+            0
+          ],
+          "color": "#3a3a3a",
+          "roughness": 0.6
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.6,
+            1.0,
+            0.2
+          ],
+          "position": [
+            0,
+            0.6,
+            1.7
+          ],
+          "color": "#3a3a3a",
+          "roughness": 0.6
+        },
+        {
+          "shape": "box",
+          "size": [
+            3.6,
+            1.0,
+            0.2
+          ],
+          "position": [
+            0,
+            0.6,
+            -1.7
+          ],
+          "color": "#3a3a3a",
+          "roughness": 0.6
+        },
+        {
+          "shape": "box",
+          "size": [
+            0.2,
+            1.0,
+            3.6
+          ],
+          "position": [
+            1.7,
+            0.6,
+            0
+          ],
+          "color": "#3a3a3a",
+          "roughness": 0.6
+        },
+        {
+          "shape": "box",
+          "size": [
+            0.2,
+            1.0,
+            3.6
+          ],
+          "position": [
+            -1.7,
+            0.6,
+            0
+          ],
+          "color": "#3a3a3a",
+          "roughness": 0.6
+        }
+      ]
+    }
   }
 }

@@ -165,15 +165,21 @@ fn main() {
     assert_eq!(picked, TOWER, "ray must select the tower");
     scene.tick_with_ops(&[op]);
 
+    // `min_top_y` tracks `top_y()` (live max particle height of the tower's
+    // ORIGINAL lattice group), NOT `centroid()` — `centroid` reads through
+    // `push_targets()`, which drops out the instant the whole-body target
+    // breaks (fragments are no longer "the tower"), so a centroid-based
+    // tracker freezes at the break tick and can never see the actual storey
+    // drop that follows. `top_y` stays valid post-break (it walks the same
+    // particle indices regardless of fragment status), so it is the honest
+    // basis for a progressive-collapse number.
     let mut min_top_y = rest_top;
     let mut break_tick: Option<u64> = None;
     let mut entity_history: Vec<(u64, usize)> = Vec::new();
     let mut prev_entities = 0usize;
     for i in 0..AFTER_TICKS {
         scene.tick();
-        if let Some(c) = centroid(&scene, TOWER) {
-            min_top_y = min_top_y.min(c[1]);
-        }
+        min_top_y = min_top_y.min(top_y(&scene));
         let whole_now = has_target(&scene, TOWER);
         if break_tick.is_none() && !whole_now {
             break_tick = Some(i);
@@ -185,20 +191,43 @@ fn main() {
         }
         if i % 150 == 0 {
             let feet = min_feet_y(&scene);
-            println!("        tick {i}: tower whole={whole_now} min feet y={feet:.3} dynamic entities={entities}");
+            println!("        tick {i}: tower whole={whole_now} top_y={:.3} min feet y={feet:.3} dynamic entities={entities}", top_y(&scene));
         }
     }
+    // Diagnostic (not an assertion): the y-height of the first N fractured
+    // bonds' particles — evidence for WHERE the break started (ground-floor
+    // bonds first vs. an arbitrary layer), read straight off the solver's
+    // fracture journal (never re-derived).
+    {
+        let physics = scene.physics().expect("physics");
+        let solver = physics.solver();
+        let sample: Vec<(u64, f64, f64)> = solver
+            .fractures
+            .iter()
+            .take(12)
+            .map(|f| (f.tick, solver.particles.pos[f.a].y, solver.particles.pos[f.b].y))
+            .collect();
+        println!("[push] first fractures (tick, y_a, y_b), base row ~ y=0.0..0.6: {sample:?}");
+        println!("[push] total fracture events = {}", solver.fractures.len());
+    }
+
     let broken = !has_target(&scene, TOWER);
     let entities_after = scene.dynamics.entities().len();
     let feet = min_feet_y(&scene);
+    let collapse = rest_top - min_top_y;
     println!("[push] tower broken = {broken}, first break tick = {break_tick:?}");
     println!("[push] dynamic entities after = {entities_after}");
     println!("[push] entity-count history (tick, count) at each change: {entity_history:?}");
     println!("[push] min feet y (final, debris settle floor) = {feet:.3}");
+    println!("[push] top_y: rest {rest_top:.3} -> min {min_top_y:.3} m (collapse drop {collapse:.3} m)");
 
     assert!(broken, "the pushed load-bearing structure must fracture (its whole-body target must vanish)");
     assert!(entities_after >= 2, "shatter must birth >= 2 fragment vessels, got {entities_after}");
     assert!(feet > -1.0, "no debris may sink far through the ground, min feet {feet:.3}");
+    assert!(
+        collapse > 0.5,
+        "a load-bearing tower sheared at its anchored base must show a real storey drop (>0.5 m), got {collapse:.3} m"
+    );
 
-    println!("\nBUILDING PUSH PROOF PASSED — the anchored ground-floor bonds shear under the push, the structure fractures and drops.");
+    println!("\nBUILDING PUSH PROOF PASSED — the anchored ground-floor bonds shear under the push, the structure fractures and drops {collapse:.3} m.");
 }
