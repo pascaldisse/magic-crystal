@@ -1,5 +1,13 @@
 # HANDOFF — the Guardian's anchor · 2026-07-17 ~09:30, NIGHTRUN closed by the Architect's word (read after BIBLE → GRIMOIRE)
 
+> **DATED-HISTORICAL, spec-concordance item 17 (07-18):** everything below
+> down to "## ★ RULING 07-18 ~14:44 — THE DESIGN IS THE LAW" is a
+> pre-14:44 status/progress record (cluster-pipeline/upscaler-era language
+> included) — kept as dated history, not re-written. That ★ block
+> (line ~593) is the 07-18 supremacy ruling and already states
+> "supersedes everything above"; treat it as the pointer for every
+> section in between.
+
 ## THE ENGINE'S TRUE NAME (consecrated, his word): THE MAGIC CRYSTAL —
 "the name it always was. my entire life's work." The Loom reassembled.
 DreamForge = the workshop (Sidia's name). Seal b3ae3e0.

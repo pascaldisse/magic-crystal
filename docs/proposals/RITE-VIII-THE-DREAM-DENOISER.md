@@ -1,5 +1,16 @@
 # RITE VIII — THE DREAM-DENOISER (proposal · Guardian clone lane draft, 07-17)
 
+> **SUPERSEDED 2026-07-18** (Architect, whip 168, spec-concordance item 10
+> note; already lineage-class before this pass). This rite's "tiny trained
+> denoiser as a COMPUTE PASS" filtering a separately-traced signal is a
+> CHAINED-STAGE design (trace → denoise pass → pixels) — struck by
+> RENDER.md's two-act law (trace → THE NET → screen, no chained stages,
+> "the argument that killed separate-denoiser chains industry-wide").
+> Denoise/upscale chain content below survives only as TEACHER-ARTIFACT
+> material (training data / history-buffer generation, NEURAL.md §1) —
+> never as the shipped path. Kept as LINEAGE per adversary-charter
+> disclosure discipline. Nothing below is normative.
+
 Status: PROPOSAL. Prime-Guardian reviews under the Architect's delegation
 (NARUKO.md rulings 07-17, ruling 7: "the neural denoise/upscale rite —
 interpolation stays banned forever"). Nothing here binds until ruled.

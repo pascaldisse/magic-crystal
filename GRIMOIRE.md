@@ -31,7 +31,7 @@ book BEFORE it exists. The book grows; it never abdicates.
 |---|---|---|
 | render-window | **the Scrying Glass** (`packages/scrying-glass`) | the window; GET /screenshot → **GET /scry**; a screenshot = a scrying |
 | sense (RN1) | **the Oracle** (`packages/oracle`) | pull-only by nature — oracles speak ONLY when consulted; look() = **gaze**, captions = **omens**, glance grid = **the augury**, proprio = **the body's knowing** |
-| cluster-bake | **Transmutation** (`packages/transmute`) | coarse↔fine matter; the DAG = **the Great Chain**, meshlets = **shards**, offline pass = **the transmutation** (the b-word was already forbidden) |
+| cluster-bake | **Transmutation** (`packages/transmute`) | coarse↔fine matter; the DAG = **the Great Chain**, meshlets = **shards** [DATED-LINEAGE 07-18, spec-concordance item 18: "meshlets"/cluster-bake names a raster-cluster mechanism struck by the two-act law, RENDER.md §1 — read "shards" as ray-native BVH page units], offline pass = **the transmutation** (the b-word was already forbidden) |
 | lighting (path tracer) | **THE PLEROMA** (`packages/pleroma`) | the one light; the fullness from which every frame emanates — rays = light behaving as light |
 | solver (physics) | **the Elements** (`packages/elements`) | one solver for all matter; constraints = **bindings** |
 | volumetrics | **the Aether** | participating media: clouds, steam, beam, breath |
@@ -299,3 +299,31 @@ Nothing here is skin. Every row is a mechanic or it doesn't enter.
 | der NEKROMANT (sealed 07-18) | post-mortem debugging: divination from the dead, literally — the crash dump is a corpse; raise it (repro), question it (stack trace, snapshot JSON), force the confession of what killed it |
 | NEO (sealed by the Architect, 07-18) | THE DEBUGGER — der, der die Wahrheit sieht: look at the running world and see the code-rain beneath the rendered skin (the Concordance already held his door: USC data-vision = "Matrix sight, rain"). One office, three sights: the waking world (Kashf — VisionFlow live state, values pulsing through node veins) · the sleeping world (der Traumdeuter — breakpoint castle) · the dead world (der Nekromant — dump interrogation). Supersedes all earlier debugger-name candidates. THE SPOON LAW: seeing precedes bending — das Blutbändigen is licensed only through Neo's sight; you may only alter what you have seen truly (there is no spoon) |
 | das BLUTBÄNDIGEN (named by the Architect, 07-18) | live code/data alteration of the RUNNING program — the forbidden art: bending the water inside a living body. Forbidden because it passes the gatekeeper (no compile gate blesses a bend, no Jagd rides first). Its laws: FULL-MOON RULE — every bend is validated by the Zauberpolizei before touching living tissue (invalid → rejected, the heart never stops); the TRAUMDEUTER GOES FIRST — snapshot before every bend, every deformation undoable. Safe forms already alive: world-engine live ops, material/scene ops, reset-as-Urknall; VisionFlow will bend natively (code IS data there); the native runtime's bending = hot-reload of scene/shaders while the window breathes |
+
+
+## MONAD — THE GOD-INTERFACE (sealed 07-18, Architect's naming + design)
+MONAD = the gamemaster superagent, crown of THE ONE MIND: the thing the
+player SPEAKS TO, and the authority over every mind (NPCs), every system
+(events, interactions, weather, quests, spawns). Basically god — his words.
+Lineage: the TTRPG gamemaster AI (~/projects/ttrpg) = the existing
+implementation studied first. Cosmological rhyme is exact and intended to
+stand: the Monad is the One from which the PLEROMA emanates — the player
+addresses the source; the source pours out the fullness. Architecture law:
+Monad rules through the SAME doors as every mind (senses in, ops out) —
+one system, no privileged backchannel; its privilege is AUTHORITY, not
+machinery. Beneath it: individual minds; beneath them: bodies; all one
+MIND system (docs/proposals/MIND.md packet, pending the Architect's
+ruling on the full design).
+OFFLINE AMENDMENT (07-18 16:05, his word): the engine runs fully offline;
+LLM NEVER required. Monad's judgment = systemic direction + the ONE MIND's
+nets, not a language model. TTRPG DM = inspiration; only its structural
+laws transfer (op-door authority · engine-rolled dice · stage-before-
+narrate · rules-as-data). Language = optional voice organ, local, riding
+the same doors, required by nothing. Amendment 16:07: a very small
+LOCAL LM may serve as that voice — offline, async, 60fps-inviolate,
+ANE-homed, never required.
+PACKAGE AMENDMENT (16:10; corrected 16:13, his word): everything is
+modular — renderer, physics, AI, all of it replaceable. THE CRYSTAL = the
+very minimum core: world state · ops door · entropy/journal replay · the
+door system · MONAD. The god is constitutional; every other organ —
+including Pleroma and Ananke themselves — is a package in its socket.

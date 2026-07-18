@@ -9,30 +9,37 @@
 ## Doctrine: NEVER OPTIMIZE
 Engineering translation: **frame cost ∝ pixels on screen, never ∝ content.**
 Every subsystem must hold this invariant:
-- geometry: billion over-detailed polygons dropped in → renders at
-  pixel-density cost. Virtualized clusters are THE ONLY geometry pipeline —
-  no legacy path, no fallback mesh renderer. ALL geometry rides it: static,
-  skinned, deforming, procedural, SDF/voxel contouring output (contouring
-  kernel emits clusters directly). Nanite analyzed → beaten: its exclusion
-  list (skinned/WPO/foliage/translucent) exists BECAUSE UE keeps a legacy
-  fallback — we have none, so our system carries everything. Nanite's
-  limitations = our requirements list. Cluster hierarchy is built
-  automatically, on the fly, at import/creation — invisible machinery.
-  Budget adapts to the hardware it finds. "Nanite on steroids, the entire
-  engine built around it, no alternative" (Pascal, verbatim law)
+- geometry (AMENDED 07-18, RENDER.md §1 two-act law, spec-concordance item
+  12): the ray door, not the raster door — cost ∝ rays gathered
+  (BVH traversal ~log(N)), never ∝ content, never a screen grid walked by a
+  raster pass. ALL geometry (static, skinned, deforming, procedural,
+  SDF/voxel contouring output) emits ray-native into the ONE BVH world —
+  no cluster raster pipeline, no visibility-buffer machinery (struck as
+  heresy, RENDER.md LINEAGE appendix). Virtualized geometry PAGES may still
+  stream under BVH RESIDENCY (ray footprint, RENDER.md §1 design slot) —
+  re-homed onto the BVH, not screen-space raster clusters. Original
+  "clusters are the only pipeline" language: LINEAGE, bottom of doc.
 - textures: 20K textures on everything → resident memory = what the screen
   samples (virtual texturing; page cache, not asset size)
 - light: NO BAKE BUTTON EXISTS. Place a light → scene is lit, immediately,
   always. Realtime GI only, Lumen-class target; cheap tricks under the hood
   fully allowed — the contract is the experience, not the math.
   **Supported light sources: INFINITE** (Pascal, verbatim law) — no pool, no
-  cap, no per-scene budget; light cost ≠ light count, cost ∝ lit pixels
-  (clustered deferred culling + GI where every emissive surface IS a light).
+  cap, no per-scene budget; light cost ≠ light count (AMENDED 07-18,
+  RENDER.md cost law: "we don't use pixels" — cost ∝ RAY BUDGET, not lit
+  pixels; no clustered-deferred culling pass, every emissive surface IS a
+  light inside the ONE traced integrator. Original "cost ∝ lit pixels
+  (clustered deferred culling)" phrasing: LINEAGE, bottom of doc).
   **ONE lighting engine, all of it traced** — no raster-only mode, no RT
   toggle, no alternative system; "whatever is the cheapest way to achieve
   ray tracing" is the implementation license, the traced result is the law
-- physics: perfect physics; solver islands budget-scheduled (active = exact,
-  far = coarse/sleeping) so content scale never forces authoring compromises
+- physics (AMENDED 07-18, PHYSICS.md §0, spec-concordance items 4+9):
+  perfect physics — Ananke assembles constraints → THE NET solves → state;
+  classical XPBD = teacher/scaffold until the P-N1 cutover, never the
+  destination; NO far/near solver-island detail tiers (NO LODs, cluster
+  law extended to physics) so content scale never forces authoring
+  compromises. Original "active = exact, far = coarse/sleeping" language:
+  LINEAGE, bottom of doc.
 - authoring: no import knobs, no LOD authoring, no lightmap UVs, no
   "optimize scene" pass. Drop it in. It works.
 - WORLD: UNIVERSE SCALE, ZERO LOADING (Pascal 07-16). World size NEVER
@@ -63,9 +70,12 @@ Every subsystem must hold this invariant:
    light that works like real fucking light"). Ground truth = Monte Carlo
    path transport, one integrator: every light IS an emissive surface, the
    sky is an emitter, reflections are just paths — nothing to configure,
-   nothing that can "not work". GRANTED: noisy + low internal res is fine
-   ("we're building an AI tool") — few paths/pixel, denoise, upscale;
-   presentation layer cleans what physics leaves rough. Tricks admitted
+   nothing that can "not work". GRANTED: noisy + few-samples/frame traced
+   signal is fine ("we're building an AI tool") — few rays/frame is a RAY
+   BUDGET; THE NET renders the only image at screen res directly from that
+   signal, no chained denoise/upscale stage (AMENDED 07-18, RENDER.md/
+   NEURAL.md two-act law, "upscaling is dead"; original "denoise, upscale;
+   presentation layer cleans" phrasing: LINEAGE, bottom of doc). Tricks admitted
    ONLY as variance reduction converging to the traced truth (ReSTIR
    many-light sampling, radiance caches, screen reuse) — bias budget, never
    an alternative model. Intersectors are swappable (SDF/occupancy mips on
@@ -167,7 +177,7 @@ observable behavior + declare what's better. No row, no replacement.
 | FEATURES.md + features/ | 100% contract inventory | ✅ committed |
 | GEOMETRY.md | polygon/voxel/SDF hybrid, contouring kernel | ✅ committed; SDF-replaces-carve ratified |
 | PHYSICS.md | unified solver, destruction, gas | ⚠ ON HOLD — Pascal's magic first; evidence: research/physics-recon.md |
-| RENDER.md | deferred, virtualized geometry, virtual texturing, ONE traced lighting system, MetalFX/upscale | recon wave out (Nanite · GI field · VT) |
+| RENDER.md | two-act (trace → THE NET → screen), virtualized geometry pages under BVH residency, virtual texturing, ONE traced lighting system | ✅ LAW (07-18 rewrite; supersedes deferred/MetalFX-upscale framing — LINEAGE, bottom of doc) |
 | STREAMING.md | scenes, asset pages, residency | after RENDER |
 | EDITOR.md | forge surface: tools, gizmos, overlay, undo | after RENDER |
 | research/ | parked recon evidence (informs, Pascal rules) | physics + neural in |
@@ -183,13 +193,18 @@ Three engines in one chip; each does what it's shaped for; unified memory
   realtime thread) · procedural DAG evaluation · residency/streaming
   decisions · transcode (UASTC bit-repack = 7-10 GB/s CPU) · connectivity
   flood-fill · mass integration
-- **GPU** — the lighting system + presentation (cull/raster/path trace/
-  ReSTIR/cache MLP/denoise/upscale) AND all frame-loop NEURAL work —
-  including physics SURROGATES: a neural net is matrix math, matrix math
-  is GPU work ("neural" ≠ neural engine). Good trade by construction: a
-  far-field surrogate MLP costs the GPU μs while replacing CPU work 300-
-  5000× bigger. Exact solver stays CPU; surrogates ride the GPU beside
-  the renderer; particle megascale only when counts demand it
+- **GPU** (AMENDED 07-18, RENDER.md/PHYSICS.md two-act laws, spec-
+  concordance item 12) — the lighting system + presentation (trace/ReSTIR/
+  cache MLP/THE NET — no raster cull pass, no chained denoise/upscale
+  stage) AND all frame-loop NEURAL work — including PHYSICS: a neural net
+  is matrix math, matrix math is GPU work ("neural" ≠ neural engine). THE
+  NET is the solve destination (PHYSICS.md §0: Ananke assembles → THE NET
+  solves → state), not a surrogate riding beside a permanent CPU-exact
+  solver — classical XPBD is the teacher/scaffold until the P-N1 cutover,
+  then retires from the live path (death rule, CLAUDE.md ★); particle
+  megascale only when counts demand it. Original "cull/raster/denoise/
+  upscale" + "exact solver stays CPU, surrogates ride the GPU" phrasing:
+  LINEAGE, bottom of doc.
 - **ANE** — refined ruling: dead for the frame loop (no per-frame API),
   ALIVE for out-of-band async inference: auto-rig, procedural/content
   generation, surrogate training — fire-and-collect via CoreML, never
@@ -313,3 +328,47 @@ Our pipeline, every coding pass, no exceptions:
    critique verbatim.
 5. MONAD final review: builder result + adversary critique + own-eyes
    gates → accept/fix/reject, merge. Pascal sees the wave's pixels.
+
+---
+
+## LINEAGE — pre-two-act doctrine language (superseded 2026-07-18, kept verbatim, spec-concordance item 12)
+
+Amended in place above; originals kept here per adversary-charter disclosure discipline (never silent erasure).
+
+**Doctrine · geometry (orig. was doctrine bullet 1):**
+> geometry: billion over-detailed polygons dropped in → renders at
+> pixel-density cost. Virtualized clusters are THE ONLY geometry pipeline —
+> no legacy path, no fallback mesh renderer. ALL geometry rides it: static,
+> skinned, deforming, procedural, SDF/voxel contouring output (contouring
+> kernel emits clusters directly). Nanite analyzed → beaten: its exclusion
+> list (skinned/WPO/foliage/translucent) exists BECAUSE UE keeps a legacy
+> fallback — we have none, so our system carries everything. Nanite's
+> limitations = our requirements list. Cluster hierarchy is built
+> automatically, on the fly, at import/creation — invisible machinery.
+> Budget adapts to the hardware it finds. "Nanite on steroids, the entire
+> engine built around it, no alternative" (Pascal, verbatim law)
+
+**Doctrine · light (orig. "Supported light sources: INFINITE" clause):**
+> light cost ≠ light count, cost ∝ lit pixels (clustered deferred culling +
+> GI where every emissive surface IS a light).
+
+**Doctrine · physics (orig. doctrine bullet):**
+> physics: perfect physics; solver islands budget-scheduled (active = exact,
+> far = coarse/sleeping) so content scale never forces authoring compromises
+
+**Pillar 6 (orig. GRANTED clause):**
+> GRANTED: noisy + low internal res is fine ("we're building an AI tool") —
+> few paths/pixel, denoise, upscale; presentation layer cleans what physics
+> leaves rough.
+
+**Spec tree · RENDER.md row (orig.):**
+> | RENDER.md | deferred, virtualized geometry, virtual texturing, ONE traced lighting system, MetalFX/upscale | recon wave out (Nanite · GI field · VT) |
+
+**Compute placement · GPU bullet (orig.):**
+> **GPU** — the lighting system + presentation (cull/raster/path trace/
+> ReSTIR/cache MLP/denoise/upscale) AND all frame-loop NEURAL work —
+> including physics SURROGATES: a neural net is matrix math, matrix math
+> is GPU work ("neural" ≠ neural engine). Good trade by construction: a
+> far-field surrogate MLP costs the GPU μs while replacing CPU work 300-
+> 5000× bigger. Exact solver stays CPU; surrogates ride the GPU beside
+> the renderer; particle megascale only when counts demand it

@@ -1,8 +1,9 @@
 # TEACHER/BENCHMARK LAB CHAIN — budget measurement + historical verdict
 
-Status 07-18 → DE-CHARTERED by two-act law (§ NEURAL.md). Chain = lab teacher/
-benchmark only → explicit `/scry?lab=teacher-benchmark`; never present/default.
-Measurements below = historical evidence, not live-path charter.
+> **DATED-LINEAGE 07-18** (spec-concordance item 18): this chain is
+> de-chartered by the two-act law (§ NEURAL.md). Teacher/benchmark only →
+> explicit `/scry?lab=teacher-benchmark`; never present/default. Measurements
+> below = historical evidence, not live-path charter.
 
 Lane `one-render-path` historical goal →
 `trace(640×480) → NEURAL DENOISE → NEURAL UPSCALE → present`, bilinear gone.
