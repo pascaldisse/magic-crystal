@@ -1,11 +1,11 @@
 use crystal::{EcsWorld, Op, OpBatch, SetOp};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::{
     fs,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
-use steiner::{read_journal, RealmScenes, Recorder, WorldCore, WorldCoreParams};
+use steiner::{RealmScenes, Recorder, WorldCore, WorldCoreParams, parse_op_batch, read_journal};
 
 static NEXT_REALM: AtomicU64 = AtomicU64::new(1);
 
@@ -115,6 +115,29 @@ fn boot_from_superscene_materializes_every_scene_into_crystal() {
 }
 
 #[test]
+fn http_door_batch_shape_preserves_dev_set_and_reset() {
+    let batch = parse_op_batch(json!({
+        "dev": true,
+        "from": "curl",
+        "ops": [
+            {
+                "op": "set",
+                "id": "box",
+                "component": "mesh",
+                "value": { "parts": [{ "shape": "box", "color": "#00aa00" }] }
+            },
+            { "op": "reset", "scene": "a" }
+        ]
+    }))
+    .expect("parse POST /op contract");
+
+    assert!(batch.dev);
+    assert_eq!(batch.from.as_deref(), Some("curl"));
+    assert!(matches!(&batch.ops[0], Op::Set(set) if set.id == "box"));
+    assert!(matches!(&batch.ops[1], Op::Reset(reset) if reset.scene.as_deref() == Some("a")));
+}
+
+#[test]
 fn runtime_set_mutates_live_crystal_without_touching_disk() {
     let fixture = TestRealm::two_scene();
     let before = fixture.scene_text("a");
@@ -172,18 +195,24 @@ fn reset_rereads_scene_and_restores_disk_truth() {
         })
         .unwrap();
 
-    assert!(report
-        .applied
-        .iter()
-        .any(|op| matches!(op, Op::Other { op, .. } if op == "event")));
-    assert!(report
-        .applied
-        .iter()
-        .any(|op| matches!(op, Op::Other { op, .. } if op == "despawn")));
-    assert!(report
-        .applied
-        .iter()
-        .any(|op| matches!(op, Op::Other { op, .. } if op == "spawn")));
+    assert!(
+        report
+            .applied
+            .iter()
+            .any(|op| matches!(op, Op::Other { op, .. } if op == "event"))
+    );
+    assert!(
+        report
+            .applied
+            .iter()
+            .any(|op| matches!(op, Op::Other { op, .. } if op == "despawn"))
+    );
+    assert!(
+        report
+            .applied
+            .iter()
+            .any(|op| matches!(op, Op::Other { op, .. } if op == "spawn"))
+    );
     assert_eq!(
         core.component("box", "mesh").unwrap()["parts"][0]["color"],
         json!("#aa0000")
