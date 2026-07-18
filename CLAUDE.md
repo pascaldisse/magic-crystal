@@ -48,6 +48,11 @@ LLM is NEVER required — not for THE ONE MIND, not for MONAD, not for any
 system. Mind core = small conditioned nets + systemic simulation (DF-class),
 deterministic, local. Natural-language dialogue = OPTIONAL pluggable voice
 organ (local, player's choice), rides the same doors, required by nothing.
+AMENDMENT (16:07): a VERY SMALL local LM is permitted as that voice organ
+IF offline AND 60fps-inviolate — async, off the frame's critical path,
+never on the render GPU (natural home: ANE — the silicon that refused our
+render GEMM is built for tiny transformers; GPU renders, CPU simulates,
+ANE speaks). Budget-fenced by measurement like everything.
 TTRPG's LLM-DM = inspiration only — its STRUCTURAL laws transfer (op-door
 authority · engine rolls all dice · stage-before-narrate · rules-as-data),
 its LLM judgment does not.

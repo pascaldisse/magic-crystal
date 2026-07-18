@@ -319,4 +319,6 @@ LLM NEVER required. Monad's judgment = systemic direction + the ONE MIND's
 nets, not a language model. TTRPG DM = inspiration; only its structural
 laws transfer (op-door authority · engine-rolled dice · stage-before-
 narrate · rules-as-data). Language = optional voice organ, local, riding
-the same doors, required by nothing.
+the same doors, required by nothing. Amendment 16:07: a very small
+LOCAL LM may serve as that voice — offline, async, 60fps-inviolate,
+ANE-homed, never required.
