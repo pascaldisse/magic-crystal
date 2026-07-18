@@ -65,7 +65,6 @@ fn naruko_params() -> SceneParameters {
         ],
         camera_yaw: env_f32("GAIA_NATIVE_CAMERA_YAW", 0.0),
         camera_pitch: env_f32("GAIA_NATIVE_CAMERA_PITCH", 0.0),
-        cluster_error_threshold: 1.0,
         tick_dt: 1.0 / 60.0,
         sun: SunDefaults {
             sun_color: "#ffe2b0".into(),

@@ -72,7 +72,6 @@ fn naruko_params() -> SceneParameters {
         camera_position: [0.0, 2.0, 22.0],
         camera_yaw: 0.0,
         camera_pitch: 0.0,
-        cluster_error_threshold: 1.0,
         tick_dt: 1.0 / 60.0,
         sun: SunDefaults {
             sun_color: "#ffe2b0".into(),
@@ -368,7 +367,14 @@ fn main() {
     let medium = steam_medium(&bound, counter_top_y);
 
     let bvh_params = BvhParams::default();
+    let static_bvh_start = Instant::now();
     let static_bvh = Bvh::build(&scene.leaf_triangles(), &bvh_params);
+    let static_bvh_ms = static_bvh_start.elapsed().as_secs_f64() * 1e3;
+    eprintln!(
+        "[audit] static BVH: {} triangles, {} nodes, build {static_bvh_ms:.3} ms",
+        static_bvh.tris.len(),
+        static_bvh.nodes.len(),
+    );
 
     // Warm the WORLD to the composed mid-stride steady state (coexist
     // precedent: past the crate-settle horizon, landing on the passing phase so

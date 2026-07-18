@@ -5,8 +5,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use transmutation::{
     default_partitioner, deserialize, read_directory, read_page, read_root, serialize, transmute,
-    transmute_default, uv_sphere, AdjacencyGraph, Cluster, Dag, GreedyPartitioner, Mesh,
-    MeshletParams, Partitioner, TransmuteError, TransmuteParams, Vertex, WeldParams,
+    transmute_default, uv_sphere, Cluster, Dag, Mesh, MeshletParams, TransmuteError,
+    TransmuteParams, Vertex, WeldParams,
 };
 
 // ---------------------------------------------------------------------------
@@ -153,22 +153,6 @@ fn uv_seam_strip() -> Mesh {
     m
 }
 
-/// N disconnected small spheres → DISCONNECTED COMPONENTS (finding 7).
-fn disconnected_spheres(count: usize, u: usize, v: usize) -> Mesh {
-    let mut m = Mesh::default();
-    for k in 0..count {
-        let s = uv_sphere(1.0, u, v);
-        let base = m.vertices.len() as u32;
-        let dx = (k as f32) * 100.0; // far apart → no shared vertices
-        for mut vert in s.vertices {
-            vert.position[0] += dx;
-            m.vertices.push(vert);
-        }
-        m.indices.extend(s.indices.iter().map(|&i| i + base));
-    }
-    m
-}
-
 // bit-exact position key (locked verts keep byte-identical coords)
 fn pkey(p: [f32; 3]) -> [u32; 3] {
     [p[0].to_bits(), p[1].to_bits(), p[2].to_bits()]
@@ -312,14 +296,9 @@ fn finding1_canonical_coordinate_offset_grids() {
     // 0 mismatches across mixed cuts. (Probe quantum 1e-3 groups the 1e-6 twins
     // but not distinct grid points ~0.25 apart.)
     let mesh = two_offset_grids(6.0, 24, 1e-6);
-    for pt in [
-        &GreedyPartitioner::default() as &dyn Partitioner,
-        default_partitioner().as_ref(),
-    ] {
-        let dag = transmute(&mesh, &TransmuteParams::default(), pt).unwrap();
-        assert!(dag.level_count() > 1, "need a chain to have parent borders");
-        assert_canonical_coords(&dag, 1e-3, dag.partitioner.as_str());
-    }
+    let dag = transmute(&mesh, &TransmuteParams::default(), &default_partitioner()).unwrap();
+    assert!(dag.level_count() > 1, "need a chain to have parent borders");
+    assert_canonical_coords(&dag, 1e-3, dag.partitioner.as_str());
 }
 
 #[test]
@@ -522,8 +501,8 @@ fn finding4_dependency_closure_covers_all_pages() {
 fn finding4_version_bumped_and_v1_rejected() {
     assert_eq!(
         transmutation::FORMAT_VERSION,
-        2,
-        "chunked layout must bump version"
+        3,
+        "entropy/partition semantics must bump the format version"
     );
     // a v1-style blob (magic + version=1) must be rejected loudly.
     let mut fake = Vec::new();
@@ -658,7 +637,7 @@ fn finding5_pathological_lossless() {
         (plane_with_hole(10.0, 40), "hole/internal"),
     ];
     for (mesh, label) in cases {
-        let dag = transmute(&mesh, &params, default_partitioner().as_ref()).unwrap();
+        let dag = transmute(&mesh, &params, &default_partitioner()).unwrap();
         assert_eq!(
             dag.leaf_tri_sum(),
             mesh.tri_count(),
@@ -727,201 +706,15 @@ fn finding6_illegal_params_rejected() {
 }
 
 // ---------------------------------------------------------------------------
-// Finding 7 — GREEDY FALLBACK: disconnected components stay balanced; frontier
-// dedup; high-valence completes; backend never lies.
+// Finding 7 — SOLE METIS: no fallback implementation exists.
 // ---------------------------------------------------------------------------
 
-#[test]
-fn finding7_disconnected_components_balanced() {
-    // 10 far-apart spheres → 10 disconnected components in the adjacency graph.
-    let mesh = disconnected_spheres(10, 24, 16);
-    let params = TransmuteParams::default();
-    let dag = transmute(&mesh, &params, &GreedyPartitioner::default()).unwrap();
-    assert_eq!(dag.leaf_tri_sum(), mesh.tri_count());
-    assert_eq!(dag.partitioner, "greedy");
-    // no single level-0 group may hoover up a disproportionate share (the
-    // pre-fix "dump the rest into the last part" bug). Cap = 4× the target.
-    let level0_groups: Vec<&transmutation::Group> =
-        dag.groups.iter().filter(|g| g.level == 0).collect();
-    assert!(!level0_groups.is_empty());
-    let max_children = level0_groups
-        .iter()
-        .map(|g| g.children.len())
-        .max()
-        .unwrap();
-    assert!(
-        max_children <= params.group_size * 4,
-        "greedy dumped a mega-group: {max_children} children (target {})",
-        params.group_size
-    );
-}
-
-#[test]
-fn finding7_greedy_partition_balance_direct() {
-    // synthetic graph: 12 disconnected 5-cliques (60 nodes), 12 parts.
-    let comp = 12usize;
-    let sz = 5usize;
-    let n = comp * sz;
-    let mut adj: Vec<Vec<(usize, i32)>> = vec![Vec::new(); n];
-    for k in 0..comp {
-        let base = k * sz;
-        for i in 0..sz {
-            for j in 0..sz {
-                if i != j {
-                    adj[base + i].push((base + j, 1));
-                }
-            }
-        }
-    }
-    let mut xadj = vec![0i32];
-    let mut adjncy = Vec::new();
-    let mut adjwgt = Vec::new();
-    for nbrs in &adj {
-        for &(nb, w) in nbrs {
-            adjncy.push(nb as i32);
-            adjwgt.push(w);
-        }
-        xadj.push(adjncy.len() as i32);
-    }
-    let graph = AdjacencyGraph {
-        node_count: n,
-        xadj,
-        adjncy,
-        adjwgt,
-    };
-    let part = GreedyPartitioner::default().partition(&graph, comp);
-    assert_eq!(part.backend, "greedy");
-    // all nodes assigned
-    assert!(part.parts.iter().all(|&p| p < comp));
-    // balanced: no part more than 2× the average (dump-the-rest would blow this)
-    let mut sizes = vec![0usize; comp];
-    for &p in &part.parts {
-        sizes[p] += 1;
-    }
-    let avg = n / comp;
-    assert!(
-        sizes.iter().all(|&s| s <= avg * 2),
-        "greedy imbalance across disconnected components: {sizes:?}"
-    );
-}
-
-/// Build a star graph: node 0 connected to `leaves` leaves. After the center
-/// part fills, every remaining leaf is its OWN isolated component — the exact
-/// shape that made the balance phase's per-component full-V clear quadratic
-/// (MF-1).
-fn star_graph(leaves: usize) -> AdjacencyGraph {
-    let n = leaves + 1;
-    let mut adjncy = Vec::with_capacity(leaves * 2);
-    let mut adjwgt = Vec::with_capacity(leaves * 2);
-    let mut xadj = vec![0i32];
-    for leaf in 1..n {
-        adjncy.push(leaf as i32);
-        adjwgt.push(1);
-    }
-    xadj.push(adjncy.len() as i32);
-    for _ in 1..n {
-        adjncy.push(0);
-        adjwgt.push(1);
-        xadj.push(adjncy.len() as i32);
-    }
-    AdjacencyGraph {
-        node_count: n,
-        xadj,
-        adjncy,
-        adjwgt,
-    }
-}
-
-// NOTE (MF-1b): the DETERMINISTIC ops-ratio scaling test lives as a UNIT test in
-// src/partition.rs, where the crate's own `cfg(test)` makes the work counter
-// (partition::take_balance_work) visible under EVERY feature set. Integration
-// tests here link the crate as an external dep, where `cfg(test)` is inactive.
-
-#[test]
-fn finding7_high_valence_completes() {
-    // Correctness sanity: a wide star still partitions completely and legally.
-    let graph = star_graph(4000);
-    let part = GreedyPartitioner::default().partition(&graph, 20);
-    assert_eq!(part.parts.len(), 4001);
-    assert!(part.parts.iter().all(|&p| p < 20));
-}
-
-#[test]
-fn finding2_greedy_leftover_bounded_not_dumped() {
-    // ADVERSARIAL (finding 2): 4 isolated nodes + ONE 96-node connected
-    // component, 4 parts. The pre-fix balance branch dumped the whole 96-node
-    // blob into the smallest part → [97,1,1,1]. The bounded-chunk spread keeps
-    // every part ≤ (1 + balance_chunk_mult) × target.
-    let iso = 4usize;
-    let comp = 96usize;
-    let n = iso + comp;
-    let nparts = 4usize;
-    let mut adj: Vec<Vec<(usize, i32)>> = vec![Vec::new(); n];
-    // component = a simple chain over nodes [iso..n) (isolated nodes come first)
-    for k in iso..n - 1 {
-        adj[k].push((k + 1, 1));
-        adj[k + 1].push((k, 1));
-    }
-    let mut xadj = vec![0i32];
-    let mut adjncy = Vec::new();
-    let mut adjwgt = Vec::new();
-    for nbrs in &adj {
-        for &(nb, w) in nbrs {
-            adjncy.push(nb as i32);
-            adjwgt.push(w);
-        }
-        xadj.push(adjncy.len() as i32);
-    }
-    let graph = AdjacencyGraph {
-        node_count: n,
-        xadj,
-        adjncy,
-        adjwgt,
-    };
-    let gp = GreedyPartitioner::default();
-    let part = gp.partition(&graph, nparts);
-    assert_eq!(part.backend, "greedy");
-    assert!(part.parts.iter().all(|&p| p < nparts));
-    let mut sizes = vec![0usize; nparts];
-    for &p in &part.parts {
-        sizes[p] += 1;
-    }
-    let target = n.div_ceil(nparts);
-    let cap = (1 + gp.balance_chunk_mult) * target; // param'd max-part-size bound
-    let max = *sizes.iter().max().unwrap();
-    assert!(
-        max <= cap,
-        "greedy dumped a leftover mega-part: sizes {sizes:?}, max {max} > cap {cap} \
-         (pre-fix was [97,1,1,1])"
-    );
-}
-
-// ---------------------------------------------------------------------------
 // Finding 8 — DETERMINISM: two independent builds → byte-identical output.
 // ---------------------------------------------------------------------------
 
-/// My pipeline's OWN ordering is deterministic (BTree everywhere, sorted feeds):
-/// with the pure-Rust greedy partitioner two in-process builds are byte-
-/// identical.
-#[test]
-fn finding8_pipeline_deterministic_greedy() {
-    let mesh = uv_sphere(1.0, 128, 96);
-    let params = TransmuteParams::default();
-    let a = transmute(&mesh, &params, &GreedyPartitioner::default()).unwrap();
-    let b = transmute(&mesh, &params, &GreedyPartitioner::default()).unwrap();
-    assert_eq!(a.clusters.len(), b.clusters.len(), "cluster count varied");
-    assert_eq!(a.levels, b.levels, "level structure varied");
-    assert_eq!(
-        serialize(&a).unwrap(),
-        serialize(&b).unwrap(),
-        "not byte-identical"
-    );
-}
-
-/// The DEFAULT (METIS) backend is deterministic IN-PROCESS too: vendored METIS
-/// calls `InitRandom(seed)` at the start of EVERY partition, so the fixed
-/// `Seed(0)` re-seeds per call — there is no process-global RNG carried across
-/// sequential builds. Two in-process default-backend builds are byte-identical.
+/// The sole METIS backend is deterministic in-process: its seed derives from
+/// identical `(world_seed, entropy, canonical geometry identity)` state, and
+/// the seed→partition interval is process-serialized.
 #[test]
 fn finding8_metis_default_in_process_double_build_identical() {
     let mesh = uv_sphere(1.0, 96, 64);
@@ -940,9 +733,23 @@ fn finding8_metis_default_in_process_double_build_identical() {
     );
 }
 
-/// The real gate: two INDEPENDENT process runs of the (METIS-default) transmuter on
-/// the same input produce byte-identical `.cbdg`. Fresh process → METIS RNG
-/// re-seeded (fixed Seed) → identical partition → identical bytes.
+/// A nonzero world coordinate is reproducible: identical
+/// `(world_seed, entropy, canonical geometry)` produces identical pages.
+#[test]
+fn finding8_entropy_state_is_byte_identical() {
+    let mesh = uv_sphere(1.0, 96, 64);
+    let params = TransmuteParams {
+        world_seed: 0x4d43_2026,
+        entropy: 731,
+        ..TransmuteParams::default()
+    };
+    let a = transmute_default(&mesh, &params).unwrap();
+    let b = transmute_default(&mesh, &params).unwrap();
+    assert_eq!(serialize(&a).unwrap(), serialize(&b).unwrap());
+}
+
+/// The real gate: two independent METIS process runs with the same canonical
+/// input and entropy state produce byte-identical `.cbdg` pages.
 #[test]
 fn finding8_two_independent_builds_byte_identical() {
     let exe = env!("CARGO_BIN_EXE_transmute-cli");
