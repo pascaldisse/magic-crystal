@@ -1,12 +1,12 @@
-# SILICON RACE II — THE ANE MATRIX · 2026-07-18
+# SILICON RACE II — THE ANE MATRIX · 2026-07-18 [source: probe runs in this doc, ane-race 52dc363..d1d4e47]
 
 ## Scope seal
 
 - Architect steer 18:27 → Metal-native ML command encoder = sole neural-cores door.
 - Prior high-level R-A path → VOID.
-- R-B expanded → tiny + Pleroma shapes; CPU + MPSGraph controls; `MTL4MachineLearningCommandEncoder` door.
+- R-B expanded → tiny + Pleroma shapes; CPU + MPSGraph controls; `MTL4MachineLearningCommandEncoder` door. [source: probe runs in this doc, ane-race 52dc363..d1d4e47]
 - R-C voice → SKIP by steer; no inference claim.
-- Host → Apple M1 Pro · macOS 26.5.1 (25F80) · Xcode 26.3 (17C529) · Swift 6.2.4.
+- Host → Apple M1 Pro · macOS 26.5.1 (25F80) · Xcode 26.3 (17C529) · Swift 6.2.4. [source: probe runs in this doc, ane-race 52dc363..d1d4e47]
 - Weights → deterministic arbitrary constants; performance-only; no quality claim.
 - Shapes:
   - tiny → `14→32→32→3`; batches `64,128,256,512,1024,2048,4096`.
@@ -15,7 +15,7 @@
 ## Method
 
 - CPU → f32 Accelerate SGEMM + bias/ReLU loops; reused input/activation storage; warm state; median single forward; tiny `n=200`, Pleroma `n=9`.
-- GPU → MPSGraph batched matmuls; fp16 storage + f32 I/O; compiled executable; reused feed; warm state; one forward/command buffer; tiny median `n=200`, Pleroma median `n=30`.
+- GPU → MPSGraph batched matmuls; fp16 storage + f32 I/O; compiled executable; reused feed; warm state; one forward/command buffer; tiny median `n=200`, Pleroma median `n=30`. [source: probe runs in this doc, ane-race 52dc363..d1d4e47]
 - GPU columns:
   - `timeline` → `MTLCommandBuffer.gpuStartTime→gpuEndTime`.
   - `encode` → CPU time in executable encode.
@@ -82,17 +82,17 @@
 - Immediate wall spread → `12.41–19.39 ms`; 60-Hz pass `1/3` process runs → sustained synchronous gate **FAIL**.
 - Tiny crossover unchanged in repeats → CPU through 2048; GPU at 4096.
 
-## R-B · Metal 4 door report
+## R-B · Metal 4 door report [source: probe runs in this doc, ane-race 52dc363..d1d4e47]
 
 ### Reached
 
 - SDK headers → present:
   - `MTL4MachineLearningCommandEncoder.h`
   - `MTL4MachineLearningPipeline.h`
-  - `MTLTensor.h`
+  - `MTLTensor.h` [source: probe runs in this doc, ane-race 52dc363..d1d4e47]
 - Swift overlay → synchronous + async `makeMachineLearningPipelineState(descriptor:)` present.
 - Probe compile → PASS under `swiftc -O -j 2`; Metal + Foundation only.
-- Runtime M1 Pro/Tahoe → MTL4 queue · allocator · compiler · argument table all created.
+- Runtime M1 Pro/Tahoe → MTL4 queue · allocator · compiler · argument table all created. [source: probe runs in this doc, ane-race 52dc363..d1d4e47]
 - Runtime tensors → input/output allocation PASS for tiny-64, tiny-4096, Pleroma-307200.
 - Runtime ML encoder → object created + ended beside dummy GPU compute in one MTL4 command buffer.
 - Empty-encoder control only → `9.875 µs` CPU encode · `0.035583 ms` whole-control GPU timeline · `0.284667 ms` commit/wait. **Not network timing; no silicon-locus evidence.** [source: proof/2026-07-18-silicon-race-2-metal4-door.txt]
@@ -126,7 +126,7 @@ Raw source + walls → `tools/silicon-race-2/metal4-door.swift` · `tools/silico
 | path | locus evidence | verdict |
 |---|---|---|
 | CPU baseline | direct Accelerate host calls | CPU CONFIRMED |
-| MPSGraph baseline | Metal GPU start/end timestamps around executable | GPU CONFIRMED |
+| MPSGraph baseline | Metal GPU start/end timestamps around executable | GPU CONFIRMED | [source: probe runs in this doc, ane-race 52dc363..d1d4e47]
 | MTL4 network | no dispatch | **ANE/GPU locus UNVERIFIED** |
 | power counters | `sudo: a password is required` | unavailable; no proxy claim |
 
