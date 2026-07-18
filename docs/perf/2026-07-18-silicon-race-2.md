@@ -95,7 +95,7 @@
 - Runtime M1 Pro/Tahoe → MTL4 queue · allocator · compiler · argument table all created.
 - Runtime tensors → input/output allocation PASS for tiny-64, tiny-4096, Pleroma-307200.
 - Runtime ML encoder → object created + ended beside dummy GPU compute in one MTL4 command buffer.
-- Empty-encoder control only → `5.334 µs` CPU encode · `0.062833 ms` whole-control GPU timeline · `0.210958 ms` commit/wait. **Not network timing; no silicon-locus evidence.**
+- Empty-encoder control only → `9.875 µs` CPU encode · `0.035583 ms` whole-control GPU timeline · `0.284667 ms` commit/wait. **Not network timing; no silicon-locus evidence.** [source: proof/2026-07-18-silicon-race-2-metal4-door.txt]
 
 ### Exact wall
 
@@ -166,6 +166,15 @@ Raw source + walls → `tools/silicon-race-2/metal4-door.swift` · `tools/silico
 - Pleroma parity/quality → not asked; arbitrary weights; performance shape only.
 - MPSGraph wall gap attribution → aggregate only; allocation vs driver vs wait split **UNVERIFIED**.
 - Pleroma process variability cause → **UNVERIFIED**; spread retained as gate evidence.
+
+## Package-builder hunt · close-out
+
+- Builder found → `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/metal-package-builder`; `xcrun --find metal-package-builder` resolves it. [source: local command output, 2026-07-18]
+- Builder contract → `metal-package-builder --help` accepts one source-package input, `-ml`, and writes a `.mtlpackage`; it does not author a network from Metal/plain source. [source: local command output, 2026-07-18]
+- Apple’s named offline workflow → source package → `metal-package-builder` → `.mtlpackage` → MTL4 pipeline state. [source: https://developer.apple.com/videos/play/wwdc2025/262/]
+- Header contract → an `MTL4MachineLearningPipelineState` is required before `dispatchNetwork`; headers expose dispatch/heap use, not package construction. [source: /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/System/Library/Frameworks/Metal.framework/Headers/MTL4MachineLearningCommandEncoder.h; /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/System/Library/Frameworks/Metal.framework/Headers/MTL4MachineLearningPipeline.h]
+- Re-run → builder against the prior compiled artifact: tool exit `0`, output absent, probe exit `1`; error: missing `Manifest.json`. [source: proof/2026-07-18-silicon-race-2-package-wall.txt]
+- Exact close → **BUILDER FOUND; TINY PACKAGE NOT PRODUCIBLE LAWFULLY ON THIS MACHINE.** The installed builder only converts the prerequisite source package; its required authoring route violates the banned-word law. Therefore tiny batches `64–4096`, network dispatch, and execution locus remain **UNVERIFIED**; no latency inference or synthetic package substitution. [source: local builder help, 2026-07-18; https://developer.apple.com/videos/play/wwdc2025/262/]
 
 ## Source trail
 
