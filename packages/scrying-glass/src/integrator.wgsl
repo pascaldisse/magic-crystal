@@ -690,6 +690,14 @@ fn temporal_resolve(@builtin(global_invocation_id) gid: vec3<u32>) {
 
   // Camera motion this frame (gates the variance clamp: a still camera converges
   // with a pure running average — no clamp to cap it).
+  // ADVISORY (adversary, light-live re-pass): 0.99999 is a raw dot-product
+  // gate, not an angle in disguise — it corresponds to ~0.26° of yaw/pitch
+  // change per frame (acos(0.99999) ≈ 0.2565°). A pan SLOWER than that per
+  // frame reads as `cam_moved == false` and takes the still-camera pure-
+  // running-average branch below, even though the eye is genuinely rotating —
+  // parked atom, not yet fixed: derive the threshold from pixel ANGULAR SIZE
+  // (fov / resolution) instead of a fixed constant, so it scales with FOV and
+  // trace resolution rather than assuming today's numbers forever.
   let cam_moved = distance(u.eye.xyz, u.prev_eye.xyz) > 1e-5
     || dot(normalize(u.forward.xyz), normalize(u.prev_forward.xyz)) < 0.99999;
 
@@ -747,6 +755,15 @@ fn temporal_resolve(@builtin(global_invocation_id) gid: vec3<u32>) {
       if (ok) {
         let hp = t_hist_prev[u32(ipy * iw + ipx)];
         var hist = hp.xyz;
+        // ADVISORY (adversary, light-live re-pass): the variance clamp only
+        // gates on `cam_moved` (the OBSERVER's motion). A relight where the
+        // camera sits still but a MOVED body's shadow/highlight sweeps across
+        // this pixel is not caught here — history keeps blending at the pure
+        // running-average alpha (no clamp), so the stale color can linger for
+        // up to `max_history` frames before the running average catches up.
+        // Quantifying the worst-case lag needs a quiet-machine push-object
+        // construction (isolate frame timing from GPU/CPU noise) — parked for
+        // a future ordeal, not reproduced here.
         if (cam_moved && !is_miss) {
           hist = clamp(hist, mean - k * sigma, mean + k * sigma);
         }

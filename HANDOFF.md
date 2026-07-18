@@ -474,3 +474,20 @@ individually completed in seconds): 408 tests passed, 0 failed, 0
 ignored, across all 17 crates (unit + integration + doctests).
 Build: `cargo build --release -p scrying-glass` clean (45.58s).
 Pushed origin main afa6e6c..038f9a0.
+
+## ADVISORY — bare-/scry one-frame staleness (light-live merge-conductor, parked for a future ordeal)
+`GET /scry` / `/screenshot` with NO query serves `latest` (the async
+capture-worker's last-written framebuffer), NOT a synchronous read of the
+frame the render loop just submitted. `render()` queues the offscreen
+copy via `map_buffer_on_submit`; the GPU readback + `latest.write()` land
+on the capture-worker thread some time AFTER `render()` returns, so a
+caller that mutates world state (an op, a walk tick, a bloodbend scene/
+shader bend) and immediately screenshots can observe the PREVIOUS frame's
+pixels — a real one-frame-or-more staleness window, independent of and
+in addition to temporal accumulation's own convergence lag. Future ordeals
+that assert on bare-/scry pixels right after a mutation should poll (a
+couple of frame-intervals' worth of retries) or use the moving-eye `/scry?
+pos=...` path (which blocks on `reply_rx.recv_timeout` for its own fresh
+render) instead of trusting the first bare capture. Not reproduced or
+quantified here — on record for whoever hits a flaky screenshot-right-
+after-mutation ordeal next.
