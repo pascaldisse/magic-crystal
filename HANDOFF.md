@@ -376,3 +376,38 @@ data in docs + fluid_kernel.rs docs):
   projection, decoupled from the density feedback loop); (2) duration/
   magnitude-gated s_corr. Cost note: solve_fluid 131.7ms @ N=1372
   (bench kernel — speed is not the gate).
+
+## PLAYGROUND MERGED (merge-conductor burst #12)
+main @ cf571de (merge becd50d + adversary advisory cf571de) — GREEN,
+suite 400/0. THE PUSH lands: the Architect's hand becomes an op — F key /
+locked click / `/push` organ all funnel through the same `Op::Impulse`
+(`build_push_ops` in scrying-glass/src/main.rs) an agent op would send.
+Nine Physics Playground vessels folded into the hand-derived canon
+(packages/oracle/tests/canon.rs); naruko plaza gets toys (rigid stack,
+bonded break-crate, pyramid) in worlds/naruko/scenes/main.json. Adversary
+HOLDS with live-door proof: shattered the bonded crate over the live HTTP
+door with her own eyes on it (proof/live-before-push.png,
+proof/live-after-push-5.png, proof/finish-toys-view2.png).
+Merge was a clean fast-forward-able join (physics-playground's
+merge-base IS main's HEAD 6cf5c2b) — no worlds/naruko/scenes/main.json
+conflict against rimguard; rimguard already sat on main before the
+playground branch was cut.
+Adversary advisory (cf571de): (a) AIM_RADIUS bare const 0.9 in
+`build_push_ops` → env param `GAIA_PUSH_AIM_RADIUS`, default 0.9,
+validated finite>0, matching its `GAIA_PUSH_REACH`/`GAIA_PUSH_SPEED`
+siblings (IRON-law fix, zero behavior change at default — rebuilt,
+playground_push example re-run, PASSED); (b) doc note: examples/
+playground_push.rs's `pick()` is a deliberate verbatim copy of the ray/
+aim-radius picker (proves the real door, not a stub) — shared-fn
+extraction considered, parked as copy-drift risk on record (example
+sits outside the crate's public surface); (c) F-key autorepeat
+(input.rs) documented as-is: held F re-fires push_pending at the OS
+KeyDown repeat rate, not once per press — rapid-shove-feature vs
+isARepeat-edge-gate is a gameplay-feel call parked for the Architect.
+Also carried, parked for the Architect: F6 solver-rest ergonomics, scry
+timeout ergonomics (both pre-existing, unrelated to this lane).
+The Architect's live window (pid 69733) already runs this build — F =
+push, toys sit behind spawn; the merge does not disturb that session.
+Full suite: `cargo test --workspace --release` → 400 passed, 0 failed,
+82 test-result groups (unit + integration + doctests), clean.
+Pushed origin main 6cf5c2b..cf571de.
