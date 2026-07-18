@@ -1,0 +1,40 @@
+{
+  "architecture": {
+    "hidden_layers": 5,
+    "hidden_width": 64,
+    "input_features": 27,
+    "kind": "N2 recurrent direct-render MLP — v2 base + reprojected prev demod-log radiance (3) + validity (1)",
+    "macs_per_pixel": 18304,
+    "output_channels": 3
+  },
+  "artifact": "rdirect-weights-v3.bin",
+  "dataset": {
+    "low": [
+      160,
+      120
+    ],
+    "native": [
+      320,
+      240
+    ],
+    "realm": "naruko",
+    "train": [
+      "front",
+      "wide",
+      "orbit_+20"
+    ]
+  },
+  "gate": "presents ONLY if real_image_ordeal writes a PASS stamp beside this file",
+  "supersedes": "rdirect-weights-v2.bin",
+  "training": {
+    "batch": 64,
+    "epochs": 6,
+    "lr0": 0.0020000000949949026,
+    "note": "data=f(seed); fresh 1-spp render seeds per frame carry the variance to average",
+    "recurrence": "still unroll (identity reproject), prev output fed as history input, validity 1 after step 0",
+    "ref_frames": 48,
+    "subsample_px_per_pose_per_epoch": 2000,
+    "unroll_steps": 4
+  },
+  "weights_sha256": "d005d9256678098b642826daf828bba18148faa90c859b1af68bda3f8f8e5b9b"
+}

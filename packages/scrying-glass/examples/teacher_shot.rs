@@ -72,20 +72,25 @@ fn write_png(mean: &[GVec3], w: u32, h: u32, exposure: f32, path: &Path) {
 fn load_state(path: &Path, w: u32, h: u32) -> (Vec<[f32; 4]>, u32) {
     let n = (w * h) as usize;
     let Ok(raw) = std::fs::read(path) else { return (vec![[0.0; 4]; n], 0); };
-    if raw.len() < 16 { return (vec![[0.0; 4]; n], 0); }
-    let hdr: &[u32] = bytemuck::cast_slice(&raw[..16]);
-    if hdr[0] != w || hdr[1] != h { return (vec![[0.0; 4]; n], 0); }
-    let total_frames = hdr[2];
-    let buf: Vec<[f32; 4]> = bytemuck::cast_slice(&raw[16..]).to_vec();
-    if buf.len() != n { return (vec![[0.0; 4]; n], 0); }
+    if raw.len() < 16 + n * 16 { return (vec![[0.0; 4]; n], 0); }
+    let u = |i: usize| u32::from_le_bytes([raw[i], raw[i + 1], raw[i + 2], raw[i + 3]]);
+    if u(0) != w || u(4) != h { return (vec![[0.0; 4]; n], 0); }
+    let total_frames = u(8);
+    let mut buf = vec![[0.0f32; 4]; n];
+    for (i, px) in buf.iter_mut().enumerate() {
+        for c in 0..4 {
+            let o = 16 + i * 16 + c * 4;
+            px[c] = f32::from_le_bytes([raw[o], raw[o + 1], raw[o + 2], raw[o + 3]]);
+        }
+    }
     (buf, total_frames)
 }
 
 fn save_state(path: &Path, w: u32, h: u32, total_frames: u32, spp: u32, buf: &[[f32; 4]]) {
+    if let Some(dir) = path.parent() { std::fs::create_dir_all(dir).ok(); }
     let mut out = Vec::with_capacity(16 + buf.len() * 16);
-    let hdr = [w, h, total_frames, spp];
-    out.extend_from_slice(bytemuck::cast_slice(&hdr));
-    out.extend_from_slice(bytemuck::cast_slice(buf));
+    for v in [w, h, total_frames, spp] { out.extend_from_slice(&v.to_le_bytes()); }
+    for px in buf { for c in 0..4 { out.extend_from_slice(&px[c].to_le_bytes()); } }
     std::fs::write(path, out).unwrap();
 }
 
@@ -109,9 +114,13 @@ fn main() {
 
     let deg = std::f32::consts::PI / 180.0;
     let mk = |eye: [f32; 3], yaw: f32, pitch: f32| Camera {
-        eye: GVec3::from(eye),
-        yaw,
-        pitch,
+        eye: GVec3::new(
+            env_f32("GAIA_ORDEAL_EYE_X", eye[0]),
+            env_f32("GAIA_ORDEAL_EYE_Y", eye[1]),
+            env_f32("GAIA_ORDEAL_EYE_Z", eye[2]),
+        ),
+        yaw: env_f32("GAIA_ORDEAL_YAW", yaw),
+        pitch: env_f32("GAIA_ORDEAL_PITCH", pitch),
         fov_y_radians: fov * deg,
         near: 0.05,
         far: 6000.0,

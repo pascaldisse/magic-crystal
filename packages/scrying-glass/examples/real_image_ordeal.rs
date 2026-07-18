@@ -128,29 +128,35 @@ fn lum(c: GVec3) -> f32 {
     0.2126 * c.x + 0.7152 * c.y + 0.0722 * c.z
 }
 
-/// Isolated-bright-pixel count per megapixel: a pixel whose luminance exceeds
-/// the median of its 8 neighbours by more than SPARK_DELTA (linear). This is
-/// the classical firefly / dot detector — a converged surface has none.
-fn sparkle_per_mpx(img: &[GVec3], w: u32, h: u32) -> f64 {
-    let mut count = 0u64;
+/// Isolated INVENTED bright dots per megapixel: pixels where the net's
+/// luminance exceeds the CONVERGED TEACHER's by more than SPARK_DELTA AND that
+/// excess is a strict local maximum of the signed error over the 3×3
+/// neighbourhood — i.e. a firefly the net hallucinated that is NOT in the real
+/// image. Measured against the teacher (not the image's own texture), so a
+/// converged surface with real high-frequency detail scores ZERO and
+/// teacher-vs-teacher is exactly 0. This is the dot the Architect sees.
+fn sparkle_resid_per_mpx(net: &[GVec3], teacher: &[GVec3], w: u32, h: u32) -> f64 {
     let idx = |x: i32, y: i32| (y as usize) * w as usize + x as usize;
+    let err = |x: i32, y: i32| lum(net[idx(x, y)]) - lum(teacher[idx(x, y)]);
+    let mut count = 0u64;
     for y in 1..h as i32 - 1 {
         for x in 1..w as i32 - 1 {
-            let c = lum(img[idx(x, y)]);
-            let mut ns = [0.0f32; 8];
-            let mut k = 0;
+            let e = err(x, y);
+            if e <= SPARK_DELTA {
+                continue;
+            }
+            let mut is_peak = true;
             for dy in -1..=1 {
                 for dx in -1..=1 {
                     if dx == 0 && dy == 0 {
                         continue;
                     }
-                    ns[k] = lum(img[idx(x + dx, y + dy)]);
-                    k += 1;
+                    if err(x + dx, y + dy) >= e {
+                        is_peak = false;
+                    }
                 }
             }
-            ns.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            let median = 0.5 * (ns[3] + ns[4]);
-            if c - median > SPARK_DELTA {
+            if is_peak {
                 count += 1;
             }
         }
@@ -307,8 +313,8 @@ fn main() {
         let outs = direct_render_sequence_hist(&mlp, &hist_frames, DEPTH_TOL, NORMAL_THRESH);
         let settled = outs.last().unwrap();
         let r = rmse(settled, &teacher_still) as f64;
-        let sp = sparkle_per_mpx(settled, target_w, target_h);
-        let spt = sparkle_per_mpx(&teacher_still, target_w, target_h);
+        let sp = sparkle_resid_per_mpx(settled, &teacher_still, target_w, target_h);
+        let spt = sparkle_resid_per_mpx(&teacher_still, &teacher_still, target_w, target_h);
         let tv = temporal_variance(&outs[(still_len - tail) as usize..]);
         println!("[ordeal] {pname} STILL: resid={r:.5} sparkle={sp:.1}/Mpx (teacher {spt:.1}) tvar={tv:.3e}");
         resid_still += r;
