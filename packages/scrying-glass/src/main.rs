@@ -18,7 +18,7 @@ use crystal::{Core, GaiaPackage, ImpulseOp, Op, load_world_dir};
 use glam::Vec3;
 use scrying_glass::ScryingGlassPackage;
 use scrying_glass::bloodbend::{self, Bend, Bloodbend, BloodbendParams};
-use scrying_glass::bvh::{Bvh, BvhParams, DEFAULT_DEGRADE_RATIO, DynamicSplice, RefitParams};
+use scrying_glass::bvh::{Bvh, BvhParams, DynamicSplice, RefitParams};
 use scrying_glass::denoiser::deserialize_weights as deserialize_denoiser_weights;
 use scrying_glass::denoiser_gpu::GpuDenoiser;
 use scrying_glass::integrator::{
@@ -207,7 +207,7 @@ impl ScryingGlassConfig {
             refit: RefitParams {
                 degrade_ratio: number(
                     "GAIA_NATIVE_BVH_REFIT_DEGRADE",
-                    DEFAULT_DEGRADE_RATIO as f64,
+                    RefitParams::default().degrade_ratio as f64,
                 )? as f32,
                 max_refits: integer("GAIA_NATIVE_BVH_REFIT_MAX", 0)?,
             },
@@ -2381,8 +2381,16 @@ fn main() {
 
             // The Embodiment: the world's own leaf triangles become the floor
             // (exact geometry, view-independent — never a camera's coarse cut),
-            // and the world spawn pose becomes a walking body.
-            let ground = Arc::new(Ground::from_positions(&render_scene.leaf_positions()));
+            // and the world spawn pose becomes a walking body. IRON SWEEP:
+            // floor cutoff / probe count / column epsilon are `PlayerParams`
+            // fields (env-overridable), so `player_params` is read before the
+            // floor set is built and threaded through explicitly — defaults
+            // reproduce the old `Ground::from_positions` behavior exactly.
+            let player_params = PlayerParams::from_env().map_err(std::io::Error::other)?;
+            let ground = Arc::new(Ground::from_positions_with_params(
+                &render_scene.leaf_positions(),
+                &player_params,
+            ));
             // The spawn eye pose defaults to the world's own spawn component; each
             // axis + yaw may be overridden by an explicit env param so the window
             // the Architect opens faces the realm (item 4 vantage). No frozen
@@ -2414,7 +2422,6 @@ fn main() {
             let spawn_yaw =
                 spawn_axis("GAIA_NATIVE_SPAWN_YAW", render_scene.camera.yaw)
                     .map_err(std::io::Error::other)?;
-            let player_params = PlayerParams::from_env().map_err(std::io::Error::other)?;
             let player = Arc::new(Mutex::new(Player::new(
                 player_params,
                 spawn_eye,

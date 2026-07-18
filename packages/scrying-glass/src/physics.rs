@@ -36,32 +36,26 @@ type NewlyBrokenFragments = Vec<(String, Vec<fracture::Fragment>, f64)>;
 /// refuses `{preset, shape}` outright), and an unknown key (typo'd dial) is a
 /// LOUD error, never a silently-defaulted body.
 #[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct Body {
     /// The matter's shape. `"box"` (the only P3 shape) fills a lattice box.
-    #[serde(default = "default_shape")]
     pub shape: String,
     /// Full extents of the body in metres (a box's width/height/depth).
-    #[serde(default = "default_size")]
     pub size: [f64; 3],
     /// Material density in kg/m³ — mass is DERIVED (`density × volume`), never
     /// authored. Default `500` (seasoned softwood — a wooden crate).
-    #[serde(default = "default_density")]
     pub density: f64,
     /// The particle lattice the body is discretized into (nx, ny, nz). More
     /// particles = finer contact, higher cost. Default `[2, 2, 2]` (the eight
     /// corners — enough for a box resting flat on a plane).
-    #[serde(default = "default_resolution")]
     pub resolution: [usize; 3],
     /// Each particle's contact thickness against the world, in metres. Default
     /// `0.05` (5 cm). The body rests with its base particles this far above a
     /// supporting face.
-    #[serde(default = "default_contact_radius")]
     pub contact_radius: f64,
     /// Shape-match stiffness on `[0, 1]`: `1.0` = perfectly rigid, `< 1.0` =
     /// deformable. Default `1.0` (a rigid crate). Ignored when `bonded` is
     /// true (a bonded body is not shape-matched — see `bonded`'s doc).
-    #[serde(default = "default_rigidity")]
     pub rigidity: f64,
     /// VI-2 — SOMETHING BREAKS: `true` makes this body a BONDED lattice
     /// (nearest-neighbor [`elements::DistanceConstraint`] bonds, each
@@ -70,13 +64,11 @@ pub struct Body {
     /// fracture — a shape-matched rigid keeps no per-bond bookkeeping to
     /// tear (see `elements::Solver::spawn_bonded_box`'s doc). Default
     /// `false` (every EXISTING scene's bodies stay rigid, byte-unchanged).
-    #[serde(default)]
     pub bonded: bool,
     /// A bonded body's per-bond love in `[0, 1]`, or `None` to DERIVE it
     /// from `density` via [`elements::default_bond_love`] (the essence
     /// rule: `density` stands in for the material's essence — stone >
     /// wood > glass, GRIMOIRE). Ignored when `bonded` is false.
-    #[serde(default)]
     pub love: Option<f64>,
     /// A bonded body's bond compliance (XPBD inverse stiffness, `m/N`;
     /// `0.0` = rigid). Default `1e-7` — near-rigid (matches the "nearly-
@@ -85,7 +77,6 @@ pub struct Body {
     /// its own `1.0e-6` — one order tighter here since a crate's own bonds
     /// should read stiffer than a hanging chain's links). Ignored when
     /// `bonded` is false.
-    #[serde(default = "default_bond_compliance")]
     pub compliance: f64,
     /// VI-2 — a bonded body's AUTHORED initial angular velocity (rad/s about
     /// its own spawn centroid), applied once at spawn via
@@ -100,7 +91,6 @@ pub struct Body {
     /// cannot do this. Default `[0, 0, 0]` (no spin — every EXISTING bonded
     /// declaration keeps falling exactly as before). Ignored when `bonded`
     /// is false.
-    #[serde(default)]
     pub spin: [f64; 3],
     /// VI-2 — a bonded body's AUTHORED initial linear velocity (m/s),
     /// applied once at spawn via [`elements::Solver::apply_impulse_to_
@@ -116,7 +106,6 @@ pub struct Body {
     /// crushed-looking settle instead of a genuine scatter). Default
     /// `[0, 0, 0]` (no drift — every EXISTING bonded declaration keeps
     /// falling exactly as before). Ignored when `bonded` is false.
-    #[serde(default)]
     pub initial_velocity: [f64; 3],
     /// PLAYGROUND — settle-window ticks a BONDED body is pre-relaxed for at
     /// install with fracture DISARMED, then re-armed (the canonical
@@ -127,30 +116,26 @@ pub struct Body {
     /// and PUNCHES must sit whole at rest, so it declares e.g. `settle: 90`;
     /// the default `0` leaves every EXISTING body (VI-2's impact-break drop
     /// included) byte-unchanged. Ignored when `bonded` is false.
-    #[serde(default)]
     pub settle: u64,
 }
 
-fn default_shape() -> String {
-    "box".to_string()
-}
-fn default_size() -> [f64; 3] {
-    [1.0, 1.0, 1.0]
-}
-fn default_density() -> f64 {
-    500.0
-}
-fn default_resolution() -> [usize; 3] {
-    [2, 2, 2]
-}
-fn default_contact_radius() -> f64 {
-    0.05
-}
-fn default_rigidity() -> f64 {
-    1.0
-}
-fn default_bond_compliance() -> f64 {
-    1.0e-7
+impl Default for Body {
+    fn default() -> Self {
+        Self {
+            shape: "box".to_string(),
+            size: [1.0, 1.0, 1.0],
+            density: 500.0,
+            resolution: [2, 2, 2],
+            contact_radius: 0.05,
+            rigidity: 1.0,
+            bonded: false,
+            love: None,
+            compliance: 1.0e-7,
+            spin: [0.0; 3],
+            initial_velocity: [0.0; 3],
+            settle: 0,
+        }
+    }
 }
 
 /// A declared body wired into the solver: which vessel it animates and its
