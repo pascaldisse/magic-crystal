@@ -59,6 +59,49 @@ pub struct IntegratorUniform {
     /// (identity upscale) so every non-window caller is unchanged; the window
     /// render loop overrides it with the true surface + mode.
     pub surface: [u32; 4],
+    // ── LIGHT-NOT-DOTS: temporal accumulation with reprojection ──
+    /// Previous frame's eye (xyz) for reprojection.
+    pub prev_eye: [f32; 4],
+    /// Previous frame's scaled image-plane right.
+    pub prev_right: [f32; 4],
+    /// Previous frame's scaled image-plane up.
+    pub prev_up: [f32; 4],
+    /// Previous frame's unit forward.
+    pub prev_forward: [f32; 4],
+    /// alpha_min (moving EMA floor), depth_tol, normal_tol (cos), clamp_k.
+    pub temporal: [f32; 4],
+    /// history_valid (0/1), max_history frames, unused, unused.
+    pub temporal_flags: [u32; 4],
+}
+
+/// Temporal accumulation dials (LIGHT-NOT-DOTS) — env-parameterised at the call
+/// site, never hardcoded. See `temporal_resolve` in integrator.wgsl.
+#[derive(Clone, Copy, Debug)]
+pub struct TemporalParams {
+    /// EMA floor for the CURRENT frame while the camera MOVES (caps effective
+    /// history so moving content stays responsive; a still camera ignores it and
+    /// converges with a pure 1/n running average).
+    pub alpha_min: f32,
+    /// Relative depth agreement for accepting reprojected history (|d-d'|/d).
+    pub depth_tol: f32,
+    /// Minimum normal agreement (cosine) for accepting reprojected history.
+    pub normal_tol: f32,
+    /// Neighbourhood variance clamp width (±k·sigma) applied under motion.
+    pub clamp_k: f32,
+    /// Hard cap on accumulated frame count (avoids unbounded 1/n stagnation).
+    pub max_history: u32,
+}
+
+impl Default for TemporalParams {
+    fn default() -> Self {
+        Self {
+            alpha_min: 0.1,
+            depth_tol: 0.05,
+            normal_tol: 0.85,
+            clamp_k: 1.5,
+            max_history: 512,
+        }
+    }
 }
 
 /// A participating medium uploaded to the GPU: the density volume (Aether's
@@ -232,6 +275,15 @@ impl IntegratorUniform {
             // Default: surface == trace resolution (identity upscale). The
             // window loop overrides this after building.
             surface: [width, height, 0, 0],
+            // Temporal defaults: history invalid (identity — output = current),
+            // so every non-temporal caller is byte-unchanged. The window loop
+            // overrides these when temporal accumulation is enabled.
+            prev_eye: [0.0; 4],
+            prev_right: [0.0; 4],
+            prev_up: [0.0; 4],
+            prev_forward: [0.0; 4],
+            temporal: [0.1, 0.05, 0.85, 1.5],
+            temporal_flags: [0, 512, 0, 0],
         }
     }
 }
@@ -258,6 +310,13 @@ pub struct Integrator {
     pub aov_pipeline: wgpu::ComputePipeline,
     pub aov_layout: wgpu::BindGroupLayout,
     // ── VIII-0 AOV EXPORT END ────────────────────────────────────────────
+    // ── LIGHT-NOT-DOTS: temporal accumulation ──
+    // Two more split pipelines over the SAME @group(0) plus a shared @group(1)
+    // of five storage buffers. When temporal accumulation is off neither is
+    // dispatched — zero cost, and `integrate`/`blit` are byte-for-byte unchanged.
+    pub temporal_integrate_pipeline: wgpu::ComputePipeline,
+    pub temporal_resolve_pipeline: wgpu::ComputePipeline,
+    pub temporal_layout: wgpu::BindGroupLayout,
 }
 
 /// Bytes one accumulation cell occupies (vec4<f32>).
@@ -387,6 +446,44 @@ impl Integrator {
             target_format,
         );
 
+        // ── LIGHT-NOT-DOTS temporal pipelines ──
+        // @group(1): FOUR read_write storage buffers (t_cur packed, t_prev
+        // packed, hist_prev, hist_out) shared by both temporal entry points
+        // — four here + four in group(0) = the 8-storage-per-stage limit.
+        let temporal_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("integrator temporal layout"),
+            entries: &[
+                storage_entry(0, false, wgpu::ShaderStages::COMPUTE),
+                storage_entry(1, false, wgpu::ShaderStages::COMPUTE),
+                storage_entry(2, false, wgpu::ShaderStages::COMPUTE),
+                storage_entry(3, false, wgpu::ShaderStages::COMPUTE),
+            ],
+        });
+        let temporal_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("integrator temporal pipeline layout"),
+                bind_group_layouts: &[Some(&compute_layout), Some(&temporal_layout)],
+                immediate_size: 0,
+            });
+        let temporal_integrate_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("integrator temporal integrate pipeline"),
+                layout: Some(&temporal_pipeline_layout),
+                module: &shader,
+                entry_point: Some("integrate_temporal"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            });
+        let temporal_resolve_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("integrator temporal resolve pipeline"),
+                layout: Some(&temporal_pipeline_layout),
+                module: &shader,
+                entry_point: Some("temporal_resolve"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            });
+
         Self {
             compute_pipeline,
             blit_pipeline,
@@ -400,6 +497,9 @@ impl Integrator {
             tri_count: bvh.tris.len() as u32,
             aov_pipeline,
             aov_layout,
+            temporal_integrate_pipeline,
+            temporal_resolve_pipeline,
+            temporal_layout,
         }
     }
 
@@ -565,6 +665,114 @@ impl Integrator {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         })
+    }
+
+    // ── LIGHT-NOT-DOTS temporal helpers ─────────────────────────────────────
+    /// Allocate one PACKED temporal frame buffer: 2 `vec4<f32>` cells per pixel
+    /// (radiance + primary gbuffer), zeroed. The window ping-pongs two of these.
+    pub fn make_temporal_packed(
+        &self,
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+    ) -> wgpu::Buffer {
+        let cells = (width as u64) * (height as u64);
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("integrator temporal packed"),
+            size: (cells.max(1)) * ACCUM_CELL * 2,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        })
+    }
+
+    /// Allocate one history buffer (rgb + accumulated frame count), 1 cell/pixel.
+    pub fn make_temporal_buffer(
+        &self,
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+    ) -> wgpu::Buffer {
+        let cells = (width as u64) * (height as u64);
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("integrator temporal history"),
+            size: (cells.max(1)) * ACCUM_CELL,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        })
+    }
+
+    /// A @group(1) bind group binding the four temporal buffers in order:
+    /// (t_cur packed, t_prev packed, hist_prev, hist_out). The window ping-pongs
+    /// the packed pair and the history pair across frames by building two.
+    pub fn temporal_bind_group(
+        &self,
+        device: &wgpu::Device,
+        cur_packed: &wgpu::Buffer,
+        prev_packed: &wgpu::Buffer,
+        hist_prev: &wgpu::Buffer,
+        hist_out: &wgpu::Buffer,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("integrator temporal bind group"),
+            layout: &self.temporal_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: cur_packed.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: prev_packed.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: hist_prev.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: hist_out.as_entire_binding(),
+                },
+            ],
+        })
+    }
+
+    /// Dispatch the two temporal passes (trace-this-frame + reproject/resolve)
+    /// into one encoder. `compute_bg` is the ordinary @group(0) (uniform/nodes/
+    /// tris/accum/density); `temporal_bg` is the @group(1) built above. The
+    /// resolve writes the accumulated radiance into the accum bound in
+    /// `compute_bg`, so the existing blit presents it unchanged.
+    #[allow(clippy::too_many_arguments)]
+    pub fn dispatch_temporal(
+        &self,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        uniform: &IntegratorUniform,
+        compute_bg: &wgpu::BindGroup,
+        temporal_bg: &wgpu::BindGroup,
+        width: u32,
+        height: u32,
+    ) {
+        queue.write_buffer(&self.uniform_buf, 0, bytemuck::bytes_of(uniform));
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("temporal integrate"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.temporal_integrate_pipeline);
+            pass.set_bind_group(0, compute_bg, &[]);
+            pass.set_bind_group(1, temporal_bg, &[]);
+            pass.dispatch_workgroups(width.div_ceil(8), height.div_ceil(8), 1);
+        }
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("temporal resolve"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.temporal_resolve_pipeline);
+            pass.set_bind_group(0, compute_bg, &[]);
+            pass.set_bind_group(1, temporal_bg, &[]);
+            pass.dispatch_workgroups(width.div_ceil(8), height.div_ceil(8), 1);
+        }
     }
 
     // ── VIII-0 AOV EXPORT BEGIN ────────────────────────────────────────────
@@ -808,6 +1016,117 @@ pub fn trace_headless(
     drop(mapped);
     readback.unmap();
     out
+}
+
+/// Run the LIVE temporal path headlessly over a SEQUENCE of camera poses (the
+/// motion the ordeal replays), driving the exact ping-pong + prev-camera wiring
+/// `main.rs`'s render loop uses. Returns the final frame's resolved radiance
+/// (one Vec3 per pixel) — the accumulated light, not raw dots. Each frame's
+/// Monte-Carlo samples are decorrelated by advancing `samples_before`.
+#[allow(clippy::too_many_arguments)]
+pub fn trace_headless_temporal(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    bvh: &Bvh,
+    cameras: &[Camera],
+    sun: &SunLight,
+    sky_top: [f32; 4],
+    sky_horizon: [f32; 4],
+    width: u32,
+    height: u32,
+    params: &IntegratorParams,
+    temporal: &TemporalParams,
+) -> Vec<Vec3> {
+    let integrator = Integrator::new(device, wgpu::TextureFormat::Rgba8UnormSrgb, bvh, None);
+    let accum = integrator.make_accum(device, width, height);
+    let compute_bg = integrator.compute_bind_group(device, &accum);
+    let packed = [
+        integrator.make_temporal_packed(device, width, height),
+        integrator.make_temporal_packed(device, width, height),
+    ];
+    let hist = [
+        integrator.make_temporal_buffer(device, width, height),
+        integrator.make_temporal_buffer(device, width, height),
+    ];
+    // Two ping-pong bind groups. Parity p: t_cur=packed[p] (written this frame),
+    // t_prev=packed[1-p] (last frame's gbuffer), hist_prev=hist[p], hist_out=hist[1-p].
+    let bind = [
+        integrator.temporal_bind_group(device, &packed[0], &packed[1], &hist[0], &hist[1]),
+        integrator.temporal_bind_group(device, &packed[1], &packed[0], &hist[1], &hist[0]),
+    ];
+
+    let mut prev: Option<IntegratorUniform> = None;
+    for (i, camera) in cameras.iter().enumerate() {
+        let mut uniform = IntegratorUniform::build(
+            camera,
+            sun,
+            sky_top,
+            sky_horizon,
+            width,
+            height,
+            integrator.node_count,
+            integrator.tri_count,
+            (i as u32) * params.spp,
+            params,
+            None,
+        );
+        uniform.temporal = [
+            temporal.alpha_min,
+            temporal.depth_tol,
+            temporal.normal_tol,
+            temporal.clamp_k,
+        ];
+        let valid = if let Some(p) = prev {
+            uniform.prev_eye = p.eye;
+            uniform.prev_right = p.right;
+            uniform.prev_up = p.up;
+            uniform.prev_forward = p.forward;
+            1
+        } else {
+            0
+        };
+        uniform.temporal_flags = [valid, temporal.max_history, 0, 0];
+        let parity = i % 2;
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("headless temporal"),
+        });
+        integrator.dispatch_temporal(
+            queue,
+            &mut encoder,
+            &uniform,
+            &compute_bg,
+            &bind[parity],
+            width,
+            height,
+        );
+        queue.submit(Some(encoder.finish()));
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        prev = Some(uniform);
+    }
+
+    let cells = (width as u64) * (height as u64);
+    let readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("headless temporal readback"),
+        size: cells * ACCUM_CELL,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("headless temporal copy"),
+    });
+    encoder.copy_buffer_to_buffer(&accum, 0, &readback, 0, cells * ACCUM_CELL);
+    let (tx, rx) = std::sync::mpsc::channel();
+    encoder.map_buffer_on_submit(&readback, wgpu::MapMode::Read, .., move |r| {
+        let _ = tx.send(r.map(|_| ()));
+    });
+    queue.submit(Some(encoder.finish()));
+    let _ = device.poll(wgpu::PollType::wait_indefinitely());
+    rx.recv().expect("readback channel").expect("map readback");
+    let mapped = readback.get_mapped_range(..).expect("mapped readback");
+    let raw: Vec<[f32; 4]> = bytemuck::cast_slice(&mapped).to_vec();
+    drop(mapped);
+    readback.unmap();
+    raw.iter().map(|c| Vec3::new(c[0], c[1], c[2])).collect()
 }
 
 // ── VIII-0 AOV EXPORT BEGIN ────────────────────────────────────────────────

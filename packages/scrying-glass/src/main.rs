@@ -22,7 +22,8 @@ use scrying_glass::bvh::{Bvh, BvhParams, DEFAULT_DEGRADE_RATIO, DynamicSplice, R
 use scrying_glass::denoiser::deserialize_weights as deserialize_denoiser_weights;
 use scrying_glass::denoiser_gpu::GpuDenoiser;
 use scrying_glass::integrator::{
-    Integrator, IntegratorParams, IntegratorUniform, resolve as resolve_accum, split_aov,
+    Integrator, IntegratorParams, IntegratorUniform, TemporalParams, resolve as resolve_accum,
+    split_aov,
     trace_headless, trace_headless_aov,
 };
 use scrying_glass::scene::{
@@ -62,6 +63,11 @@ struct ScryingGlassConfig {
     /// Interim upscale mode uploaded to the blit: 0 = bilinear (default),
     /// 1 = nearest. The clean seam for the neural upscaler (VIII-3).
     upscale_mode: u32,
+    /// LIGHT-NOT-DOTS: temporal accumulation with reprojection on the live
+    /// present path (GAIA_NATIVE_TEMPORAL, default ON). When off the legacy
+    /// reset-on-move accum path runs (the escape hatch).
+    temporal_enabled: bool,
+    temporal: TemporalParams,
     /// FPS COUNTER BURST — HUD toggle (GAIA_NATIVE_HUD, default ON) and its
     /// rolling-median sample window (GAIA_NATIVE_HUD_WINDOW, default 30).
     hud_enabled: bool,
@@ -230,6 +236,19 @@ impl ScryingGlassConfig {
                     }
                 },
                 Err(_) => 0,
+            },
+            temporal_enabled: match std::env::var("GAIA_NATIVE_TEMPORAL") {
+                Ok(value) => value.parse::<bool>().map_err(|_| {
+                    format!("GAIA_NATIVE_TEMPORAL must be true or false, got {value:?}")
+                })?,
+                Err(_) => true,
+            },
+            temporal: TemporalParams {
+                alpha_min: number("GAIA_NATIVE_TEMPORAL_ALPHA_MIN", 0.1)? as f32,
+                depth_tol: number("GAIA_NATIVE_TEMPORAL_DEPTH_TOL", 0.05)? as f32,
+                normal_tol: number("GAIA_NATIVE_TEMPORAL_NORMAL_TOL", 0.85)? as f32,
+                clamp_k: number("GAIA_NATIVE_TEMPORAL_CLAMP_K", 1.5)? as f32,
+                max_history: integer("GAIA_NATIVE_TEMPORAL_MAX_HISTORY", 512)?,
             },
             hud_enabled,
             hud_window: integer("GAIA_NATIVE_HUD_WINDOW", 30)? as usize,
@@ -900,6 +919,21 @@ struct Renderer {
     surface_compute_bg: wgpu::BindGroup,
     surface_blit_bg: wgpu::BindGroup,
     samples_before: u32,
+    /// LIGHT-NOT-DOTS live temporal accumulation state (see `render`).
+    temporal_enabled: bool,
+    temporal_params: TemporalParams,
+    /// Ping-pong PACKED frame buffers (radiance + primary gbuffer, 2 cells/px)
+    /// and history (rgb + accumulated frame count). Parity flips each frame.
+    /// Owned here to keep the GPU buffers alive for the lifetime of `t_bind`.
+    #[allow(dead_code)]
+    t_packed: [wgpu::Buffer; 2],
+    #[allow(dead_code)]
+    t_hist: [wgpu::Buffer; 2],
+    t_bind: [wgpu::BindGroup; 2],
+    /// Frame parity for the ping-pong and the previous-frame camera uniform
+    /// (None until the first temporal frame has run / after an invalidation).
+    t_parity: usize,
+    t_prev: Option<IntegratorUniform>,
     /// (eye, yaw, pitch, width, height) the current accumulation belongs to.
     last_view: Option<([f32; 3], f32, f32, u32, u32)>,
     offscreen: OffscreenTarget,
@@ -924,6 +958,8 @@ impl Renderer {
         render_height: u32,
         upscale_mode: u32,
         draw_own_body: bool,
+        temporal_enabled: bool,
+        temporal_params: TemporalParams,
     ) -> Result<Self, String> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let target = unsafe {
@@ -1021,6 +1057,26 @@ impl Renderer {
         let surface_accum = integrator.make_accum(&device, render_width, render_height);
         let surface_compute_bg = integrator.compute_bind_group(&device, &surface_accum);
         let surface_blit_bg = integrator.blit_bind_group(&device, &surface_accum);
+        // LIGHT-NOT-DOTS temporal buffers (trace-resolution): one current-frame
+        // color buffer + ping-pong history/gbuffer, and the two parity bind
+        // groups. Built even when temporal is off (cheap; kept valid so the
+        // toggle needs no reallocation).
+        let t_packed = [
+            integrator.make_temporal_packed(&device, render_width, render_height),
+            integrator.make_temporal_packed(&device, render_width, render_height),
+        ];
+        let t_hist = [
+            integrator.make_temporal_buffer(&device, render_width, render_height),
+            integrator.make_temporal_buffer(&device, render_width, render_height),
+        ];
+        let t_bind = [
+            integrator.temporal_bind_group(
+                &device, &t_packed[0], &t_packed[1], &t_hist[0], &t_hist[1],
+            ),
+            integrator.temporal_bind_group(
+                &device, &t_packed[1], &t_packed[0], &t_hist[1], &t_hist[0],
+            ),
+        ];
         let offscreen = OffscreenTarget::new(&device, format, config.width, config.height);
         eprintln!(
             "[wgpu] traced {render_width}x{render_height} → upscale → surface {}x{} ({}); {format:?}",
@@ -1069,6 +1125,13 @@ impl Renderer {
             surface_compute_bg,
             surface_blit_bg,
             samples_before: 0,
+            temporal_enabled,
+            temporal_params,
+            t_packed,
+            t_hist,
+            t_bind,
+            t_parity: 0,
+            t_prev: None,
             last_view: None,
             offscreen,
             pixel_order,
@@ -1452,6 +1515,8 @@ impl Renderer {
             );
             self.reset_surface_accum();
             self.last_view = None;
+            // Aspect/scale changed — last frame's reprojection basis is stale.
+            self.t_prev = None;
         }
     }
 
@@ -1487,12 +1552,14 @@ impl Renderer {
     fn render(&mut self, size: PhysicalSize<u32>) -> Option<wgpu::SubmissionIndex> {
         self.resize(size);
 
-        // Reset accumulation the instant the eye moves (progressive while still).
+        // LIGHT-NOT-DOTS: with temporal accumulation the eye moving is NOT a
+        // reset — the resolve reprojects last frame's light into the new view.
+        // Only the legacy escape-hatch path throws the samples away on move.
         let key = self.view_key();
-        if self.last_view != Some(key) {
+        if !self.temporal_enabled && self.last_view != Some(key) {
             self.reset_surface_accum();
-            self.last_view = Some(key);
         }
+        self.last_view = Some(key);
 
         // RESOLUTION OF GOD: the path trace runs at the INTERNAL resolution;
         // the blit upscales it to the surface. `width`/`height` here are the
@@ -1526,6 +1593,24 @@ impl Renderer {
         // Tell the blit the true surface + upscale mode (params.xy stays trace dims).
         uniform.surface = [surface_w, surface_h, self.upscale_mode, 0];
 
+        // LIGHT-NOT-DOTS: hand the resolve the previous frame's camera + dials.
+        if self.temporal_enabled {
+            let t = &self.temporal_params;
+            uniform.temporal = [t.alpha_min, t.depth_tol, t.normal_tol, t.clamp_k];
+            match self.t_prev {
+                Some(prev) => {
+                    uniform.prev_eye = prev.eye;
+                    uniform.prev_right = prev.right;
+                    uniform.prev_up = prev.up;
+                    uniform.prev_forward = prev.forward;
+                    uniform.temporal_flags = [1, t.max_history, 0, 0];
+                }
+                None => {
+                    uniform.temporal_flags = [0, t.max_history, 0, 0];
+                }
+            }
+        }
+
         let surface_frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
             | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => Some(frame),
@@ -1543,15 +1628,30 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("traced frame + capture"),
             });
-        // One accumulation frame, then present the running mean to both targets.
-        self.integrator.dispatch(
-            &self.queue,
-            &mut encoder,
-            &uniform,
-            &self.surface_compute_bg,
-            width,
-            height,
-        );
+        // LIGHT-NOT-DOTS: temporal path traces THIS frame + reprojects/blends
+        // last frame's accumulated light into the accum the blit reads; the
+        // legacy path dispatches one accumulation frame in place. Either way the
+        // blit below presents `surface_accum` unchanged.
+        if self.temporal_enabled {
+            self.integrator.dispatch_temporal(
+                &self.queue,
+                &mut encoder,
+                &uniform,
+                &self.surface_compute_bg,
+                &self.t_bind[self.t_parity],
+                width,
+                height,
+            );
+        } else {
+            self.integrator.dispatch(
+                &self.queue,
+                &mut encoder,
+                &uniform,
+                &self.surface_compute_bg,
+                width,
+                height,
+            );
+        }
         self.integrator.blit(
             &mut encoder,
             &self.offscreen.view,
@@ -1623,6 +1723,13 @@ impl Renderer {
         }
         let submission = self.queue.submit(Some(encoder.finish()));
         self.samples_before += self.int_params.spp;
+        // LIGHT-NOT-DOTS: this frame's camera becomes next frame's reprojection
+        // source, and the ping-pong parity flips (hist_out→hist_prev, curr_gbuf
+        // →gbuf_prev). Only after temporal actually ran.
+        if self.temporal_enabled {
+            self.t_prev = Some(uniform);
+            self.t_parity ^= 1;
+        }
         if let Some(frame) = surface_frame {
             self.queue.present(frame);
         }
@@ -2325,6 +2432,8 @@ fn main() {
                 config.render_height,
                 config.upscale_mode,
                 config.draw_own_body,
+                config.temporal_enabled,
+                config.temporal,
             )
             .map_err(std::io::Error::other)?;
             // DAS BLUTBÄNDIGEN — B0 DATA DOOR. Seed the live bend state from the
