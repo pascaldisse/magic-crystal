@@ -217,3 +217,98 @@ Concordance brought current from S11 (stale) through S13:
 3. Prior gaps (default = slower path is now RESOLVED — S8 flipped MPSGraph to
    default; static 96×64 weights / N1 quality; legacy bilinear) carry forward
    otherwise unchanged.
+
+---
+
+## VERDICT — S15 (N0.k): the "9ms world advance" premise OVERTURNED
+
+**HOLDS parity/determinism · the N0.j blame (BVH re-splice+upload) was WRONG ·
+the real 5.36ms thief inside world advance is `elements::Solver::step()`.**
+
+- Instrumented `advance_world`/`tick_with_ops` to the leaf: splice (0.16ms) +
+  upload (0.43ms) together are ~0.6ms, NOT the ~7ms N0.j blamed. KAMI decorative
+  eval + JSON round-trip are ~0.06ms — also cleared. `elements::Solver::step()`
+  is 5.36ms of the 6.97ms world advance — the entire thief.
+- One dirty-only cut landed (dirty-skin, static bodies cost zero re-skin) —
+  correct, byte-identical (`rite5` 17/17), but only ~0.04ms — skin was already
+  cheap. Splice/upload dirty-only correctly NOT attempted (only ~0.6ms surface,
+  inside contention noise).
+- **60 fps: STILL VIOLATED (~49 fps).** Verdict redirected the charter: next
+  shift must attack the solver, not the BVH pipeline. Source:
+  `docs/perf/2026-07-18-neural-live-n0.md` N0.k.
+
+## VERDICT — S16 (N0.l): THE SOLVER CHARTER — island sleeping, solver thief KILLED
+
+**HOLDS parity/determinism/motion · solver_step 4.45→0.077ms live (152× on the
+isolated settled sub-table) · world advance 6.97→~2.6ms · frame now TRACE-bound
+on the offscreen numbers this shift measured (no windowed wall re-measured).**
+
+- Leaf instrument inside `solver_step` found the REAL thief was
+  `collision_static` (3.30ms, particle-vs-12368-static-tri broadphase), not the
+  O(n²) body pass (0.44ms) — the N0.k lesson ("the sub-table moves the cut")
+  held twice. A second hidden cost, `ensure_collision_grid` re-hashing the
+  static soup every tick (~1.48ms), was cut with a pointer+len identity cache
+  (byte-identical, no possible fingerprint mismatch since colliders are always
+  wholesale-replaced, asserted by grep).
+- **Island sleeping charter** (union-find over rigid+bond+proximity edges,
+  awake-only proximity fan-in so all-asleep unions stay O(bonds)): settled
+  naruko (199 particles / 13 islands) drops solver_step 3.88 → 0.026ms
+  (152×). Sleep OFF is byte-unchanged (every branch gated). 4 new ordeals green
+  (determinism, settled-sleeps, WAKE-TEST — a pushed sleeper travels, no silent
+  freeze — rest-pose parity |Δcentroid| < 5e-3m).
+- **Projection only, NOT measured this shift:** N0.l projected world≈2.6 +
+  trace≈6 + net_gpu≈4.7 ≈ 14-16ms → ~60-70fps, flagged explicitly as a
+  PROJECTION (offscreen-only measurement, no windowed wall re-run). **S17 below
+  is the verification of that projection.**
+- **60 fps: NOT YET MET on any full windowed measurement** (none taken this
+  shift). Source: `docs/perf/2026-07-18-neural-live-n0.md` N0.l.
+
+---
+
+## VERDICT — S17 (N0.m, THE CROWN MEASUREMENT): projection REFUTED at wall-clock — 60fps NOT MET, ~53fps
+
+**HOLDS parity/determinism/rite5/motion · sleep charter VERIFIED live (world
+advance 5.61→1.75ms median, solver_step 3.95→0.05ms median, ~79× live) · BUT
+the N0.l "14-16ms → 60-70fps" projection is REFUTED at the wall-clock mean: only
+52.86 fps (18.92 ms/frame mean) reached with sleep ON, 50.23 fps (19.91 ms/frame)
+with sleep OFF — a +2.63 fps / ~1.0 ms mean delta, NOT the ~9-11ms the projection
+implied.**
+
+- **The world-stage MEDIAN delta reproduces the shift's own prediction closely**
+  (5.607→1.747ms = 3.86ms, inside the "~3-4ms/frame" the task asked to
+  reproduce) — the sleep charter's CPU win is real and measured twice now
+  (N0.l's isolated sub-table, this shift's live A/B).
+- **But the wall-clock MEAN barely moves.** Root cause, read from the same
+  `/budget`: `demod`'s p95 is **10.46ms vs a 1.66ms median** (both arms) — a
+  heavy GPU-contention tail (single-M1-GPU serialization, N0.i's standing
+  thief) that solver sleep does not touch. The mean (the metric wall-clock fps
+  actually reports) is dominated by that tail; the median table is not. The
+  median-level "books balance" the doc has used all shift under-counts this
+  tail — **a methodology gap this shift surfaces and flags, not one it
+  resolves.**
+- **Parity/determinism/motion — ALL HOLD.** `n0b_gather_and_shared_forward_
+  match_cpu` ok, `n0_gate1_live_net_matches_cpu_reference` ok, `rite5` 17/17,
+  `s16_sleep_ordeals` 4/4, both eyes read coherent (no black/wedge/NaN) in both
+  arms, motion gate confirms the presence layer moves under sleep ON.
+- **Absolutes** — 60 FPS: **STILL VIOLATED, both arms** (sleep ON 52.86 fps /
+  18.92ms mean — 2.25ms short; sleep OFF 50.23 fps / 19.91ms mean). NO LODs /
+  no neural upscale / one light pass / no hardcoded res: HOLDS.
+
+## Gaps carried forward (S17)
+1. **60fps unmet by 2.25ms mean (sleep ON) despite the solver being killed.**
+   The remaining wall is the SAME two thieves N0.i/N0.j already named — trace
+   (~5.9-6.0ms, synchronous submit+poll on the render thread) and net_gpu
+   (~4.9ms, single-M1-GPU contention) — PLUS a now-visible third: demod's
+   heavy p95 tail (10.46ms vs 1.66ms median), which the median-table
+   methodology this doc has used since N0.d does not surface. Next shift
+   should measure/attack that tail directly (a p99/mean column in `/budget`,
+   or GPU timeline tracing across trace/net_gpu/demod to find what's actually
+   serializing on the one GPU), not just chase more median-level cuts.
+2. **The N0.l projection method (median-sum extrapolation) is now shown
+   unreliable for wall-clock prediction** — carry a wall-clock-fps-only
+   discipline forward for any future projection (this doc's own N0.i already
+   warned "median stage-sum is NOT the throughput"; S17 shows the warning
+   applies to inter-shift A/B deltas too, not just single-run stage-sum vs
+   wall-fps).
+3. 2 frames-in-flight / +1 display-latency ruling — still PENDING with the
+   Architect (unchanged).

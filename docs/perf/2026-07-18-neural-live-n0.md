@@ -983,3 +983,173 @@ only), so the ~14-16ms projection is a PROJECTION, not a played windowed frame.
 - PNGs: `/tmp/s16-{off,on}-presented.png`, `/tmp/s16-motion{A,B}.png` (READ above).
 - env: `GAIA_NATIVE_OFFSCREEN=true GAIA_NATIVE_SLEEP=1 [GAIA_NATIVE_SLEEP_VEL/_FRAMES]`,
   release, world `worlds/naruko`, M1/macOS 26. Toggle sleep off = omit the env.
+
+---
+
+# N0.m — SHIFT 17: THE CROWN MEASUREMENT — wall-clock fps after the solver cut
+
+State in: N0.l killed `elements::Solver::step()` (settled solver_step 4.45→0.077
+ms live median) and PROJECTED (not measured) world≈2.6 + trace≈6 + net_gpu≈4.7 ≈
+14-16ms → ~60-70fps. This shift MEASURES the real windowed wall-clock, live,
+player-shaped, offscreen, ≥1000 frames both arms. Live, offscreen 640×480,
+release, M1/macOS 26, `worlds/naruko`, `GAIA_NATIVE_OFFSCREEN=true`.
+
+## (1) BUILD — release, current HEAD
+`cargo build --release -p scrying-glass` under the build-lock token — already
+current at `1df1e15` (0.73s, no recompile needed; verified fresh by the lock
+acquiring cleanly and the binary timestamp preceding this shift's run).
+
+## (2) BENCH RECIPE — `s17-bench.sh` (new, modeled on `s15-bench.sh`)
+Offscreen server, `/walk` POST bursts (`KeyW`, 16 ticks, 70× @0.35s spacing —
+long enough for >=1000 frames at ~50fps), then `/budget` + `/state` snapshot +
+both eyes via `/scry`. Script:
+`packages/scrying-glass/proof/neural-live/s17-bench.sh`.
+Env: `GAIA_NEURAL_LIVE=1 GAIA_NATIVE_OFFSCREEN=true GAIA_NATIVE_NET_PRESENT=true
+GAIA_NATIVE_HUD=false GAIA_NATIVE_PORT=<port> GAIA_WORLD=.../worlds/naruko`.
+
+## (3) MEASURE — wall-clock fps A/B (release, offscreen, player-shaped, ≥1000f)
+
+| arm       | port | frames | WALL-FPS | mean ms/frame |
+|-----------|------|--------|----------|---------------|
+| sleep ON (`GAIA_NATIVE_SLEEP=1`, S17 default) | 8442 | 1620 | **52.86** | **18.92** |
+| sleep OFF (`GAIA_NATIVE_SLEEP=0`)             | 8443 | 1539 | **50.23** | **19.91** |
+
+**Delta: +2.63 fps / −0.99 ms mean per frame.** This does **NOT** reproduce the
+"~3-4 ms/frame" the task context asked to verify — at the wall-clock MEAN level
+the win is ~1 ms, not 3-4. See §(5) for why (the tail, not the median, sets the
+mean).
+
+## (4) FULL STAGE TABLE — median/p95 ms · `/budget` JSON (verbatim)
+
+**sleep ON** (`s17-sleep-on.budget.json`, frames=1620):
+
+| stage      | median | p95    |
+|------------|--------|--------|
+| trace      | 5.943  | 9.795  |
+| gather     | 0.905  | 1.291  |
+| net_wall   | 0.013  | 4.832  |
+| net_gpu    | 4.895  | 6.659  |
+| net_commit | 0.006  | 0.011  |
+| net_wait   | 0.001  | 4.820  |
+| demod      | 1.664  | **10.461** |
+| present    | 0.086  | 0.131  |
+| **total**  | **11.423** | **22.453** |
+
+**sleep OFF** (`s17-sleep-off.budget.json`, frames=1539):
+
+| stage      | median | p95    |
+|------------|--------|--------|
+| trace      | 5.578  | 9.512  |
+| gather     | 0.939  | 1.321  |
+| net_wall   | 0.014  | 3.504  |
+| net_gpu    | 4.865  | 6.177  |
+| net_commit | 0.006  | 0.014  |
+| net_wait   | 0.001  | 3.488  |
+| demod      | 1.031  | **10.255** |
+| present    | 0.089  | 0.136  |
+| **total**  | **10.483** | **21.084** |
+
+## (5) OUTSIDE TABLE (world/http/readback/loop_total) — the solver win, VERIFIED live
+
+| segment    | sleep ON median/p95 | sleep OFF median/p95 | note                     |
+|------------|----------------------|------------------------|--------------------------|
+| world      | **1.747 / 2.187**    | **5.607 / 6.392**      | **−3.86 ms — reproduces the ~3-4ms prediction** |
+| readback   | 0.000 / 0.000        | 0.000 / 0.000          | on-demand, unchanged (N0.j) |
+| http       | 0.618 / 1.279        | 0.592 / 1.193          | unchanged                |
+| loop_total | 13.916 / 24.808      | 16.825 / 27.659        | −2.91 ms (world win partly offset by total +0.94ms) |
+
+`world_stages.solver_step` median: **0.050ms (sleep ON) vs 3.945ms (sleep
+OFF) — 79× live** (close to N0.l's 152× isolated sub-table; live regime is
+lower because `/walk` wakes the player-proximate island every burst — correct,
+moving = solving). `command`(skin)/`splice`/`upload`/`gather` all near-identical
+across arms (0.54/0.17/0.48/0.07 vs 0.54/0.16/0.46/0.07) — the fp-cache and
+dirty-skin cuts hold, confirming N0.k/N0.l did not regress.
+
+## (6) WHY THE MEAN DIDN'T MOVE LIKE THE MEDIAN — the demod tail
+`demod` p95 is **10.46ms (sleep ON) / 10.26ms (sleep OFF) against a ~1-1.7ms
+median in both** — an order-of-magnitude GPU-contention tail (single-M1-GPU
+serialization, N0.i's standing #2 thief) that solver sleep does not touch (the
+solver sits entirely on the CPU side of `world`, not on the GPU timeline `demod`
+shares with `trace`/`net_gpu`). Wall-clock fps is `frames / wall-seconds` — it
+is a MEAN, and a MEAN is set by the tail, not the median. The world-advance
+median win (−3.86ms) is real and reproducible (§5), but the SAME contended GPU
+tail that was already eating frames before this shift eats a comparable amount
+after it — so the median-level "books balance" arithmetic this doc has used
+since N0.d (stage_sum + world + http ≈ loop_total, all at MEDIAN) **does not
+extrapolate to wall-clock fps**, exactly as N0.i warned for a single run and as
+this shift now shows applies to cross-shift A/B deltas too.
+
+## 60 FPS THROUGHPUT VERDICT — NOT MET at 52.86 fps wall-clock (18.92 ms/frame mean), 2 frames in flight
+`60fps throughput NOT MET at 52.86 fps wall-clock (18.92 ms/frame mean, sleep
+ON — the S17 default), 2.25 ms short of the 16.67 ms wall; per-image latency ≈ 2
+frames-in-flight (N0.i's overlap, unchanged this shift). The N0.l projection
+("world≈2.6 + trace≈6 + net_gpu≈4.7 ≈ 14-16ms → 60-70fps") is REFUTED at the
+wall-clock mean: the solver cut is real and VERIFIED live (world advance
+5.61→1.75ms median, solver_step 3.95→0.05ms median, 79×) but a GPU-contention
+tail in demod (p95 10.46ms vs 1.66ms median, unrelated to the solver) absorbs
+most of the theoretical gain when measured as frames/wall-seconds rather than
+median stage-sum. Sleep OFF, same binary, same walk script: 50.23 fps (19.91
+ms/frame mean) — confirms the ON/OFF delta is real (+2.63 fps) but small
+relative to the projection.` Remaining-thief table:
+
+| thief                  | ms (median) | ms (tail, p95) | status                                   |
+|------------------------|-------------|-----------------|-------------------------------------------|
+| ~~solver_step~~        | 0.05        | 0.54            | KILLED, VERIFIED LIVE (was 3.95/4.32)     |
+| trace (synchronous)    | 5.94        | 9.80            | UNCHANGED — N0.j's #1, unattacked          |
+| net_gpu (contention)   | 4.90        | 6.66            | UNCHANGED — N0.i's #2, unattacked          |
+| **demod (GPU tail)**   | 1.66        | **10.46**       | **NEWLY VISIBLE this shift** — the median-table method hid it; it is the actual mean-fps thief, not named as a distinct target before |
+
+Honest sum at MEDIAN (does not predict the mean, see §6): trace(5.94) +
+gather(0.91) + net_wall(0.01) + demod(1.66) + present(0.09) = total(8.61,
+undercounts vs the measured total 11.42 — encode/submit overhead not itemized)
++ world(1.75) + http(0.62) ≈ loop_total(13.9) — median books still balance
+internally; they just don't equal the measured wall-clock mean (18.92ms).
+
+## Parity + determinism + rite5 + motion gates — ALL HOLD (this shift's own runs)
+- `n0b_gather_and_shared_forward_match_cpu` — ok (GATE A 9.5e-7, GATE B
+  1.9e-6, S8 MPSGraph-vs-chain 4.8e-7; release, `GAIA_NEURAL_LIVE=1`).
+- `n0_gate1_live_net_matches_cpu_reference` — ok (live-vs-committed abs
+  1.311e-6 rel 5.96e-5).
+- `s16_sleep_ordeals` — 4/4: settled-sleeps (drift 0.00e0), WAKE-TEST (pushed
+  sleeper travelled 0.5115m, no freeze), rest-pose parity (|Δcentroid|
+  9.77e-13m), sleep determinism (byte-identical hash across runs).
+- `rite5` — 17/17, incl. `v0_body_render_is_deterministic`,
+  `v1_gait_is_deterministic_byte_identical`, `v2_cat_animation_is_byte_identical`.
+- MOTION gate (render, sleep ON): two `/scry?eye=presented` frames ~2.5s apart
+  under active `/walk` (`s17-motionA-presented.png`, `s17-motionB-presented.png`,
+  READ) — the player camera and presence spheres are at visibly different
+  positions/framing between A and B (frame A: wide platform view, large
+  iridescent sphere near-camera, small sphere upper-left, tower with cyan halo
+  rings mid-frame; frame B: under-platform view between two support posts, a
+  single small pale sphere near the tower base, dark industrial block at
+  right with lit windows) — coherent naruko dusk in both, no black, no wedge,
+  no freeze.
+
+## Proof — both eyes (READ, pixel words — NOT black, served on-demand)
+- sleep-ON presented/belief: `s17-sleep-on-presented.png` /
+  `s17-sleep-on-belief.png` — close-range view of the dark tower base against a
+  mauve dusk sky, water reflecting a horizon line below; presented is dark/
+  night-toned, belief is the same geometry brighter/desaturated over a cream
+  ground (albedo not undone), as designed. (The walk script drove the player
+  right up to the tower — a tighter framing than prior shifts' wide establishing
+  shots, same scene, same demod correctness.)
+- sleep-OFF presented/belief: `s17-sleep-off-presented.png` /
+  `s17-sleep-off-belief.png` — **pixel-identical framing to sleep-ON** (same
+  deterministic walk script → same player path): confirms the sleep toggle
+  changes ONLY solver cost, not render output. Parity HOLDS visually.
+- motion gate: `s17-motionA-presented.png` / `s17-motionB-presented.png` (see
+  above).
+
+## Source
+- bench: `packages/scrying-glass/proof/neural-live/s17-bench.sh` (new).
+- logs/budgets/state: `s17-sleep-on.log` / `.budget.json` / `.state.json`,
+  `s17-sleep-off.log` / `.budget.json` / `.state.json`, `s17-motion.log`, all
+  under `packages/scrying-glass/proof/neural-live/`.
+- PNGs: `s17-sleep-{on,off}-{presented,belief}.png`,
+  `s17-motion{A,B}-{presented,belief}.png`.
+- env: `GAIA_NEURAL_LIVE=1 GAIA_NATIVE_OFFSCREEN=true GAIA_NATIVE_NET_PRESENT=true
+  GAIA_NATIVE_HUD=false`, `GAIA_NATIVE_SLEEP=1|0` (A/B), release, world
+  `worlds/naruko`, M1/macOS 26. Tag `[n0m]` (reuses `[n0i]` per-frame log lines
+  — the print tag was not renamed this shift, an honest cosmetic gap).
+- 0 scrying-glass processes running at shift end (verified: every spawned
+  server was `kill`ed via bash `trap ... EXIT` and confirmed with `ps aux`).

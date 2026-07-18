@@ -1,0 +1,15 @@
+[package] scrying-glass v0.1.0 registered
+[world] /Users/pascaldisse/projects/magic-crystal-neural-live/worlds/naruko scene(s)=["main"] entities=45 chains=23 clusters=913 transmute=87.5ms
+[embodiment] spawn eye=Vec3(0.0, 7.0, 44.0) yaw=0 floor_triangles=10464 tick_dt=0.016666668
+[pleroma] BVH nodes=15487 triangles=23192 (static 12368 + dynamic 10824) build=13.5ms; 22 dynamic entit(ies) — living layer
+[pleroma] traced integrator spp=2 bounces=4 rr_start=2 — first_light is dead
+[wgpu] traced 640x480 → upscale → surface 960x640 (bilinear); Bgra8UnormSrgb
+[frame] trace 640x480 → offscreen 960x640: median 8.06ms mean 8.35ms/frame (spp=2, 60-frame sample)
+[scry] GET http://127.0.0.1:8444/scry (alias: /screenshot; optional pos/yaw/pitch/fov/w/h)
+[embodiment] GET http://127.0.0.1:8444/pose · POST http://127.0.0.1:8444/walk {keys,yaw?,pitch?,ticks?}
+[offscreen] GAIA_NATIVE_OFFSCREEN=true: NO NSWindow — rendering to offscreen 960x640; /scry (?eye=belief|presented), /budget, /state on http://127.0.0.1:8444
+[n0c] net-present rig pooled (God's res): trace 640x480 → net 640x480 → nearest blit → surface 960x640 (307200 px)
+[n0i] frames=60 640x480→640x480 (ms median/p95 vs 16.67): trace 8.53/14.14 gather 1.07/2.24 net[wall 0.11/12.73 gpu 5.52/10.17 commit 0.01/0.02 wait 0.01/12.71] demod 1.53/10.09 present 0.09/0.16 TOTAL 15.88/30.33 | WALL-FPS 39.4
+[n0i] frames=120 640x480→640x480 (ms median/p95 vs 16.67): trace 9.58/14.14 gather 1.15/2.24 net[wall 0.05/20.41 gpu 5.89/12.25 commit 0.01/0.03 wait 0.00/20.39] demod 1.53/9.23 present 0.09/0.16 TOTAL 16.99/37.53 | WALL-FPS 40.0
+[n0i] frames=180 640x480→640x480 (ms median/p95 vs 16.67): trace 9.58/14.14 gather 1.05/2.12 net[wall 0.03/16.85 gpu 5.79/11.46 commit 0.01/0.02 wait 0.00/16.84] demod 1.53/9.86 present 0.09/0.15 TOTAL 16.99/30.33 | WALL-FPS 42.0
+[n0i] frames=240 640x480→640x480 (ms median/p95 vs 16.67): trace 9.69/14.06 gather 1.04/2.08 net[wall 0.03/13.06 gpu 5.68/11.46 commit 0.01/0.02 wait 0.00/13.04] demod 1.58/10.17 present 0.09/0.14 TOTAL 16.99/30.13 | WALL-FPS 42.9
