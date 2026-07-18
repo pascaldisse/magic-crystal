@@ -212,7 +212,10 @@ disabled, ABSENT:
 - **bake** (light, mesh, or anything else) · **lightmap** · **authored LOD**
   · **optimize/import-quality knobs** · **"generate LODs" button** ·
   **manual UV mapping** · **manual rigging as a required step** ·
-  **loading screen** · **level loading** · **authored streaming volumes**
+  **loading screen** · **level loading** · **upscaling as a stage** (07-18:
+  ray budget ≠ internal resolution; samples are evidence, the ONE NET renders
+  the only image at screen res — § NEURAL.md two-act law) ·
+  **authored streaming volumes**
   (old engine's world.json `load` volumes → auto-derived residency;
   behavior preserved on import, concept retired) · **frame interpolation /
   frame generation**

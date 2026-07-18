@@ -78,12 +78,19 @@ as DESTINATION; NR1/NR2 demote to teachers/baselines, lab equipment only)
 The render is TWO ACTS, NO SEAM: trace → ONE NET → screen.
 - Act 1: Ananke's rays — the one integrator emits sparse radiance + G-buffer
   features (same rays, byproducts, never separate passes).
-- Act 2: the ONE NET consumes everything jointly — G-buffer + traced samples
-  + temporal history — and emanates the FINISHED frame at present resolution:
-  denoise + reconstruction + upscale = one act, one estimate. No chained
-  stages: chains make irreversible decisions on partial information at every
-  seam (the argument that killed separate-denoiser chains industry-wide —
-  DLSS-RR precedent as evidence, not authority).
+- Act 2: the ONE NET consumes everything jointly — full-res geometry
+  features (primary visibility is cheap) + sparse traced radiance + temporal
+  history — and RENDERS THE ONLY IMAGE, at screen resolution, directly. No
+  chained stages: chains make irreversible decisions on partial information
+  at every seam (the argument that killed separate-denoiser chains
+  industry-wide — DLSS-RR precedent as evidence, not authority).
+- ★ UPSCALING IS DEAD AS A CONCEPT (Architect, 07-18): no small picture is
+  ever made, so nothing is ever enlarged. The traced samples are EVIDENCE,
+  not an image — a RAY BUDGET (samples/frame the machine affords at 60fps),
+  not an internal resolution; samples need not sit on a grid. Supersedes the
+  07-17 "640×480 + upscale" framing: the budget survives, the costume dies.
+  Last legal use of the word: the live window's pre-cutover bilinear
+  scaffold, which dies when HE plays the neural frame.
 - Temporal accumulation = substrate, not a stage: the integrator gathering
   its own samples — live-window convergence today + ground-truth teacher
   data + the net's history input.
