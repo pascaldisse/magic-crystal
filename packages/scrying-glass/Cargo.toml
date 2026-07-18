@@ -78,10 +78,11 @@ features = [
 [target.'cfg(target_os = "macos")'.dependencies.objc2-metal]
 version = "0.3.2"
 # S5: raw compute encoder + library for the fused bias+ReLU kernel between GEMMs.
+# S12: MTLEvent adds the dedicated-net-queue → render-queue fence (MTLSharedEvent).
 features = [
   "MTLDevice", "MTLCommandQueue", "MTLBuffer", "MTLResource", "MTLCommandBuffer",
   "MTLComputePipeline", "MTLComputeCommandEncoder", "MTLCommandEncoder",
-  "MTLLibrary", "MTLTypes",
+  "MTLLibrary", "MTLTypes", "MTLEvent",
 ]
 
 [target.'cfg(target_os = "macos")'.dependencies.objc2]

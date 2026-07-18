@@ -54,7 +54,7 @@ mod imp {
     use objc2_metal::{
         MTLBuffer, MTLCommandBuffer, MTLCommandEncoder, MTLCommandQueue,
         MTLComputeCommandEncoder, MTLComputePipelineState, MTLCreateSystemDefaultDevice,
-        MTLDevice, MTLLibrary, MTLResourceOptions, MTLSize,
+        MTLDevice, MTLLibrary, MTLResourceOptions, MTLSharedEvent, MTLSize,
     };
     use objc2_metal_performance_shaders::{
         MPSCommandBuffer, MPSDataType, MPSMatrix, MPSMatrixDescriptor, MPSMatrixMultiplication,
@@ -66,7 +66,7 @@ mod imp {
     };
     use std::ffi::c_void;
     use std::ptr::NonNull;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::mpsc::{Receiver, Sender};
     use std::sync::Arc;
     use std::thread::JoinHandle;
@@ -368,7 +368,24 @@ kernel void bias_relu(
     /// only shared-mutable objc state and both are Apple-documented thread-safe
     /// (executable encode; command-buffer creation off a queue).
     struct EncodeCtx {
-        queue: Retained<ProtocolObject<dyn MTLCommandQueue>>,
+        /// S12 — the net's OWN command queue. The encode thread creates and the
+        /// render thread commits net command buffers HERE, so the net's Metal
+        /// work (buffer creation + MPSGraph encode) no longer shares the wgpu
+        /// render queue with trace — the S9 contention that regressed trace
+        /// +6 ms was CPU driver-lock on that shared queue. Cross-queue hazards
+        /// after the split are EXACTLY two: gather→net (the `event` fence below)
+        /// and net→demod (covered by `commit_net`'s `waitUntilCompleted`).
+        net_queue: Retained<ProtocolObject<dyn MTLCommandQueue>>,
+        /// S12 — the gather→net fence. Protocol: each pipelined net command
+        /// buffer `encodeWaitForEvent`s its own value V (claimed from
+        /// `wait_counter` at encode time, on the net queue); after that frame's
+        /// gather the render queue `encodeSignalEvent`s the SAME V
+        /// (`signal_gather_ready`). FIFO consumption == encode order == strictly
+        /// increasing V, so signals are monotonic (a fresh event is 0; V starts
+        /// at 1). This is the ONLY event needed — net→demod is a CPU fence.
+        event: Retained<ProtocolObject<dyn MTLSharedEvent>>,
+        /// S12 — monotonic wait-value dispenser (see `event`). Starts at 1.
+        wait_counter: AtomicU64,
         /// Compiled once for the FIXED shape `[max_pixels, in_features]`.
         executable: Retained<MPSGraphExecutable>,
         sets: Vec<EncodeSet>,
@@ -391,6 +408,11 @@ kernel void bias_relu(
         /// Some on the MPSGraph path (the wrapper we commit), None on the chain.
         mps: Option<Retained<MPSCommandBuffer>>,
         set: usize,
+        /// S12 — the gather→net fence value THIS buffer waits on (net queue),
+        /// which the render thread signals after the gather. `None` on the
+        /// sync/ordeal path (single queue+thread, gather already polled
+        /// complete — no cross-queue wait encoded).
+        wait_value: Option<u64>,
     }
     // SAFETY: the encode thread builds it, hands sole ownership across the
     // channel to the render thread, which is the only place it is committed.
@@ -402,11 +424,26 @@ kernel void bias_relu(
         /// moves off the critical path. The path (MPSGraph vs chain) is read
         /// from `use_mpsgraph` at encode time.
         #[allow(unsafe_op_in_unsafe_fn)]
-        unsafe fn encode(&self, set: usize) -> PreparedNet {
+        unsafe fn encode(&self, set: usize, pipelined: bool) -> PreparedNet {
+            // S12: net command buffers are created off the DEDICATED net queue
+            // (not the shared wgpu render queue) — the whole point of the shift.
             let base = self
-                .queue
+                .net_queue
                 .commandBuffer()
                 .expect("rdirect_live: commandBuffer alloc failed (encode)");
+            // S12: the pipelined path fences on the gather across the queue split
+            // — claim this buffer's monotonic value V and encode the wait FIRST
+            // (before the forward), so the net cannot read a half-written feature
+            // buffer. The sync/ordeal path runs single-queue+thread with the
+            // gather already polled complete, so it needs no cross-queue wait.
+            let wait_value = if pipelined {
+                let v = self.wait_counter.fetch_add(1, Ordering::Relaxed);
+                let ev = ProtocolObject::from_ref(&*self.event);
+                base.encodeWaitForEvent_value(ev, v);
+                Some(v)
+            } else {
+                None
+            };
             let s = &self.sets[set];
             if self.use_mpsgraph.load(Ordering::Relaxed) {
                 let mps = MPSCommandBuffer::commandBufferWithCommandBuffer(&base);
@@ -420,10 +457,10 @@ kernel void bias_relu(
                         // executable must not internally commit/wait.
                         None,
                     );
-                PreparedNet { base, mps: Some(mps), set }
+                PreparedNet { base, mps: Some(mps), set, wait_value }
             } else {
                 s.chain.encode(&base);
-                PreparedNet { base, mps: None, set }
+                PreparedNet { base, mps: None, set, wait_value }
             }
         }
     }
@@ -482,6 +519,10 @@ kernel void bias_relu(
         in_features: usize,
         out_channels: usize,
         pool: Option<SharedPool>,
+        /// S12 — the gather→net fence, render-thread clone (created in `build`,
+        /// shared with the encode thread via `EncodeCtx.event`). The render
+        /// thread signals it (`signal_gather_ready`); the net queue waits on it.
+        event: Retained<ProtocolObject<dyn MTLSharedEvent>>,
         /// S3 instrument: GPU-only time of the last forward (MTLCommandBuffer
         /// GPUEndTime − GPUStartTime, ms). The `runWithMTLCommandQueue` API hid
         /// this; the encode path below owns the command buffer so it reads it.
@@ -520,6 +561,11 @@ kernel void bias_relu(
             unsafe {
                 let graph = MPSGraph::new();
                 let mps_device = MPSGraphDevice::deviceWithMTLDevice(&device);
+                // S12: the gather→net fence, made on the same device both queues
+                // share (an MTLSharedEvent works cross-queue on one device).
+                let event = device
+                    .newSharedEvent()
+                    .ok_or_else(|| "rdirect_live: newSharedEvent failed".to_string())?;
 
                 // Layers, in blob order, transposing each weight to [in, out].
                 let mut cursor = 0usize;
@@ -587,6 +633,7 @@ kernel void bias_relu(
                     in_features: INPUT_FEATURES,
                     out_channels: OUTPUT_CHANNELS,
                     pool: None,
+                    event,
                     last_gpu_ms: Cell::new(0.0),
                     // S8: MPSGraph (fused GPU, 6.65 ms) is the DEFAULT — it beat
                     // the un-fused chain (42.8 ms GPU) 1.8× in N0.f. The chain
@@ -759,8 +806,17 @@ kernel void bias_relu(
                     encode_sets.push(EncodeSet { inputs, results, chain });
                 }
 
+                // S12: the net's dedicated command queue (separate from the wgpu
+                // render queue), so the encode thread's per-frame net Metal work
+                // stops contending with trace on the shared queue.
+                let net_queue = mtl_device
+                    .newCommandQueue()
+                    .ok_or_else(|| "rdirect_live: net newCommandQueue failed".to_string())?;
                 let ctx = Arc::new(EncodeCtx {
-                    queue: self.queue.clone(),
+                    net_queue,
+                    event: self.event.clone(),
+                    // Fresh event is 0; V=1 is the first real fence.
+                    wait_counter: AtomicU64::new(1),
                     executable,
                     sets: encode_sets,
                     use_mpsgraph: AtomicBool::new(self.use_mpsgraph.get()),
@@ -828,7 +884,7 @@ kernel void bias_relu(
             // running (asserted), so no other thread touches `ctx.sets[set]`.
             // Autorelease pool drains MPSGraph's per-run intermediate NDArrays.
             objc2::rc::autoreleasepool(|_| unsafe {
-                let prepared = pool.ctx.encode(set);
+                let prepared = pool.ctx.encode(set, false);
                 let gpu_ms = commit_prepared(&prepared);
                 self.last_gpu_ms.set(gpu_ms);
             });
@@ -871,7 +927,8 @@ kernel void bias_relu(
                 .name("rdirect-net-encode".into())
                 .spawn(move || {
                     while let Ok(set) = rx_req.recv() {
-                        let prepared = objc2::rc::autoreleasepool(|_| unsafe { ctx.encode(set) });
+                        let prepared =
+                            objc2::rc::autoreleasepool(|_| unsafe { ctx.encode(set, true) });
                         if tx_ready.send(prepared).is_err() {
                             break; // render side gone
                         }
@@ -935,6 +992,38 @@ kernel void bias_relu(
             // Ask for the replacement for this set (double-buffer refill).
             let _ = pipe.tx_req.send(set);
             Ok(())
+        }
+
+        /// S12: release the gather→net fence on the RENDER queue. Call AFTER the
+        /// gather submit and BEFORE `commit_net`: a tiny command buffer on the
+        /// wgpu render queue signals the shared event to THIS frame's wait value,
+        /// releasing the net command buffer (which waits on that value on the
+        /// dedicated net queue) to read the freshly-gathered feature buffer.
+        /// Committed in-order on the render queue → the signal lands only after
+        /// the gather's GPU work. No-op if the current buffer carries no fence.
+        /// Render-thread only.
+        pub fn signal_gather_ready(&self) {
+            let guard = self.pipeline.borrow();
+            let pipe = guard
+                .as_ref()
+                .expect("rdirect_live: signal_gather_ready before start_pipeline");
+            let wait_value = pipe
+                .current
+                .as_ref()
+                .expect("rdirect_live: signal_gather_ready without begin_frame")
+                .wait_value;
+            if let Some(v) = wait_value {
+                // A bare command buffer off the render queue that only signals
+                // the event, then commits (no wait). Same queue as the gather →
+                // GPU-ordered after it.
+                let cmd = self
+                    .queue
+                    .commandBuffer()
+                    .expect("rdirect_live: signal command buffer alloc failed");
+                let ev = ProtocolObject::from_ref(&*self.event);
+                cmd.encodeSignalEvent_value(ev, v);
+                cmd.commit();
+            }
         }
 
         /// S3 instrument: GPU-only ms of the last forward (sync or pipelined).

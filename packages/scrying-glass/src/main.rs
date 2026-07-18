@@ -1317,6 +1317,12 @@ impl NetPresent {
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
         let gather_ms = t1.elapsed().as_secs_f64() * 1000.0;
 
+        // S12: release the gather→net fence on the render queue now the gather
+        // is done, so the net command buffer waiting on it (on the dedicated
+        // net queue) can run. This is the ONE cross-queue hazard the queue
+        // split introduces (net→demod stays a CPU fence via commit_net).
+        self.live.signal_gather_ready();
+
         // —— STAGE: net (S9 PIPELINED: encode already done on the encode thread)
         // The ~14 ms MPSGraph `encodeToCommandBuffer` (S8 default path) ran on
         // the background encode thread while the render thread did trace+gather;
