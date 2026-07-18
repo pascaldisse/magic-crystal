@@ -600,3 +600,16 @@ NOT present-path · THE ONE LANE = full neural engine in the live present path
 (net on tensor path 4.47ms + rays 7.6ms, interop MPSGraph↔wgpu + pooling +
 gather + training loop). Nothing else is legal work on the renderer.
 Law written: CLAUDE.md (top) · here · nyari memory. Sealed.
+
+
+## ★ RULING 07-18 ~14:50 — LAW EXTENDED TO PHYSICS
+His words = the ruling: an ACTUAL neural-network-based physics system, no
+fallback. Design sealed: Ananke assembles → NET solves → state; classical
+solve demoted to teacher/ground-truth + scaffold; same death rule as render.
+Honest state at ruling: physics 100% classical (zero neural ever ran) ·
+fluids lab-proven (gates 1-3, buoyancy impossible in current formulation —
+pressure-mirrored boundary = the open door, HIS parked ruling now MOOT: build
+it as part of the real thing) · building collapse NOT built (toy scale only).
+Lanes: neural-physics (net solver inside Ananke, N0 plumbing/N1 training,
+gates vs classical) · playable-destruction (building-scale collapse + fluid
+spawn door IN HIS WINDOW, real player path). Sealed.

@@ -8,6 +8,11 @@ else. No fallbacks. No prototypes. No interims shipped into the present path.
 Hand-built reconstruction (temporal gates/clamps/heuristics) = LAB EQUIPMENT
 ONLY (training data + history buffers), never the shipped path. Until the net
 lands, the window shows the one integrator's young samples — truth, no stand-in.
+★ EXTENDED TO PHYSICS (Architect, 07-18 14:50): same law — the ONE NEURAL
+PHYSICS ENGINE: Ananke assembles constraints → THE NET solves → state. The
+classical solve = teacher/ground-truth generator + pre-net scaffold, never the
+destination. Death rule: a net that loses to the classical solve it replaces
+at equal quality dies. Fluids + building-scale collapse are OWED IN HIS WINDOW.
 Absolutes: 60 FPS minimum · NO LODs (cluster law) · neural interpolation BANNED
 · one light pass · never hardcode (LOVE=1 sole literal) · derived tolerances ·
 canon learns every vessel the same wave · full suite between merges · push only
