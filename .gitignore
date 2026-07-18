@@ -1,5 +1,9 @@
-target/
 *.png.tmp
-tcc-probe.png
-proof/run.log
+.DS_Store
 .scratch/
+bend-journal/
+build*.log
+proof/.*.log
+proof/run.log
+target/
+tcc-probe.png
