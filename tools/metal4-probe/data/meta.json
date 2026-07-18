@@ -1,0 +1,10 @@
+{
+  "pose": "front",
+  "low": [48, 32],
+  "native": [96, 64],
+  "n_pixels": 6144,
+  "input_features": 23,
+  "output_channels": 3,
+  "weights_sha256": "4f25cdb1a6835c4d8c9e956b4ae5772ee2f47e1c17c37f315c08ab8906ce142a",
+  "layer_dims": [(23, 64), (64, 64), (64, 64), (64, 64), (64, 64), (64, 3)]
+}
