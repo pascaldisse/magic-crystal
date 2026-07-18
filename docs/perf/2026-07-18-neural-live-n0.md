@@ -450,3 +450,137 @@ not touch the sync/ordeal path (`pipelined=false`, single queue, no fence).
 - env: `GAIA_NEURAL_LIVE=1 GAIA_NATIVE_OFFSCREEN=true GAIA_NATIVE_NET_PRESENT=true
   GAIA_NATIVE_PORT=8438`, release, world `worlds/naruko`, M1 / macOS 26.
   Instrument gate: `GAIA_NATIVE_NET_TRACE=1`. Tag `[n0h]`.
+
+---
+
+# N0.i — S13 FRAME OVERLAP (SHIFT 12): the net wait leaves the critical path
+
+The endgame cut. N0.h left the net stage SOLVED on GPU (net_gpu 4.83 ms) but
+`commit_net`'s `waitUntilCompleted` blocked the render thread for the whole net
+wall (13.3 ms) — GPU + commit/fence serialization serial per frame, no overlap.
+S13 restructures the loop so frame N's committed net forward runs WHILE frame
+N+1's trace+gather run, and the wait moves one frame downstream. Live, offscreen
+640×480, release, M1/macOS 26, `worlds/naruko`, `GAIA_NATIVE_OFFSCREEN=true`.
+
+## DESIGN CHOICE — present frame N-1's finished image while building N
+`commit_net` now: (1) commits THIS frame's pre-encoded buffer WITHOUT blocking
+(`commit_prepared_nowait`, its GPU forward starts overlapping the next frame),
+(2) stashes it as `pending`, (3) WAITS and returns the PREVIOUS frame's buffer
+(`wait_prepared`) — whose net has been running during THIS frame's trace+gather
+and is (near-)complete, so the wait is short. The demod+present consume that
+FINISHED buffer's set. Chosen over "present N late in frame N" because it keeps
+the render thread free of any net-GPU wait on the frame that issued it.
+
+**Output-or-nothing is intact.** Each presented image is the COMPLETE image of
+its OWN frame's evidence (its own trace→gather→net→demod); only DISPLAY latency
+grows by one frame (frames-in-flight = 2, per-image latency ≈ 2 frames). The
+first frame presents nothing (`commit_net` returns `None` — no finished buffer
+yet), never a partial image. **[Flagged for the Architect's judgment:** the
+image is one frame older on screen than the render thread's current pose; the
+image itself is never mixed or partial.**]**
+
+Two correctness pieces:
+- **Per-set AOV** (`net_aov: Vec`, one per double-buffer set). The overlap demods
+  the PREVIOUS frame's radiance, so its albedo must be THAT frame's, not the one
+  trace just wrote. Trace/gather touch `net_aov[set]`; demod reads
+  `net_aov[demod_set]` — albedo stays matched to the radiance's frame.
+- **Per-queue signal order preserved** (N0.h). The deferral moves only WHEN we
+  `waitUntilCompleted`, never the signal↔wait pairing: each set's dedicated net
+  queue runs its buffers in commit order (frame N, N+2, …), each awaiting its own
+  strictly-increasing V signaled that frame. The N0.h FIFO wedge cannot reopen —
+  proven by 3625+/2617+ frames, 0 GPU errors, both eyes render.
+
+## WHERE THE 8.5 ms HID — the WAIT, not the commit (instrumented)
+S13 splits the net wall into `commit` (CPU, `commit_prepared_nowait`) and `wait`
+(`wait_prepared`), both in the `/budget` JSON:
+
+| path            | net_wall | net_gpu | net_commit | net_wait |
+|-----------------|----------|---------|------------|----------|
+| blocking (N0.h) | 12.99    | 4.64    | **0.005**  | **12.98**|
+
+The commit is **essentially free (0.005 ms median)**. The entire ~8.5 ms gap
+(net_wall − net_gpu) was the render thread BLOCKING at `waitUntilCompleted` on
+the net GPU completion + the per-set-queue fence serialization — NOT MPSCommand-
+Buffer commit overhead, NOT completion-handler latency, NOT gather poll. Moving
+that wait one frame downstream (onto an already-running buffer) collapses it:
+net_wait median **12.98 → 0.001 ms**, net_wall **12.99 → 0.012 ms**.
+
+## Budget — median / p95 ms · 640×480 · vs 16.67 wall · SAME BINARY A/B
+Toggle: `GAIA_NATIVE_NET_NOOVERLAP=1` forces the old blocking path for an
+apples-to-apples wall-clock comparison on one binary.
+
+**OVERLAP (S13 default, frames=3625)** — `s13-offscreen-release.log` / `/budget`:
+
+| stage    | median | p95   | note                                                  |
+|----------|--------|-------|-------------------------------------------------------|
+| trace    | 5.93   | 7.54  | +0.2 ms — net GPU now contends on the shared M1 GPU    |
+| gather   | 0.83   | 1.21  | unchanged                                              |
+| net wall | 0.012  | 0.44  | **wait moved downstream** — commit 0.005 + ~0 wait     |
+| net gpu  | 4.70   | 5.38  | fused GEMM+bias+ReLU (unchanged)                       |
+| demod    | 0.76   | 9.93  | median tiny; **p95 balloons** — blocks behind net GPU  |
+| present  | 0.11   | 0.17  | nearest blit + offscreen capture                      |
+| **TOTAL**| **11.69** | **18.27** | median stage-sum (NOT the throughput — see below) |
+
+**BLOCKING (`NOOVERLAP=1`, frames=2617)** — `s13-nooverlap.log`:
+
+| stage    | median | p95   | note                                        |
+|----------|--------|-------|---------------------------------------------|
+| trace    | 5.54   | 6.08  | no net contention (net waited serially)      |
+| net wall | 12.99  | 14.39 | **the block reappears** (wait 12.98)         |
+| demod    | 0.64   | 1.08  | tight — GPU idle when demod runs             |
+| **TOTAL**| **20.24** | **23.15** | N0.h shape reproduced on this binary    |
+
+### WALL-CLOCK fps — the throughput truth (frames / wall-seconds, whole run)
+| path                | WALL-FPS | mean ms/frame |
+|---------------------|----------|---------------|
+| blocking (NOOVERLAP)| **35.55**| 28.1          |
+| overlap (S13)       | **48.75**| 20.5          |
+
+**Overlap moves throughput +37 % (35.55 → 48.75 fps).** The median stage-sum
+(11.69 ms → "85 fps") is NOT the throughput: ~9 ms of frame-loop work lives
+OUTSIDE the per-stage budget (world advance / skin·tick·splice, the offscreen
+readback for `/scry`, HTTP) and is present in BOTH A/B arms equally — so the
+wall-clock A/B delta (+13.2 fps) is the honest overlap win, and wall-clock fps
+is the only number that tells the truth (exactly why this shift added it).
+
+## 60 FPS THROUGHPUT VERDICT — NOT MET at 48.75 fps wall-clock; 20.5 ms/frame, 2 frames-in-flight
+`60fps throughput NOT MET at 48.75 fps wall-clock (20.5 ms/frame mean), per-image
+latency ≈ 2 frames-in-flight; the frame overlap improved throughput +37 % over
+the blocking path (35.55 → 48.75 fps) and drove net_wall 12.99 → 0.012 ms, but
+did not reach 60.` Two standing thieves, both now VISIBLE and honest:
+1. **Single-GPU serialization tax.** The M1 has ONE GPU: deferring the CPU wait
+   does not make the net's 4.70 ms GPU forward run in PARALLEL with trace/demod —
+   it converts an explicit render-thread block into implicit GPU contention
+   (trace 5.54→5.93, demod p95 0.97→9.93). Real 60 fps needs CUTTING net_gpu or
+   trace GPU work, not just rescheduling it (N1 quality pass / a cheaper trace).
+2. **~9 ms non-net frame loop** (world advance + offscreen capture + present +
+   HTTP) outside the net budget — the next honest target once the GPU work
+   itself is cut. `commit`/`wait`/`wall_fps` are now in `/budget` to track both.
+
+## Parity ordeal — HOLDS (sync path untouched)
+- `n0b_gather_and_shared_forward_match_cpu` — **ok** (release, `GAIA_NEURAL_LIVE=1`).
+- `n0_gate1_live_net_matches_cpu_reference` — **ok**.
+The overlap changes only the pipelined render loop; the ordeal's sync path
+(`run_set_sync`, single queue+thread, commit_prepared_nowait+wait_prepared
+back-to-back) is bit-identical to before.
+
+## Proof — both eyes (READ, pixel words — NOT black)
+- presented: `s13-presented.png` (960×640, `/scry?eye=presented`).
+- belief: `s13-belief.png` (640×480, `/scry?eye=belief`, raw net radiance).
+- **Pixel words (both, READ):** coherent naruko dusk scene — stacked brown
+  crates, a translucent green-tinted glass panel, central dark tower ringed by
+  cyan/pink/violet concentric halos, pale presence spheres (tower mouth + around
+  the panel/platform), a large glass orb on a green cylindrical pedestal, a dark
+  chimneyed factory block with lit windows at right, pink→mauve sky over a purple
+  ground. Colours natural, radiance bounded → GPU demod wired right; the per-set
+  AOV keeps albedo matched to the presented frame. Belief eye = same geometry,
+  brighter/desaturated (albedo not undone), as designed. **Both eyes render — the
+  overlap is coherent, no wedge, no black.**
+
+## Source
+- commits: frame-overlap wip + A/B toggle (this shift), measured on the following.
+- logs: `s13-offscreen-release.log` (overlap default), `s13-nooverlap.log`
+  (`GAIA_NATIVE_NET_NOOVERLAP=1`) under `packages/scrying-glass/proof/neural-live/`.
+- env: `GAIA_NEURAL_LIVE=1 GAIA_NATIVE_OFFSCREEN=true GAIA_NATIVE_NET_PRESENT=true
+  GAIA_NATIVE_HUD=false`, release, world `worlds/naruko`, M1/macOS 26. Tag `[n0i]`.
+  `/budget` now carries `wall_fps`, `net_commit`, `net_wait`.

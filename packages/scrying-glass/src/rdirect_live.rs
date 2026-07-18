@@ -573,6 +573,11 @@ kernel void bias_relu(
         /// cost of one frame of DISPLAY latency (never evidence latency: each
         /// presented image is the complete image of its OWN frame's trace).
         pending: Option<PreparedNet>,
+        /// N0.i S13 A/B: `true` (default) = frame overlap (commit now, wait the
+        /// PREVIOUS buffer). `GAIA_NATIVE_NET_NOOVERLAP=1` forces the old S11
+        /// blocking path (commit + wait THIS buffer) for a same-binary wall-fps
+        /// A/B — proving whether overlap moves throughput on the single M1 GPU.
+        overlap: bool,
         join: Option<JoinHandle<()>>,
     }
 
@@ -1024,11 +1029,16 @@ kernel void bias_relu(
             for set in 0..SET_COUNT {
                 let _ = tx_req.send(set);
             }
+            let overlap = !matches!(
+                std::env::var("GAIA_NATIVE_NET_NOOVERLAP").as_deref(),
+                Ok("1") | Ok("true")
+            );
             *self.pipeline.borrow_mut() = Some(Pipeline {
                 tx_req,
                 rx_ready,
                 current: None,
                 pending: None,
+                overlap,
                 join: Some(join),
             });
             Ok(())
@@ -1089,6 +1099,20 @@ kernel void bias_relu(
             self.last_commit_ms.set(commit_ms);
             // Keep the encode a frame ahead: refill the set we just committed.
             let _ = pipe.tx_req.send(cur_set);
+            // N0.i S13 A/B: blocking path — wait THIS buffer now, present it this
+            // frame (no pending rotation, no display latency). The wall-fps A/B
+            // against the overlap path on the same binary.
+            if !pipe.overlap {
+                let (gpu_ms, wait_ms) = objc2::rc::autoreleasepool(|_| unsafe {
+                    let t = std::time::Instant::now();
+                    let g = wait_prepared(&current);
+                    (g, t.elapsed().as_secs_f64() * 1000.0)
+                });
+                self.last_gpu_ms.set(gpu_ms);
+                self.last_wait_ms.set(wait_ms);
+                // Buffer stays owned here until it drops (waited, safe).
+                return Ok(Some(cur_set));
+            }
             // Rotate: the buffer committed LAST frame becomes the one we wait on.
             let prev = pipe.pending.replace(current);
             match prev {
