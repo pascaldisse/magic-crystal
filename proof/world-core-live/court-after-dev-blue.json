@@ -1,0 +1,70 @@
+{
+  "env": {
+    "environment": {
+      "fog": {
+        "color": "#151126",
+        "density": 0.002
+      },
+      "sky": {
+        "horizon": "#282044",
+        "preset": "night",
+        "top": "#090914"
+      }
+    }
+  },
+  "proof_box": {
+    "mesh": {
+      "parts": [
+        {
+          "color": "#2050ff",
+          "emissive": "#0820ff",
+          "shape": "box",
+          "size": [
+            5,
+            4,
+            4
+          ]
+        }
+      ]
+    },
+    "transform": {
+      "position": [
+        0,
+        2,
+        0
+      ]
+    }
+  },
+  "proof_floor": {
+    "mesh": {
+      "parts": [
+        {
+          "color": "#302b40",
+          "shape": "box",
+          "size": [
+            30,
+            1,
+            30
+          ]
+        }
+      ]
+    },
+    "transform": {
+      "position": [
+        0,
+        -0.5,
+        0
+      ]
+    }
+  },
+  "spawn": {
+    "spawn": {
+      "position": [
+        0,
+        3,
+        10
+      ],
+      "yaw": 0
+    }
+  }
+}
