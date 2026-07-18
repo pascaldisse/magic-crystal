@@ -1,3 +1,29 @@
+# ADVERSARY — neural-live (N0.g, shift 9): the ONE net presented live
+
+## SHIFT 9 UPDATE (S8 default flip + S9 encode pipeline) — VERDICT: HOLDS parity, STILL FAILS 60fps but HALVES the gap.
+- **S8 flipped the default to MPSGraph** (the 1.8× faster path N0.f measured);
+  the chain is now the opt-in lab A/B (`GAIA_NATIVE_NET_CHAIN=1`). Parity
+  re-gated: MPSGraph vs CPU 1.9e-6, MPSGraph vs chain 4.8e-7. The default is no
+  longer the slower path — the shift-8 concordance gap #2 is CLOSED.
+- **S9 pipelined the ~14 ms MPSGraph encode onto a background thread** (double-
+  buffered sets, 0 latency — the net still reads the frame's own gather; the
+  pre-encode records references not data, render commits in-order). Net wall
+  **20.5 → 4.16 ms** (encode hidden). TESTED live @640×480, both PNGs read.
+- **Honest tax:** trace regressed **6.5 → 12.7 ms (+6 ms)** — the encode thread's
+  CPU contends with the render thread's trace submission on the shared Metal
+  queue. The chain-pipeline A/B (encode ≈0.4 ms → thread idle) keeps trace at
+  6.99 ms, ISOLATING the cause. TOTAL **30.05 → 20.07 ms** (~33 → ~50 fps): real
+  tested win, ~6 ms of it eaten by the tax.
+- **60 fps: STILL VIOLATED, 3.40 ms short (~50 fps).** The net stage is solved
+  (4.16 ms); the sole remaining thief is the trace regression. Recover trace's
+  6.99 ms baseline (dedicated encode `MTLCommandQueue` + `MTLSharedEvent` for the
+  gather→net dependency) → TOTAL ~12.9 ms → 60 fps MET. Not attacked this shift.
+- Source: `docs/perf/2026-07-18-neural-live-n0.md` N0.g; proofs
+  `proof/neural-live/n0g-{mpsgraph,chain}-pipeline.log` +
+  `s9-pipeline-{mpsgraph,chain}-net.png`.
+
+---
+
 # ADVERSARY — neural-live (N0.f, shift 8): the ONE net presented live
 
 Scope: the `GAIA_NATIVE_NET_PRESENT` live path — trace low radiance + native

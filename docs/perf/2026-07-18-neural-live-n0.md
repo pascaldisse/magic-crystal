@@ -248,3 +248,100 @@ weights tolerate: the n0d **dithered checkerboard stipple is gone**. See
   GAIA_NATIVE_HUD=false` (+ `GAIA_NATIVE_NET_MPSGRAPH=1` for the A/B), release
   binary, world `worlds/naruko`, M1 / macOS 26. Worker window = non-activating
   (never key, never pops in front). `[n0e]` tag now carries `demod` + `present`.
+
+---
+
+# N0.g — S8 default flip + S9 encode pipeline (SHIFT 9): the encode leaves the wall
+
+Two changes land, both TESTED live (:8436, `worlds/naruko`, worker window,
+release, M1/macOS 26):
+- **S8 — MPSGraph is the frame DEFAULT.** N0.f proved the fused MPSGraph GPU
+  (6.65 ms) beats the un-fused chain GPU (42.8 ms) 6.4×; the chain was default
+  only by S5 charter and lost 1.8×. S8 flips it: `use_mpsgraph` defaults TRUE;
+  the raw `MPSMatrixMultiplication` chain stays a lab A/B via
+  `GAIA_NATIVE_NET_CHAIN=1` (honest slower measurement, kept). Parity re-gated
+  after the flip: MPSGraph(default) vs CPU **1.9e-6**, MPSGraph vs chain
+  **4.8e-7** (ordeal `n0b_gather_and_shared_forward_match_cpu`).
+- **S9 — the ~14 ms MPSGraph encode rides a dedicated thread.** N0.f's net wall
+  = 6.65 GPU + ~13.9 ms CPU `encodeToCommandBuffer`. That CPU encode is
+  DATA-INDEPENDENT (fixed shape, pooled buffers), so a background encode thread
+  pre-builds the NEXT net command buffer while the render thread does GPU work.
+  Double-buffered feature/output/tensor-data SETS (`SET_COUNT=2`): the render
+  thread consumes set[frame%2] while the encode thread encodes the other set's
+  next buffer. `begin_frame` claims the pre-encoded buffer + names the set the
+  gather must fill; `commit_net` commits it (AFTER the gather) + waits the GPU.
+  **0 latency — the net still reads THIS frame's own gather** (the pre-encode
+  records buffer REFERENCES, not data; the render thread commits in-order so the
+  GPU runs gather→net every frame). No design fork: no one-frame-old evidence.
+
+## Budget — median / p95 ms · 640×480 · vs 16.67 wall · quiet machine
+
+**S8+S9 MPSGraph pipeline (the DEFAULT, frames=300)** —
+`proof/neural-live/n0g-mpsgraph-pipeline.log`:
+
+| stage    | median | p95   | note                                                 |
+|----------|--------|-------|------------------------------------------------------|
+| trace    | 12.65  | 19.09 | **+6 ms REGRESSION** — encode-thread CPU contends     |
+| gather   | 1.03   | 2.50  | unchanged                                             |
+| net wall | 4.16   | 7.16  | **encode HIDDEN** (was 20.5): commit + GPU wait only  |
+| net gpu  | 6.42   | 14.04 | fused GEMM+bias+ReLU (unchanged from n0f)             |
+| demod    | 0.63   | 1.42  | GPU undo-log-demod, one dispatch                     |
+| present  | 0.11   | 0.20  | nearest surface blit + offscreen capture             |
+| **TOTAL**| **20.07** | **26.19** | ~50 fps · **1.2× over the wall (3.40 ms short)** |
+
+**Chain pipeline (A/B, `GAIA_NATIVE_NET_CHAIN=1`, frames=720)** —
+`proof/neural-live/n0g-chain-pipeline.log`:
+
+| stage    | median | p95   | note                                                 |
+|----------|--------|-------|------------------------------------------------------|
+| trace    | 6.99   | 9.76  | **baseline** — chain encode 0.4 ms, encode thread idle |
+| net wall | 35.55  | 48.19 | chain GPU on the critical path (encode irrelevant)   |
+| net gpu  | 35.23  | 47.86 | un-fused per-layer GEMMs                              |
+| **TOTAL**| **45.05** | **58.76** | ~22 fps · confirms S8: MPSGraph pipeline wins 2.2× |
+
+### The win, and the honest tax on it
+- S9 moved the whole ~14 ms encode off the critical path: **net wall 20.5 → 4.16 ms.**
+- BUT **trace regressed 6.5 → 12.7 ms (+6 ms).** The A/B ISOLATES the cause: the
+  chain pipeline (encode ≈ 0.4 ms → encode thread ~idle) keeps trace at its
+  6.99 ms baseline; only the MPSGraph pipeline (encode thread busy ~14 ms/frame)
+  inflates trace. The encode thread's CPU work contends with the render thread's
+  trace submission — Metal command-buffer creation on the SHARED wgpu queue +
+  raw CPU pressure on the P-cores. So the theoretical 30→~14 ms became **30.05 →
+  20.07 ms (−10 ms, ~33→~50 fps)**: a real, tested win, ~6 ms eaten by the tax.
+- **Encode-thread occupancy ≈ 69%** (derived: one ~13.9 ms MPSGraph encode per
+  ~20.1 ms frame; no hardware counter added — honest label).
+
+## 60 FPS VERDICT — NOT MET, 3.40 ms short (~50 fps)
+TOTAL 20.07 ms median vs the 16.67 ms wall. The net stage is SOLVED (4.16 ms
+wall). The sole remaining thief is now the **+6 ms trace regression** the encode
+thread induces. The chain-pipeline baseline proves trace's natural cost is
+6.99 ms; recover that and TOTAL ≈ 6.99+1.03+4.16+0.63+0.11 = **~12.9 ms → 60 fps
+MET**. Next target: decouple the encode thread's Metal work from the render
+thread's trace — a DEDICATED `MTLCommandQueue` for the net encode + an
+`MTLSharedEvent` for the gather→net dependency (the only cross-queue hazard;
+demod already waits via `commit_net`). Not attacked this shift (cross-queue
+sync is its own ordeal).
+
+## Proof — both eyes
+- MPSGraph pipeline surface: `proof/neural-live/s9-pipeline-mpsgraph-net.png`
+  (960×640 = the 640×480 canvas nearest-blitted, live `/scry` :8436).
+- chain pipeline surface: `proof/neural-live/s9-pipeline-chain-net.png` (A/B).
+- **Pixel words (both, READ):** coherent naruko scene — brown crates,
+  translucent mirror glass panel, central dark tower ringed by pink/violet
+  halos, cyan+pink presence spheres, large glass orb on a cylindrical pedestal,
+  dark chimneyed factory block with lit windows, pink→mauve dusk sky over purple
+  ground. Colours natural, radiance bounded → GPU demod wired right. **Clean
+  surfaces — no checkerboard stipple** (the God's-res dividend holds).
+  **Parity MPSGraph-pipeline ↔ chain-pipeline: HOLDS** — same
+  geometry/lighting/silhouettes/demod; the only diff is the animated presence
+  spheres at a different frame instant (live motion + spp=1 noise), consistent
+  with the ordeal's 4.8e-7. **Parity vs s7 (n0f) frames: HOLDS** — same scene,
+  same clean surfaces.
+
+## Source
+- logs: `n0g-mpsgraph-pipeline.log` (default), `n0g-chain-pipeline.log`
+  (`GAIA_NATIVE_NET_CHAIN=1`) under `packages/scrying-glass/proof/neural-live/`.
+- env: `GAIA_NATIVE_WORKER_WINDOW=true GAIA_NATIVE_NET_PRESENT=true
+  GAIA_NATIVE_HUD=false GAIA_NATIVE_PORT=8436`, release, world `worlds/naruko`,
+  M1 / macOS 26. Tag `[n0g]`. Ownership: encode thread `rdirect-net-encode`
+  encodes (no commit); render thread commits + waits; `Drop` joins the thread.
