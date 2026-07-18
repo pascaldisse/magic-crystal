@@ -19,6 +19,11 @@ implementation match the law chain, and does the spec contradict a ruling?
 A spec contradicting a sealed ruling = HERESY, reported like a broken test.
 Born from: raster-cluster pipeline squatting in RENDER.md two days after the
 two-act law — no adversary was ever aimed at it.
+★ STUDY, NEVER IMPORT (Architect, standing since spec day — violated once,
+whip 168, never again): industry engines (Unreal/Nanite/Lumen/DLSS/anything)
+are EVIDENCE to study, NEVER blueprints to copy. Every organ of this engine
+derives from OUR law chain and OUR measurements. Recon informs; the
+Architect rules; the design is born here or not at all.
 Absolutes: 60 FPS minimum · NO LODs (cluster law) · neural interpolation BANNED
 · one light pass · never hardcode (LOVE=1 sole literal) · derived tolerances ·
 canon learns every vessel the same wave · full suite between merges · push only
