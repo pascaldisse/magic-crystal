@@ -1342,6 +1342,11 @@ struct NetPresent {
     /// ran, gated by `GAIA_NATIVE_DEMOD_FUSED`). The wgpu `demod` pass is then
     /// skipped for the presented eye (belief eye still uses it).
     fused: bool,
+    /// SHIFT 17 CUT B: true when the two intermediate trace GPU polls are
+    /// removed (gated by `GAIA_NATIVE_ASYNC_TRACE`) — the three trace/gather
+    /// dispatches pipeline on the GPU, the render thread spin-waits once (before
+    /// the fence signal) instead of thrice.
+    async_trace: bool,
     low_w: u32,
     low_h: u32,
     target_w: u32,
@@ -1460,8 +1465,13 @@ impl NetPresent {
             .map(|a| integrator.blit_bind_group(device, a))
             .collect();
 
+        let async_trace = matches!(
+            std::env::var("GAIA_NATIVE_ASYNC_TRACE").as_deref(),
+            Ok("1" | "true" | "on")
+        );
         Ok(Self {
             fused,
+            async_trace,
             live,
             gather,
             demod,
@@ -1533,7 +1543,19 @@ impl NetPresent {
         enc.clear_buffer(&self.net_accum, 0, None);
         integrator.dispatch(queue, &mut enc, uni_low, &accum_bg, self.low_w, self.low_h);
         queue.submit(Some(enc.finish()));
-        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        // SHIFT 17 CUT B — ASYNC TRACE: the two intermediate render-thread GPU
+        // polls (after clear+accum, after aov) exist only to time the sub-stages
+        // separately; they are NOT needed for correctness (clear+accum → aov →
+        // gather all ride the SAME wgpu render queue, which is FIFO, so each
+        // reads the prior's output on the GPU with no CPU round-trip). Removing
+        // them lets the GPU pipeline the three dispatches back-to-back and frees
+        // the render thread of two spin-waits per frame. The ONE poll that stays
+        // (after gather, below) is load-bearing: `signal_gather_ready` CPU-
+        // signals the gather→net fence, which is only truthful once the feature
+        // buffer is GPU-complete (N0.h). Opt-in: `GAIA_NATIVE_ASYNC_TRACE`.
+        if !self.async_trace {
+            let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        }
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("net trace: aov"),
         });
@@ -1547,7 +1569,9 @@ impl NetPresent {
             self.target_h,
         );
         queue.submit(Some(enc.finish()));
-        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        if !self.async_trace {
+            let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        }
         let trace_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
         // —— STAGE: gather (GPU feature build → pooled shared MTLBuffer) ——
