@@ -256,6 +256,7 @@ impl ScryingGlassConfig {
                 normal_tol: number("GAIA_NATIVE_TEMPORAL_NORMAL_TOL", 0.85)? as f32,
                 clamp_k: number("GAIA_NATIVE_TEMPORAL_CLAMP_K", 1.5)? as f32,
                 max_history: integer("GAIA_NATIVE_TEMPORAL_MAX_HISTORY", 512)?,
+                still_px: number("GAIA_NATIVE_TEMPORAL_STILL_PX", 0.05)? as f32,
             },
             hud_enabled,
             hud_window: integer("GAIA_NATIVE_HUD_WINDOW", 30)? as usize,
@@ -1610,10 +1611,10 @@ impl Renderer {
                     uniform.prev_right = prev.right;
                     uniform.prev_up = prev.up;
                     uniform.prev_forward = prev.forward;
-                    uniform.temporal_flags = [1, t.max_history, 0, 0];
+                    uniform.temporal_flags = [1, t.max_history, t.still_px.to_bits(), 0];
                 }
                 None => {
-                    uniform.temporal_flags = [0, t.max_history, 0, 0];
+                    uniform.temporal_flags = [0, t.max_history, t.still_px.to_bits(), 0];
                 }
             }
         }

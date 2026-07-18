@@ -86,10 +86,22 @@ pub struct TemporalParams {
     pub depth_tol: f32,
     /// Minimum normal agreement (cosine) for accepting reprojected history.
     pub normal_tol: f32,
-    /// Neighbourhood variance clamp width (±k·sigma) applied under motion.
+    /// Neighbourhood variance clamp width (±k·sigma). Applied EVERY frame now
+    /// (gateless), so a still-camera relight re-converges too.
     pub clamp_k: f32,
     /// Hard cap on accumulated frame count (avoids unbounded 1/n stagnation).
     pub max_history: u32,
+    /// Sub-pixel image-motion budget (in PIXELS) below which a frame is treated
+    /// as numerically STILL: identity reproject + pure 1/n running average +
+    /// clamp off (deep, exact convergence). ABOVE it the frame reprojects, floors
+    /// alpha, and clamps. This must be NEAR ZERO, not a generous sub-pixel box:
+    /// a SUSTAINED sub-pixel pan (0.1°/frame is already >0.05px at trace res)
+    /// smears just as badly under identity reproject as a fast one, because the
+    /// displacement GROWS every frame while a 1/n average keeps old frames
+    /// weighted — that was the Architect's ghost. 0.05px only snaps true stillness
+    /// (float noise) and a tremor that oscillates in place. Derived against the
+    /// pixel angular size in the shader — replaces the frozen 0.99999 gate.
+    pub still_px: f32,
 }
 
 impl Default for TemporalParams {
@@ -100,6 +112,7 @@ impl Default for TemporalParams {
             normal_tol: 0.85,
             clamp_k: 1.5,
             max_history: 512,
+            still_px: 0.05,
         }
     }
 }
@@ -1085,7 +1098,7 @@ pub fn trace_headless_temporal(
         } else {
             0
         };
-        uniform.temporal_flags = [valid, temporal.max_history, 0, 0];
+        uniform.temporal_flags = [valid, temporal.max_history, temporal.still_px.to_bits(), 0];
         let parity = i % 2;
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("headless temporal"),
