@@ -439,3 +439,38 @@ Full workspace suite run per-package under the build token (avoids the
 300s wall): 17/17 crates green, 401 tests passed, 0 failed.
 Build: `cargo build --release -p scrying-glass` clean (39.45s).
 Pushed origin main c989f06..755dfa5.
+
+## BLOODBEND B0 MERGED (merge-conductor burst)
+main @ 038f9a0 (merge of bloodbend-b0 @ a934c51, no-ff) — GREEN, suite
+408/0 (401 prior + 7 new bloodbend_ordeals). Merge landed with NO
+conflicts: main's main.rs (worker-window from_env/WindowBuilder) and
+bloodbend's main.rs (config params, bend_scene/bend_shader, the
+watch-drain loop) touched non-overlapping regions — git auto-merged
+clean; both features verified present post-merge (grep for
+WindowBuilder + bloodbend:: symbols).
+What B0 opens: edit scene JSON (world.json/scenes/*.json) or
+packages/scrying-glass/src/integrator.wgsl WHILE the window runs —
+the live world/shader updates in place. Bad edits (broken JSON,
+broken WGSL) get a police report and the old scene/pipeline keeps
+rendering, never a crash. The journal (debug/bloodbend-journal) snapshots
+the previous-good scene/shader before every applied bend — undo. TOCTOU
+is dead by construction: validation runs against the EXACT captured bytes
+via a private validation dir, never a second live re-read, so validated
+bytes == stored last_good bytes always.
+Advisory commit d8ab694/038f9a0 (attributed to the hostile re-pass,
+corner (a)): a duplicate-id scene write can be value-identical at the
+entity-diff level (no-op) while its raw bytes are still loader-rejectable
+(the duplicate key itself). Old no-op path advanced `last_good` to those
+bytes anyway — smallest cut: no-op path now leaves `last_good` untouched,
+pointed at the last VALIDATED bytes; next real diff still computes
+correctly. Plus doc note at scene_paths init (bloodbend.rs): the watch
+set is fixed at boot — a scene file created live (new scenes/*.json) is
+unwatched until process restart; on record, not a MUST-FIX (no exploit,
+just a known gap for a future watch-set refresh).
+Full workspace suite run per-package/per-binary under the build token
+(the 300s single-shot `--workspace` wall bit mid scrying-glass lib
+unittests — no hang, just wall-clock; every package/binary re-run
+individually completed in seconds): 408 tests passed, 0 failed, 0
+ignored, across all 17 crates (unit + integration + doctests).
+Build: `cargo build --release -p scrying-glass` clean (45.58s).
+Pushed origin main afa6e6c..038f9a0.
