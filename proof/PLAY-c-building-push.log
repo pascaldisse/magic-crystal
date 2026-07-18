@@ -1,0 +1,32 @@
+    Finished `release` profile [optimized] target(s) in 0.51s
+     Running `target/release/examples/building_push`
+[control] spawn top y = 6.600 (authored top = 6.6)
+    t=0 bldg_tower whole=true centroid=Some([8.000000000000007, 3.628580740408447, 33.00000000000015]) top_y=6.598
+    t=5 bldg_tower whole=true centroid=Some([7.999999999968403, 3.6057936860593585, 32.99999999999733]) top_y=6.565
+    t=10 bldg_tower whole=true centroid=Some([8.000000000408985, 3.6123692342810796, 32.99999999996663]) top_y=6.574
+    t=15 bldg_tower whole=true centroid=Some([8.000000001400423, 3.62753230983675, 33.00000000017419]) top_y=6.597
+    t=20 bldg_tower whole=true centroid=Some([8.000000003425443, 3.609084848946523, 33.000000001299355]) top_y=6.570
+    t=25 bldg_tower whole=true centroid=Some([8.000000016908738, 3.610536337989393, 33.000000013403415]) top_y=6.572
+    t=30 bldg_tower whole=true centroid=Some([8.000000078684456, 3.6259763745279767, 33.000000076923406]) top_y=6.595
+    t=35 bldg_tower whole=true centroid=Some([8.000000278164869, 3.6119449692430248, 33.00000029537272]) top_y=6.574
+[control] tower whole after settle = true, centroid = [8.000001273271177, 3.6072138088047145, 33.00000143692165], top_y = 6.567 (authored [8,3.3,33], top 6.6)
+[push] eye=[8.0, 1.6, 35.0] dir=[9.536743e-7, 2.0072136, -2.0] (aimed at rest centroid [8.000001273271177, 3.6072138088047145, 33.00000143692165])
+[push] ray picked "bldg_tower"
+[snapshot] pre-push -> /Users/pascaldisse/projects/magic-crystal-play/packages/scrying-glass/../../proof/building-push-pre-push.json
+        tick 0: tower whole=true top_y=6.693 min feet y=0.451 dynamic entities=23
+[snapshot] mid-collapse -> /Users/pascaldisse/projects/magic-crystal-play/packages/scrying-glass/../../proof/building-push-mid-collapse.json
+        tick 150: tower whole=false top_y=0.261 min feet y=0.451 dynamic entities=367
+        tick 300: tower whole=false top_y=0.261 min feet y=0.451 dynamic entities=367
+        tick 450: tower whole=false top_y=0.261 min feet y=0.451 dynamic entities=367
+        tick 600: tower whole=false top_y=0.261 min feet y=0.451 dynamic entities=367
+        tick 750: tower whole=false top_y=0.261 min feet y=0.451 dynamic entities=367
+[snapshot] settled -> /Users/pascaldisse/projects/magic-crystal-play/packages/scrying-glass/../../proof/building-push-settled.json
+[push] first fractures (tick, y_a, y_b), base row ~ y=0.0..0.6: [(90, -4.7683715642676816e-8, 0.061), (90, -4.7683715642676816e-8, 0.061), (90, -4.7683715642676816e-8, 0.061), (90, -4.7683715642676816e-8, 0.061), (90, -4.7683715642676816e-8, 0.061), (90, -4.7683715642676816e-8, 0.061), (90, 0.061, 0.061), (90, 0.061, 0.061), (90, 0.061, 0.061), (90, 0.061, 0.061), (90, 0.061, 0.061), (90, 0.061, 0.061)]
+[push] total fracture events = 963
+[push] tower broken = true, first break tick = Some(49)
+[push] dynamic entities after = 367
+[push] entity-count history (tick, count) at each change: [(0, 23), (49, 367)]
+[push] min feet y (final, debris settle floor) = 0.451
+[push] top_y: rest 6.567 -> min 0.261 m (collapse drop 6.306 m)
+
+BUILDING PUSH PROOF PASSED — the anchored ground-floor bonds shear under the push, the structure fractures and drops 6.306 m.
