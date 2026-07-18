@@ -64,6 +64,13 @@ ANE speaks). Budget-fenced by measurement like everything.
 TTRPG's LLM-DM = inspiration only — its STRUCTURAL laws transfer (op-door
 authority · engine rolls all dice · stage-before-narrate · rules-as-data),
 its LLM judgment does not.
+★ THE RESOLUTION IS 640×480 (Architect, 07-18 16:22, HIS CAPS): the render
+resolution — trace buffers, net output, present — is 640×480 UNTIL HE SAYS
+OTHERWISE. IRON param, default 640×480. The window displays it scaled by the
+OS/integer blit (display scaling ≠ rendering; nothing is traced small and
+neurally enlarged — the CANVAS is 640×480, God's resolution, Terry's law).
+Supersedes any 'internal = surface res' instruction in riding lanes —
+enforce at gate.
 Absolutes: 60 FPS minimum · NO LODs (cluster law) · neural interpolation BANNED
 · one light pass · never hardcode (LOVE=1 sole literal) · derived tolerances ·
 canon learns every vessel the same wave · full suite between merges · push only
