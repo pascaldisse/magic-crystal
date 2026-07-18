@@ -118,6 +118,17 @@ pub struct Body {
     /// falling exactly as before). Ignored when `bonded` is false.
     #[serde(default)]
     pub initial_velocity: [f64; 3],
+    /// PLAYGROUND — settle-window ticks a BONDED body is pre-relaxed for at
+    /// install with fracture DISARMED, then re-armed (the canonical
+    /// `elements::building::settle` gesture). A near-rigid lattice spikes a
+    /// huge transient constraint force in its first substeps — a numerical
+    /// startup shock, not real load — that would spuriously tear a resting
+    /// crate before a hand ever touched it. A crate the player walks up to
+    /// and PUNCHES must sit whole at rest, so it declares e.g. `settle: 90`;
+    /// the default `0` leaves every EXISTING body (VI-2's impact-break drop
+    /// included) byte-unchanged. Ignored when `bonded` is false.
+    #[serde(default)]
+    pub settle: u64,
 }
 
 fn default_shape() -> String {
@@ -192,6 +203,20 @@ pub struct Physics {
     /// `bindings` (a bonded body carries no `elements::RigidBody`, so it has
     /// no shape-matched pose to read the way `Physics::pose` does).
     bonded: Vec<BondedBinding>,
+    /// PLAYGROUND — remaining runtime ticks a bonded lattice's fracture stays
+    /// DISARMED after load (`max` of the declared `settle`). A near-rigid
+    /// lattice spikes a huge transient constraint force in its first substeps
+    /// (a numerical startup shock, not real load) that would spuriously tear a
+    /// resting crate before a hand ever touched it — so for these first ticks
+    /// [`Physics::step`] runs with the threshold at infinity, then it arms.
+    /// Done in the RUNTIME step (never a pre-settle at install) so every rigid
+    /// body still spawns exactly where the realm authored it — rigid bodies
+    /// carry no bonds, so the disarm is invisible to them. `0` (every existing
+    /// world) leaves the solver byte-unchanged.
+    settle_remaining: u64,
+    /// The armed fracture threshold captured at install, restored after each
+    /// disarmed settle step.
+    armed_fracture_threshold: f64,
 }
 
 impl Physics {
@@ -222,6 +247,7 @@ impl Physics {
         });
         let mut bindings = Vec::with_capacity(declarations.len());
         let mut bonded = Vec::new();
+        let mut settle_ticks = 0u64;
         for (gaia_id, body, center) in declarations {
             let dims = Vec3::new(body.size[0], body.size[1], body.size[2]);
             let counts = (body.resolution[0], body.resolution[1], body.resolution[2]);
@@ -267,6 +293,7 @@ impl Physics {
                     );
                     solver.apply_impulse_to_particles(&whole, dv);
                 }
+                settle_ticks = settle_ticks.max(body.settle);
                 bonded.push(BondedBinding {
                     gaia_id,
                     whole,
@@ -293,16 +320,31 @@ impl Physics {
                 });
             }
         }
+        let armed_fracture_threshold = solver.config.fracture_threshold;
         Some(Physics {
             solver,
             bindings,
             bonded,
+            settle_remaining: settle_ticks,
+            armed_fracture_threshold,
         })
     }
 
     /// Advance every declared body one fixed tick (the entropy coordinate).
+    /// PLAYGROUND — for the first `settle` ticks after load, a settle-
+    /// requesting bonded lattice steps with fracture DISARMED so its startup
+    /// shock relaxes without spuriously tearing (see `settle_remaining`); then
+    /// the authored threshold is armed for the rest of the run. Rigid-only
+    /// realms (`settle == 0`) take the plain step, byte-unchanged.
     pub fn step(&mut self) {
-        self.solver.step();
+        if self.settle_remaining > 0 {
+            self.solver.config.fracture_threshold = f64::INFINITY;
+            self.solver.step();
+            self.solver.config.fracture_threshold = self.armed_fracture_threshold;
+            self.settle_remaining -= 1;
+        } else {
+            self.solver.step();
+        }
     }
 
     /// VI-2 — poll every NOT-YET-BROKEN bonded body: still whole, or broke
