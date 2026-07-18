@@ -362,16 +362,75 @@ impl Integrator {
             ],
         });
 
+        // ── VIII-0 AOV EXPORT BEGIN ────────────────────────────────────────
+        // Own bind group layout at @group(1): a single read_write storage
+        // buffer for the packed albedo/normal/depth cells. `compute_layout`
+        // (@group(0)) is reused UNCHANGED as the AOV pipeline's group 0 —
+        // nothing above this block was touched to add AOV export.
+        let aov_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("integrator aov layout"),
+            entries: &[storage_entry(0, false, wgpu::ShaderStages::COMPUTE)],
+        });
+        // ── VIII-0 AOV EXPORT END ──────────────────────────────────────────
+
+        // The three pipelines (compute / blit / aov) are built by the SHARED
+        // `build_pipelines` — the SAME path das Blutbändigen's shader bend
+        // (`reload_shader`) re-runs on a live WGSL edit, so a hot-swapped
+        // module goes through byte-identical pipeline construction (law 1: the
+        // layouts/buffers OUTLIVE the swapped module).
+        let (compute_pipeline, blit_pipeline, aov_pipeline) = Self::build_pipelines(
+            device,
+            &shader,
+            &compute_layout,
+            &blit_layout,
+            &aov_layout,
+            target_format,
+        );
+
+        Self {
+            compute_pipeline,
+            blit_pipeline,
+            compute_layout,
+            blit_layout,
+            uniform_buf,
+            node_buf,
+            tri_buf,
+            density_buf,
+            node_count: bvh.nodes.len() as u32,
+            tri_count: bvh.tris.len() as u32,
+            aov_pipeline,
+            aov_layout,
+        }
+    }
+
+    /// Build the three integrator pipelines (compute `integrate`, blit
+    /// `blit_vs`/`blit_fs`, AOV `integrate_aov`) over an already-created shader
+    /// module and the persistent bind-group layouts. Shared by `new` and by
+    /// das Blutbändigen's `reload_shader` so a live WGSL swap reconstructs the
+    /// pipelines by the identical path — only the module changes; the layouts,
+    /// buffers and bind groups persist untouched (BLOODBEND law 1).
+    fn build_pipelines(
+        device: &wgpu::Device,
+        shader: &wgpu::ShaderModule,
+        compute_layout: &wgpu::BindGroupLayout,
+        blit_layout: &wgpu::BindGroupLayout,
+        aov_layout: &wgpu::BindGroupLayout,
+        target_format: wgpu::TextureFormat,
+    ) -> (
+        wgpu::ComputePipeline,
+        wgpu::RenderPipeline,
+        wgpu::ComputePipeline,
+    ) {
         let compute_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("integrator compute pipeline layout"),
-                bind_group_layouts: &[Some(&compute_layout)],
+                bind_group_layouts: &[Some(compute_layout)],
                 immediate_size: 0,
             });
         let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("integrator compute pipeline"),
             layout: Some(&compute_pipeline_layout),
-            module: &shader,
+            module: shader,
             entry_point: Some("integrate"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             cache: None,
@@ -379,20 +438,20 @@ impl Integrator {
 
         let blit_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("integrator blit pipeline layout"),
-            bind_group_layouts: &[Some(&blit_layout)],
+            bind_group_layouts: &[Some(blit_layout)],
             immediate_size: 0,
         });
         let blit_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("integrator blit pipeline"),
             layout: Some(&blit_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &shader,
+                module: shader,
                 entry_point: Some("blit_vs"),
                 buffers: &[],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
-                module: &shader,
+                module: shader,
                 entry_point: Some("blit_fs"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: target_format,
@@ -411,44 +470,60 @@ impl Integrator {
             cache: None,
         });
 
-        // ── VIII-0 AOV EXPORT BEGIN ────────────────────────────────────────
-        // Own bind group layout at @group(1): a single read_write storage
-        // buffer for the packed albedo/normal/depth cells. `compute_layout`
-        // (@group(0)) is reused UNCHANGED as the AOV pipeline's group 0 —
-        // nothing above this block was touched to add AOV export.
-        let aov_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("integrator aov layout"),
-            entries: &[storage_entry(0, false, wgpu::ShaderStages::COMPUTE)],
-        });
         let aov_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("integrator aov pipeline layout"),
-            bind_group_layouts: &[Some(&compute_layout), Some(&aov_layout)],
+            bind_group_layouts: &[Some(compute_layout), Some(aov_layout)],
             immediate_size: 0,
         });
         let aov_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("integrator aov pipeline"),
             layout: Some(&aov_pipeline_layout),
-            module: &shader,
+            module: shader,
             entry_point: Some("integrate_aov"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             cache: None,
         });
-        // ── VIII-0 AOV EXPORT END ──────────────────────────────────────────
+        (compute_pipeline, blit_pipeline, aov_pipeline)
+    }
 
-        Self {
-            compute_pipeline,
-            blit_pipeline,
-            compute_layout,
-            blit_layout,
-            uniform_buf,
-            node_buf,
-            tri_buf,
-            density_buf,
-            node_count: bvh.nodes.len() as u32,
-            tri_count: bvh.tris.len() as u32,
-            aov_pipeline,
-            aov_layout,
+    /// DAS BLUTBÄNDIGEN — the SHADER SUB-DOOR (B0). Recompile the integrator's
+    /// WGSL from a live source string and swap the pipelines ONLY on a clean
+    /// validation. A wgpu Validation error scope wraps the whole module +
+    /// pipeline construction (FULL-MOON RULE: reject-before-apply, zero partial
+    /// effect); on ANY compile/validation error the new module is discarded and
+    /// the OLD pipelines keep rendering untouched — the caller gets the error
+    /// string for a police report. On success the three pipeline fields are
+    /// swapped; every buffer, layout and bind group persists (the API separates
+    /// state from code — law 1).
+    pub fn reload_shader(
+        &mut self,
+        device: &wgpu::Device,
+        source: &str,
+        target_format: wgpu::TextureFormat,
+    ) -> Result<(), String> {
+        let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("L1 traced integrator (bent)"),
+            source: wgpu::ShaderSource::Wgsl(source.into()),
+        });
+        let (compute, blit, aov) = Self::build_pipelines(
+            device,
+            &module,
+            &self.compute_layout,
+            &self.blit_layout,
+            &self.aov_layout,
+            target_format,
+        );
+        // The scope captures every validation error raised above (parse, naga
+        // validation, pipeline creation). If any fired, the new pipelines are
+        // invalid — DISCARD them, keep the old ones live.
+        if let Some(error) = pollster::block_on(scope.pop()) {
+            return Err(format!("{error}"));
         }
+        self.compute_pipeline = compute;
+        self.blit_pipeline = blit;
+        self.aov_pipeline = aov;
+        Ok(())
     }
 
     /// Re-upload the acceleration structure after the living layer re-splices the

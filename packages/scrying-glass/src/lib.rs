@@ -1,5 +1,6 @@
 use crystal::{Core, GaiaPackage, PackageManifest};
 
+pub mod bloodbend;
 pub mod bvh;
 pub mod denoiser;
 pub mod denoiser_dataset;

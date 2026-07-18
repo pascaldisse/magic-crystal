@@ -17,6 +17,7 @@ use scrying_glass::{input, player};
 use crystal::{Core, GaiaPackage, ImpulseOp, Op, load_world_dir};
 use glam::Vec3;
 use scrying_glass::ScryingGlassPackage;
+use scrying_glass::bloodbend::{self, Bend, Bloodbend, BloodbendParams};
 use scrying_glass::bvh::{Bvh, BvhParams, DEFAULT_DEGRADE_RATIO, DynamicSplice, RefitParams};
 use scrying_glass::denoiser::deserialize_weights as deserialize_denoiser_weights;
 use scrying_glass::denoiser_gpu::GpuDenoiser;
@@ -874,6 +875,10 @@ struct Renderer {
     offscreen: OffscreenTarget,
     pixel_order: PixelOrder,
     capture_sender: mpsc::Sender<CaptureReady>,
+    /// DAS BLUTBÄNDIGEN — B0 data door state. `None` when the master switch is
+    /// off; `Some` carries the world/scene params + last-good snapshot the live
+    /// scene/shader bends re-materialize and journal against.
+    bloodbend: Option<Bloodbend>,
 }
 
 impl Renderer {
@@ -1038,7 +1043,115 @@ impl Renderer {
             offscreen,
             pixel_order,
             capture_sender,
+            bloodbend: None,
         })
+    }
+
+    /// DAS BLUTBÄNDIGEN — SCENE BEND. A watched scene JSON file changed: run the
+    /// full Zauberpolizei inspection (loader + render-scene materialization into
+    /// a THROWAWAY world) BEFORE touching living tissue. On rejection the world
+    /// stays byte-identical and a police report is logged. On success the
+    /// PREVIOUS good bytes are journaled (Traumdeuter-Vorritt), the entity diff
+    /// is reported (law 4 blast radius), and the scene tier rebuilds live —
+    /// window/device/surface/pipelines all persist.
+    fn bend_scene(&mut self) {
+        let Some(bb) = self.bloodbend.as_ref() else {
+            return;
+        };
+        let world_path = bb.world_path.clone();
+        let scene_params = bb.scene_params.clone();
+        let journal_dir = bb.params.journal_dir.clone();
+        let scene_paths = bb.params.scene_paths.clone();
+        let previous = bb.last_good.clone();
+        let next = bloodbend::read_scene_bytes(&scene_paths);
+
+        // INSPECTION 1 — parse + deserialize through the sigil structs (the
+        // loader's `deny_unknown_fields` is already LOUD).
+        let mut core = Core::default();
+        ScryingGlassPackage.register(&mut core);
+        if let Err(error) = load_world_dir(&world_path, &mut core.world) {
+            bloodbend::police_report("scene", &error);
+            return;
+        }
+        // INSPECTION 2 — materialize the render scene (geometry/material laws).
+        let new_scene = match RenderScene::from_ecs(core.world, &scene_params) {
+            Ok(scene) => scene,
+            Err(error) => {
+                bloodbend::police_report("scene", &format!("materialize: {error}"));
+                return;
+            }
+        };
+
+        let diff = bloodbend::diff_scenes(&previous, &next);
+        // TRAUMDEUTER-VORRITT — snapshot the previous good bytes BEFORE apply.
+        match bloodbend::journal_previous(&journal_dir, &previous) {
+            Ok(dir) => eprintln!("[bloodbend] 📜 journaled previous scene → {}", dir.display()),
+            Err(error) => {
+                bloodbend::police_report(
+                    "scene",
+                    &format!("journal failed, refusing to apply (undo would be lost): {error}"),
+                );
+                return;
+            }
+        }
+
+        self.rebuild_scene(new_scene);
+        if let Some(bb) = self.bloodbend.as_mut() {
+            bb.last_good = next;
+        }
+        bloodbend::bend_applied("scene", &diff.summary());
+    }
+
+    /// The scene tier of the blast-radius ladder (law 4): swap the render scene,
+    /// rebuild the static BVH + dynamic splice over the new leaf triangles, re-
+    /// upload the acceleration structure, refresh sun/sky, and reset the window
+    /// accumulation. The device, surface, integrator pipelines and uniform
+    /// buffer all persist (law 1 — stable substrate outlives the swapped unit).
+    fn rebuild_scene(&mut self, new_scene: RenderScene) {
+        self.scene = new_scene;
+        let tris = self.scene.leaf_triangles();
+        self.static_bvh = Bvh::build(&tris, &self.bvh_params);
+        let dynamic_tris = self.scene.dynamic_leaf_triangles();
+        self.splice = DynamicSplice::build(
+            &self.static_bvh,
+            &dynamic_tris,
+            &self.bvh_params.dynamic(),
+            self.refit_params,
+        );
+        self.integrator.update_bvh(&self.device, &self.splice.merged);
+        self.last_models = self.scene.dynamics.model_matrices();
+        self.sun = self.scene.sun;
+        self.sky_top = self.scene.sky_top;
+        self.sky_horizon = self.scene.sky_horizon;
+        self.camera.fov_y_radians = self.scene.camera.fov_y_radians;
+        self.reset_surface_accum();
+    }
+
+    /// DAS BLUTBÄNDIGEN — SHADER BEND. The watched WGSL source changed: read it
+    /// and hand it to `Integrator::reload_shader`, which recompiles + rebuilds
+    /// the pipelines under a wgpu Validation error scope. A bad shader keeps the
+    /// OLD pipeline rendering and yields a police report; a clean one swaps the
+    /// pipelines and resets accumulation. Buffers/layouts/bind groups persist.
+    fn bend_shader(&mut self) {
+        let Some(bb) = self.bloodbend.as_ref() else {
+            return;
+        };
+        let path = bb.params.shader_path.clone();
+        let source = match std::fs::read_to_string(&path) {
+            Ok(source) => source,
+            Err(error) => {
+                bloodbend::police_report("shader", &format!("read {}: {error}", path.display()));
+                return;
+            }
+        };
+        let format = self.config.format;
+        match self.integrator.reload_shader(&self.device, &source, format) {
+            Ok(()) => {
+                self.reset_surface_accum();
+                bloodbend::bend_applied("shader", &format!("{} recompiled", path.display()));
+            }
+            Err(error) => bloodbend::police_report("shader", &error),
+        }
     }
 
     /// Rebuild the window accumulation buffer (zeroed) for the current surface
@@ -2077,10 +2190,30 @@ fn main() {
                 config.draw_own_body,
             )
             .map_err(std::io::Error::other)?;
+            // DAS BLUTBÄNDIGEN — B0 DATA DOOR. Seed the live bend state from the
+            // boot scene bytes and, when the master switch is on, spawn the
+            // mtime file-watch (law 1: polling, no new crate). The receiver is
+            // drained on the render thread, which owns the device + scene.
+            let bloodbend_params = BloodbendParams::from_env(&config.world_path)
+                .map_err(std::io::Error::other)?;
+            let bend_rx = if bloodbend_params.enabled {
+                Some(bloodbend::spawn_watcher(&bloodbend_params))
+            } else {
+                eprintln!("[bloodbend] master switch GAIA_NATIVE_BLOODBEND=false — data door closed");
+                None
+            };
+            let bloodbend_state = bloodbend_params.enabled.then(|| {
+                Bloodbend::seed(
+                    bloodbend_params.clone(),
+                    config.world_path.clone(),
+                    config.scene.clone(),
+                )
+            });
             {
                 // MEASURE (item 3): print the honest GPU trace cost at the
                 // configured internal resolution before the frame loop starts.
                 let mut renderer = renderer;
+                renderer.bloodbend = bloodbend_state;
                 let (median, mean) = renderer.measure_trace_ms(60);
                 eprintln!(
                     "[frame] trace {}x{} → surface {}x{}: median {median:.2}ms mean {mean:.2}ms/frame (spp={}, 60-frame sample)",
@@ -2124,6 +2257,7 @@ fn main() {
                             tick_dt,
                             render_interval,
                             &scry_rx,
+                            bend_rx.as_ref(),
                             &running,
                             &hud_overlay,
                             hud_enabled,
@@ -2157,6 +2291,7 @@ fn run_render_loop(
     tick_dt: f32,
     render_interval: Duration,
     scry_rx: &mpsc::Receiver<ScryRequest>,
+    bend_rx: Option<&mpsc::Receiver<Bend>>,
     running: &Arc<AtomicBool>,
     hud_overlay: &tauri::webview::Webview<tauri::Wry>,
     hud_enabled: bool,
@@ -2197,6 +2332,25 @@ fn run_render_loop(
         while let Ok(request) = scry_rx.try_recv() {
             let frame = renderer.capture_pose(&request.params);
             let _ = request.reply.send(frame);
+        }
+        // DAS BLUTBÄNDIGEN — drain the file-watch. Coalesce a burst of mtime
+        // bumps into ONE apply per surface this frame (an editor may touch a
+        // file several times); scene rebuild + shader recompile both run here on
+        // the render thread that owns the device.
+        if let Some(bend_rx) = bend_rx {
+            let (mut scene_dirty, mut shader_dirty) = (false, false);
+            while let Ok(bend) = bend_rx.try_recv() {
+                match bend {
+                    Bend::Scene => scene_dirty = true,
+                    Bend::Shader => shader_dirty = true,
+                }
+            }
+            if scene_dirty {
+                renderer.bend_scene();
+            }
+            if shader_dirty {
+                renderer.bend_shader();
+            }
         }
         // Step the body one fixed tick and aim the window camera at its eye.
         let mut body_speed = 0.0f32;
