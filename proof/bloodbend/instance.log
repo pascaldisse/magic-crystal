@@ -1,0 +1,36 @@
+[package] scrying-glass v0.1.0 registered
+[world] /Users/pascaldisse/projects/magic-crystal-playground/worlds/bloodbend-proof scene(s)=["main"] entities=4 chains=2 clusters=2 transmute=1.1ms
+[embodiment] spawn eye=Vec3(0.0, 1.7, 24.0) yaw=0 floor_triangles=8 tick_dt=0.016666668
+[pleroma] BVH nodes=17 triangles=24 (static 24 + dynamic 0) build=0.2ms; 0 dynamic entit(ies) — living layer
+[pleroma] traced integrator spp=2 bounces=4 rr_start=2 — first_light is dead
+[wgpu] traced 640x480 → upscale → surface 1920x1280 (bilinear); Bgra8UnormSrgb
+[bloodbend] 🩸 watching 1 scene file(s) + /Users/pascaldisse/projects/magic-crystal-playground/packages/scrying-glass/src/integrator.wgsl @ 300ms poll
+[frame] trace 640x480 → surface 960x640: median 3.26ms mean 4.23ms/frame (spp=2, 60-frame sample)
+[scry] GET http://127.0.0.1:8431/scry (alias: /screenshot; optional pos/yaw/pitch/fov/w/h)
+[embodiment] GET http://127.0.0.1:8431/pose · POST http://127.0.0.1:8431/walk {keys,yaw?,pitch?,ticks?}
+[scrying-glass] child webview overlay created; render, capture, PNG, and HTTP run off the main thread
+[hud] window.__gaiaHud && window.__gaiaHud(12.6,79.60)
+[hud] window.__gaiaHud && window.__gaiaHud(12.6,79.60)
+[hud] window.__gaiaHud && window.__gaiaHud(51.8,19.29)
+[hud] window.__gaiaHud && window.__gaiaHud(51.8,19.29)
+[hud] window.__gaiaHud && window.__gaiaHud(54.7,18.28)
+[bloodbend] 📜 journaled previous scene → /Users/pascaldisse/projects/magic-crystal-playground/proof/bloodbend/journal/scene-1784375407767
+[bloodbend] ✅ BEND APPLIED · scene · +0 added [] · ~1 changed ["proof_crate"] · -0 removed []
+[bloodbend] ⛔ ZAUBERPOLIZEI REJECT · scene · parse /Users/pascaldisse/projects/magic-crystal-playground/worlds/bloodbend-proof/scenes/main.json: key must be a string at line 1 column 30
+[bloodbend] 📜 journaled previous scene → /Users/pascaldisse/projects/magic-crystal-playground/proof/bloodbend/journal/scene-1784375435982
+[bloodbend] ✅ BEND APPLIED · scene · +0 added [] · ~0 changed [] · -0 removed []
+[bloodbend] ✅ BEND APPLIED · shader · /Users/pascaldisse/projects/magic-crystal-playground/packages/scrying-glass/src/integrator.wgsl recompiled
+[bloodbend] ⛔ ZAUBERPOLIZEI REJECT · shader · Validation Error
+
+Caused by:
+  In Device::create_shader_module, label = 'L1 traced integrator (bent)'
+    
+Shader 'L1 traced integrator (bent)' parsing error: expected expression, found ";"
+    ┌─ wgsl:688:38
+    │
+688 │   rgb = rgb * THIS_IS_NOT_VALID_WGSL(;
+    │                                      ^ expected expression
+
+
+
+[bloodbend] ✅ BEND APPLIED · shader · /Users/pascaldisse/projects/magic-crystal-playground/packages/scrying-glass/src/integrator.wgsl recompiled

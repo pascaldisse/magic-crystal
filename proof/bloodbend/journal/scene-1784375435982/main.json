@@ -1,0 +1,24 @@
+{
+  "env": {
+    "environment": {
+      "sky": { "preset": "night", "top": "#2a1a3e", "horizon": "#d98ba8" },
+      "sun": { "position": [40, 80, 40], "color": "#ffe8c0", "intensity": 1.4 },
+      "hemisphere": { "intensity": 0.4 }
+    }
+  },
+  "world_spawn": {
+    "spawn": { "position": [0, 1.7, 24], "yaw": 0 }
+  },
+  "proof_ground": {
+    "transform": { "position": [0, 0, 0] },
+    "mesh": { "parts": [
+      { "shape": "box", "size": [80, 0.5, 80], "position": [0, -0.25, 0], "color": "#3a3550" }
+    ] }
+  },
+  "proof_crate": {
+    "transform": { "position": [0, 1.5, 12] },
+    "mesh": { "parts": [
+      { "shape": "box", "size": [3, 3, 3], "position": [0, 0, 0], "color": "#d8c020", "roughness": 0.85 }
+    ] }
+  }
+}
