@@ -1,4 +1,4 @@
-//! THE ONE RENDER PATH — own-eyes proof. Renders one naruko vista and writes a
+//! TEACHER/BENCHMARK SURFACE (ITEM 16, de-chartered — was "THE ONE RENDER PATH") — own-eyes proof. Renders one naruko vista and writes a
 //! side-by-side: LEFT = the OLD runtime resolve (bilinear upscale of the noisy
 //! 1-spp 640×480 trace); RIGHT = the chartered neural path (GPU denoise at
 //! 640×480 → GPU neural upscale → present). Same trace, same AOVs — only the
