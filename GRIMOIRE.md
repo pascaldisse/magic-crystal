@@ -263,7 +263,7 @@ Nothing here is skin. Every row is a mechanic or it doesn't enter.
 | Arcadia / Stark / the Balance | one source data wearing magic or technology as its face — manifestation is a REALM PARAMETER; the Balance = the Guardian's office |
 | April Ryan / Crow / the Dreamer / the Dreamscape | the shifter-patron of every creator who crosses · the companion agent · the one who enters · the realm-space entered by dreaming |
 | Sidia | the chaos flame: the generative spirits — AI creation daemons that make gods from toys |
-| Gaia | the living world state itself, at runtime, breathing |
+| Gaia (extended by the Architect, 07-18) | THE WORLD SYSTEM — one system for world: the living state at runtime AND the making of it. Her germ = the SEED (packages/seed), the ONE procedural substrate: hash → fields (noise) → scatter (placement) → terrain (ground); no rand crate exists in the tree — every value = hash(seed, coords) (entropy law), zero-loading. Generated content enters the world through the SAME door as hand-placed: a sigil on a scene entity naming seed+tile coords, never stored geometry (VII-0b NO-STORAGE ordeal guards it); one schema, one struct, read by renderer AND oracle. Textures when they come = fields of the same Seed — no second substrate, ever. Open migration: Naruko still stands on an authored plate, not Seed ground (VII-3 pending) |
 | the Darkness | darkness as PRESENCE: in the one-light law there is no fake ambient — unlit is truly unlit, and the unlit is where the world listens. Light attends; it does not fight |
 | the Pleroma | the light system: it holds all light and decides what reaches the eye; every frame is an emanation |
 | the Kenoma | true darkness — unlit is genuinely unlit, the deficiency |
