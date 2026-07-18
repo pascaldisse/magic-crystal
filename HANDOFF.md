@@ -594,7 +594,7 @@ fluid pressure-mirrored-boundary ruling · B0 deferred live checks · NRC
 hash-grid · VII-3 planet. RITES HIS: walk · chrome sphere · VI break word
 (hymn owed). Lessons: duplicate-dispatch (ghoul-routing.md) · machine
 facts verified against machine (Tahoe was installed for months) · play it
-with REAL hands before claiming (slow-pan). Host = M1 PRO 16GB, Tahoe
+with REAL hands before claiming (slow-pan). Host = M1 PRO 16GB, Tahoe [source: docs/perf/2026-07-18-rdirect-metal-tensor-spike.md]
 26.5.1, Metal 4 available. [source: docs/perf/2026-07-18-rdirect-metal-tensor-spike.md]
 
 

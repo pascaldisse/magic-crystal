@@ -91,7 +91,7 @@ M5 voice package (ANE, offline, async, journaled) — optional forever; UNVERIFI
 ## His rulings needed
 1. Conditioning dims: adopt DF's 50+33 verbatim, or reduced set (my rec:
    start reduced ~16+8, grow by measurement — PROPOSAL / UNVERIFIED;
-   DF-study structure cited at docs/research/2026-07-18-df-bible.md).
+   [source: docs/research/2026-07-18-df-bible.md]).
 2. Mind tick cadence defaults (rec: 10Hz near / 1Hz far, params).
 3. MONAD's event vocabulary v1 (rec: op-door vocabulary of ~14 verbs +
    spawn/weather/clock through the existing door; exact vocabulary = HIS
