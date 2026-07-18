@@ -595,25 +595,28 @@ hash-grid · VII-3 planet. RITES HIS: walk · chrome sphere · VI break word
 (hymn owed). Lessons: duplicate-dispatch (ghoul-routing.md) · machine
 facts verified against machine (Tahoe was installed for months) · play it
 with REAL hands before claiming (slow-pan). Host = M1 PRO 16GB, Tahoe
-26.5.1, Metal 4 available.
+26.5.1, Metal 4 available. [source: docs/perf/2026-07-18-rdirect-metal-tensor-spike.md]
 
 
 ## ★ RULING 07-18 ~14:44 — THE DESIGN IS THE LAW (supersedes everything above)
 Architect's word, verbatim intent: no fallback, no prototype — build ONLY the
-one full neural rendering engine as designed: trace → THE NET → screen.
-Consequences executed: GAIA_NATIVE_TEMPORAL default flipped OFF (temporal =
-lab equipment: training ground-truth + history buffers; its heuristics never
-ship) · light-fix lane (in flight) harvests as TRAINING-GENERATOR gates only,
-NOT present-path · THE ONE LANE = full neural engine in the live present path
-(net on tensor path 4.47ms + rays 7.6ms, interop MPSGraph↔wgpu + pooling +
-gather + training loop). Nothing else is legal work on the renderer.
+one full neural rendering engine as designed: world truth enters Pleroma;
+Pleroma renders the final image or nothing. Consequences executed:
+GAIA_NATIVE_TEMPORAL default flipped OFF (temporal = lab equipment: training
+ground-truth + history buffers; its heuristics never ship) · light-fix lane
+(in flight) harvests as TRAINING-GENERATOR gates only, NOT present-path · THE
+ONE LANE = Pleroma in the live present path (Pleroma's learned act on tensor
+path 4.47ms + rays 7.6ms, interop MPSGraph↔wgpu + pooling + gather + training [source: docs/perf/2026-07-18-rdirect-metal-tensor-spike.md]
+loop [source: docs/perf/2026-07-18-rdirect-metal-tensor-spike.md]). Nothing
+else is legal work on the renderer.
 Law written: CLAUDE.md (top) · here · nyari memory. Sealed.
 
 
 ## ★ RULING 07-18 ~14:50 — LAW EXTENDED TO PHYSICS
 His words = the ruling: an ACTUAL neural-network-based physics system, no
-fallback. Design sealed: Ananke assembles → NET solves → state; classical
-solve demoted to teacher/ground-truth + scaffold; same death rule as render.
+fallback. Design sealed: Ananke assembles; Pleroma's learned act solves
+into state; classical solve demoted to teacher/ground-truth + scaffold; same
+death rule as render.
 Honest state at ruling: physics 100% classical (zero neural ever ran) ·
 fluids lab-proven (gates 1-3, buoyancy impossible in current formulation —
 pressure-mirrored boundary = the open door, HIS parked ruling now MOOT: build

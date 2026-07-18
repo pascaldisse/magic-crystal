@@ -6,21 +6,21 @@ EXTENDED TO PHYSICS): same law as rendering — ONE NEURAL PHYSICS ENGINE.
 
 ## 0 · The normative path (07-18)
 ```
-Ananke assembles constraints → THE NET solves → state
+Ananke assembles constraints; Pleroma's learned act solves into state
 ```
 - **Assembly — Ananke**: builds the constraint graph each tick (contacts,
   joints, distance, volume/bend, actuated rest-length — the kernel set §1
   below still names the VOCABULARY of constraints; what changes is the
-  solver reading them).
-- **Solve — THE NET**: consumes the assembled graph, PRODUCES STATE
-  directly. No chained stand-in stage between assembly and state.
+  learned act reading them).
+- **Pleroma's learned act** consumes the assembled graph, PRODUCES STATE
+  directly. No chained stand-in between assembly and state.
 - **Classical XPBD (`packages/elements`) = TEACHER + LIVE SCAFFOLD, not the
   destination.** The world keeps moving under the classical solver until
-  cutover — it is not dead code, it is the ground truth the net trains
-  against AND the thing that keeps physics running every tick before the
-  net exists. Eviction date = the net's arrival: classical solving is
-  retired from the live path the moment THE NET wins its chair by
-  measurement (P-N1 milestone — death rule, CLAUDE.md ★: "a net that
+  cutover — it is not dead code, it is the ground truth Pleroma's learned act
+  trains against AND the thing that keeps physics running every tick before it
+  exists. Eviction date = Pleroma's learned act arrival: classical solving is
+  retired from the live path when Pleroma's learned act wins its chair by
+  measurement (P-N1 milestone — death rule, CLAUDE.md ★: "a learned act that
   loses to the classical solve it replaces at equal quality dies"). Until
   P-N1, every classical-solver line below (§1-§8) describes the SCAFFOLD,
   not a competing normative design.
