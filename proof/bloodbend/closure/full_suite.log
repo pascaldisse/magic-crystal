@@ -1,0 +1,948 @@
+    Finished `release` profile [optimized] target(s) in 0.51s
+     Running unittests src/lib.rs (target/release/deps/aether-7a0a5cabced112d8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ordeals.rs (target/release/deps/ordeals-f6944eb1dce16bfc)
+
+running 5 tests
+test ordeal_1_analytic_slab ... ok
+test ordeal_5_grid_vs_analytic ... ok
+test ordeal_4_determinism ... ok
+test ordeal_3_energy_budget ... ok
+test ordeal_2_hg_phase_normalized ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/release/deps/char_editor-0da74fb73fafb48c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ordeals.rs (target/release/deps/ordeals-4672a7de9c0d2fd8)
+
+running 5 tests
+test out_of_range_params_clamp_and_surface_never_panic ... ok
+test parity_nari_byte_identical ... ok
+test parity_pink_cat_byte_identical ... ok
+test determinism_byte_identical ... ok
+test watertight_across_sampled_params ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.57s
+
+     Running unittests src/lib.rs (target/release/deps/crystal-fd73bfc0ec15799c)
+
+running 10 tests
+test package_tests::package_registers_versioned_manifest ... ok
+test prefab::tests::prefab_name_reads_string_or_link ... ok
+test protocol::tests::parses_the_external_hub_world_when_available ... ok
+test prefab::tests::diff_keeps_overridden_and_novel_components ... ok
+test prefab::tests::expand_then_diff_is_identity_on_deltas ... ok
+test prefab::tests::objects_merge_recursively_arrays_replace ... ok
+test protocol::tests::preserves_unknown_ops_and_messages ... ok
+test protocol::tests::typed_boomtown_components_and_model_parts_deserialize ... ok
+test protocol::tests::parses_and_roundtrips_the_committed_fixture_world ... ok
+test protocol::tests::parses_boomtown_world_when_available ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests/ecs.rs (target/release/deps/ecs-3f4a99ebc0c63932)
+
+running 4 tests
+test fixed_group_accumulator_clamps_and_preserves_fraction ... ok
+test command_buffer_replays_in_record_order_at_explicit_boundary ... ok
+test dynamic_component_soa_roundtrip_query_and_gaia_map ... ok
+test dotscity_compiled_order_conforms_to_reference_snapshot ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/world_loading.rs (target/release/deps/world_loading-2e69f6f3559b1000)
+
+running 3 tests
+test world_json_composes_two_scenes_into_one_ecs ... ok
+test prefab_instance_deep_merges_under_its_deltas ... ok
+test naruko_blank_page_parses_and_populates_expected_entities ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/release/deps/elements-97b37e310e0de046)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/adv_chain.rs (target/release/deps/adv_chain-4836491f9dc87396)
+
+running 1 test
+test adv_chain_three_walls ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/adv_margin.rs (target/release/deps/adv_margin-267ed812b917fdf1)
+
+running 2 tests
+test adv_two_sided_overshoot ... ok
+test adv_grid_boundary_superset ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/diag.rs (target/release/deps/diag-a6f93a4ae4191f32)
+
+running 1 test
+test diag_incline ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.38s
+
+     Running tests/ordeals.rs (target/release/deps/ordeals-dd9dcebfe1390531)
+
+running 16 tests
+test ordeal_fracture_weak_link_breaks ... ok
+test ordeal_momentum_gate_catches_injected_leak - should panic ... ok
+test ordeal_restitution_apex_matches_param ... ok
+test ordeal_pendulum_period ... ok
+test ordeal_mixed_radius_bodies_rest_at_derived_gap ... ok
+test ordeal_energy_behavior_documented ... ok
+test ordeal_stack_topple_momentum_drift_bounded ... ok
+test ordeal_rigid_invariance_under_tumbling ... ok
+test ordeal_box_drop_settles_level_and_still ... ok
+test ordeal_chain_length_conservation ... ok
+test ordeal_rigid_energy_honest ... ok
+test ordeal_determinism_rigid_collision ... ok
+test ordeal_stack_at_rest_stability_after_topple ... ok
+test ordeal_determinism_byte_identical ... ok
+test ordeal_stack_topple_replay_is_byte_identical ... ok
+test ordeal_friction_incline_critical_angle ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+     Running tests/pscale_broadphase.rs (target/release/deps/pscale_broadphase-85497d01b6c4354f)
+
+running 4 tests
+test ordeal_grid_query_is_complete ... ok
+test ordeal_broadphase_pruned_pairs_never_contact ... ok
+test ordeal_broadphase_deterministic ... ok
+test ordeal_broadphase_replay_byte_identical ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.15s
+
+     Running tests/pscale_ordeals.rs (target/release/deps/pscale_ordeals-22f165c59257a7ec)
+
+running 5 tests
+test ordeal_per_tick_cost_recorded ... ok
+test ordeal_step_profiled_matches_step ... ok
+test ordeal_building_at_rest_stays_at_rest ... ok
+test ordeal_building_collapse_replay_byte_identical ... ok
+test ordeal_building_fragments_do_not_interpenetrate ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.86s
+
+     Running tests/vi2_break_ordeals.rs (target/release/deps/vi2_break_ordeals-c4aa3efb8ca0561c)
+
+running 7 tests
+test ordeal_momentum_gate_catches_injected_leak_through_fracture - should panic ... ok
+test ordeal_momentum_through_fracture_bounded ... ok
+test ordeal_default_essence_love_breaks_under_full_scenario ... ok
+test ordeal_equivalent_exchange_mass_exact ... ok
+test ordeal_fragments_do_not_interpenetrate_after_break ... ok
+test ordeal_replay_determinism_drop_break_settle_including_fragments ... ok
+test ordeal_fracture_threshold_reads_bond_love_not_a_hardcoded_break ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running unittests src/lib.rs (target/release/deps/fracture-b3f6b7ddd5ee078b)
+
+running 3 tests
+test tests::fragments_split_the_chain_in_two ... ok
+test tests::fragment_dag_round_trips_transmute ... ok
+test tests::ordeal_fragment_chains_byte_deterministic ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/release/deps/homunculus-937d27277967d5cf)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ordeals.rs (target/release/deps/ordeals-92c36b1c128b0764)
+
+running 8 tests
+test ordeal_generator_counts_and_lengths ... ok
+test ordeal_morphology_continuity ... ok
+test ordeal_socket_bind_derivation ... ok
+test ordeal_bind_pose_roundtrip ... ok
+test ordeal_defaults_preserve_v0 ... ok
+test ordeal_socket_determinism ... ok
+test ordeal_socket_follows_elbow ... ok
+test ordeal_weights_normalized ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/release/deps/jormungandr-c3d4af71b3749d4f)
+
+running 1 test
+test tests::aabb_distance_zero_inside_and_grows_outside ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ordeals.rs (target/release/deps/ordeals-7fa5b143900ca78c)
+
+running 5 tests
+test ordeal_missing_artifact_is_typed_error ... ok
+test ordeal_torn_page_is_typed_error_no_panic ... ok
+test ordeal_eviction_order_honors_distance ... ok
+test ordeal_unknown_page_is_typed_error ... ok
+test ordeals_flight ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.88s
+
+     Running unittests src/lib.rs (target/release/deps/kami-a5ccace12040cd64)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/cat.rs (target/release/deps/cat-a7788ca004edfbb0)
+
+running 3 tests
+test cat_loop_visits_sit_then_flick_then_walk ... ok
+test cat_walk_is_bounded_and_returns_home ... ok
+test cat_drive_stream_is_byte_identical ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ordeals.rs (target/release/deps/ordeals-3521559373bcbd7f)
+
+running 13 tests
+test ordeal_flicker_formula_parity ... ok
+test ordeal_orbit_formula_parity ... ok
+test ordeal_path_formula_parity ... ok
+test ordeal_bob_formula_parity ... ok
+test ordeal_pulse_formula_parity ... ok
+test ordeal_emissive_is_always_a_color_string ... ok
+test ordeal_spin_formula_parity ... ok
+test ordeal_patrol_visits_every_waypoint_and_loop_closes ... ok
+test ordeal_look_at_yaw_error_goes_to_zero ... ok
+test ordeal_follow_converges_without_overshoot ... ok
+test ordeal_decorative_determinism_byte_identical ... ok
+test ordeal_wander_stays_in_bounds_10k_ticks ... ok
+test ordeal_determinism_byte_identical_over_1000_ticks ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running unittests src/lib.rs (target/release/deps/oracle-a4b02f71457ff6bd)
+
+running 27 tests
+test tests::boomtown_loads_once_and_gazes_stay_cheap ... ok
+test model::aabb_tests::tube_default_radius_is_three_not_half ... ok
+test model::aabb_tests::rotation_rotates_the_world_aabb ... ok
+test model::aabb_tests::tube_bounds_cover_spline_sag_beyond_control_points ... ok
+test model::aabb_tests::cylinder_honors_radius_top_and_bottom ... ok
+test model::aabb_tests::direct_mesh_is_one_implicit_part ... ok
+test model::aabb_tests::tube_absent_path_defaults_to_reference_segment ... ok
+test model::aabb_tests::tube_short_radii_clamp_last_not_point_five ... ok
+test model::aabb_tests::visible_false_part_is_excluded ... ok
+test tests::from_core_live_path_constructs_a_world ... ok
+test tests::loads_naruko_scene_into_ecs ... ok
+test tests::lighthouse_cells_and_depth_are_geometry_truth_at_grid_32 ... ok
+test tests::default_naruko_excludes_ground_from_captions ... ok
+test tests::invalid_tie_eps_is_a_typed_error ... ok
+test tests::horizon_row_tracks_pitch ... ok
+test tests::lazy_layers_are_proven_by_the_op_counter ... ok
+test tests::invalid_params_are_typed_errors ... ok
+test tests::live_ecs_mutation_is_reflected_on_next_gaze ... ok
+test tests::oversized_grid_is_a_typed_error_not_oom ... ok
+test tests::deeper_grid_levels_are_just_a_param ... ok
+test tests::look_is_pure_geometry_and_directional ... ok
+test tests::proprio_reports_pose_and_components ... ok
+test tests::spawn_pose_faces_the_lighthouse ... ok
+test tests::yaw_west_rejects_the_lighthouse_entirely ... ok
+test tests::serialized_channels_are_honest_no_null_no_unrequested_keys ... ok
+test tests::stamped_cells_are_all_true_ray_hits_no_fabricated_depth ... ok
+test tests::byte_budget_is_enforced_before_allocation ... ok
+
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.67s
+
+     Running unittests src/bin/oracle_cli.rs (target/release/deps/oracle_cli-3146d2dd1dc82cb7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/canon.rs (target/release/deps/canon-0e9e02a249f9bcaf)
+
+running 8 tests
+test canon_terrain_patch_bounds_and_range_are_derived ... ok
+test canon_depth_band_column_16_is_front_face_path_length ... ok
+test canon_tower_cells_and_depth_band_at_grid_32 ... ok
+test canon_default_glance_frustum_set_is_the_ten_meshed_vessels ... ok
+test canon_tower_owns_no_grid8_cell ... ok
+test canon_moved_eye_pier_glance ... ok
+test canon_glance_serialization_is_deterministic ... ok
+test canon_nearest_ordering_and_ranges_are_derived ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.02s
+
+     Running tests/rest_pose_canon.rs (target/release/deps/rest_pose_canon-fad1f349efec5356)
+
+running 2 tests
+test senses_read_solver_rested_pose ... ok
+test rest_is_deterministic ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.54s
+
+     Running tests/vi2_fracture_canon.rs (target/release/deps/vi2_fracture_canon-c81422db224ef92f)
+
+running 2 tests
+test ordeal_no_orphan_matter_every_fragment_traces_to_its_parent ... ok
+test ordeal_oracle_learns_fragments_same_wave ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/vii0b_gaze.rs (target/release/deps/vii0b_gaze-49db68408df3bbfe)
+
+running 2 tests
+test gaze_facing_the_patch_returns_naruko_first_ground_at_the_derived_range ... ok
+test gaze_facing_away_from_the_patch_does_not_return_it ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/release/deps/pleroma-9fb3fb1ffc34cc56)
+
+running 19 tests
+test color::tests::black_is_zero ... ok
+test color::tests::mid_gray_decodes_below_half ... ok
+test color::tests::unknown_is_none ... ok
+test color::tests::short_hex_expands ... ok
+test geometry::tests::box_from_inside ... ok
+test color::tests::white_is_linear_one ... ok
+test geometry::tests::plane_hit_and_parallel ... ok
+test geometry::tests::box_miss ... ok
+test geometry::tests::box_face_normal ... ok
+test geometry::tests::sphere_from_inside_flips_normal ... ok
+test geometry::tests::sphere_front_hit ... ok
+test geometry::tests::sphere_miss ... ok
+test sampler::tests::cosine_pdf_matches_and_hemisphere_respected ... ok
+test sampler::tests::distinct_keys_differ ... ok
+test sampler::tests::uniform_is_stable_and_in_range ... ok
+test vec::tests::dot_cross_hand_values ... ok
+test vec::tests::onb_is_orthonormal ... ok
+test sampler::tests::uniform_mean_near_half ... ok
+test sampler::tests::cosine_average_is_two_thirds ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/medium_ordeals.rs (target/release/deps/medium_ordeals-fef8a58c92e9c4a9)
+
+running 2 tests
+test ordeal_steam_localized ... ok
+test ordeal_equivalent_exchange ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/ordeals.rs (target/release/deps/ordeals-1087679dac0d1f01)
+
+running 8 tests
+test ordeal_energy ... ok
+test ordeal_metallic_furnace ... ok
+test ordeal_furnace ... ok
+test radiance_is_public ... ok
+test ordeal_mirror_image ... ok
+test ordeal_metallic_energy ... ok
+test ordeal_determinism ... ok
+test ordeal_direct_analytic ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/release/deps/sama-e3a82a44cf4513e7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ordeals.rs (target/release/deps/ordeals-b16b675537d2cff4)
+
+running 7 tests
+test v0_sama_idle_tick0_is_bind_pose ... ok
+test ordeal_look_at_clamps_and_error ... ok
+test ordeal_state_machine_timing_and_continuity ... ok
+test ordeal_gait_walk_determinism ... ok
+test ordeal_walk_parity_with_canon ... ok
+test ordeal_determinism_byte_identical ... ok
+test ordeal_both_morphologies_valid ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/release/deps/scrying_glass-c30c0657160097db)
+
+running 47 tests
+test bvh::tests::empty_build_has_one_leaf ... ok
+test denoiser::tests::sha256_matches_nist_test_vector_abc ... ok
+test bvh::tests::dynamic_splice_default_gate_fires_on_blowup ... ok
+test bvh::tests::merge_handles_single_leaf_sides ... ok
+test bvh::tests::leaf_indices_cover_every_triangle_once ... ok
+test bvh::tests::ray_hits_and_shadow_occludes ... ok
+test bvh::tests::merge_equals_full_rebuild ... ok
+test bvh::tests::dynamic_splice_refits_then_rebuilds ... ok
+test denoiser::tests::forward_is_pure_and_repeatable ... ok
+test bvh::tests::refit_matches_rebuild_geometry ... ok
+test denoiser::tests::sha256_matches_nist_test_vector_empty ... ok
+test bvh::tests::dynamic_splice_default_holds_across_bounded_oscillation ... ok
+test error_metric::tests::empty_images_are_zero_not_nan ... ok
+test error_metric::tests::mae_self_is_exactly_zero ... ok
+test error_metric::tests::rmse_and_mae_discriminate_a_real_difference ... ok
+test denoiser::tests::weights_roundtrip_through_serialization ... ok
+test horizon::tests::radius_derives_from_budget_and_fits ... ok
+test error_metric::tests::rmse_self_is_exactly_zero ... ok
+test player::tests::floor_query_ignores_walls_and_finds_top ... ok
+test horizon::tests::tiny_budget_is_rejected_not_panicked ... ok
+test player::tests::ground_clamp_settles_at_eye_height_and_never_sinks ... ok
+test player::tests::gravity_integration_is_deterministic ... ok
+test player::tests::jump_arc_apex_matches_v_squared_over_two_g ... ok
+test player::tests::walk_covers_speed_times_time_forward ... ok
+test scene::tests::from_ecs_derives_world_space_box_vertices_and_spawn_camera ... ok
+test presence::tests::body_transform_tracks_the_pose ... ok
+test scene::tests::emissive_sources_read_the_real_lantern ... ok
+test presence::tests::join_and_reap_track_the_pose_set ... ok
+test presence::tests::motion_drives_the_gait ... ok
+test scene::tests::stall_top_flat_surface_is_derived_from_geometry ... ok
+test scene::tests::terrain_placement_offset_is_translation_invariant_at_planetary_tile_magnitude ... ok
+test scene::tests::sun_reads_environment_over_defaults ... ok
+test upscaler::tests::bilinear_upsample_is_exact_identity_at_scale_one ... ok
+test upscaler::tests::forward_is_pure_and_repeatable ... ok
+test denoiser::tests::training_reduces_loss_on_a_trivial_identity_task ... ok
+test upscaler::tests::input_feature_count_is_twentyone ... ok
+test upscaler::tests::untrained_net_is_exactly_bilinear ... ok
+test upscaler::tests::weights_roundtrip_through_serialization ... ok
+test presence::tests::splice_byte_deterministic ... ok
+test upscaler::tests::training_reduces_residual_loss_on_a_learnable_task ... ok
+test scene::tests::naruko_selected_cut_preserves_every_material_band ... ok
+test scene::tests::finest_threshold_reproduces_leaf_geometry ... ok
+test scene::tests::leaf_triangles_split_albedo_and_emission_by_material ... ok
+test scene::tests::dynamic_split_leaf_parity_holds ... ok
+test scene::tests::naruko_chain_is_deterministic_and_double_builds_byte_identical ... ok
+test scene::tests::bob_matches_kami_through_the_pipeline ... ok
+test scene::tests::tick_determinism_byte_identical_model_buffer ... ok
+
+test result: ok. 47 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.67s
+
+     Running unittests src/main.rs (target/release/deps/scrying_glass-df6a1bed370e4c55)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/bloodbend_ordeals.rs (target/release/deps/bloodbend_ordeals-1b520d289199c77a)
+
+running 4 tests
+test journal_snapshots_previous_before_apply ... ok
+test valid_crate_recolor_is_applied_and_reflected ... ok
+test broken_json_is_rejected_and_world_hash_unchanged ... ok
+test bad_wgsl_keeps_old_pipeline_and_valid_swap_works ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/body_sigil.rs (target/release/deps/body_sigil-1f9167e317bbc0b1)
+
+running 4 tests
+test f2_unknown_body_field_is_loud ... ok
+test f2_both_preset_and_shape_refuses_the_realm ... ok
+test f2_shape_body_is_a_rigid_not_a_vessel ... ok
+test f2_preset_body_on_meshed_entity_is_vessel_only ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/floor_fallthrough.rs (target/release/deps/floor_fallthrough-f08744ea5bbb00a1)
+
+running 2 tests
+test terra_north_rim_steps_down_onto_sea_plate_grounded ... ok
+test walk_the_realm_has_no_interior_fallthrough ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.08s
+
+     Running tests/horizon.rs (target/release/deps/horizon-34139367321b2517)
+
+running 5 tests
+test ordeal1_horizon_materializes_ahead_evicts_behind_under_budget ... ok
+test ordeal4_evicted_tile_leaves_the_collision_world ... ok
+test ordeal2_render_origin_rebases_pose_trace_continuous ... ok
+test ordeal3_planetary_magnitude_walk_holds_the_invariants ... ok
+test ordeal2b_sabotaged_rebase_trips_the_continuity_guard ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.96s
+
+     Running tests/medium_parity.rs (target/release/deps/medium_parity-66d3925772c7bdea)
+
+running 2 tests
+test medium_parity_gpu_matches_aether_reference ... ok
+test point_light_parity_gpu_matches_aether_reference ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests/ordeals.rs (target/release/deps/ordeals-9eb43ca0b72e3dd6)
+
+running 4 tests
+test shadowed_point_receives_no_sun ... ok
+test determinism_same_seed_frames_byte_identical ... ok
+test specular_parity_gpu_mirror_matches_pleroma ... ok
+test parity_gpu_tracer_matches_pleroma ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests/patch_gate.rs (target/release/deps/patch_gate-45d60d4fbe3c4e7e)
+
+running 7 tests
+test sliver_low_enough_above_floor_is_admitted_by_design ... ok
+test patch_radius_gate_discriminates_both_directions ... ok
+test contact_radius_matches_measured_foot_half_extent ... ok
+test pier_plank_is_unchanged ... ok
+test patch_gate_query_is_deterministic ... ok
+test mirror_panel_top_seam_dies ... ok
+test legitimate_floors_are_unchanged ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/physics.rs (target/release/deps/physics-ad2f13f230598edb)
+
+running 6 tests
+test no_body_declared_is_byte_unchanged ... ok
+test stack_settles_at_derived_chained_heights ... ok
+test two_runs_are_byte_identical_state_hashes ... ok
+test crate_falls_and_rests_on_the_planks_at_derived_height ... ok
+test stack_topple_never_falls_through_the_pier_deck ... ok
+test stack_topple_via_impulse_replays_byte_identical ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.94s
+
+     Running tests/pose_trace.rs (target/release/deps/pose_trace-b4d7d3fc08017784)
+
+running 1 test
+test pose_trace_script ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/rite5.rs (target/release/deps/rite5-3204fc1b81003f0e)
+
+running 17 tests
+test v1_contact_and_passing_are_distinct_poses ... ok
+test v1_derived_foot_ground_contact_no_hover ... ok
+test v0_body_enters_dynamic_partition_each_tick ... ok
+test v2_cat_body_is_minded_nari_is_not ... ok
+test v1_body_grounds_on_the_walker_floor_f1 ... ok
+test v0_body_composes_from_the_sigil ... ok
+test v1_sama_pose_is_the_skinning_input_each_tick ... ok
+test weld_attachment_sigil_is_read ... ok
+test weld_own_eye_cull_excludes_attached_body_foreign_eye_includes_it ... ok
+test v1_body_casts_a_traced_shadow_on_the_seawall ... ok
+test weld_attached_body_position_equals_walker_0e0 ... ok
+test weld_gait_speed_is_derived_not_broadcast ... ok
+test v0_body_render_is_deterministic ... ok
+test v1_gait_is_deterministic_byte_identical ... ok
+test weld_shadow_follows_the_walked_body ... ok
+test v2_cat_animation_is_byte_identical ... ok
+test v2_cat_walks_its_circuit_while_nari_holds ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.10s
+
+     Running tests/seam_step.rs (target/release/deps/seam_step-ee946d4741d5b429)
+
+running 5 tests
+test ruling6_contact_patch_gate_bites_generated_geometry ... ok
+test seam_height_mismatch_is_caught_by_the_guard ... ok
+test rigid_body_rests_on_generated_terrain_at_planetary_render_origin ... ok
+test walker_crosses_seam_forward_and_back_is_pose_trace_continuous ... ok
+test rigid_body_rests_on_generated_terrain_in_the_solver_collision_world ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+
+     Running tests/vii0b_terrain.rs (target/release/deps/vii0b_terrain-fec239010d0f996b)
+
+running 4 tests
+test terrain_entity_with_a_mesh_component_is_refused ... ok
+test generated_patch_enters_the_walker_floor_at_the_analytic_field_value ... ok
+test no_storage_cold_double_load_is_byte_identical_and_json_carries_no_geometry ... ok
+test render_origin_at_planetary_tile_magnitude_reproduces_the_local_mesh_through_the_real_weld ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/viii0_ordeals.rs (target/release/deps/viii0_ordeals-771c379188368bef)
+
+running 6 tests
+test ban_aov_signature_takes_current_frame_inputs_only ... ok
+test ban_no_temporal_vocabulary_in_the_new_aov_error_module ... ok
+test aov_off_matches_pre_atom_golden_hash ... ok
+test aov_export_is_deterministic_cold_run ... ok
+test reference_accumulation_is_reproducible ... ok
+test error_metric_discriminates_a_real_gpu_difference ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+
+     Running tests/viii1_ordeals.rs (target/release/deps/viii1_ordeals-0aa78b0971b47a1d)
+
+running 6 tests
+test d_ban_every_public_fn_signature_in_denoiser_takes_current_frame_inputs_only ... ok
+test d_ban_denoiser_module_is_picked_up_by_the_forward_proof_grep_gate ... ok
+test a4_committed_weights_bytes_match_pinned_provenance_sha256 ... ok
+test a_inference_is_byte_identical_same_frame_twice_cold ... ok
+test e_senses_unchanged_oracle_sha_equal_pass_on_or_off ... ok
+test b_and_c_denoised_beats_pinned_bound_and_beats_noisy_on_every_validation_frame ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.69s
+
+     Running tests/viii2_ordeals.rs (target/release/deps/viii2_ordeals-78b1ff229c50917c)
+
+running 5 tests
+test f_ban_every_public_fn_signature_in_denoiser_gpu_takes_current_frame_inputs_only ... ok
+test e_gpu_uploads_weights_matching_the_hash_pinned_committed_artifact ... ok
+test d_ban_no_temporal_vocabulary_in_the_gpu_shader ... ok
+test a_gpu_inference_is_byte_identical_same_frame_twice ... ok
+test b_and_c_gpu_matches_cpu_within_derived_bound_and_beats_noisy ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.31s
+
+     Running tests/viii3_ordeals.rs (target/release/deps/viii3_ordeals-28a646ead60e98df)
+
+running 6 tests
+test f_ban_every_public_fn_signature_in_upscaler_takes_current_frame_inputs_only ... ok
+test d_scale_one_degenerates_to_exact_identity ... ok
+test f_ban_upscaler_module_is_picked_up_by_the_forward_proof_grep_gate ... ok
+test e_committed_weights_bytes_match_pinned_provenance_sha256 ... ok
+test a_inference_is_byte_identical_same_frame_twice_cold ... ok
+test b_and_c_neural_beats_bilinear_and_meets_pinned_bound_on_every_validation_frame ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.91s
+
+     Running tests/viii3b_ordeals.rs (target/release/deps/viii3b_ordeals-eeabcaf68305e638)
+
+running 4 tests
+test d_ban_no_temporal_vocabulary_in_the_gpu_shader ... ok
+test g_full_neural_path_is_deterministic_end_to_end ... ok
+test a_gpu_inference_is_byte_identical_same_frame_twice ... ok
+test b_and_c_gpu_matches_cpu_within_derived_bound_and_beats_bilinear ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.79s
+
+     Running unittests src/lib.rs (target/release/deps/seed-7381ca2900fee527)
+
+running 3 tests
+test terrain_sigil::tests::defaults_match_terrain_params_default_when_nothing_overridden ... ok
+test terrain_sigil::tests::tile_size_override_re_derives_dependent_dials ... ok
+test terrain_sigil::tests::deny_unknown_fields_rejects_a_typo ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ordeals.rs (target/release/deps/ordeals-300d17176ebfc8ed)
+
+running 6 tests
+test fbm_defaults_in_range ... ok
+test ordeal_isolation_region_regenerates_alone ... ok
+test ordeal_density_scatter_ratio ... ok
+test ordeal_poisson_min_distance_exhaustive ... ok
+test ordeal_determinism_two_runs_and_iteration_order ... ok
+test ordeal_noise_statistics ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/terrain_ordeals.rs (target/release/deps/terrain_ordeals-e8c888ad0dbe9107)
+
+running 9 tests
+test height_field_is_a_pure_function_of_world_xz ... ok
+test ordeal_different_seed_different_mesh ... ok
+test ordeal_local_vertex_spacing_stable_at_large_tile_coordinate ... ok
+test ordeal_regeneration_determinism ... ok
+test ordeal_no_storage_cold_rebuild ... ok
+test ordeal_seam_all_four_directions_byte_identical ... ok
+test ordeal_tile_seed_and_coord_key_i64_distinguish_coordinates ... ok
+test ordeal_seam_large_tile_coordinate ... ok
+test ordeal_tile_isolation ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/release/deps/steiner-84e5e4c4abefd710)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ordeals.rs (target/release/deps/ordeals-839016912c0c36de)
+
+running 8 tests
+test ordeal_v1_file_compatibility ... ok
+test ordeal_torn_write ... ok
+test ordeal_snapshot_journal_torn_tail ... ok
+test ordeal_snapshot_prefix_replay ... ok
+test ordeal_roundtrip ... ok
+test ordeal_any_point_reconstruction ... ok
+test ordeal_determinism ... ok
+test ordeal_worldline_fork ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running unittests src/lib.rs (target/release/deps/transmutation-deee4fcfa4592417)
+
+running 8 tests
+test tests::gaia_primitives_tessellate_nonempty ... ok
+test tests::header_rejects_garbage ... ok
+test partition::scaling_tests::finding7_high_valence_scales_linearly ... ok
+test tests::greedy_fallback_also_transmutes ... ok
+test tests::serialize_roundtrip_equality ... ok
+test tests::leaf_tri_sum_equals_input ... ok
+test tests::sphere_transmutes_multi_level_chain ... ok
+test tests::every_shard_within_budgets ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running unittests src/bin/transmute-cli.rs (target/release/deps/transmute_cli-c0dda09a0985f752)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/inquisition.rs (target/release/deps/inquisition-5b11410386f9235b)
+
+running 24 tests
+test finding3_single_triangle_terminal ... ok
+test finding2_greedy_leftover_bounded_not_dumped ... ok
+test budgets_default_is_engine_ceiling ... ok
+test finding3_unsimplifiable_stays_terminal_no_orphans ... ok
+test finding4_version_bumped_and_v1_rejected ... ok
+test advisory_leaf_triangle_multiset_equals_input ... ok
+test finding5_uv_seam_not_welded ... ok
+test finding1_canonical_coordinate_offset_grids ... ok
+test finding6_illegal_params_rejected ... ok
+test finding5_uv_seam_survives_multi_level ... ok
+test finding7_greedy_partition_balance_direct ... ok
+test finding7_high_valence_completes ... ok
+test advisory_error_monotone_up_chain ... ok
+test finding2_group_records_share_metric ... ok
+test finding7_disconnected_components_balanced ... ok
+test finding4_pages_range_read_independently ... ok
+test finding1_boundary_locking_pathological ... ok
+test finding4_dependency_closure_covers_all_pages ... ok
+test finding5_pathological_lossless ... ok
+test finding4_root_loads_without_the_rest ... ok
+test finding1_boundary_locking_sphere_and_plane ... ok
+test finding8_metis_default_in_process_double_build_identical ... ok
+test finding8_pipeline_deterministic_greedy ... ok
+== transmutation Great Chain stats ==
+mesh:        sphere @ res 128
+input verts: 12513
+input tris:  24576
+partitioner: metis
+levels:      10
+clusters:    667 total
+groups:      171 total
+leaf tri sum:24576 (== input: true)
+
+level    clusters         tris  avg tris/cl
+0             262        24576         93.8
+1             185        12264         66.3
+2             101         6118         60.6
+3              54         3074         56.9
+4              30         1548         51.6
+5              16          802         50.1
+6               9          454         50.4
+7               6          236         39.3
+8               3          118         39.3
+9               1           58         58.0
+wrote /Users/pascaldisse/projects/magic-crystal-playground/target/tmp/det_a.cbdg (1868803 bytes)
+== transmutation Great Chain stats ==
+mesh:        sphere @ res 128
+input verts: 12513
+input tris:  24576
+partitioner: metis
+levels:      10
+clusters:    667 total
+groups:      171 total
+leaf tri sum:24576 (== input: true)
+
+level    clusters         tris  avg tris/cl
+0             262        24576         93.8
+1             185        12264         66.3
+2             101         6118         60.6
+3              54         3074         56.9
+4              30         1548         51.6
+5              16          802         50.1
+6               9          454         50.4
+7               6          236         39.3
+8               3          118         39.3
+9               1           58         58.0
+wrote /Users/pascaldisse/projects/magic-crystal-playground/target/tmp/det_b.cbdg (1868803 bytes)
+test finding8_two_independent_builds_byte_identical ... ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.57s
+
+     Running unittests src/lib.rs (target/release/deps/vessel-997b39a6a6231f0c)
+
+running 4 tests
+test color::tests::hex_roundtrips_canonical ... ok
+test color::tests::short_hex_expands ... ok
+test color::tests::unknown_is_none ... ok
+test color::tests::white_black_roundtrip ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ordeals.rs (target/release/deps/ordeals-122017f4a71b2fd3)
+
+running 11 tests
+test ordeal_deformation_regions ... ok
+test ordeal_region_coverage_geometric ... ok
+test ordeal_both_morphologies_no_nan ... ok
+test ordeal_closedness ... ok
+test ordeal_both_morphologies_regions_nonempty ... ok
+test ordeal_every_vertex_one_region ... ok
+test ordeal_weights_normalized ... ok
+test ordeal_mesh_sanity ... ok
+test ordeal_color_validity ... ok
+test ordeal_determinism ... ok
+test ordeal_colored_determinism ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/rite5.rs (target/release/deps/rite5-a7f6fab41c9d9a31)
+
+running 4 tests
+test v0_watertight_after_skinning ... ok
+test v0_nari_palette_is_avatar_canon ... ok
+test v0_bone_vertex_transform_parity ... ok
+test v0_skinning_is_byte_identical ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/rite5_v2.rs (target/release/deps/rite5_v2-d3e27a706f42df87)
+
+running 4 tests
+test v2_cat_palette_paints_every_region ... ok
+test v2_cat_lowest_vertex_is_a_paw ... ok
+test v2_cat_watertight_after_skinning ... ok
+test v2_cat_skinning_is_byte_identical ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running unittests src/lib.rs (target/release/deps/wired-5143a9227aca1c76)
+
+running 13 tests
+test interp::tests::own_presence_never_buffered ... ok
+test interp::tests::extrapolation_cap_honored ... ok
+test interp::tests::delay_param_honored_exactly ... ok
+test codec::tests::move_presence_emits_position_and_yaw ... ok
+test codec::tests::hello_and_ops_batch_roundtrip_wire_shape ... ok
+test codec::tests::despawn_and_event_and_clear ... ok
+test interp::tests::observe_extracts_from_entity_map ... ok
+test codec::tests::set_null_clears_component_and_unknown_components_survive ... ok
+test codec::tests::folds_snapshot_then_ops ... ok
+test interp::tests::rejects_non_monotonic_arrivals ... ok
+test interp::tests::yaw_slerps_shortest_arc ... ok
+test interp::tests::smooth_vs_slam_bound ... ok
+test interp::tests::determinism_byte_identical ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests aether
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests char_editor
+
+running 1 test
+test packages/char-editor/src/lib.rs - (line 31) ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s
+
+   Doc-tests crystal
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests elements
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests fracture
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests homunculus
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests jormungandr
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kami
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests oracle
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests pleroma
+
+running 1 test
+test packages/pleroma/src/lib.rs - (line 18) ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+
+   Doc-tests sama
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests scrying_glass
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests seed
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests steiner
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests transmutation
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests vessel
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests wired
+
+running 1 test
+test packages/wired/src/lib.rs - (line 9) - compile ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
