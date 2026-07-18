@@ -21,10 +21,39 @@
 //!
 //! Run: cargo run -p scrying-glass --release --example fluid_door
 
+use std::path::Path;
+
 use elements::fluid::{fill, surface_height, FluidPoolSpec};
 use elements::fluid_kernel::poly6;
 use elements::pointgrid::PointGrid;
 use elements::Vec3;
+
+/// PLAY.c — offline scene-state snapshot (window-ban proof): every current
+/// fluid particle's position + velocity, written as JSON to
+/// `proof/fluid-door-<label>.json`. The headless substitute for a
+/// screenshot when what's proven is PARTICLE STATE, not pixels.
+fn snapshot(fluid: &[usize], solver: &elements::Solver, label: &str, note: &str) {
+    let particles: Vec<serde_json::Value> = fluid
+        .iter()
+        .map(|&i| {
+            let p = solver.particles.pos[i];
+            let v = solver.particles.vel[i];
+            serde_json::json!({"pos": [p.x, p.y, p.z], "vel": [v.x, v.y, v.z]})
+        })
+        .collect();
+    let doc = serde_json::json!({
+        "label": label,
+        "engine_tick": solver.tick,
+        "note": note,
+        "fluid_particle_count": particles.len(),
+        "particles": particles,
+    });
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../proof");
+    std::fs::create_dir_all(&dir).expect("proof dir");
+    let path = dir.join(format!("fluid-door-{label}.json"));
+    std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap()).expect("write snapshot");
+    println!("[snapshot] {label} -> {}", path.display());
+}
 
 /// bldg_basin's inner cavity, derived from its authored mesh (see module
 /// doc): walls at |x|,|z| = 1.7 +/- 0.1 half-thickness -> inner span
@@ -174,6 +203,8 @@ fn main() {
     }
     println!("[door] residual film settled, surface {:.4} m", surface_height(&pool));
 
+    snapshot(&pool.fluid, &pool.solver, "pre-burst", "residual film settled, door about to open");
+
     // ── THE DOOR BURSTS — spawn the flood volume above the south rim with
     // an inward+downward impulse, register it into the SAME fluid particle
     // set the pool machinery tracks. ─────────────────────────────────────
@@ -202,11 +233,23 @@ fn main() {
 
     let pre_burst_surface = surface_height(&pool);
     let mut peak_splash = pre_burst_surface;
+    let mut peak_tick: u64 = 0;
+    let mut mid_splash_snapped = false;
     println!("\n-- SPLASH ({SPLASH_TICKS} ticks) --");
     for t in 0..SPLASH_TICKS {
         pool.solver.step();
         let surf = surface_height_all(&all_fluid, &pool.solver);
-        peak_splash = peak_splash.max(surf);
+        if surf > peak_splash {
+            peak_splash = surf;
+            peak_tick = pool.solver.tick;
+        }
+        // Mid-splash snapshot: the tick the surface first crosses halfway
+        // between the pre-burst rest height and the eventual peak splash
+        // (i.e. the burst is clearly airborne/impacting, not yet settled).
+        if !mid_splash_snapped && surf > pre_burst_surface + 0.5 {
+            snapshot(&all_fluid, &pool.solver, "mid-splash", "surface crossing pre-burst+0.5m, actively splashing");
+            mid_splash_snapped = true;
+        }
         if t % 25 == 0 {
             println!(
                 "tick {:3}: surface {:.4} m, in-basin {:.3}, max speed {:.3} m/s, KE {:.4} J, max overdensity {:.4}",
@@ -220,9 +263,12 @@ fn main() {
         }
     }
     println!(
-        "[door] peak splash surface {peak_splash:.4} m (pre-burst {pre_burst_surface:.4} m, wall top {:.2} m)",
+        "[door] peak splash surface {peak_splash:.4} m at tick {peak_tick} (pre-burst {pre_burst_surface:.4} m, wall top {:.2} m)",
         BASIN_WALL_HEIGHT
     );
+    if !mid_splash_snapped {
+        snapshot(&all_fluid, &pool.solver, "mid-splash", "splash window ended without crossing +0.5m; last splash-phase state");
+    }
 
     println!("\n-- POOL SETTLE ({POOL_SETTLE_TICKS} ticks) --");
     for t in 0..POOL_SETTLE_TICKS {
@@ -245,6 +291,7 @@ fn main() {
     let final_ke = total_kinetic_energy(&all_fluid, &pool.solver);
     let flatness = surface_flatness(&all_fluid, &pool.solver);
     println!("\n[door] FINAL: surface {final_surface:.4} m, in-basin {final_in_basin:.3}, max speed {final_speed:.4} m/s, KE {final_ke:.4} J, flatness (max-min column top) {flatness:.4} m");
+    snapshot(&all_fluid, &pool.solver, "settled", "final tick, pool settled");
 
     assert!(peak_splash > pre_burst_surface + 0.05, "the burst must raise the surface above the dry-film rest height (a real splash), peak={peak_splash:.4} pre={pre_burst_surface:.4}");
     assert!(final_in_basin > 0.9, "the flood must land and stay mostly INSIDE the basin footprint, got {final_in_basin:.3}");

@@ -16,6 +16,39 @@ use std::path::Path;
 use crystal::{load_world_dir, EcsWorld, ImpulseOp, Op};
 use scrying_glass::scene::{RenderScene, SceneParameters, SunDefaults};
 
+/// PLAY.c — offline scene-state snapshot (window-ban proof): the tower's
+/// ORIGINAL particle group's positions + velocities + a few summary fields,
+/// written as JSON to `proof/building-push-<label>.json`. Read with `cat`/
+/// `jq`, never a browser — the headless substitute for a screenshot when
+/// what's being proven is PHYSICS STATE, not pixels.
+fn snapshot(scene: &RenderScene, label: &str, tick: u64, note: &str) {
+    let physics = scene.physics().expect("physics");
+    let solver = physics.solver();
+    let group = solver.bonded_groups.iter().find(|g| g.len() == 6 * 11 * 6).expect("tower group");
+    let particles: Vec<serde_json::Value> = group
+        .iter()
+        .map(|&i| {
+            let p = solver.particles.pos[i];
+            let v = solver.particles.vel[i];
+            serde_json::json!({"pos": [p.x, p.y, p.z], "vel": [v.x, v.y, v.z]})
+        })
+        .collect();
+    let doc = serde_json::json!({
+        "label": label,
+        "engine_tick": tick,
+        "note": note,
+        "tower_particle_count": particles.len(),
+        "fracture_events_so_far": solver.fractures.len(),
+        "dynamic_entities": scene.dynamics.entities().len(),
+        "particles": particles,
+    });
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../proof");
+    std::fs::create_dir_all(&dir).expect("proof dir");
+    let path = dir.join(format!("building-push-{label}.json"));
+    std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap()).expect("write snapshot");
+    println!("[snapshot] {label} -> {}", path.display());
+}
+
 const SETTLE_TICKS: u64 = 40;
 const AFTER_TICKS: u64 = 900;
 const TOWER: &str = "bldg_tower";
@@ -163,6 +196,7 @@ fn main() {
     };
     println!("[push] ray picked {picked:?}");
     assert_eq!(picked, TOWER, "ray must select the tower");
+    snapshot(&scene, "pre-push", 0, "settled, whole, about to receive the impulse");
     scene.tick_with_ops(&[op]);
 
     // `min_top_y` tracks `top_y()` (live max particle height of the tower's
@@ -177,6 +211,7 @@ fn main() {
     let mut break_tick: Option<u64> = None;
     let mut entity_history: Vec<(u64, usize)> = Vec::new();
     let mut prev_entities = 0usize;
+    let mut mid_collapse_snapped = false;
     for i in 0..AFTER_TICKS {
         scene.tick();
         min_top_y = min_top_y.min(top_y(&scene));
@@ -189,11 +224,22 @@ fn main() {
             entity_history.push((i, entities));
             prev_entities = entities;
         }
+        // Mid-collapse snapshot: the first tick 20 ticks after the break is
+        // first observed (structure actively falling, not yet settled).
+        if !mid_collapse_snapped {
+            if let Some(bt) = break_tick {
+                if i >= bt + 20 {
+                    snapshot(&scene, "mid-collapse", i, "20 ticks after first break observed, actively falling");
+                    mid_collapse_snapped = true;
+                }
+            }
+        }
         if i % 150 == 0 {
             let feet = min_feet_y(&scene);
             println!("        tick {i}: tower whole={whole_now} top_y={:.3} min feet y={feet:.3} dynamic entities={entities}", top_y(&scene));
         }
     }
+    snapshot(&scene, "settled", AFTER_TICKS, "final tick, debris settled");
     // Diagnostic (not an assertion): the y-height of the first N fractured
     // bonds' particles — evidence for WHERE the break started (ground-floor
     // bonds first vs. an arbitrary layer), read straight off the solver's
