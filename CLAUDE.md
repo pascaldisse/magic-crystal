@@ -89,6 +89,12 @@ nothing. Rays = input sampling inside Pleroma, never a picture. THE SCREEN
 SHOWS PLEROMA'S OUTPUT OR NOTHING (black) — the raw-evidence present path
 (dots/accum-to-screen) is DEAD; no intermediate ever reaches glass. Enforce
 at every gate: present = Pleroma or black.
+★ BANNED WORD (Architect, 07-18 18:27): Apple's high-level ML framework is
+NEVER mentioned, specced, or built against again. The neural-cores door for
+this engine = the Metal-native ML command encoder (Tahoe, GPU-or-ANE on the
+command timeline [source: client-rs/research/metal4-neural-recon.md]) —
+Metal end to end, one API family, period. Any lane spec or doc carrying the
+banned framework: voided at gate.
 Absolutes: 60 FPS minimum · NO LODs (cluster law) · neural interpolation BANNED
 · one light pass · never hardcode (LOVE=1 sole literal) · derived tolerances ·
 canon learns every vessel the same wave · full suite between merges · push only
