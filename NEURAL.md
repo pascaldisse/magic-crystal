@@ -72,3 +72,23 @@ NR4 physics surrogates: cloth/debris far-field A/B vs exact solver;
     fluid neural-detail research spike
 Each gated: same scene, neural on/off, frame-time + image/physics-error
 metrics on the MacBook. No gate, no promotion.
+
+## ★ THE TWO-ACT LAW (Architect's ruling, 07-18 — supersedes staged chain
+as DESTINATION; NR1/NR2 demote to teachers/baselines, lab equipment only)
+The render is TWO ACTS, NO SEAM: trace → ONE NET → screen.
+- Act 1: Ananke's rays — the one integrator emits sparse radiance + G-buffer
+  features (same rays, byproducts, never separate passes).
+- Act 2: the ONE NET consumes everything jointly — G-buffer + traced samples
+  + temporal history — and emanates the FINISHED frame at present resolution:
+  denoise + reconstruction + upscale = one act, one estimate. No chained
+  stages: chains make irreversible decisions on partial information at every
+  seam (the argument that killed separate-denoiser chains industry-wide —
+  DLSS-RR precedent as evidence, not authority).
+- Temporal accumulation = substrate, not a stage: the integrator gathering
+  its own samples — live-window convergence today + ground-truth teacher
+  data + the net's history input.
+- Performance rule unchanged: the net beats the rays/cost it replaces at
+  equal quality or it dies. Cutover of old selectable paths = his call,
+  after HE plays it.
+Lane lineage: r-direct spike (07-18) = first embodiment; sharpening at fix
+pass: output at present res so upscaling dissolves into the same act.
