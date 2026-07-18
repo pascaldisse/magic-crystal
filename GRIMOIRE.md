@@ -322,3 +322,7 @@ narrate · rules-as-data). Language = optional voice organ, local, riding
 the same doors, required by nothing. Amendment 16:07: a very small
 LOCAL LM may serve as that voice — offline, async, 60fps-inviolate,
 ANE-homed, never required.
+PACKAGE AMENDMENT (16:10, his word): everything is a package — only THE
+CRYSTAL is a must, and the crystal INCLUDES MONAD. The god is
+constitutional: every world is born with the voice the player can address,
+LM or no LM — the authority machinery is core; the tongue is a package.

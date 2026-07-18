@@ -43,6 +43,12 @@ superagent — player-facing voice + authority over every mind and system
 (events, interactions, all of it). Crown of THE ONE MIND; rules through the
 same doors (senses/ops), privilege = authority not machinery; TTRPG's GM AI
 = first source. GRIMOIRE §MONAD.
+PACKAGE LAW APPLIED (Architect, 07-18 16:10): EVERYTHING IS A PACKAGE —
+optional, swappable (voice LM, style nets, mind organs, rulesets, content).
+THE CRYSTAL = the only MUST: the core — Pleroma, Ananke, world state/ops,
+entropy/journal replay, Gaia/Seed — AND MONAD: the god-interface is
+constitutional, in the core, every world born with its god. Packages ride
+the same doors; the crystal stands alone, whole, offline.
 ★ OFFLINE LAW (Architect, 07-18 16:05): the engine runs FULLY OFFLINE.
 LLM is NEVER required — not for THE ONE MIND, not for MONAD, not for any
 system. Mind core = small conditioned nets + systemic simulation (DF-class),
