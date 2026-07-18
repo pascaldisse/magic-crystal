@@ -545,9 +545,14 @@ impl Solver {
             }
         }
         if self.fluid.is_none() {
+            let base = FluidConfig::default();
             self.fluid = Some(FluidConfig {
                 h: h_factor * spacing,
-                ..FluidConfig::default()
+                // DERIVE the absolute minimum-separation floor from THIS pool's
+                // spawn spacing (never a bare metre literal). r_min =
+                // min_sep_factor × spacing.
+                min_separation: base.min_sep_factor * spacing,
+                ..base
             });
         }
         self.fluid_particles.extend_from_slice(&indices);
@@ -644,7 +649,6 @@ impl Solver {
         let rho0 = cfg.rest_density;
         let inv_rho0 = 1.0 / rho0;
         let eps = cfg.cfm_epsilon;
-        let w_dq = poly6(cfg.tensile_dq_frac * h, h).max(f64::EPSILON);
         let cell = PointGrid::cell_size(h);
         let grid = PointGrid::build(&self.particles.pos, &self.fluid_particles, cell);
 
@@ -716,32 +720,13 @@ impl Solver {
                     let mj = mass(&self.particles, j);
                     let r_vec = pi - self.particles.pos[j];
                     let lj = slot(j).map(|s| lambda[s]).unwrap_or(0.0);
-                    // Artificial pressure (tensile instability corrector),
-                    // Macklin/Müller §4: s_corr rides INSIDE the position-
-                    // correction sum alongside the pair's own constraint terms
-                    // — Δp_i ∝ Σ_j (λ_i + λ_j + s_corr)·∇W — so it MUST be
-                    // inert whenever the pair's constraint is inert. s_corr is
-                    // always <0 (pure pair repulsion); the earlier bug applied
-                    // it to EVERY neighbour pair unconditionally, including
-                    // λ_i=λ_j=0 pairs (every underdense/rest particle under
-                    // compression_only, the overwhelming majority once ρ₀ is
-                    // calibrated to MAX density) — an unbalanced repulsion
-                    // with nothing to counter it, detonating the pool on tick
-                    // 1 (measured: 15 m by tick 120). Gate it on the SAME
-                    // pair-local signal that already carries the constraint:
-                    // zero unless at least one side is actively constrained.
-                    // Under compression_only this naturally limits s_corr to
-                    // compressed neighbourhoods (li or lj > 0) and leaves
-                    // rest/underdense pairs (li=lj=0) at exactly zero
-                    // contribution; under the bilateral mode it behaves as
-                    // the original PBF term wherever a constraint is live.
-                    let s_corr = if cfg.tensile_k != 0.0 && (li != 0.0 || lj != 0.0) {
-                        let ratio = poly6(r_vec.length(), h) / w_dq;
-                        -cfg.tensile_k * ratio.powf(cfg.tensile_n)
-                    } else {
-                        0.0
-                    };
-                    acc = acc + spiky_grad(r_vec, h).scale(mj * (li + lj + s_corr));
+                    // ROUND-8: the artificial-pressure `s_corr` term is RETIRED
+                    // (it detonated under sustained compression yet masked a
+                    // real-space collapse when off — see FluidConfig::tensile_k).
+                    // The position correction is now the pure density gradient
+                    // sum; pairwise MINIMUM-SEPARATION is enforced downstream by
+                    // `solve_fluid_contacts` through the shared contact solve.
+                    acc = acc + spiky_grad(r_vec, h).scale(mj * (li + lj));
                 }
                 dp[a] = acc.scale(inv_rho0 * cfg.relax);
             }
@@ -753,6 +738,76 @@ impl Solver {
             }
         }
         fp.len()
+    }
+
+    /// FLUID — the ROUND-8 MINIMUM-SEPARATION contact floor: the s_corr
+    /// replacement, and the whole cure for the tensile collapse. Any two fluid
+    /// particles whose centres are closer than `r_min = cfg.min_separation`
+    /// become a genuine CONTACT resolved by the EXACT same rule
+    /// [`Solver::solve_body_collisions`] uses for rigid/bonded pairs — push the
+    /// pair apart to `r_min` along their separating normal, split by inverse
+    /// mass, and emit a [`Contact`] each so the shared friction/restitution
+    /// velocity passes see them. This is a collision-style hard floor entirely
+    /// DECOUPLED from the SPH density estimate that destabilised s_corr: the
+    /// density constraint owns incompressibility (aggregate packing), this owns
+    /// pairwise separation (the geometry the smoothed density is blind to).
+    ///
+    /// Fluid–fluid pairs still SKIP the cluster contact in `solve_body_
+    /// collisions` (all fluid shares `ClusterId::Fluid`); this pass is their
+    /// dedicated door, broadphased by the neighbour grid (cell = `r_min`) so it
+    /// stays O(k·neighbours), not O(k²). Deterministic: fluid indices ascend,
+    /// each cell's list ascends, each unordered pair is resolved once (`j > i`)
+    /// in that fixed order (Gauss-Seidel, live position updates — matching
+    /// `solve_body_collisions`). Costs zero when no fluid or `r_min <= 0`.
+    fn solve_fluid_contacts(&mut self) -> Vec<Contact> {
+        let mut contacts = Vec::new();
+        let Some(cfg) = self.fluid else {
+            return contacts;
+        };
+        let r_min = cfg.min_separation;
+        if self.fluid_particles.is_empty() || r_min <= 0.0 {
+            return contacts;
+        }
+        let restitution = cfg.contact_restitution;
+        let cell = PointGrid::cell_size(r_min);
+        let grid = PointGrid::build(&self.particles.pos, &self.fluid_particles, cell);
+        let fp = &self.fluid_particles;
+        // Capture each fluid particle's neighbour candidates ONCE (ascending)
+        // from the entry positions, so the sequential resolve is order-stable
+        // independent of the live position mutations below.
+        let mut cand: Vec<u32> = Vec::new();
+        let mut neighbours: Vec<Vec<usize>> = Vec::with_capacity(fp.len());
+        for &i in fp {
+            grid.query_ball(self.particles.pos[i], r_min, &mut cand);
+            neighbours.push(cand.iter().map(|&c| c as usize).collect());
+        }
+        let p = &mut self.particles;
+        for (a, &i) in fp.iter().enumerate() {
+            let wi = p.inv_mass[i];
+            for &j in &neighbours[a] {
+                if j <= i {
+                    continue; // resolve each unordered pair once, ascending.
+                }
+                let wj = p.inv_mass[j];
+                let w = wi + wj;
+                if w == 0.0 {
+                    continue; // two anchors — nothing to push apart.
+                }
+                let delta = p.pos[i] - p.pos[j];
+                let dist = delta.length();
+                if dist >= r_min || dist <= 0.0 {
+                    continue; // outside the floor (or exactly coincident — the
+                              // floor acts every substep so this never arises).
+                }
+                let normal = delta.scale(1.0 / dist);
+                let depth = r_min - dist;
+                p.pos[i] = p.pos[i] + normal.scale(depth * (wi / w));
+                p.pos[j] = p.pos[j] - normal.scale(depth * (wj / w));
+                contacts.push(Contact { particle: i, normal, restitution });
+                contacts.push(Contact { particle: j, normal: normal.scale(-1.0), restitution });
+            }
+        }
+        contacts
     }
 
     /// FLUID — XSPH VISCOSITY (Macklin §5 / Algorithm 1 step 5). The velocity
@@ -916,6 +971,9 @@ impl Solver {
                 self.solve_fluid();
                 contacts = self.solve_collision_normal();
                 contacts.extend(self.solve_body_collisions(&particle_cluster));
+                // FLUID: the pairwise minimum-separation floor (s_corr's
+                // replacement) rides the SAME contact list.
+                contacts.extend(self.solve_fluid_contacts());
             }
             self.read_back_velocity(dt_sub);
             // FLUID: XSPH viscosity filters the read-back velocity (the term
@@ -999,6 +1057,11 @@ impl Solver {
                 let t = Instant::now();
                 contacts.extend(self.solve_body_collisions(&particle_cluster));
                 prof.collision_body += t.elapsed();
+                // FLUID: pairwise minimum-separation floor — SAME order as
+                // `step` (after body collisions), timed under the fluid phase.
+                let t = Instant::now();
+                contacts.extend(self.solve_fluid_contacts());
+                prof.solve_fluid += t.elapsed();
                 prof.body_pair_checks += pairs_per_solve;
             }
             let t = Instant::now();
@@ -1485,12 +1548,21 @@ impl Solver {
                 }
             }
         }
-        // Loose particles — each carries its own weight.
+        // Loose particles — each carries its own weight. ONE correction per
+        // particle (first contact in list order wins), matching the
+        // restitution pass's once-per-particle rule: a fluid particle now
+        // carries a static-wall contact AND several fluid–fluid separation
+        // contacts, and applying Coulomb friction once per contact would
+        // over-damp it. The wall contact is emitted first
+        // (`solve_collision_normal` precedes `solve_fluid_contacts`), so a
+        // resting particle still frictions against the floor exactly as before.
+        let mut rubbed = vec![false; self.particles.pos.len()];
         for c in contacts {
             let i = c.particle;
-            if in_rigid[i] || self.particles.inv_mass[i] == 0.0 {
+            if in_rigid[i] || rubbed[i] || self.particles.inv_mass[i] == 0.0 {
                 continue;
             }
+            rubbed[i] = true;
             let dv = Self::coulomb_dv(self.particles.vel[i], c.normal, g, dt_sub, &mat);
             self.particles.vel[i] = self.particles.vel[i] + dv;
         }

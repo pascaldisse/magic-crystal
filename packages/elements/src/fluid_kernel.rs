@@ -55,52 +55,56 @@ pub struct FluidConfig {
     /// The DERIVED absolute CFM ε `= cfm_relax × interior Σ|∇C|²`, filled by
     /// [`crate::Solver::calibrate_fluid_rest_density`]. `0.0` until calibrated.
     pub cfm_epsilon: f64,
-    /// Artificial-pressure strength `k` (Macklin eq. 13) — the tensile-
-    /// instability corrector that keeps particles from clumping into clusters
-    /// under negative pressure and yields a slight surface cohesion (reads as
-    /// water, not soup). The paper's value is `0.1`, but ROUND-6 (the
-    /// isolation probe, `fluid_unit_probe` case F / `fluid_clamp_probe`)
-    /// found it EXPLODES under sustained hydrostatic compression even
-    /// correctly per-pair gated (`li!=0 || lj!=0`, [`crate::solver`]'s
-    /// `solve_fluid`): a compressed hydrostatic column keeps most of its
-    /// particles gate-live tick after tick (unlike a splash's brief,
-    /// isolated compressed pairs), so s_corr's anti-clustering repulsion
-    /// compounds instead of firing once and settling. ROUND-7's small-scale
-    /// isolation probe (`fluid_unit_probe`, no gravity/walls) confirmed
-    /// `tensile_k=0.0` + the same per-pair gate is immediately stable there —
-    /// but round-7's POOL-SCALE follow-up (`fluid_volume_probe`, WITH
-    /// gravity, at both the render pool and a small ordeal-scale fixture)
-    /// found `tensile_k=0.0` does NOT give clean water either: the SPH
-    /// density estimate (a smoothed, kernel-averaged quantity) reads as
-    /// near-ρ₀/flat while the TRUE geometry collapses — mean nearest-
-    /// neighbour distance measured 70-90% BELOW the spawn spacing at rest,
-    /// with pairs landing exactly coincident (min NN distance `0.0`).
-    /// s_corr's whole purpose is resisting exactly this (Macklin/Müller §4:
-    /// the density estimate alone permits particle clustering because poly6
-    /// is smooth and forgiving at small r; s_corr adds a purely pairwise
-    /// repulsion the aggregate density check cannot see). DISABLING it
-    /// removes that resistance with nothing durable put in its place
-    /// (compression_only only bounds the AGGREGATE SPH estimate, not true
-    /// pairwise separation) — so `tensile_k=0.0` trades round-6's visible
-    /// detonation for an invisible-to-the-density-metric collapse, not a fix.
-    /// ROUND-7 SHIPPED THIS DEFAULT (`0.0`) ANYWAY per the round's mandate
-    /// (see fluid_ordeals.rs's module doc for the full account) but the
-    /// finding STOPS the round short of declaring the kernel finished: this
-    /// is escalated to the Architect, unmerged. Re-enabling `>0.0` un-gated
-    /// only trades one failure for the other (round-6); a real fix needs a
-    /// pairwise MINIMUM-SEPARATION mechanism decoupled from the SPH density
-    /// feedback loop that destabilises s_corr under sustained compression —
-    /// candidates: a genuine collision-style contact radius between fluid
-    /// particles (independent of the density constraint entirely), or
-    /// gating s_corr on compression DURATION/magnitude rather than the
-    /// current instantaneous per-pair gate. Neither is implemented here.
+    /// RETIRED (round-8) — the artificial-pressure/tensile-instability
+    /// corrector `s_corr` (Macklin eq. 13). The solver NO LONGER READS these
+    /// three fields: `solve_fluid` computes no `s_corr` term. They survive as
+    /// inert config only so the round-6/7 diagnostic probes
+    /// (`fluid_unit_probe`, `fluid_clamp_probe`, `fluid_probe`,
+    /// `fluid_flatness`) still compile; setting them has ZERO runtime effect.
+    ///
+    /// The full round-6/7 verdict: `s_corr>0` DETONATES under sustained
+    /// hydrostatic compression even correctly per-pair gated (a compressed
+    /// column keeps its particles gate-live tick after tick, so the repulsion
+    /// compounds), while `s_corr=0` leaves the SPH density estimate blind to a
+    /// real-space particle COLLAPSE (mean NN distance measured 70-90% below
+    /// spawn spacing, pairs coincident) — s_corr traded one failure for an
+    /// invisible one. The round-8 CURE replaces it with a genuine collision-
+    /// style pairwise MINIMUM-SEPARATION resolved through the solver's OWN
+    /// contact machinery (`min_sep_factor`/`min_separation` below), decoupled
+    /// from the SPH density feedback loop entirely. s_corr is dead.
     pub tensile_k: f64,
-    /// Artificial-pressure exponent `n` (Macklin eq. 13). Default `4` (paper).
+    /// RETIRED — see `tensile_k`. Inert.
     pub tensile_n: f64,
-    /// Δq for the artificial pressure, as a FRACTION of `h` (Macklin: `Δq` in
-    /// `[0.1h, 0.3h]`). Default `0.2` → `Δq = 0.2h`. The reference kernel value
-    /// `W(Δq)` the corrector normalises against.
+    /// RETIRED — see `tensile_k`. Inert.
     pub tensile_dq_frac: f64,
+    /// MINIMUM-SEPARATION contact floor `r_min`, as a FRACTION of the spawn
+    /// spacing (`r_min = min_sep_factor × spacing`, derived at
+    /// [`crate::Solver::spawn_fluid_box`] into `min_separation` — never a bare
+    /// metre literal). This is the round-8 CURE for the tensile collapse: any
+    /// two fluid particles closer than `r_min` become a CONTACT in the SAME
+    /// per-substep contact solve every rigid body uses
+    /// ([`crate::Solver::solve_fluid_contacts`]) — a collision-style hard
+    /// floor on pairwise separation, entirely independent of the SPH density
+    /// estimate that s_corr destabilised. Default `0.85`: the spawn lattice's
+    /// nearest neighbour sits at exactly `spacing`, so a floor at `0.85 ×
+    /// spacing` leaves the rest lattice force-free (no jitter, no added
+    /// overdensity) while catching any genuine collapse long before the
+    /// SPH-invisible clustering can start. `0.0` disables the floor (recovers
+    /// the round-7 collapse — used by the sabotage ordeal to prove the
+    /// min-separation gate is non-vacuous).
+    pub min_sep_factor: f64,
+    /// The DERIVED absolute minimum separation `r_min` (metres) `=
+    /// min_sep_factor × spacing`, filled by
+    /// [`crate::Solver::spawn_fluid_box`] from the actual spawn spacing. `0.0`
+    /// until a fluid box is spawned (the contact pass then costs zero).
+    pub min_separation: f64,
+    /// Restitution for fluid–fluid minimum-separation contacts (a
+    /// dimensionless bounce fraction in `[0,1]`). Default `0.0`: a fluid
+    /// particle collision is inelastic — the floor kills inward normal
+    /// velocity and adds no bounce (any residual momentum is diffused by XSPH
+    /// viscosity). Tangential friction on these contacts rides the pool's
+    /// shared [`crate::collision::ContactMaterial`], not a second dial.
+    pub contact_restitution: f64,
     /// JACOBI SOR under-relaxation on the per-particle position correction Δp
     /// (Macklin §4, "Algorithm 1" applies the density correction with a
     /// relaxation because ALL particles project simultaneously — the pairwise
@@ -175,6 +179,9 @@ impl Default for FluidConfig {
             tensile_k: 0.0,
             tensile_n: 4.0,
             tensile_dq_frac: 0.2,
+            min_sep_factor: 0.85,
+            min_separation: 0.0, // set by spawn_fluid_box
+            contact_restitution: 0.0,
             relax: 0.1,
             solver_iterations: 4,
             compression_only: true,
