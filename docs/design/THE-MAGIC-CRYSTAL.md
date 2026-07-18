@@ -29,6 +29,13 @@ Earth. The player finds the shard. THE SHARD SPEAKS BACK. Tutorial begins.
 6. Two wizard factions = the standing conflict spine (names Edan Connor,
    Zareb Aiden canon; protagonist name OPEN — his word pending).
 
+## THE TUTORIAL (Architect, 07-18 21:21)
+Taught by the ZAUBERPOLIZEI: Pascal & Dariush — the OG two. They drive a
+Lamborghini Diablo SV. NOT a mockoff, THE OG ONE — the real car, faithful,
+no fake-brand knockoff. (Lineage: the Zauberpolizei catechism = the design
+bible sung as law; the law arrives in a Diablo.) Sequence: the shard speaks
+back → tutorial begins → the Zauberpolizei arrive to teach it.
+
 ## Status
 Design canon, sealed. Build staging (universe generation charter, disc
 world, intro flight) = separate proposals, each gated by measurement under
