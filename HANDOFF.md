@@ -411,3 +411,31 @@ push, toys sit behind spawn; the merge does not disturb that session.
 Full suite: `cargo test --workspace --release` → 400 passed, 0 failed,
 82 test-result groups (unit + integration + doctests), clean.
 Pushed origin main 6cf5c2b..cf571de.
+
+## WORKER WINDOW MERGED (merge-conductor burst)
+main @ 755dfa5 (merge of worker-window @ 0f1f3b6, no-ff) — GREEN,
+suite 401/0 (17/17 packages). Nekromant case #1 fix: worker instances
+never-key (focused:false, focusable:false via tao), smaller + titled,
+so the Architect's live window keeps input focus even with worker
+instances open beside it. Always-on focus/activation logging added
+(packages/scrying-glass/src/main.rs) as the field witness — every
+focus-gained/lost and window-activation event now logged, default-off
+as an *instrument* (no behavior gate, just visibility) so silent
+focus-steals stop being invisible. Conductor-reviewed; adversary pass
+deferred on record (not yet run against this lane).
+Silent-deaths case CLOSED: root cause was focus-steal from worker
+instances grabbing keyboard focus away from the Architect's live
+window; fix makes workers structurally unable to key (OS-level
+focused/focusable flags), not a heuristic.
+Field-trial note: Cmd+Q refusal behavior on worker windows is
+UNADJUDICATED — needs a real multi-window session with the always-on
+focus log open to confirm whether a worker eating Cmd+Q is desired
+(prevents accidental kill of the wrong window) or a bug; punt to next
+real session, log is the diagnostic tool for that call.
+Merge: worker-window's merge-base (6cf5c2b6ebc4f7215148f841980b18dc61c42870)
+sat on main's line; only packages/scrying-glass/src/main.rs touched
+(+99/-12) — clean, no conflicts.
+Full workspace suite run per-package under the build token (avoids the
+300s wall): 17/17 crates green, 401 tests passed, 0 failed.
+Build: `cargo build --release -p scrying-glass` clean (39.45s).
+Pushed origin main c989f06..755dfa5.
