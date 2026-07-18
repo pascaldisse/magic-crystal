@@ -51,3 +51,30 @@ path = "examples/vii0_ground.rs"
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6.2"
 objc2-app-kit = { version = "0.3.2", features = ["NSEvent", "NSWindow", "NSCursor"] }
+
+# NEURAL-LIVE (N0 scaffold — dies at lane cutover): MPSGraph batched-GEMM
+# forward on the wgpu Metal device, reached via as_hal. Guarded by
+# GAIA_NEURAL_LIVE (dev flag). objc2-metal already transitive via wgpu-hal.
+[target.'cfg(target_os = "macos")'.dependencies.objc2-metal-performance-shaders-graph]
+version = "0.3.2"
+features = [
+  "MPSGraph", "MPSGraphCore", "MPSGraphTensor", "MPSGraphOperation",
+  "MPSGraphDevice", "MPSGraphMemoryOps", "MPSGraphMatrixMultiplicationOps",
+  "MPSGraphArithmeticOps", "MPSGraphActivationOps", "MPSGraphTensorData",
+  "objc2-metal-performance-shaders",
+]
+
+[target.'cfg(target_os = "macos")'.dependencies.objc2-metal-performance-shaders]
+version = "0.3.2"
+features = ["MPSCore", "MPSCoreTypes", "MPSNDArray"]
+
+[target.'cfg(target_os = "macos")'.dependencies.objc2-metal]
+version = "0.3.2"
+features = ["MTLDevice", "MTLCommandQueue", "MTLBuffer"]
+
+[target.'cfg(target_os = "macos")'.dependencies.objc2]
+version = "0.6"
+
+[target.'cfg(target_os = "macos")'.dependencies.objc2-foundation]
+version = "0.3.2"
+features = ["NSArray", "NSData", "NSDictionary", "NSString", "NSValue"]
