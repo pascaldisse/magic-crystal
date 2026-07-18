@@ -147,6 +147,7 @@ impl Default for Body {
             spin: [0.0; 3],
             initial_velocity: [0.0; 3],
             settle: 0,
+            anchor_base: false,
         }
     }
 }

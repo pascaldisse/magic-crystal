@@ -1,0 +1,22 @@
+[build-lock] post-main-oracle-canon acquired
+   Compiling transmutation v0.1.0 (/Users/pascaldisse/projects/magic-crystal-play/packages/transmute)
+   Compiling steiner v0.1.0 (/Users/pascaldisse/projects/magic-crystal-play/packages/steiner)
+   Compiling seed v0.1.0 (/Users/pascaldisse/projects/magic-crystal-play/packages/seed)
+   Compiling oracle v0.1.0 (/Users/pascaldisse/projects/magic-crystal-play/packages/oracle)
+   Compiling fracture v0.1.0 (/Users/pascaldisse/projects/magic-crystal-play/packages/fracture)
+   Compiling scrying-glass v0.1.0 (/Users/pascaldisse/projects/magic-crystal-play/packages/scrying-glass)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.92s
+     Running tests/canon.rs (target/debug/deps/canon-21dabd47335c9a33)
+
+running 8 tests
+test canon_terrain_patch_bounds_and_range_are_derived ... ok
+test canon_default_glance_frustum_set_is_the_ten_meshed_vessels ... ok
+test canon_tower_cells_and_depth_band_at_grid_32 ... ok
+test canon_depth_band_column_16_is_front_face_path_length ... ok
+test canon_moved_eye_pier_glance ... ok
+test canon_tower_owns_no_grid8_cell ... ok
+test canon_glance_serialization_is_deterministic ... ok
+test canon_nearest_ordering_and_ranges_are_derived ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.75s
+
