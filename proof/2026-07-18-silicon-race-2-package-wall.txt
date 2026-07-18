@@ -1,0 +1,2 @@
+metal-package-builder: error: Failed to read model package at ane-spike/f_16384.mlmodelc/ -- file:///Users/pascaldisse/projects/magic-crystal-ane/. Error: A valid manifest does not exist at path: /Users/pascaldisse/projects/magic-crystal-ane/ane-spike/f_16384.mlmodelc/Manifest.json
+tool_exit_status=0 output_exists=no probe_exit_status=1
