@@ -235,12 +235,23 @@ impl Vertex {
 /// stream, so identical geometry across colours never fragments the chain.
 pub struct MaterialChain {
     pub dag: Dag,
+    /// Authored GAIA entity that owns this chain; retained for retina IDs.
+    pub entity_id: String,
+    /// Stable renderer material token; identity, never shaded colour.
+    pub material_id: String,
     pub color: [f32; 3],
     pub emissive: f32,
     /// L2 conductor lobe: metallic `[0,1]` (0 = lambertian default).
     pub metallic: f32,
     /// L2 conductor lobe: roughness `[0,1]` (1 = lambertian default).
     pub roughness: f32,
+}
+
+/// Primary-ray identity parallel to a [`LeafTriangle`].
+#[derive(Clone, Debug)]
+pub struct RetinaTag {
+    pub entity_id: String,
+    pub material_id: String,
 }
 
 pub struct RenderScene {
@@ -696,9 +707,9 @@ impl RenderScene {
             .unwrap_or_default();
         entities.sort_by(|a, b| world.gaia_id_for(*a).cmp(&world.gaia_id_for(*b)));
 
-        // Tessellate every mesh part into world-space triangles. Static parts
-        // pool into shared material buckets; each dynamic entity seals its OWN.
-        let mut static_buckets = BTreeMap::<MatKey, MatBucket>::new();
+        // Tessellate every mesh part into world-space triangles. Static chains
+        // seal per entity so primary-ray hits retain authored entity identity.
+        let mut static_chains = Vec::<MaterialChain>::new();
         // The physics collision soup: every STATIC part's world-space triangles
         // with clean per-face outward normals (accumulated as we tessellate).
         let mut collider_triangles: Vec<Triangle> = Vec::new();
@@ -764,8 +775,8 @@ impl RenderScene {
                     )
                     .map_err(|error| format!("entity {id:?} mesh part {index}: {error}"))?;
                 }
-                let chains =
-                    seal_buckets(buckets).map_err(|error| format!("entity {id:?}: {error}"))?;
+                let chains = seal_buckets(buckets, &id)
+                    .map_err(|error| format!("entity {id:?}: {error}"))?;
                 let bind = BindPose {
                     position: bind_position.as_dvec3().to_array(),
                     rotation: bind_rotation.as_dvec3().to_array(),
@@ -780,9 +791,10 @@ impl RenderScene {
                     parameters.emission_intensity,
                 );
             } else {
+                let mut buckets = BTreeMap::<MatKey, MatBucket>::new();
                 for (index, part) in parts.iter().enumerate() {
                     append_part(
-                        &mut static_buckets,
+                        &mut buckets,
                         part,
                         entity_model,
                         default_color,
@@ -791,6 +803,7 @@ impl RenderScene {
                     )
                     .map_err(|error| format!("entity {id:?} mesh part {index}: {error}"))?;
                 }
+                static_chains.extend(seal_buckets(buckets, &id)?);
             }
         }
 
@@ -868,19 +881,14 @@ impl RenderScene {
                     Some(hex) => linear_rgb(hex)?,
                     None => default_color,
                 };
-                append_terrain(
-                    &mut static_buckets,
-                    &mesh,
-                    offset,
-                    color,
-                    &mut collider_triangles,
-                );
+                let mut buckets = BTreeMap::<MatKey, MatBucket>::new();
+                append_terrain(&mut buckets, &mesh, offset, color, &mut collider_triangles);
+                static_chains.extend(seal_buckets(buckets, &id)?);
             }
         }
 
-        // Seal the shared static buckets into the transmuted Great Chains — THE
-        // one geometry path — before anything grounds on the realm.
-        let chains = seal_buckets(static_buckets)?;
+        // Per-entity chains remain the one transmuted Great-Chain geometry path.
+        let chains = static_chains;
 
         // RITE V weld (F1 — ONE FLOOR): read the embodied ones (`body` sigil)
         // into world-space skinned triangles BEFORE the dynamics consume the
@@ -1129,6 +1137,38 @@ impl RenderScene {
             }
         }
         out
+    }
+
+    /// Exact post-transmute primary triangles paired with authored source IDs.
+    /// Tags ride beside the tracer input; rendering remains untouched.
+    /// Whether this eye omits walker-attached body geometry; the retina cache's
+    /// complete eye-dependent geometry key.
+    pub fn retina_culls_own_body(&self, eye: Vec3, epsilon: f32, force_draw: bool) -> bool {
+        !force_draw && self.last_walker_eye.is_some_and(|walker| eye.distance(walker) <= epsilon)
+    }
+
+    pub fn retina_triangles_for_eye(&self, eye: Vec3, epsilon: f32, force_draw: bool) -> (Vec<LeafTriangle>, Vec<RetinaTag>) {
+        let culls_own_body = self.retina_culls_own_body(eye, epsilon, force_draw);
+        let mut triangles = Vec::new();
+        let mut tags = Vec::new();
+        for chain in &self.chains {
+            let leaf = chain_leaf_triangles(chain, self.emission_intensity);
+            tags.extend(std::iter::repeat_with(|| RetinaTag { entity_id: chain.entity_id.clone(), material_id: chain.material_id.clone() }).take(leaf.len()));
+            triangles.extend(leaf);
+        }
+        for entity in self.dynamics.entities() {
+            let leaf = entity.world_triangles();
+            tags.extend(std::iter::repeat_with(|| RetinaTag { entity_id: entity.gaia_id.clone(), material_id: "dynamic".into() }).take(leaf.len()));
+            triangles.extend(leaf);
+        }
+        for body in &self.bodies {
+            if !(culls_own_body && body.follows_walker()) {
+                tags.extend(std::iter::repeat_with(|| RetinaTag { entity_id: body.gaia_id.clone(), material_id: format!("body:{}", body.preset) }).take(body.world_tris.len()));
+                triangles.extend_from_slice(&body.world_tris);
+            }
+        }
+        debug_assert_eq!(triangles.len(), tags.len());
+        (triangles, tags)
     }
 }
 
@@ -1616,7 +1656,11 @@ fn leaf_positions_of(chains: &[MaterialChain]) -> Vec<[f32; 3]> {
 /// deterministic (BTree ordering + canonical welds), so two builds of one input
 /// produce byte-identical chains. Shared by the static pool and every dynamic
 /// entity's own chains.
-fn seal_buckets(buckets: BTreeMap<MatKey, MatBucket>) -> Result<Vec<MaterialChain>, String> {
+fn material_token(color: [f32; 3], emissive: f32, metallic: f32, roughness: f32) -> String {
+    format!("lin:{:08x}{:08x}{:08x}:e{:08x}:m{:08x}:r{:08x}", color[0].to_bits(), color[1].to_bits(), color[2].to_bits(), emissive.to_bits(), metallic.to_bits(), roughness.to_bits())
+}
+
+fn seal_buckets(buckets: BTreeMap<MatKey, MatBucket>, entity_id: &str) -> Result<Vec<MaterialChain>, String> {
     let chain_params = TransmuteParams::default();
     let mut chains = Vec::<MaterialChain>::with_capacity(buckets.len());
     for bucket in buckets.into_values() {
@@ -1629,6 +1673,8 @@ fn seal_buckets(buckets: BTreeMap<MatKey, MatBucket>) -> Result<Vec<MaterialChai
             .map_err(|error| format!("transmute material chain: {error}"))?;
         chains.push(MaterialChain {
             dag,
+            entity_id: entity_id.to_string(),
+            material_id: material_token(bucket.color, bucket.emissive, bucket.metallic, bucket.roughness),
             color: bucket.color,
             emissive: bucket.emissive,
             metallic: bucket.metallic,
@@ -1917,6 +1963,8 @@ impl Dynamics {
                     };
                     let chain = MaterialChain {
                         dag,
+                        entity_id: frag_id.clone(),
+                        material_id: material_token(inherited.0, if inherited.1 { 1.0 } else { 0.0 }, 0.0, 1.0),
                         color: inherited.0,
                         emissive: if inherited.1 { 1.0 } else { 0.0 },
                         metallic: 0.0,
