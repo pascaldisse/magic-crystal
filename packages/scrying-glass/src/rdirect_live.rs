@@ -71,6 +71,12 @@ mod imp {
     use std::sync::Arc;
     use std::thread::JoinHandle;
 
+    /// S11 instrument gate: GAIA_NATIVE_NET_TRACE prints the gather→net fence
+    /// value pair + command-buffer terminal status, to SEE the wedge.
+    fn net_trace() -> bool {
+        matches!(std::env::var("GAIA_NATIVE_NET_TRACE"), Ok(v) if !v.is_empty() && v != "0" && v != "false")
+    }
+
     /// A single dense layer's Metal-resident weights, already transposed to the
     /// GEMM's second operand `[in, out]` (the CPU net stores `[out, in]`).
     struct GraphLayer {
@@ -368,14 +374,26 @@ kernel void bias_relu(
     /// only shared-mutable objc state and both are Apple-documented thread-safe
     /// (executable encode; command-buffer creation off a queue).
     struct EncodeCtx {
-        /// S12 — the net's OWN command queue. The encode thread creates and the
-        /// render thread commits net command buffers HERE, so the net's Metal
-        /// work (buffer creation + MPSGraph encode) no longer shares the wgpu
-        /// render queue with trace — the S9 contention that regressed trace
-        /// +6 ms was CPU driver-lock on that shared queue. Cross-queue hazards
-        /// after the split are EXACTLY two: gather→net (the `event` fence below)
-        /// and net→demod (covered by `commit_net`'s `waitUntilCompleted`).
-        net_queue: Retained<ProtocolObject<dyn MTLCommandQueue>>,
+        /// S12 — the net's OWN command queues (S11: ONE PER SET). The encode
+        /// thread creates and the render thread commits net command buffers HERE,
+        /// so the net's Metal work no longer shares the wgpu render queue with
+        /// trace — the S9 contention that regressed trace +6 ms was CPU driver-
+        /// lock on that shared queue.
+        ///
+        /// S11 net-wedge fix — WHY ONE QUEUE PER SET: MPSGraph's
+        /// `encodeToCommandBuffer` internally `commitAndContinue`s, so `base`
+        /// (carrying our `encodeWaitForEvent(V)`) is COMMITTED at ENCODE time,
+        /// 1–2 frames AHEAD of `signal_gather_ready`. On ONE shared net queue
+        /// that lands set-1's V2 wait on the FIFO ahead of set-0's continuation;
+        /// the render thread signals one V per frame but blocks on set-0's
+        /// completion queued BEHIND set-1's unsignaled wait → cross-buffer FIFO
+        /// deadlock (base times out, GPU 0.00, black eyes). A DEDICATED queue
+        /// per set removes the cross-set FIFO coupling: set-1's early wait can
+        /// no longer stall set-0's buffers. Within one set's queue the waits are
+        /// strictly increasing and signaled in frame order, so no self-block.
+        /// Cross-queue hazards stay EXACTLY two: gather→net (the `event` fence)
+        /// and net→demod (`commit_net`'s `waitUntilCompleted`).
+        net_queues: Vec<Retained<ProtocolObject<dyn MTLCommandQueue>>>,
         /// S12 — the gather→net fence. Protocol: each pipelined net command
         /// buffer `encodeWaitForEvent`s its own value V (claimed from
         /// `wait_counter` at encode time, on the net queue); after that frame's
@@ -427,8 +445,10 @@ kernel void bias_relu(
         unsafe fn encode(&self, set: usize, pipelined: bool) -> PreparedNet {
             // S12: net command buffers are created off the DEDICATED net queue
             // (not the shared wgpu render queue) — the whole point of the shift.
+            // S11: ONE queue PER SET so MPSGraph's early (commitAndContinue)
+            // commit of set-1's event wait cannot FIFO-block set-0's buffers.
             let base = self
-                .net_queue
+                .net_queues[set]
                 .commandBuffer()
                 .expect("rdirect_live: commandBuffer alloc failed (encode)");
             // S12: the pipelined path fences on the gather across the queue split
@@ -440,6 +460,9 @@ kernel void bias_relu(
                 let v = self.wait_counter.fetch_add(1, Ordering::Relaxed);
                 let ev = ProtocolObject::from_ref(&*self.event);
                 base.encodeWaitForEvent_value(ev, v);
+                if net_trace() {
+                    eprintln!("[net-trace] encode set={set} awaits V={v} (event signaled={})", self.event.signaledValue());
+                }
                 Some(v)
             } else {
                 None
@@ -470,6 +493,9 @@ kernel void bias_relu(
     /// only.
     #[allow(unsafe_op_in_unsafe_fn)]
     unsafe fn commit_prepared(p: &PreparedNet) -> f64 {
+        if net_trace() {
+            eprintln!("[net-trace] pre-commit set={} base.status={:?}", p.set, p.base.status());
+        }
         if let Some(mps) = &p.mps {
             let root = mps.rootCommandBuffer();
             mps.commit();
@@ -477,6 +503,23 @@ kernel void bias_relu(
         } else {
             p.base.commit();
             p.base.waitUntilCompleted();
+        }
+        // S11 INSTRUMENT: after the wait, read the base buffer's terminal status
+        // + error to SEE the stuck value pair (net wedge diagnosis).
+        if net_trace() {
+            let status = p.base.status();
+            let err = p.base.error();
+            eprintln!(
+                "[net-trace] commit set={} wait_value={:?} base.status={:?} root_is_base={:?} err={}",
+                p.set,
+                p.wait_value,
+                status,
+                p.mps.as_ref().map(|m| std::ptr::eq(
+                    Retained::as_ptr(&m.rootCommandBuffer()) as *const (),
+                    Retained::as_ptr(&p.base) as *const (),
+                )),
+                err.is_some(),
+            );
         }
         (p.base.GPUEndTime() - p.base.GPUStartTime()) * 1000.0
     }
@@ -806,14 +849,19 @@ kernel void bias_relu(
                     encode_sets.push(EncodeSet { inputs, results, chain });
                 }
 
-                // S12: the net's dedicated command queue (separate from the wgpu
-                // render queue), so the encode thread's per-frame net Metal work
-                // stops contending with trace on the shared queue.
-                let net_queue = mtl_device
-                    .newCommandQueue()
-                    .ok_or_else(|| "rdirect_live: net newCommandQueue failed".to_string())?;
+                // S12: the net's dedicated command queues (separate from the
+                // wgpu render queue) — S11: ONE PER SET (see EncodeCtx doc), so
+                // set-1's early-committed event wait cannot FIFO-block set-0.
+                let mut net_queues = Vec::with_capacity(SET_COUNT);
+                for _ in 0..SET_COUNT {
+                    net_queues.push(
+                        mtl_device
+                            .newCommandQueue()
+                            .ok_or_else(|| "rdirect_live: net newCommandQueue failed".to_string())?,
+                    );
+                }
                 let ctx = Arc::new(EncodeCtx {
-                    net_queue,
+                    net_queues,
                     event: self.event.clone(),
                     // Fresh event is 0; V=1 is the first real fence.
                     wait_counter: AtomicU64::new(1),
@@ -1023,6 +1071,9 @@ kernel void bias_relu(
                 .expect("rdirect_live: signal_gather_ready without begin_frame")
                 .wait_value;
             if let Some(v) = wait_value {
+                if net_trace() {
+                    eprintln!("[net-trace] signal set V={v} (was signaled={})", self.event.signaledValue());
+                }
                 self.event.setSignaledValue(v);
             }
         }

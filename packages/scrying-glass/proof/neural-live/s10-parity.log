@@ -1,0 +1,27 @@
+nice: setpriority: Permission denied
+   Compiling scrying-glass v0.1.0 (/Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass)
+error[E0603]: struct `Camera` is private
+   --> packages/scrying-glass/examples/rdirect_live_frame.rs:100:40
+    |
+100 |     front: &scrying_glass::integrator::Camera,
+    |                                        ^^^^^^ private struct
+    |
+note: the struct `Camera` is defined here
+   --> packages/scrying-glass/src/integrator.rs:16:20
+    |
+ 16 | use crate::scene::{Camera, SunLight};
+    |                    ^^^^^^
+help: consider importing this struct instead
+    |
+100 -     front: &scrying_glass::integrator::Camera,
+100 +     front: &scrying_glass::scene::Camera,
+    |
+help: import `Camera` directly
+    |
+100 -     front: &scrying_glass::integrator::Camera,
+100 +     front: &scrying_glass::scene::Camera,
+    |
+
+For more information about this error, try `rustc --explain E0603`.
+error: could not compile `scrying-glass` (example "rdirect_live_frame") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

@@ -1,0 +1,1 @@
+{"frames":311,"wall_ms":16.67,"path":"mpsgraph","canvas":[640,480],"stages":{"trace":[6.138,9.274],"gather":[1.016,1.918],"net_wall":[0.218,0.290],"net_gpu":[0.000,0.000],"demod":[0.617,1.459],"present":[0.103,0.159],"total":[8.162,12.068]}}
