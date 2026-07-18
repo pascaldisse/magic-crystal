@@ -99,3 +99,8 @@ The render is TWO ACTS, NO SEAM: trace → ONE NET → screen.
   after HE plays it.
 Lane lineage: r-direct spike (07-18) = first embodiment; sharpening at fix
 pass: output at present res so upscaling dissolves into the same act.
+SPIKE VERDICT (07-18, docs/perf/2026-07-18-rdirect-spike-verdict.md, lane
+r-direct @ f403c65 unmerged): net BEATS chain on ALL held-out poses + scene
+edit at equal 1spp budget (RMSE .0389/.0405/.0372 vs chain .0481/.0540/.0545)
+@ 1.23x MAC; 18k params (fits on-chip). 60fps UNVERIFIED: CPU-ref only;
+fp16/fused GPU kernel = next atom.
