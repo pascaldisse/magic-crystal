@@ -6,17 +6,14 @@ bottom, kept verbatim per adversary-charter disclosure discipline. Only
 the two-act law + silicon race verdicts + unified world-net ledger are
 normative below.
 
-## ★ THE TWO-ACT LAW (Architect's ruling, 07-18 — supersedes staged chain
+## ★ THE ONE-RENDER LAW (Architect's ruling, 07-18 — supersedes staged chain
 as DESTINATION; NR1/NR2 demote to teachers/baselines, lab equipment only)
-The render is TWO ACTS, NO SEAM: trace → ONE NET → screen.
-- Act 1: Ananke's rays — the one integrator emits sparse radiance + G-buffer
-  features (same rays, byproducts, never separate passes).
-- Act 2: the ONE NET consumes everything jointly — full-res geometry
-  features (primary visibility is cheap) + sparse traced radiance + temporal
-  history — and RENDERS THE ONLY IMAGE, at screen resolution, directly. No
-  chained stages: chains make irreversible decisions on partial information
-  at every seam (the argument that killed separate-denoiser chains
-  industry-wide — DLSS-RR precedent as evidence, not authority).
+Pleroma renders once: world truth in; final image or nothing out. Inside
+Pleroma: sampling and judgment jointly consume full-resolution geometry
+features (primary visibility is cheap), sparse traced radiance, and temporal
+history. Rays yield evidence/byproducts, never a picture or separate pass;
+no chained seams make irreversible partial decisions (DLSS-RR = evidence, not
+authority).
 - ★ UPSCALING IS DEAD AS A CONCEPT (Architect, 07-18): no small picture is
   ever made, so nothing is ever enlarged. The traced samples are EVIDENCE,
   not an image — a RAY BUDGET (samples/frame the machine affords at 60fps),
@@ -24,29 +21,33 @@ The render is TWO ACTS, NO SEAM: trace → ONE NET → screen.
   07-17 "640×480 + upscale" framing: the budget survives, the costume dies.
   Last legal use of the word: the live window's pre-cutover bilinear
   scaffold, which dies when HE plays the neural frame.
-- Temporal accumulation = substrate, not a stage: the integrator gathering
-  its own samples — live-window convergence today + ground-truth teacher
-  data + the net's history input.
-- Performance rule unchanged: the net beats the rays/cost it replaces at
+- Temporal accumulation = substrate: Pleroma's gathered samples —
+  live-window convergence today + ground-truth teacher data + its history
+  input.
+- Performance rule unchanged: Pleroma's learned act beats the rays/cost it replaces at
   equal quality or it dies. Cutover of old selectable paths = his call,
   after HE plays it.
-Lane lineage: r-direct spike (07-18) = first embodiment; sharpening at fix
-pass: output at present res so upscaling dissolves into the same act.
-SPIKE VERDICT (07-18, docs/perf/2026-07-18-rdirect-spike-verdict.md, lane
-r-direct @ f403c65 unmerged): net BEATS chain on ALL held-out poses + scene
+Lane lineage: r-direct spike (07-18) = first embodiment; output at present
+resolution; upscaling dissolves into Pleroma's one render. SPIKE VERDICT
+(07-18, docs/perf/2026-07-18-rdirect-spike-verdict.md, lane r-direct @
+f403c65 unmerged): Pleroma's learned act BEATS the retired chain on ALL held-out poses + scene
 edit at equal 1spp budget (RMSE .0389/.0405/.0372 vs chain .0481/.0540/.0545)
 @ 1.23x MAC; 18k params (fits on-chip). 60fps UNVERIFIED: CPU-ref only;
 fp16/fused GPU kernel = next atom.
 
-## Silicon race verdicts (07-18, Architect's full-speed order; host = M1 Pro)
-- WGSL per-thread MLP: DOOR SHUT at native (280-300ms; even 2x32 net 32.5ms).
-- ANE/CoreML: NO — refuses the net >16k px; never faster than CPU where it
-  runs; native falls to GPU-GEMM ~27.5ms. Does NOT free the GPU. (ane-race)
-- METAL TENSOR (MPSGraph GEMM): DOOR REOPENS — 4.47ms f32 @ native 960x640,
+## Silicon race verdicts (07-18, Architect's full-speed order; host = M1 Pro [source: docs/perf/2026-07-18-rdirect-metal-tensor-spike.md])
+- WGSL per-thread MLP: DOOR SHUT at native (280-300ms; even 2x32 Pleroma
+  learned act 32.5ms). [source: docs/perf/2026-07-18-rdirect-metal-tensor-spike.md]
+- ANE/CoreML: NO — refuses Pleroma's learned act >16k px; never faster than
+  CPU where it runs; native falls to GPU-GEMM ~27.5ms. Does NOT free the GPU.
+  (ane-race) [source: docs/perf/2026-07-18-rdirect-metal-tensor-spike.md]
+- METAL TENSOR (MPSGraph GEMM): DOOR REOPENS — 4.47ms f32 @ native 960x640 [source: docs/perf/2026-07-18-rdirect-metal-tensor-spike.md]
+  [pre-law lab measurement @960×640; remeasure at 640×480 canvas owed],
   ~94% roofline, parity 1.6e-7; 63x over WGSL. 60fps arithmetic: rays 7.6ms
-  + net 4.47ms + elementwise ≈ ~13ms < 16.67. Remaining: gather/demod
-  measure · buffer pooling (157MB intermediates; wall 23ms until pooled) ·
-  wgpu↔MPSGraph interop lane · reload_shader↔temporal-pipeline gap.
+  + Pleroma's learned act 4.47ms + elementwise ≈ ~13ms < 16.67. Remaining:
+  gather/demod measure · buffer pooling (157MB intermediates; wall 23ms until
+  pooled) · wgpu↔MPSGraph interop lane · reload_shader↔temporal-pipeline gap.
+  [source: docs/perf/2026-07-18-rdirect-metal-tensor-spike.md]
   (r-direct @ eed0bdc, docs/perf/2026-07-18-rdirect-metal-tensor-spike.md)
 
 ## UNIFIED WORLD-NET LEDGER (07-18, searched — the challenger category, kept honest)
@@ -130,7 +131,7 @@ the composition is ours to prove per milestone (Xcode limiter captures).
 Honesty line (unchanged): ZERO shipped-game precedent for learned sim in
 the loop — we would be first. Staged experiments BEHIND the exact solver,
 never a dependency; promotion requires side-by-side truth comparison.
-Superseded 07-18 by PHYSICS.md §0 (Ananke → THE NET → state); "near-field
+Superseded 07-18 by PHYSICS.md §0 (Ananke → THE NET [= Pleroma's learned act] → state); "near-field
 exact / far-field surrogate" tiering = a physics LOD, struck.
 
 ### Memory note (16 GB unified)

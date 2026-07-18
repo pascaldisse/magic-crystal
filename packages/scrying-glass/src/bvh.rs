@@ -531,7 +531,17 @@ pub struct RefitParams {
     pub max_refits: u32,
 }
 
+/// `RefitParams::degrade_ratio` default — measured by the 300-tick +
+/// 1200-tick trace-drift sweep (`examples/refit_degrade.rs`): `1 + 10 ×` the
+/// maximum benign gated-ratio excursion. Public so every door uses this one
+/// IRON parameter rather than duplicating its derived value.
+pub const DEFAULT_DEGRADE_RATIO: f32 = 1.7030;
+
 impl Default for RefitParams {
+    /// Defaults measured by the 300-tick + 1200-tick trace-drift sweep
+    /// (`examples/refit_degrade.rs`). The degrade ratio is
+    /// `1 + 10 × max benign excursion above 1.0`; §
+    /// `docs/perf/2026-07-17-refit-degrade-derivation.md` revision 2.
     fn default() -> Self {
         Self {
             degrade_ratio: DEFAULT_DEGRADE_RATIO,
@@ -539,18 +549,6 @@ impl Default for RefitParams {
         }
     }
 }
-
-/// `RefitParams::degrade_ratio` default — derived by the 300-tick + 1200-tick
-/// (20 full gait cycles) trace-drift sweep (`examples/refit_degrade.rs`),
-/// reporting the EXACT ratio `DynamicSplice::update`'s gate divides by
-/// (`current total-node-half-area sum / the sum at the last rebuild`), not a
-/// same-tick proxy. See `docs/perf/2026-07-17-refit-degrade-derivation.md`
-/// (revision 2 — the first derivation measured a different, structurally-
-/// pinned ratio and is superseded). The sweep's drift gate never bit, so this
-/// is the excursion-form fallback: `1 + 10 × (max observed benign gated-ratio
-/// excursion above 1.0)`. `pub` so `main.rs`'s env-var default can reference
-/// this constant instead of re-typing the literal.
-pub const DEFAULT_DEGRADE_RATIO: f32 = 1.7030;
 
 /// The persistent two-level splice (LEVER 1: refit-not-rebuild). Holds the
 /// cached STATIC tree, a PERSISTENT dynamic tree, its build permutation, and the

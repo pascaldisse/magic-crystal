@@ -6,6 +6,7 @@ root=$(git rev-parse --show-toplevel)
 gate="$root/tools/wilde-jagd-gate.sh"
 zero=0000000000000000000000000000000000000000
 commits=()
+ranges=()
 
 while read -r local_ref local_sha remote_ref remote_sha; do
   [[ "$local_sha" == "$zero" ]] && continue  # deletion
@@ -17,10 +18,24 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     printf 'WILDE JAGD REFUSED — remote tip %s is unavailable locally. Fetch before pushing.\n' "$remote_sha" >&2
     exit 1
   fi
+  ranges+=( "$range" )
   while read -r commit; do
     [[ -n "$commit" ]] && commits+=( "$commit" )
   done < <(git rev-list --min-parents=2 "$range")
 done
 
-(( ${#commits[@]} == 0 )) && exit 0
-exec "$gate" "${commits[@]}"
+args=()
+if (( ${#ranges[@]} > 0 )); then
+  for range in "${ranges[@]}"; do
+    args+=( --cite-range "$range" )
+  done
+fi
+
+(( ${#args[@]} == 0 && ${#commits[@]} == 0 )) && exit 0
+if (( ${#commits[@]} == 0 )); then
+  exec "$gate" "${args[@]}"
+elif (( ${#args[@]} == 0 )); then
+  exec "$gate" "${commits[@]}"
+else
+  exec "$gate" "${args[@]}" "${commits[@]}"
+fi

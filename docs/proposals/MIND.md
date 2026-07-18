@@ -4,9 +4,9 @@
 STATUS: PROPOSAL. The Architect rules; no code before his word.
 
 ## Laws inherited (sealed, not re-argued)
-Offline whole; LLM never required (voice = optional ANE package) · one mind
-system, organs not rivals · deterministic: state=f(seed,entropy,journal) ·
-60fps M1 untouchable (mind never on the frame's critical path) · package
+Offline whole; LLM never required (voice = optional ANE package [source: NEURAL.md §Silicon race verdicts]) · one mind system, organs not rivals ·
+deterministic: state=f(seed,entropy,journal) · 60fps M1 untouchable
+UNVERIFIED (mind never on the frame's critical path) · package
 law: mind = package in the mind socket; MONAD = constitutional, in the
 crystal core · study-never-import · IRON · death rule for every net.
 
@@ -31,8 +31,9 @@ world snapshot + event tail
   met:unmet → ±skill) · affect (valence/arousal/stress) · body convictions
   (rain: !BACK/!FLOAT/!SINK…) · clock/goal/scene. Numbers in, never prose.
 - AFFORDANCE WORLD (Sims law: the WORLD advertises): every possible act =
-  data {verb, actor, target, precond, effects, cost, tags} — TTRPG's 14
-  semantic ops = the proven op vocabulary; no hidden bespoke AI paths.
+  data {verb, actor, target, precond, effects, cost, tags} — op-door
+  vocabulary of ~14 verbs (shape evidence from his own TTRPG; exact vocabulary
+  = HIS ruling #3); no hidden bespoke AI paths.
 - HARD MASK BEFORE NET (FEAR legality + MyRobot emotion-gates-affordances):
   death/reach/body/status/resources/consent/social permission → candidate
   set; the net NEVER sees an illegal act. Emotion mutates the mask (proven
@@ -64,7 +65,7 @@ world snapshot + event tail
   opportunity BUDGET (RimWorld/L4D lineage) + event authoring through the
   SAME ops door; reads everything, commands no agent's mind, fabricates no
   memory. Tarn's fairness law verbatim: disasters follow hubris/folly or
-  offer prevention. Judgment = core; tongue = ANE voice package.
+  offer prevention. Judgment = core; tongue = ANE voice package [source: NEURAL.md §Silicon race verdicts].
 
 ## Determinism
 Every net choice journaled (candidates+scores+index) · dice = kami hash ·
@@ -72,10 +73,11 @@ voice-package outputs enter as journaled events (replay = same world even
 if the tongue changes) · fixed iteration order · cohort scheduling seeded.
 
 ## Performance (DF choir, adopted)
-Near/visible agents 10-20Hz · distant 0.2-2Hz aggregated · staggered
-cohorts (DF: jobs/100 ticks, seasons/10, cleanup/1000) · dirty flags skip
-sleeping regions · mind runs OFF the render thread entirely; frame never
-waits for a thought.
+PROPOSAL / UNVERIFIED: near/visible agents 10-20Hz · distant 0.2-2Hz
+aggregated · staggered cohorts (DF-study evidence: jobs/100 ticks,
+seasons/10, cleanup/1000 [source: docs/research/2026-07-18-df-bible.md]) ·
+dirty flags skip sleeping regions · mind runs OFF the render thread entirely;
+frame never waits for a thought.
 
 ## Staging (each gate = ordeals + adversary + his word)
 M0 crystal extraction (mind socket exists) — prerequisite, already owed.
@@ -84,14 +86,15 @@ M1 affordance world + hard mask + HAND-CODED utility (the teacher; no net).
 M2 conditioning vectors + salience ledger + core-memory deltas.
 M3 the small net ranks (trained in-loop from M1 teacher; death rule).
 M4 social contracts + MONAD director (budget + events + fairness law).
-M5 voice package (ANE, offline, async, journaled) — optional forever.
+M5 voice package (ANE, offline, async, journaled) — optional forever; UNVERIFIED.
 
 ## His rulings needed
 1. Conditioning dims: adopt DF's 50+33 verbatim, or reduced set (my rec:
-   start reduced ~16+8, grow by measurement — DF's own effects are half
-   unknown even to its wiki).
+   start reduced ~16+8, grow by measurement — PROPOSAL / UNVERIFIED;
+   [source: docs/research/2026-07-18-df-bible.md]).
 2. Mind tick cadence defaults (rec: 10Hz near / 1Hz far, params).
-3. MONAD's event vocabulary v1 (rec: TTRPG's proven 14 ops + spawn/weather
-   /clock through the existing door).
+3. MONAD's event vocabulary v1 (rec: op-door vocabulary of ~14 verbs +
+   spawn/weather/clock through the existing door; exact vocabulary = HIS
+   ruling #3).
 4. Name for the mind system (spine name = his to give; "THE ONE MIND" =
    placeholder).

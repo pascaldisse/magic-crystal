@@ -265,7 +265,7 @@ Nothing here is skin. Every row is a mechanic or it doesn't enter.
 | Sidia | the chaos flame: the generative spirits — AI creation daemons that make gods from toys |
 | Gaia (extended by the Architect, 07-18) | THE WORLD SYSTEM — one system for world: the living state at runtime AND the making of it. Her germ = the SEED (packages/seed), the ONE procedural substrate: hash → fields (noise) → scatter (placement) → terrain (ground); no rand crate exists in the tree — every value = hash(seed, coords) (entropy law), zero-loading. Generated content enters the world through the SAME door as hand-placed: a sigil on a scene entity naming seed+tile coords, never stored geometry (VII-0b NO-STORAGE ordeal guards it); one schema, one struct, read by renderer AND oracle. Textures when they come = fields of the same Seed — no second substrate, ever. Open migration: Naruko still stands on an authored plate, not Seed ground (VII-3 pending) |
 | the Darkness | darkness as PRESENCE: in the one-light law there is no fake ambient — unlit is truly unlit, and the unlit is where the world listens. Light attends; it does not fight |
-| the Pleroma (whole, sealed by the Architect 07-18) | THE RENDERING ENGINE — one system, one name: the ray tracing engine AND the one net ARE the Pleroma, its two acts (rays = the truth, the net = the image), never two named things. It holds all light and decides what reaches the eye; every frame is an emanation. No inner names, no sub-systems, no second way |
+| the Pleroma (whole, sealed by the Architect 07-18) | THE RENDERING ENGINE — one system, one name: world truth enters Pleroma; Pleroma renders the final image or nothing. Inside Pleroma: sampling and judgment; rays are evidence, never a picture. It holds all light and decides what reaches the eye; every frame is an emanation. No inner names, no sub-systems, no second way |
 | the Kenoma | true darkness — unlit is genuinely unlit, the deficiency |
 | the AETHER (ruled by the Architect, 07-18) | THE INPUT TO THE PLEROMA — the world projected into renderable truth: geometry/clusters, materials, light sources, physics state as Ananke left it this tick, volumetric density fields (the packages/aether media crate = one province of it: steam/clouds/fire as true volumes, Beer-Lambert + Henyey-Greenstein, hash-noise only), plus the sparse traced evidence + history. ANANKE WRITES THE AETHER, PLEROMA READS IT and emanates the frame. Neo's sight (rain / Matrix vision) = reading the Aether RAW, unconverted — the debugger and the renderer are two readers of the same page. The luminiferous medium made real: what the world IS to the eye, before the eye has seen it |
 | the sparks (nitzotzot) | emissive surfaces — light trapped in matter |
@@ -321,7 +321,7 @@ laws transfer (op-door authority · engine-rolled dice · stage-before-
 narrate · rules-as-data). Language = optional voice organ, local, riding
 the same doors, required by nothing. Amendment 16:07: a very small
 LOCAL LM may serve as that voice — offline, async, 60fps-inviolate,
-ANE-homed, never required.
+ANE-homed [source: NEURAL.md §Silicon race verdicts], never required.
 PACKAGE AMENDMENT (16:10; corrected 16:13, his word): everything is
 modular — renderer, physics, AI, all of it replaceable. THE CRYSTAL = the
 very minimum core: world state · ops door · entropy/journal replay · the
