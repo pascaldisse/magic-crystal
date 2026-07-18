@@ -3,6 +3,8 @@
 set -euo pipefail
 
 law='ADVERSARY CHARTER: every merge requires cross-model adversary + spec-concordance.'
+cite_law='CITE TOOTH: newly added Markdown silicon/host claims require [source: ...] or UNVERIFIED on the same line.'
+cite_pattern='ANE|CoreML|MPSGraph|MTLTensor|Metal [0-9]|macOS [0-9]|M[0-9] (Pro|Max)?|neural cores'
 
 if [[ -n "${GAIA_JAGD_SKIP:-}" ]]; then
   printf 'WILDE JAGD BYPASS — GAIA_JAGD_SKIP=%s\n' "$GAIA_JAGD_SKIP" >&2
@@ -10,12 +12,50 @@ if [[ -n "${GAIA_JAGD_SKIP:-}" ]]; then
   exit 0
 fi
 
-commits=( "$@" )
-if (( ${#commits[@]} == 0 )); then
+commits=()
+cite_ranges=()
+while (( $# > 0 )); do
+  case "$1" in
+    --cite-range)
+      [[ $# -ge 2 ]] || { printf 'WILDE JAGD REFUSED — --cite-range needs a range.\n' >&2; exit 1; }
+      cite_ranges+=( "$2" )
+      shift 2
+      ;;
+    *)
+      commits+=( "$1" )
+      shift
+      ;;
+  esac
+done
+
+status=0
+if (( ${#cite_ranges[@]} > 0 )); then
+for range in "${cite_ranges[@]}"; do
+  violations=()
+  while IFS= read -r line; do
+    [[ "$line" == +++* || "$line" != +* ]] && continue
+    added=${line:1}
+    if grep -Eq "$cite_pattern" <<<"$added" && ! grep -Eq '\[source:|UNVERIFIED' <<<"$added"; then
+      violations+=( "$added" )
+    fi
+  done < <(git diff --no-ext-diff --unified=0 "$range" -- '*.md')
+  if (( ${#violations[@]} > 0 )); then
+    printf 'WILDE JAGD REFUSED — cite tooth found uncited newly added Markdown claim(s) in %s.\n' "$range" >&2
+    printf '%s\n' "$cite_law" >&2
+    printf 'Required: [source: <doc/hash>] or UNVERIFIED on the same line.\n' >&2
+    printf '  + %s\n' "${violations[@]}" >&2
+    status=1
+  else
+    printf 'WILDE JAGD CITE TOOTH HOLDS — %s\n' "$range" >&2
+  fi
+done
+fi
+
+if (( ${#commits[@]} == 0 && ${#cite_ranges[@]} == 0 )); then
   commits=( HEAD )
 fi
 
-status=0
+if (( ${#commits[@]} > 0 )); then
 for commit in "${commits[@]}"; do
   if ! git rev-parse --verify --quiet "${commit}^{commit}" >/dev/null; then
     printf 'WILDE JAGD REFUSED — %s is not a commit.\n' "$commit" >&2
@@ -58,5 +98,6 @@ for commit in "${commits[@]}"; do
     printf 'WILDE JAGD HOLDS — merge %s\n' "$commit" >&2
   fi
 done
+fi
 
 exit "$status"
