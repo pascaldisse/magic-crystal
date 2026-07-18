@@ -684,3 +684,7 @@ dedicated encode queue + shared-event sync; projected ~12.9ms [UNVERIFIED].
 NAMED (18:54): the agent harness for the optional LLM = THE EGREGORE —
 package, never required, doors-only (no backchannel); crystal+MONAD = the
 only must. [source: his words, room 07-18 18:54]
+RACE II CLOSED on main (321f5e9): matrix final — CPU<=2048/GPU>=4096 tiny,
+Pleroma-shape GPU 4.3-6.4ms; encoder door nearly free (10us encode) but
+package wall precise: metal-package-builder needs undocumented Manifest.json
+→ locus UNVERIFIED, parked [source: docs/perf/2026-07-18-silicon-race-2.md].
