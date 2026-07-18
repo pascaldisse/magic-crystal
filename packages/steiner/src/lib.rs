@@ -21,6 +21,7 @@ pub mod hash;
 pub mod journal;
 #[cfg(feature = "live")]
 pub mod live;
+pub mod realm;
 mod recorder;
 
 pub use error::{SteinerError, TornKind};
@@ -30,6 +31,7 @@ pub use journal::{
     Header, JournalEntry, JournalWriter, ReadOutcome, SnapshotFrame, FORMAT_VERSION,
     FORMAT_VERSION_SNAPSHOT, HEADER_LEN, HEADER_LEN_V2, MAGIC,
 };
+pub use realm::{materialize_state, RealmScenes, SceneDocument};
 pub use recorder::Recorder;
 
 #[cfg(feature = "live")]
