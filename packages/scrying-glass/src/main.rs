@@ -1098,15 +1098,19 @@ impl Renderer {
         // ADVISORY 3 — no-op bend: the watcher can fire on a touch with no
         // entity-level change (save-without-edit, whitespace-only diff, a
         // broken-JSON write that briefly round-trips back to the same text).
-        // Skip journal + rebuild + accumulation-reset entirely; still advance
-        // `last_good` so the NEXT real diff is computed against the freshest
-        // observed bytes.
+        // Skip journal + rebuild + accumulation-reset entirely.
+        //
+        // RE-PASS ADVISORY (corner a): do NOT advance `last_good` to `next`
+        // here. A duplicate-id write can be value-identical at the entity
+        // level (diff empty) while its raw bytes are still loader-rejectable
+        // (e.g. a repeated key the loader itself would refuse) — those bytes
+        // never passed INSPECTION 1+2 below. Leaving `last_good` pointed at
+        // the last VALIDATED bytes keeps the invariant "last_good always
+        // loads" true across a no-op; the next real (non-empty) diff still
+        // computes correctly against those same last-validated bytes.
         let diff = bloodbend::diff_scenes(&previous, &next);
         if diff.is_empty() {
             eprintln!("[bloodbend] no-op bend ignored · scene · entity diff empty");
-            if let Some(bb) = self.bloodbend.as_mut() {
-                bb.last_good = next;
-            }
             return;
         }
 

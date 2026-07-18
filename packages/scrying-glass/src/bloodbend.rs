@@ -96,6 +96,11 @@ impl BloodbendParams {
             poll: Duration::from_millis(poll_ms.max(1)),
             journal_dir,
             shader_path,
+            // ADVISORY (re-pass, on record): this watch set is fixed at boot.
+            // A scene file CREATED after the watcher starts (new scenes/*.json
+            // dropped in live) is not in `scene_paths` and will not be polled
+            // until the process restarts. Not a MUST-FIX for B0 — no player-
+            // facing exploit, just a known gap for a future watch-set refresh.
             scene_paths: watched_scene_files(world_path),
         })
     }
