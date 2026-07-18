@@ -1770,8 +1770,8 @@ impl Renderer {
     /// `/retina`: exact primary rays over the tracer's post-transmute leaf
     /// geometry; no framebuffer, radiance, or secondary-ray path is involved.
     fn capture_retina(&mut self, params: &RetinaParams) -> Result<String, String> {
-        let width = params.pose.width.unwrap_or(64).max(1);
-        let height = params.pose.height.unwrap_or(64).max(1);
+        let width = params.width;
+        let height = params.height;
         let fov = match params.pose.fov {
             Some(degrees) if degrees > 0.0 && degrees < 180.0 => degrees.to_radians(),
             Some(_) => return Err("fov must be between 0 and 180 degrees".into()),
@@ -2171,12 +2171,16 @@ struct FoveaParams {
 #[derive(Clone, Debug)]
 struct RetinaParams {
     pose: ScryParams,
+    width: u32,
+    height: u32,
     layers: RetinaLayers,
     fovea: Vec<FoveaParams>,
 }
 
 fn parse_retina_query(query: &str) -> Result<RetinaParams, String> {
-    let mut pose = ScryParams { width: Some(64), height: Some(64), ..Default::default() };
+    let mut pose = ScryParams::default();
+    let mut width = 64;
+    let mut height = 64;
     let mut layers = RetinaLayers { depth: true, normal: true, entity_id: true, material_id: true, world_pos: true };
     let mut fovea = Vec::new();
     for pair in query.split('&').filter(|part| !part.is_empty()) {
@@ -2200,15 +2204,22 @@ fn parse_retina_query(query: &str) -> Result<RetinaParams, String> {
             }
             continue;
         }
+        if key == "w" || key == "h" {
+            let dimension = value
+                .parse::<u32>()
+                .ok()
+                .filter(|dimension| *dimension > 0)
+                .ok_or_else(|| format!("{key} must be a positive integer, got {value:?}"))?;
+            if key == "w" { width = dimension; } else { height = dimension; }
+            continue;
+        }
         let one = parse_scry_query(pair)?;
         if one.pos.is_some() { pose.pos = one.pos; }
         if one.yaw.is_some() { pose.yaw = one.yaw; }
         if one.pitch.is_some() { pose.pitch = one.pitch; }
         if one.fov.is_some() { pose.fov = one.fov; }
-        if one.width.is_some() { pose.width = one.width; }
-        if one.height.is_some() { pose.height = one.height; }
     }
-    Ok(RetinaParams { pose, layers, fovea })
+    Ok(RetinaParams { pose, width, height, layers, fovea })
 }
 
 fn parse_finite_f32(value: &str, name: &str) -> Result<f32, String> {
