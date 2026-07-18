@@ -1,0 +1,14 @@
+host=Apple M1 Pro os=Version 26.5.1 (Build 25F80)
+sdk_surface=MTL4MachineLearningCommandEncoder MTL4MachineLearningPipelineState MTLTensor
+runtime_objects=queue:ok allocator:ok compiler:ok argument_table:ok
+tensor=tiny-64 input_alloc=1792 output_alloc=384 usage=ml+compute
+tensor=tiny-4096 input_alloc=114688 output_alloc=32768 usage=ml+compute
+tensor=pleroma-307200 input_alloc=14139392 output_alloc=1851392 usage=ml+compute
+ordinary_function_pipeline=isolated_negative_control flag=--ordinary-function-negative
+empty_encoder_control=median32 encode_us=5.334000 gpu_timeline_ms=0.062833 commit_wait_ms=0.210958
+network_dispatch=UNVERIFIED reason=no_metal_ml_package
+network_encode_cpu=UNVERIFIED
+network_gpu_timeline_sync=UNVERIFIED
+network_execution_locus=UNVERIFIED
+retained_tensors=6 table_device=Apple M1 Pro
+powermetrics_exit=1 error=sudo: a password is required

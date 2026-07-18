@@ -1,0 +1,18 @@
+negative_control=compile_ordinary_metal_function_as_ml_pipeline
+*** Terminating app due to uncaught exception 'NSInvalidArgumentException', reason: '-[_MTLLibrary executableWithDeviceSelection:]: unrecognized selector sent to instance 0xaed04cbc0'
+*** First throw call stack:
+(
+	0   CoreFoundation                      0x0000000183d5d1c0 __exceptionPreprocess + 176
+	1   libobjc.A.dylib                     0x00000001837e691c objc_exception_throw + 88
+	2   CoreFoundation                      0x0000000183e1e250 -[NSObject(NSObject) __retain_OA] + 0
+	3   CoreFoundation                      0x0000000183ccdf38 ___forwarding___ + 1480
+	4   CoreFoundation                      0x0000000183ccd8b0 _CF_forwarding_prep_0 + 96
+	5   Metal                               0x0000000190431c68 -[_MTL4Compiler newMachineLearningPipelineStateWithDescriptor:error:] + 392
+	6   libswiftMetal.dylib                 0x00000001beee38a8 $sSo12MTL4CompilerP5MetalE32makeMachineLearningPipelineState10descriptorSo0aefgH0_pSo0aefG10DescriptorC_tKF + 64
+	7   metal4-door                         0x0000000102135134 $s4main32negativeOrdinaryFunctionPipelineyyKF + 592
+	8   metal4-door                         0x0000000102134dfc main + 156
+	9   dyld                                0x0000000183873e00 start + 6992
+)
+libc++abi: terminating due to uncaught exception of type NSException
+
+exit_status=134
