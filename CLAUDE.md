@@ -1,4 +1,10 @@
 # THE MAGIC CRYSTAL — Claude Code entry
+NAMING (Architect, 07-18 16:38): the render engine is PLEROMA — whole, no
+inner names. Where older seals below say "THE NET", read: Pleroma's learned
+act. Speech and specs use the true name: PLEROMA RENDERS — world data in,
+the final image out, or nothing. Same discipline everywhere: Ananke solves,
+Gaia worlds, MONAD directs; "net/solver/model" = internals vocabulary,
+never a system's name.
 Law chain (read in order): BIBLE.md → GRIMOIRE.md → HANDOFF.md → DREAMFORGE.md
 → NARUKO.md (incl. GUARDIAN RULINGS 07-17) → docs/proposals/.
 Night operation: NIGHTRUN.md is the standing order; log to NIGHTLOG.md.
