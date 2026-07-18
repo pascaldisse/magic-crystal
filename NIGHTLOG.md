@@ -237,3 +237,45 @@ HANDOFF.md.
 - **Rite VII**: recon complete (anchors mapped; coordinate-law payment is
   greenfield across transmute/ring/scene/player). Held until current lanes
   merge — the 64-bit/camera-relative refactor touches every file in flight.
+
+## N2 — REAL-IMAGE BAR: v3 STAMP OR HONEST BLACK (finisher, 2026-07-19)
+- **VERDICT: HONEST BLACK.** v3 retrained (60 ep, teacher=128-accum,
+  320×240, K=5 still-unroll; loss 0.041→0.026; sha 2c6622e). REAL-IMAGE
+  ORDEAL run at the full **640×480** (2 val poses orbit_-20/+40, still+pan,
+  f(seed)). Result: FAIL on ONE iron quantity —
+  - resid_still   0.03251  ≤ 0.035  PASS (−0.00249) — it IS the real image
+  - sparkle_still 345.05   ≤ 40.0   **FAIL (+305.05)** — the dots
+  - tvar_still    7.0e-5   ≤ 5e-4   PASS (−4.3e-4) — settles, no shimmer
+  - resid_move    0.03489  ≤ 0.060  PASS (−0.02511)
+  - ghost_excess  0.00064  ≤ 0.012  PASS (−0.01136) — history no smear
+  NO stamp written. `main.rs` gate (`verify_stamp`) → present BLACK. Gate law
+  live-verified: real_image_gate 2/2 (unstamped→denied black), rite5 17/17,
+  medium_parity green.
+- **WHY sub-bar (adversary read, both eyes @640×480, defects first):** net &
+  teacher READ near-identical — geometry, dusk-pink sky gradient, lighthouse +
+  building silhouettes, two lit windows, pier wood tone all converge. The sole
+  defect is **isolated emissive-edge fireflies**: the cyan waterline neon is a
+  broken/speckled run of over-bright cyan dots (vs teacher's clean dashes) +
+  faint dark-surface speckle on the building's lower-right. tvar is LOW → the
+  fireflies are STABLE frame-to-frame (a spatial bias at emissive/reflection
+  edges), so the still-unroll recurrence — which averages TEMPORAL variance —
+  cannot dissolve them. Killing them needs a spatial firefly/clamp term in the
+  loss or an edge-aware feature, not more of the same recurrence. Sentence:
+  **BAR FAILED by sparkle +305/Mpx; every other bar PASSED with margin.**
+- **fps / history cost (exact, MACs):** v3 = 18304 MACs/px (27-in, 5×64, 3-out);
+  v2 = 18048. History features (reprojected prev demod-log 3 + validity 1 = 4
+  extra inputs ×64) cost **+256 MACs/px = +1.42%** over v2. @640×480 =
+  5.62 GMACs/frame (v3) vs 5.54 (v2), Δ 78.6 MMACs/frame — negligible vs trace.
+  Live wall-clock fps UNVERIFIED: the GPU net harness `rdirect_live_frame`
+  is bit-rotted (private `Camera` import, pre-existing, out of scope) — did NOT
+  fix; compute cost is the honest measurable and it is trivial.
+- **labyrinth (Architect recompose):** continued from salvage state (emissive
+  frame border + concentric barbershop tunnel), did NOT redesign. Current
+  proof/ordeal-light/labyrinth.png READS: centered corridor of concentric
+  cyan emissive frames receding to a vanishing point, red laser near-foreground
+  crossing INTO the glass — **~10–11 cyan nestings countable** before they
+  merge into a bright cyan-magenta core. Energy at deepest saturates = the
+  named **vanishing-point blowout** (unfixed). GAP: named tuning (mirrors
+  closer, blowout clamp) + a 1024-bounce 640×480 re-render NOT done — deferred
+  rather than start a re-render that can't finish inside the wall (the failure
+  mode that killed the prior lane).
