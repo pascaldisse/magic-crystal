@@ -56,7 +56,8 @@ mod imp {
     };
     use objc2_metal_performance_shaders::MPSDataType;
     use objc2_metal_performance_shaders_graph::{
-        MPSGraph, MPSGraphDevice, MPSGraphTensor, MPSGraphTensorData,
+        MPSGraph, MPSGraphDevice, MPSGraphExecutable, MPSGraphExecutableExecutionDescriptor,
+        MPSGraphShapedType, MPSGraphTensor, MPSGraphTensorData,
     };
     use std::ffi::c_void;
     use std::ptr::NonNull;
@@ -80,9 +81,27 @@ mod imp {
         feature_buf: wgpu::Buffer,
         /// Same MTLBuffer as `feature_buf`, fed to the graph zero-copy.
         feature_mtl: Retained<ProtocolObject<dyn MTLBuffer>>,
-        /// The graph's output MTLBuffer (Shared storage → CPU-readable).
+        /// The graph's output MTLBuffer (Shared storage → CPU-readable AND the
+        /// same buffer wrapped as `out_buf` for the GPU demod, CUT 2).
         out_mtl: Retained<ProtocolObject<dyn MTLBuffer>>,
+        /// CUT 2: `out_mtl` wrapped as a wgpu STORAGE buffer so the demod
+        /// compute pass reads the net output on the GPU (no CPU round-trip).
+        out_buf: wgpu::Buffer,
         max_pixels: usize,
+        // ── CUT 1: POOL THE NET — everything below is built ONCE here (the
+        // metal4-probe pattern: a compiled MPSGraphExecutable + pre-allocated
+        // MPSGraphTensorData on the persistent MTLBuffers). Per-frame
+        // `forward` then just runs the executable — no graph rebuild, no
+        // tensor-data / NSDictionary allocation, which is what took the net
+        // stage from the probe's 4.47 ms down to 27 ms in the N0.d run.
+        /// Compiled once for the FIXED shape `[max_pixels, in_features]`.
+        executable: Retained<MPSGraphExecutable>,
+        /// Input feed array `[in_td]` (in_td wraps `feature_mtl` zero-copy).
+        inputs: Retained<NSArray<MPSGraphTensorData>>,
+        /// Result array `[out_td]` (out_td wraps `out_mtl` zero-copy).
+        results: Retained<NSArray<MPSGraphTensorData>>,
+        /// `waitUntilCompleted = true` → the run blocks; reused every frame.
+        exec_desc: Retained<MPSGraphExecutableExecutionDescriptor>,
     }
 
     /// The live net: an MPSGraph batched-GEMM forward built once at construction
@@ -275,11 +294,77 @@ mod imp {
                         mapped_at_creation: false,
                     },
                 );
+                // CUT 2: wrap the SAME output MTLBuffer as a wgpu STORAGE buffer
+                // so the GPU demod pass reads the net output in place (no CPU
+                // readback). COPY_SRC lets `forward_shared` still map it for the
+                // ordeal/CPU path.
+                let out_hal = wgpu::hal::metal::Device::buffer_from_raw(
+                    out_mtl.clone(),
+                    out_bytes as u64,
+                );
+                let out_buf = wgpu_device.create_buffer_from_hal::<wgpu::hal::api::Metal>(
+                    out_hal,
+                    &wgpu::BufferDescriptor {
+                        label: Some("rdirect net output (shared MTLBuffer)"),
+                        size: out_bytes as u64,
+                        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                        mapped_at_creation: false,
+                    },
+                );
+
+                // ── CUT 1: compile the executable ONCE for the fixed shape and
+                // pre-build the zero-copy feed/result tensor-data arrays. ──
+                let in_shape = shape(&[max_pixels, self.in_features]);
+                let out_shape = shape(&[max_pixels, self.out_channels]);
+                let in_shaped = MPSGraphShapedType::initWithShape_dataType(
+                    MPSGraphShapedType::alloc(),
+                    Some(&in_shape),
+                    MPSDataType::Float32,
+                );
+                let feeds = objc2_foundation::NSDictionary::<
+                    MPSGraphTensor,
+                    MPSGraphShapedType,
+                >::from_slices(&[&*self.input], &[&*in_shaped]);
+                let targets = NSArray::from_slice(&[&*self.output]);
+                let executable = self
+                    .graph
+                    .compileWithDevice_feeds_targetTensors_targetOperations_compilationDescriptor(
+                        Some(&self.mps_device),
+                        &feeds,
+                        &targets,
+                        None,
+                        None,
+                    );
+                let in_td = MPSGraphTensorData::initWithMTLBuffer_shape_dataType(
+                    MPSGraphTensorData::alloc(),
+                    &feature_mtl,
+                    &in_shape,
+                    MPSDataType::Float32,
+                );
+                let out_td = MPSGraphTensorData::initWithMTLBuffer_shape_dataType(
+                    MPSGraphTensorData::alloc(),
+                    &out_mtl,
+                    &out_shape,
+                    MPSDataType::Float32,
+                );
+                let inputs = NSArray::from_slice(&[&*in_td]);
+                let results = NSArray::from_slice(&[&*out_td]);
+                let exec_desc = MPSGraphExecutableExecutionDescriptor::new();
+                // PROBE: GAIA_NATIVE_NET_ASYNC=true → don't block on the forward
+                // (measure whether the 21ms wall-gap is CPU-encode or GPU-wait).
+                let wait = std::env::var("GAIA_NATIVE_NET_ASYNC").as_deref() != Ok("true");
+                exec_desc.setWaitUntilCompleted(wait);
+
                 self.pool = Some(SharedPool {
                     feature_buf,
                     feature_mtl,
                     out_mtl,
+                    out_buf,
                     max_pixels,
+                    executable,
+                    inputs,
+                    results,
+                    exec_desc,
                 });
             }
             Ok(())
@@ -289,6 +374,60 @@ mod imp {
         /// wrapped for wgpu). `None` unless built via `from_wgpu_queue`.
         pub fn feature_buffer(&self) -> Option<&wgpu::Buffer> {
             self.pool.as_ref().map(|p| &p.feature_buf)
+        }
+
+        /// CUT 2: the net's OUTPUT MTLBuffer wrapped as a wgpu STORAGE buffer
+        /// (`[N, out_channels]` row-major, demod-log radiance). The GPU demod
+        /// pass reads this in place — no CPU readback. `None` unless built via
+        /// `from_wgpu_queue`.
+        pub fn output_buffer(&self) -> Option<&wgpu::Buffer> {
+            self.pool.as_ref().map(|p| &p.out_buf)
+        }
+
+        /// CUT 1 CORE: run the pooled, compiled executable over the pooled
+        /// buffers. Zero per-call allocation — the executable, feed/result
+        /// tensor-data arrays and execution descriptor were all built once in
+        /// `attach_pool`. Blocks until the GPU forward completes
+        /// (`waitUntilCompleted`), so on return `out_mtl` / `out_buf` hold the
+        /// frame's radiance. `n` must equal the pooled `max_pixels` (the
+        /// executable is specialized to that fixed shape).
+        fn run_executable(&self, n: usize) -> Result<&SharedPool, String> {
+            let pool = self.pool.as_ref().ok_or_else(|| {
+                "rdirect_live: forward needs the shared pool (from_wgpu_queue)".to_string()
+            })?;
+            if n != pool.max_pixels {
+                return Err(format!(
+                    "rdirect_live: n={n} != pooled max_pixels={} (the executable is \
+                     compiled for the fixed boot shape)",
+                    pool.max_pixels
+                ));
+            }
+            // SAFETY: objc2 message send; the executable, inputs/results arrays
+            // and descriptor are the pool's (fixed shapes over the persistent
+            // MTLBuffers), and the run waits for completion before returning.
+            // The run is wrapped in an autorelease pool so MPSGraph's per-call
+            // intermediate NDArrays (the ~157MB hidden activations) are drained
+            // this frame rather than piling into the thread's outer pool.
+            objc2::rc::autoreleasepool(|_| unsafe {
+                let _ = pool
+                    .executable
+                    .runWithMTLCommandQueue_inputsArray_resultsArray_executionDescriptor(
+                        &self.queue,
+                        &pool.inputs,
+                        Some(&pool.results),
+                        Some(&pool.exec_desc),
+                    );
+            });
+            Ok(pool)
+        }
+
+        /// CUT 1 + CUT 2 live path: run the pooled executable and leave the
+        /// result ON the GPU in `output_buffer()`. No CPU readback, no output
+        /// `Vec` allocation — the demod compute pass consumes `out_buf`
+        /// directly.
+        pub fn forward_shared_gpu(&self, n: usize) -> Result<(), String> {
+            self.run_executable(n)?;
+            Ok(())
         }
 
         /// Ceiling passed at construction (max target pixels per forward).
@@ -302,47 +441,14 @@ mod imp {
         /// MTLBuffer, returning `[n, out_channels]` demod-log radiance. No NSData
         /// staging, no per-call allocation — both buffers are the pool's.
         pub fn forward_shared(&self, n: usize) -> Result<Vec<f32>, String> {
-            let pool = self.pool.as_ref().ok_or_else(|| {
-                "rdirect_live: forward_shared needs the shared pool (from_wgpu_queue)".to_string()
-            })?;
-            if n == 0 || n > pool.max_pixels {
-                return Err(format!(
-                    "rdirect_live: n={n} outside [1, max_pixels={}]",
-                    pool.max_pixels
-                ));
-            }
-            // SAFETY: objc2 message sends; the MTLBuffers are sized to max_pixels
-            // ≥ n, shapes match the tensors, output is Shared storage.
+            // CUT 1: run the pooled compiled executable (blocks until done),
+            // then read the pooled Shared-storage output back to a Vec. The
+            // ordeal/example CPU path keeps this Vec return; the live present
+            // uses `forward_shared_gpu` (no readback) + the GPU demod pass.
+            let pool = self.run_executable(n)?;
+            // SAFETY: `out_mtl` is Shared storage, sized to max_pixels ≥ n, and
+            // `run_executable` waited for the GPU forward to complete.
             unsafe {
-                let in_shape = shape(&[n, self.in_features]);
-                let in_td = MPSGraphTensorData::initWithMTLBuffer_shape_dataType(
-                    MPSGraphTensorData::alloc(),
-                    &pool.feature_mtl,
-                    &in_shape,
-                    MPSDataType::Float32,
-                );
-                let out_shape = shape(&[n, self.out_channels]);
-                let out_td = MPSGraphTensorData::initWithMTLBuffer_shape_dataType(
-                    MPSGraphTensorData::alloc(),
-                    &pool.out_mtl,
-                    &out_shape,
-                    MPSDataType::Float32,
-                );
-                let feeds = objc2_foundation::NSDictionary::<
-                    MPSGraphTensor,
-                    MPSGraphTensorData,
-                >::from_slices(&[&*self.input], &[&*in_td]);
-                let results = objc2_foundation::NSDictionary::<
-                    MPSGraphTensor,
-                    MPSGraphTensorData,
-                >::from_slices(&[&*self.output], &[&*out_td]);
-                self.graph
-                    .runWithMTLCommandQueue_feeds_targetOperations_resultsDictionary(
-                        &self.queue,
-                        &feeds,
-                        None,
-                        &results,
-                    );
                 let ptr = pool.out_mtl.contents().as_ptr() as *const f32;
                 let out = std::slice::from_raw_parts(ptr, n * self.out_channels).to_vec();
                 Ok(out)

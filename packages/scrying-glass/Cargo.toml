@@ -61,6 +61,7 @@ features = [
   "MPSGraph", "MPSGraphCore", "MPSGraphTensor", "MPSGraphOperation",
   "MPSGraphDevice", "MPSGraphMemoryOps", "MPSGraphMatrixMultiplicationOps",
   "MPSGraphArithmeticOps", "MPSGraphActivationOps", "MPSGraphTensorData",
+  "MPSGraphExecutable",
   "objc2-metal-performance-shaders",
 ]
 

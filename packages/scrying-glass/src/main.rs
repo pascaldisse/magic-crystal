@@ -31,6 +31,8 @@ use scrying_glass::integrator::{
 #[cfg(target_os = "macos")]
 use scrying_glass::rdirect::ALBEDO_DEMOD_EPS;
 #[cfg(target_os = "macos")]
+use scrying_glass::rdirect_demod::DemodPass;
+#[cfg(target_os = "macos")]
 use scrying_glass::rdirect_gather::FeatureGather;
 #[cfg(target_os = "macos")]
 use scrying_glass::rdirect_live::RdirectLive;
@@ -1127,6 +1129,8 @@ struct NetTimings {
 struct NetPresent {
     live: RdirectLive,
     gather: FeatureGather,
+    /// CUT 2: GPU demod pass (undo-log-demod on the GPU, no CPU round-trip).
+    demod: DemodPass,
     /// Low-res noisy radiance accum (STORAGE|COPY_SRC|COPY_DST — cleared each
     /// frame so a moving camera never smears progressive samples).
     net_accum: wgpu::Buffer,
@@ -1186,6 +1190,7 @@ impl NetPresent {
         .map_err(|e| format!("read rdirect weights: {e}"))?;
         let live = RdirectLive::from_wgpu_queue(device, queue, &weights, n)?;
         let gather = FeatureGather::new(device);
+        let demod = DemodPass::new(device);
 
         let low_cells = (low_w as u64) * (low_h as u64);
         let net_accum = device.create_buffer(&wgpu::BufferDescriptor {
@@ -1214,6 +1219,7 @@ impl NetPresent {
         Ok(Self {
             live,
             gather,
+            demod,
             net_accum,
             net_aov,
             aov_stage,

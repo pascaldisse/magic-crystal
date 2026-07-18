@@ -1,0 +1,23 @@
+[package] scrying-glass v0.1.0 registered
+[world] /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/../../worlds/naruko scene(s)=["main"] entities=45 chains=23 clusters=913 transmute=73.0ms
+[worker-window] GAIA_NATIVE_WORKER_WINDOW=true: window built focused=false focusable=false (never-key) title="GAIA — Scrying Glass [worker]"
+[embodiment] spawn eye=Vec3(0.0, 7.0, 44.0) yaw=0 floor_triangles=10464 tick_dt=0.016666668
+[pleroma] BVH nodes=15487 triangles=23192 (static 12368 + dynamic 10824) build=13.5ms; 22 dynamic entit(ies) — living layer
+[pleroma] traced integrator spp=2 bounces=4 rr_start=2 — first_light is dead
+[wgpu] traced 640x480 → upscale → surface 960x640 (bilinear); Bgra8UnormSrgb
+[bloodbend] 🩸 watching 1 scene file(s) + /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/src/integrator.wgsl @ 500ms poll
+[frame] trace 640x480 → surface 480x320: median 7.63ms mean 7.76ms/frame (spp=2, 60-frame sample)
+[scry] GET http://127.0.0.1:8436/scry (alias: /screenshot; optional pos/yaw/pitch/fov/w/h)
+[embodiment] GET http://127.0.0.1:8436/pose · POST http://127.0.0.1:8436/walk {keys,yaw?,pitch?,ticks?}
+[scrying-glass] child webview overlay created; render, capture, PNG, and HTTP run off the main thread
+[n0c] net-present rig pooled: trace 640x480 → net 960x640 (614400 px)
+[n0d] frames=60 640x480→960x640 (ms median/p95 vs 16.67): trace 6.36/6.84 gather 1.43/1.64 net 26.73/27.15 present 6.71/7.27 TOTAL 41.19/41.96
+[wgpu-input] passthrough click x=219.9 y=128.5
+[n0d] frames=120 640x480→960x640 (ms median/p95 vs 16.67): trace 6.33/6.77 gather 1.41/1.61 net 26.72/27.19 present 6.68/6.98 TOTAL 41.16/41.89
+[n0d] frames=180 640x480→960x640 (ms median/p95 vs 16.67): trace 6.48/9.02 gather 1.44/1.65 net 26.68/27.18 present 6.69/6.98 TOTAL 41.42/43.97
+[n0d] frames=240 640x480→960x640 (ms median/p95 vs 16.67): trace 6.87/10.71 gather 1.44/1.65 net 26.69/27.19 present 6.67/6.97 TOTAL 41.80/45.44
+[n0d] frames=300 640x480→960x640 (ms median/p95 vs 16.67): trace 8.06/10.65 gather 1.44/1.66 net 26.69/27.24 present 6.66/6.95 TOTAL 43.08/45.46
+[n0d] frames=360 640x480→960x640 (ms median/p95 vs 16.67): trace 9.08/10.62 gather 1.45/1.68 net 26.75/27.28 present 6.66/6.96 TOTAL 43.92/45.46
+[n0d] frames=420 640x480→960x640 (ms median/p95 vs 16.67): trace 9.06/10.61 gather 1.45/1.69 net 26.75/27.32 present 6.65/6.95 TOTAL 43.92/45.45
+[n0d] frames=480 640x480→960x640 (ms median/p95 vs 16.67): trace 9.08/10.53 gather 1.44/1.69 net 26.74/27.30 present 6.65/6.93 TOTAL 43.93/45.40
+[n0d] frames=540 640x480→960x640 (ms median/p95 vs 16.67): trace 9.16/10.48 gather 1.44/1.69 net 26.74/27.33 present 6.65/6.96 TOTAL 43.98/45.44
