@@ -614,7 +614,11 @@ impl Solver {
                 best_sum_grad2 = grad_i.dot(grad_i) + sum_grad_j2;
             }
         }
-        cfg.rest_density = best_density.max(f64::EPSILON);
+        // ROUND-9: place ρ₀ BELOW the fullest packing (factor < 1) so the
+        // settled column is genuinely over-dense and a depth-increasing
+        // hydrostatic λ gradient forms (compression_only then bites). factor
+        // 1.0 recovers the round-8 pressureless calibration exactly.
+        cfg.rest_density = (best_density * cfg.rest_density_factor).max(f64::EPSILON);
         // ∇C = (1/ρ₀)×(mass-weighted ∇W); |∇C|² carries 1/ρ₀². The reference
         // denominator for ε is that full-neighbourhood Σ|∇C|².
         let ref_denom = best_sum_grad2 / (cfg.rest_density * cfg.rest_density);

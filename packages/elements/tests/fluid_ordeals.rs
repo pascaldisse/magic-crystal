@@ -382,51 +382,92 @@ fn ordeal_hydrostatic_endurance() {
 // bulk, the pure pairwise contact coupling has nothing to transmit, so no
 // buoyant force emerges. The round-8 min-separation floor cured the collapse
 // and stabilised the column (gates 1–3) but does not manufacture pressure.
-// A real fix needs pressure-bearing fluid (bilateral-with-anti-clustering, or
-// ρ₀ calibrated to the interior mean) and/or an Akinci-style boundary coupling
-// where the solid contributes to the fluid density estimate. Neither is in
-// scope here. This ordeal keeps the rise assertion so running it --ignored
-// shows the honest RED; it is NOT part of the green suite.
+//
+// ROUND-9 UPDATE (two levers ATTEMPTED and MEASURED, still RED — see
+// `tests/fluid_profile_probe.rs` for the numbers, kept as evidence):
+//   LEVER 2 (Akinci two-way fluid↔solid boundary coupling): the submerged
+//     body's particles now contribute ψ_b·W to the fluid density and receive
+//     the mirrored, inverse-mass-split position correction back
+//     (`solver::solve_fluid` + `FluidConfig::solid_coupling`). Implemented and
+//     live — but with no fluid pressure to couple, it only produces a mass-
+//     BLIND upward shove.
+//   LEVER 1 (ρ₀ below packing, `FluidConfig::rest_density_factor`): SWEPT
+//     1.0→0.85. It does NOT create a sustained gradient — a FREE-SURFACE
+//     `compression_only` pool simply EXPANDS to relieve over-density, so the
+//     settled column reads UNDER-dense in every depth bin at every factor
+//     (λ≈0 at rest). Worse, the discrimination sweep converged EVERY density
+//     (200–2000 kg/m³) and every release height to the SAME equilibrium depth
+//     (~0.165 m): ZERO mass discrimination — a density-2000 box rests where a
+//     density-200 cork does. That is a displacement artifact, NOT Archimedes.
+//     Default reverted to 1.0 (a factor<1 also breaks gate 1's C≤0-at-spawn).
+// The TRUE remaining lever is a real `λ` FIELD at depth: CONTAINER-boundary
+// Akinci particles so the confined bottom fluid stops reading boundary-
+// deficient and develops λ, plus a confined over-density. Larger effort,
+// escalated — NOT faked here. This ordeal keeps the rise assertion so running
+// it --ignored shows the honest RED; it is NOT part of the green suite.
 // ─────────────────────────────────────────────────────────────────────────
 #[test]
-#[ignore = "OPEN ITEM (gate 4): buoyancy does not emerge from the pressureless compression_only fluid + contact coupling — EXPECTED RED, escalated, not part of the green suite"]
+#[ignore = "OPEN ITEM (gate 4): buoyancy does not emerge — round-9 measured BOTH levers (Akinci two-way coupling live + rho0-below-packing swept) and proved zero mass discrimination (all densities converge to one depth); real fix needs a container-boundary lambda field. EXPECTED RED, escalated, not faked, not in the green suite"]
 fn ordeal_buoyancy_rises() {
+    // A TRUE buoyancy gate must test ARCHIMEDES, not a single body's transient
+    // PEAK (the old `y_peak - y_start > spacing` assertion — round-9 proved it a
+    // false positive: the mass-blind Akinci shove peaks a light body up by
+    // +0.14 m with NO real pressure behind it). The non-gameable witness is
+    // MASS DISCRIMINATION on the SETTLED (net) depth: release the SAME crate at
+    // two densities — light (≪ water 1000) and heavy (≫ water) — from the SAME
+    // deep pose, let each reach equilibrium, and require the light one to REST
+    // clearly HIGHER than the heavy one. No coupling artifact can pass this: it
+    // needs a depth-varying λ that pushes light up and lets heavy sink.
     let spec = small_spec();
-    let mut pool = fill(spec);
-    let r_min = pool.solver.fluid.unwrap().min_separation;
     let search_r = spec.spacing * 2.0;
-
-    for _ in 0..200 {
-        pool.solver.step();
-    }
-    let surf = surface_height(&pool);
     let crate_dims = Vec3::new(0.09, 0.09, 0.09);
-    let submerge_y = (surf * 0.35).max(crate_dims.y * 0.5 + spec.spacing);
-    let idx = drop_crate(&mut pool, crate_dims, (3, 3, 3), 400.0, submerge_y, 0.0, 0.01);
-    let y_start = body_center_y(&pool, idx);
 
-    let floor_gate = r_min * (1.0 - FLOOR_TOL);
-    let mut worst_min = f64::INFINITY;
-    let mut y_peak = y_start;
-    for _ in 0..250 {
-        pool.solver.step();
-        y_peak = y_peak.max(body_center_y(&pool, idx));
-        let (_, mn) = nn_stats(&pool.solver, search_r);
-        worst_min = worst_min.min(mn);
-    }
-    let rise = y_peak - y_start;
+    // Equilibrium (tail-mean) depth of a released crate of the given density.
+    let settle_depth = |density: f64| -> (f64, f64, f64) {
+        let mut pool = fill(spec);
+        let r_min = pool.solver.fluid.unwrap().min_separation;
+        for _ in 0..260 {
+            pool.solver.step();
+        }
+        let surf = surface_height(&pool);
+        let submerge_y = (surf * 0.30).max(crate_dims.y * 0.5 + spec.spacing);
+        let idx = drop_crate(&mut pool, crate_dims, (3, 3, 3), density, submerge_y, 0.0, 0.01);
+        let y_start = body_center_y(&pool, idx);
+        let mut worst_min = f64::INFINITY;
+        let (mut tail_sum, mut tail_n) = (0.0_f64, 0usize);
+        let total = 400;
+        for t in 0..total {
+            pool.solver.step();
+            let (_, mn) = nn_stats(&pool.solver, search_r);
+            worst_min = worst_min.min(mn);
+            if t >= total - 80 {
+                tail_sum += body_center_y(&pool, idx);
+                tail_n += 1;
+            }
+        }
+        (y_start, tail_sum / tail_n as f64, (r_min * (1.0 - FLOOR_TOL)).min(worst_min))
+    };
+
+    let (light_start, light_rest, light_worst) = settle_depth(200.0);
+    let (heavy_start, heavy_rest, heavy_worst) = settle_depth(2000.0);
+    let floor_gate = fill(spec).solver.fluid.unwrap().min_separation * (1.0 - FLOOR_TOL);
+    // Discrimination = how much higher the cork rests than the lead block. A
+    // real fluid separates them by most of the column; we ask for at least one
+    // spacing of clear separation (well above solver noise).
+    let discrimination = light_rest - heavy_rest;
     println!(
-        "ORDEAL buoyancy (OPEN, expected red): crate released y={y_start:.4}, peak y={y_peak:.4} (rose {rise:+.4} m); fluid worst min NN {worst_min:.4} m (floor {floor_gate:.4})"
+        "ORDEAL buoyancy (OPEN, expected red): light(200) start {light_start:.4} rest {light_rest:.4}; heavy(2000) start {heavy_start:.4} rest {heavy_rest:.4}; DISCRIMINATION light-heavy = {discrimination:+.4} m (need > one spacing {:.4}); worst min NN light {light_worst:.4} heavy {heavy_worst:.4} (floor {floor_gate:.4})",
+        spec.spacing
     );
-    // The packing half IS a real round-8 result and holds even here:
+    // The packing half IS a real round-8 result and holds even under a body:
     assert!(
-        worst_min >= floor_gate,
-        "fluid packing collapsed under the body: min NN {worst_min:.4} < floor {floor_gate:.4}"
+        light_worst >= floor_gate && heavy_worst >= floor_gate,
+        "fluid packing collapsed under a submerged body: min NN light {light_worst:.4} / heavy {heavy_worst:.4} < floor {floor_gate:.4}"
     );
-    // The lift half is the OPEN failure:
+    // The Archimedes half is the OPEN failure (round-9: discrimination ≈ 0):
     assert!(
-        rise > spec.spacing,
-        "OPEN ITEM: a light submerged body failed to rise (rose only {rise:+.4} m <= one spacing {:.4}) — the pressureless-fluid buoyancy gap",
+        discrimination > spec.spacing,
+        "OPEN ITEM: no mass discrimination — a cork (200) and a lead block (2000) settle to nearly the SAME depth (Δ={discrimination:+.4} m <= one spacing {:.4}); the pressureless fluid has no λ field to enact Archimedes",
         spec.spacing
     );
 }

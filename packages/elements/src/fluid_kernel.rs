@@ -44,6 +44,37 @@ pub struct FluidConfig {
     /// self-consistent SPH value that makes an interior particle report
     /// `C_i = 0` at the spawn lattice. `0.0` until calibrated.
     pub rest_density: f64,
+    /// ROUND-9 — HYDROSTATIC-GRADIENT FACTOR. Multiplies the packing density
+    /// measured by [`crate::Solver::calibrate_fluid_rest_density`] before it
+    /// becomes `rest_density`, dimensionless in `(0,1]`. `1.0` sets ρ₀ = the
+    /// MAX (fullest) spawn-lattice packing, so at rest every particle reads
+    /// `C_i ≤ 0` and the `compression_only` constraint is inert — the fluid is
+    /// PRESSURELESS in the bulk (the round-8 buoyancy gap: no gradient, nothing
+    /// lifts a submerged body). A factor `< 1` places ρ₀ BELOW packing, so the
+    /// settled lattice would be genuinely OVER-dense (`C > 0`) and, since a
+    /// column under gravity compresses MORE with depth, `C` — hence the density
+    /// pressure `λ` — would RISE with depth: a real hydrostatic gradient.
+    ///
+    /// ROUND-9 MEASURED VERDICT (`fluid_profile_probe`, kept): this lever DOES
+    /// NOT deliver buoyancy; the default stays `1.0`. Two proven reasons:
+    ///   1. With a FREE SURFACE + `compression_only`, the pool simply EXPANDS
+    ///      (surface rose ~0.185→0.204 m as factor 1.0→0.85) to relieve the
+    ///      over-density, so the settled column reads UNDER-dense in EVERY
+    ///      depth bin at every factor — no sustained `C>0`, so `λ≈0` at rest,
+    ///      so no gradient. Pressure is the multiplier `λ`, not density;
+    ///      `compression_only` clamps `C→0` hence `λ→0` for a fluid at rest.
+    ///   2. The discrimination sweep converged EVERY density (200–2000 kg/m³)
+    ///      AND every release height to the SAME equilibrium depth (~0.165 m)
+    ///      — zero mass discrimination. A density-2000 box (twice water, must
+    ///      sink) rested at the same depth as a density-200 cork: the "rise"
+    ///      is a geometric displacement artifact of the Akinci push, not
+    ///      Archimedes.
+    /// A factor `< 1` also breaks the by-construction `C≤0`-at-spawn rest gate.
+    /// The true remaining lever is a real `λ` FIELD at depth — CONTAINER-
+    /// boundary Akinci particles (so confined bottom fluid stops reading
+    /// boundary-deficient and develops `λ`) plus a confined over-density; a
+    /// larger effort, escalated not faked. Documented, measured infrastructure.
+    pub rest_density_factor: f64,
     /// CFM relaxation FRACTION (Macklin eq. 11, `ε`) expressed RELATIVE to a
     /// full neighbourhood's `Σ|∇C|²` — never a bare units² literal. The
     /// absolute `ε = cfm_relax × (interior Σ|∇C|²)` is DERIVED at calibration
@@ -190,6 +221,7 @@ impl Default for FluidConfig {
         FluidConfig {
             h: 0.0,           // set by spawn_fluid_box
             rest_density: 0.0, // set by calibrate_fluid_rest_density
+            rest_density_factor: 1.0, // round-9: ρ₀ = max packing (round-8 exact). A factor < 1 was MEASURED insufficient for buoyancy (see solver::solve_fluid round-9 note + fluid_profile_probe) and breaks the by-construction C≤0 rest gate; kept as investigated infrastructure, NOT the cure.
             cfm_relax: 1.0e-4,
             cfm_epsilon: 0.0, // set by calibrate_fluid_rest_density
             tensile_k: 0.0,
