@@ -1,6 +1,20 @@
 use std::collections::BTreeMap;
+use std::sync::OnceLock;
 
 use crate::physics::{Body, BodyPose, Physics};
+
+/// S15 DIRTY-ONLY SKIN master switch (default ON). `GAIA_NATIVE_DIRTY_SKIN=0`
+/// (or `false`) restores the old always-re-skin path for the A/B measurement.
+/// Read once and cached — the per-body gate must not pay an env lookup per tick.
+fn dirty_skin_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        !matches!(
+            std::env::var("GAIA_NATIVE_DIRTY_SKIN").as_deref(),
+            Ok("0" | "false")
+        )
+    })
+}
 use bytemuck::{Pod, Zeroable};
 use crystal::{
     EcsWorld, Environment, Mesh, MeshPart, NumberOrNumbers, Op, QuerySpec, Spawn, Transform,
@@ -359,6 +373,14 @@ pub struct BodyInstance {
     /// The engine never special-cases a creature — any body may declare it.
     /// `None` = unattached (walker-broadcast, or minded).
     follows: Option<String>,
+    /// S15 DIRTY-ONLY SKIN — whether the PREVIOUS tick this body was animating
+    /// (non-idle gait or blending). Forces ONE final re-skin the tick after
+    /// animation stops so the settled idle pose is captured before freezing.
+    prev_animating: bool,
+    /// S15 — the model `world_tris` were last SKINNED at. When the body is idle,
+    /// settled, and its model is unchanged from this, the skin is a no-op and
+    /// `world_tris` are kept verbatim (the static majority costs ZERO per tick).
+    last_skinned_model: Mat4,
 }
 
 impl BodyInstance {
@@ -392,7 +414,32 @@ impl BodyInstance {
     pub fn command(&mut self, commanded_speed: f32) {
         self.commanded_speed = commanded_speed;
         self.pose = self.locomotion.step(&self.body.skeleton, commanded_speed);
-        self.world_tris = skin_body(&self.body, &self.pose, self.model, &self.albedo);
+        self.reskin_if_dirty();
+    }
+
+    /// S15 DIRTY-ONLY SKIN — re-skin `world_tris` ONLY when this body's skinning
+    /// inputs actually changed. An idle, settled body (gait Idle, not blending)
+    /// whose model is unchanged from the last skin holds STATIC geometry (the
+    /// engine's own `is_animating` contract), so its `posed`+triangle rebuild is
+    /// skipped and the previous `world_tris` are kept verbatim — the static
+    /// majority of the living layer costs ZERO per tick. `prev_animating` forces
+    /// one final skin the tick after animation stops (the settling frame changes
+    /// the pose while the model may already be still). `skin_body` is pure, so a
+    /// kept `world_tris` is byte-identical to what a re-skin would produce — no
+    /// order drift, determinism intact. `GAIA_NATIVE_DIRTY_SKIN=0` forces the old
+    /// always-skin path for the A/B.
+    fn reskin_if_dirty(&mut self) {
+        let animating = self.is_animating();
+        let dirty = !dirty_skin_enabled()
+            || self.world_tris.is_empty()
+            || animating
+            || self.prev_animating
+            || self.model != self.last_skinned_model;
+        if dirty {
+            self.world_tris = skin_body(&self.body, &self.pose, self.model, &self.albedo);
+            self.last_skinned_model = self.model;
+        }
+        self.prev_animating = animating;
     }
 
     /// RITE V · V2 — advance a MINDED body one tick against the world clock time
@@ -420,7 +467,7 @@ impl BodyInstance {
         self.pose = self
             .locomotion
             .step(&self.body.skeleton, self.commanded_speed);
-        self.world_tris = skin_body(&self.body, &self.pose, self.model, &self.albedo);
+        self.reskin_if_dirty();
     }
 
     /// Whether this body carries a behavior spirit (a minded body drives itself
@@ -513,6 +560,8 @@ impl BodyInstance {
             base_scale: Vec3::ONE,
             // A wire-composed presence body is not walker-attached (N2 drives it).
             follows: None,
+            prev_animating: false,
+            last_skinned_model: model,
         })
     }
 
@@ -532,7 +581,7 @@ impl BodyInstance {
         self.model = ground_model(&self.body, pos, yaw as f32, floor);
         self.commanded_speed = commanded_speed;
         self.pose = self.locomotion.step(&self.body.skeleton, commanded_speed);
-        self.world_tris = skin_body(&self.body, &self.pose, self.model, &self.albedo);
+        self.reskin_if_dirty();
     }
 
     /// The current grounded world model (rotation/scale/translation) — exposed so
@@ -1314,6 +1363,8 @@ fn body_instances(world: &EcsWorld, floor: &Ground) -> Result<Vec<BodyInstance>,
             ground_y: grounded_y,
             base_scale: body_scale,
             follows,
+            prev_animating: false,
+            last_skinned_model: model,
         });
     }
     Ok(out)

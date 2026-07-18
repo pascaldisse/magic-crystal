@@ -1180,6 +1180,10 @@ impl OffscreenTarget {
 struct WorldStages {
     /// `command_bodies_walked` + `tick_with_ops` (skin the bodies, advance solver).
     skin: f64,
+    /// `command_bodies_walked` alone (SAMA gait + re-skin the body meshes).
+    command: f64,
+    /// `tick_with_ops` alone (dynamics solver step + op application).
+    tick: f64,
     /// `dynamic_leaf_triangles_for_eye` (gather the dynamic partition's tris).
     gather: f64,
     /// `splice.update` — dynamic refit/rebuild + CPU merge onto the static tree.
@@ -1194,6 +1198,8 @@ struct OutsideBudget {
     world: Vec<f64>,
     /// S14 sub-breakdown of `world` (skin·tick / gather / splice / upload).
     w_skin: Vec<f64>,
+    w_command: Vec<f64>,
+    w_tick: Vec<f64>,
     w_gather: Vec<f64>,
     w_splice: Vec<f64>,
     w_upload: Vec<f64>,
@@ -1220,6 +1226,8 @@ impl OutsideBudget {
     /// S14: record the sub-stage breakdown of the frame's world advance.
     fn record_world(&mut self, s: WorldStages) {
         self.w_skin.push(s.skin);
+        self.w_command.push(s.command);
+        self.w_tick.push(s.tick);
         self.w_gather.push(s.gather);
         self.w_splice.push(s.splice);
         self.w_upload.push(s.upload);
@@ -1240,9 +1248,12 @@ impl OutsideBudget {
     /// S14: the `"world_stages"` block (median/p95 per advance sub-stage).
     fn world_stages_json(&self) -> String {
         format!(
-            "\"world_stages\":{{\"skin\":[{:.3},{:.3}],\"gather\":[{:.3},{:.3}],\
+            "\"world_stages\":{{\"skin\":[{:.3},{:.3}],\"command\":[{:.3},{:.3}],\
+             \"tick\":[{:.3},{:.3}],\"gather\":[{:.3},{:.3}],\
              \"splice\":[{:.3},{:.3}],\"upload\":[{:.3},{:.3}]}}",
             pct(&self.w_skin, 0.5), pct(&self.w_skin, 0.95),
+            pct(&self.w_command, 0.5), pct(&self.w_command, 0.95),
+            pct(&self.w_tick, 0.5), pct(&self.w_tick, 0.95),
             pct(&self.w_gather, 0.5), pct(&self.w_gather, 0.95),
             pct(&self.w_splice, 0.5), pct(&self.w_splice, 0.95),
             pct(&self.w_upload, 0.5), pct(&self.w_upload, 0.95),
@@ -2359,8 +2370,12 @@ impl Renderer {
         // bodies (`follows: "walker"`): they TRACK the walker, gait derived from
         // displacement, instead of gaiting in place off the broadcast.
         let bodies_animating = self.scene.command_bodies_walked(body_speed, walker);
+        self.last_world_stages.command = t_skin.elapsed().as_secs_f64() * 1000.0;
+        let t_tick = Instant::now();
         self.scene.tick_with_ops(push_ops);
-        self.last_world_stages.skin = t_skin.elapsed().as_secs_f64() * 1000.0;
+        self.last_world_stages.tick = t_tick.elapsed().as_secs_f64() * 1000.0;
+        self.last_world_stages.skin =
+            self.last_world_stages.command + self.last_world_stages.tick;
         let models = self.scene.dynamics.model_matrices();
         if models == self.last_models && !bodies_animating {
             return; // nothing moved — keep accumulating
