@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Run the Wilde Jagd gate against merge commits newly introduced by this push.
+set -euo pipefail
+
+root=$(git rev-parse --show-toplevel)
+gate="$root/tools/wilde-jagd-gate.sh"
+zero=0000000000000000000000000000000000000000
+commits=()
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [[ "$local_sha" == "$zero" ]] && continue  # deletion
+  if [[ "$remote_sha" == "$zero" ]]; then
+    range="$local_sha"
+  elif git cat-file -e "${remote_sha}^{commit}" 2>/dev/null; then
+    range="${remote_sha}..${local_sha}"
+  else
+    printf 'WILDE JAGD REFUSED — remote tip %s is unavailable locally. Fetch before pushing.\n' "$remote_sha" >&2
+    exit 1
+  fi
+  while read -r commit; do
+    [[ -n "$commit" ]] && commits+=( "$commit" )
+  done < <(git rev-list --min-parents=2 "$range")
+done
+
+(( ${#commits[@]} == 0 )) && exit 0
+exec "$gate" "${commits[@]}"
