@@ -29,6 +29,15 @@ struct Uniform {
   // ── RESOLUTION OF GOD: the window surface being drawn. params.xy is the
   // internal traced resolution; the blit upscales params.xy → surface.xy.
   surface: vec4<u32>,      // surface_w, surface_h, upscale_mode (0 bilinear, 1 nearest), _
+  // ── LIGHT-NOT-DOTS: temporal accumulation with reprojection ──
+  // The PREVIOUS frame's camera, so `temporal_resolve` can reproject this
+  // frame's world points into last frame's screen and fetch their history.
+  prev_eye: vec4<f32>,     // xyz prev eye
+  prev_right: vec4<f32>,   // prev image-plane right, scaled (surface aspect)
+  prev_up: vec4<f32>,      // prev image-plane up, scaled
+  prev_forward: vec4<f32>, // prev unit look direction
+  temporal: vec4<f32>,     // alpha_min (moving EMA floor), depth_tol, normal_tol (cos), clamp_k
+  temporal_flags: vec4<u32>, // history_valid (0/1), max_history frames, _, _
 };
 
 struct Node {
@@ -562,6 +571,197 @@ fn integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
   let total = f32(samples_before + spp);
   // accum holds the running SUM of per-sample radiance; .w = total samples.
   accum[pixel] = vec4<f32>(prev + frame_sum, total);
+}
+
+// ── LIGHT-NOT-DOTS: TEMPORAL ACCUMULATION WITH REPROJECTION ──────────────────
+// The live present path traces the ONE integrator at ~1spp per frame; still, it
+// converges by accumulating samples across frames — but the instant the camera
+// moves the old reset-on-move path threw the history away and the Architect saw
+// raw 1spp DOTS. This pair reconstructs that same one light pass across frames
+// instead of discarding it: `integrate_temporal` traces THIS frame's radiance
+// (spp samples) plus a primary gbuffer (depth+normal); `temporal_resolve`
+// reprojects each current world point into the PREVIOUS frame's screen, fetches
+// its accumulated history when depth+normal agree (rejects disocclusions and
+// moved bodies), then blends via an exponential moving average with a
+// neighbourhood variance clamp under motion. NOT a second light mode — one
+// integrator, its samples accumulated. A SEPARATE @group(1) (like AOV) keeps
+// the pre-existing `integrate`/`blit` bind group layout byte-for-byte unchanged.
+// To stay under the 8-storage-buffer-per-stage limit (group(0) already uses 4),
+// the current frame's colour AND primary gbuffer are PACKED into one buffer,
+// 2 vec4<f32> cells per pixel: [2p] = (radiance.rgb, 1), [2p+1] = (depth, nx,
+// ny, nz). The packed buffer ping-pongs so last frame's gbuffer (t_prev) is
+// available for reprojection validation. Four bindings total → 8 with group(0).
+@group(1) @binding(0) var<storage, read_write> t_cur: array<vec4<f32>>;   // this frame, packed
+@group(1) @binding(1) var<storage, read_write> t_prev: array<vec4<f32>>;  // last frame, packed (gbuf half read)
+@group(1) @binding(2) var<storage, read_write> t_hist_prev: array<vec4<f32>>;
+@group(1) @binding(3) var<storage, read_write> t_hist_out: array<vec4<f32>>;
+
+// Trace THIS frame: radiance (spp samples, jittered — the Monte-Carlo estimate
+// whose samples we accumulate) into t_cur[2p], and the PRIMARY hit's depth +
+// world normal (pixel-centre ray, deterministic geometry) into t_cur[2p+1].
+@compute @workgroup_size(8, 8, 1)
+fn integrate_temporal(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let w = u.params.x;
+  let h = u.params.y;
+  if (gid.x >= w || gid.y >= h) { return; }
+  let pixel = gid.y * w + gid.x;
+  let spp = u.params.z;
+  let samples_before = u.counters.y;
+  let inv_w = 1.0 / f32(w);
+  let inv_h = 1.0 / f32(h);
+  // Primary gbuffer: pixel-centre ray, no jitter (the geometry, not the estimate).
+  let cx = (2.0 * (f32(gid.x) + 0.5) * inv_w) - 1.0;
+  let cy = 1.0 - (2.0 * (f32(gid.y) + 0.5) * inv_h);
+  let cdir = normalize(u.forward.xyz + u.right.xyz * cx + u.up.xyz * cy);
+  let ghit = trace_closest(u.eye.xyz, cdir, u.misc.y, INF);
+  var frame_sum = vec3<f32>(0.0, 0.0, 0.0);
+  for (var s = 0u; s < spp; s = s + 1u) {
+    let sample = samples_before + s;
+    let jx = urand(pixel, sample, 900000u);
+    let jy = urand(pixel, sample, 900001u);
+    let sx = (2.0 * (f32(gid.x) + jx) * inv_w) - 1.0;
+    let sy = 1.0 - (2.0 * (f32(gid.y) + jy) * inv_h);
+    let dir = normalize(u.forward.xyz + u.right.xyz * sx + u.up.xyz * sy);
+    let prim = trace_closest(u.eye.xyz, dir, u.misc.y, INF);
+    let t_first = select(u.med_params.w, prim.t, prim.ok);
+    let surf = radiance(u.eye.xyz, dir, pixel, sample, prim);
+    let med = medium_primary(u.eye.xyz, dir, t_first);
+    frame_sum = frame_sum + med.xyz + med.w * surf;
+  }
+  t_cur[2u * pixel + 0u] = vec4<f32>(frame_sum / f32(max(spp, 1u)), 1.0);
+  if (ghit.ok) {
+    let n = tri_normal(ghit.tri, cdir);
+    t_cur[2u * pixel + 1u] = vec4<f32>(ghit.t, n.x, n.y, n.z);
+  } else {
+    t_cur[2u * pixel + 1u] = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+  }
+}
+
+// Last frame's gbuffer (depth+normal) at an integer pixel, clamped to bounds.
+fn t_prev_gbuf_at(px: i32, py: i32, iw: i32, ih: i32) -> vec4<f32> {
+  let x = clamp(px, 0, iw - 1);
+  let y = clamp(py, 0, ih - 1);
+  return t_prev[2u * u32(y * iw + x) + 1u];
+}
+
+// Reproject, validate, blend. Writes the accumulated radiance into t_hist_out
+// (carried to next frame) AND into accum (so the existing blit presents it
+// unchanged). accum.w = 1 so blit's sum/samples resolve is the identity.
+@compute @workgroup_size(8, 8, 1)
+fn temporal_resolve(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let w = u.params.x;
+  let h = u.params.y;
+  if (gid.x >= w || gid.y >= h) { return; }
+  let iw = i32(w);
+  let ih = i32(h);
+  let pixel = gid.y * w + gid.x;
+  let curr = t_cur[2u * pixel + 0u].xyz;
+  let cg = t_cur[2u * pixel + 1u];
+  let depth = cg.x;
+  let n_curr = cg.yzw;
+  let is_miss = depth <= 0.0;
+
+  // Neighbourhood statistics of the CURRENT (noisy) frame — the TAA colour AABB
+  // the history is clamped to under motion (bounds ghosting).
+  var m1 = vec3<f32>(0.0, 0.0, 0.0);
+  var m2 = vec3<f32>(0.0, 0.0, 0.0);
+  var cnt = 0.0;
+  for (var dy = -1; dy <= 1; dy = dy + 1) {
+    for (var dx = -1; dx <= 1; dx = dx + 1) {
+      let nx = i32(gid.x) + dx;
+      let ny = i32(gid.y) + dy;
+      if (nx < 0 || ny < 0 || nx >= iw || ny >= ih) { continue; }
+      let c = t_cur[2u * u32(ny * iw + nx) + 0u].xyz;
+      m1 = m1 + c;
+      m2 = m2 + c * c;
+      cnt = cnt + 1.0;
+    }
+  }
+  let mean = m1 / cnt;
+  let sigma = sqrt(max(m2 / cnt - mean * mean, vec3<f32>(0.0, 0.0, 0.0)));
+  let k = u.temporal.w;
+
+  // World point of this pixel (hit: eye+dir*depth; miss: far along dir for sky).
+  let cx = (2.0 * (f32(gid.x) + 0.5) / f32(w)) - 1.0;
+  let cy = 1.0 - (2.0 * (f32(gid.y) + 0.5) / f32(h));
+  let dir = normalize(u.forward.xyz + u.right.xyz * cx + u.up.xyz * cy);
+  let dist = select(depth, 1.0e5, is_miss);
+  let world = u.eye.xyz + dir * dist;
+
+  // Camera motion this frame (gates the variance clamp: a still camera converges
+  // with a pure running average — no clamp to cap it).
+  let cam_moved = distance(u.eye.xyz, u.prev_eye.xyz) > 1e-5
+    || dot(normalize(u.forward.xyz), normalize(u.prev_forward.xyz)) < 0.99999;
+
+  var out_col = curr;
+  var out_len = 1.0;
+
+  if (u.temporal_flags.x == 1u) {
+    // The reprojected previous-frame pixel. A STILL camera uses the identity
+    // map (same pixel) — exact, no resample, so accumulation is a true running
+    // average; a MOVING camera reprojects this frame's world point into last
+    // frame's screen. `valid` is false only when a moving reprojection lands
+    // behind the eye or off-screen.
+    var ipx = i32(gid.x);
+    var ipy = i32(gid.y);
+    var valid = true;
+    if (cam_moved) {
+      let half_a = length(u.prev_right.xyz);
+      let half_u = length(u.prev_up.xyz);
+      let r_u = u.prev_right.xyz / max(half_a, 1e-8);
+      let up_u = u.prev_up.xyz / max(half_u, 1e-8);
+      let f_u = u.prev_forward.xyz;
+      let rel = world - u.prev_eye.xyz;
+      let rz = dot(rel, f_u);
+      if (rz > 1e-4) {
+        let sx = dot(rel, r_u) / (rz * max(half_a, 1e-8));
+        let sy = dot(rel, up_u) / (rz * max(half_u, 1e-8));
+        let fpx = (sx + 1.0) * 0.5 * f32(w) - 0.5;
+        let fpy = (1.0 - sy) * 0.5 * f32(h) - 0.5;
+        if (fpx >= 0.0 && fpy >= 0.0 && fpx <= f32(iw - 1) && fpy <= f32(ih - 1)) {
+          ipx = i32(round(fpx));
+          ipy = i32(round(fpy));
+        } else {
+          valid = false; // disoccluded / off-screen → no history
+        }
+      } else {
+        valid = false; // behind the previous eye
+      }
+    }
+    if (valid) {
+      let pg = t_prev_gbuf_at(ipx, ipy, iw, ih);
+      let prev_depth = pg.x;
+      let prev_n = pg.yzw;
+      let prev_miss = prev_depth <= 0.0;
+      var ok = false;
+      if (is_miss) {
+        ok = prev_miss; // sky reprojects to sky
+      } else if (!prev_miss) {
+        // Distance from the PREVIOUS eye to this frame's world point vs the
+        // depth the previous frame stored there (identity for a still camera).
+        let dist_prev = length(world - u.prev_eye.xyz);
+        let depth_ok = abs(dist_prev - prev_depth) <= u.temporal.y * max(dist_prev, 1e-4);
+        let normal_ok = dot(n_curr, prev_n) >= u.temporal.z;
+        ok = depth_ok && normal_ok;
+      }
+      if (ok) {
+        let hp = t_hist_prev[u32(ipy * iw + ipx)];
+        var hist = hp.xyz;
+        if (cam_moved && !is_miss) {
+          hist = clamp(hist, mean - k * sigma, mean + k * sigma);
+        }
+        let n_frames = min(hp.w + 1.0, f32(u.temporal_flags.y));
+        // Still camera: pure running average (alpha = 1/n) for maximal
+        // convergence. Moving: floor alpha so history stays responsive.
+        let alpha = select(1.0 / n_frames, max(u.temporal.x, 1.0 / n_frames), cam_moved);
+        out_col = mix(hist, curr, alpha);
+        out_len = n_frames;
+      }
+    }
+  }
+
+  t_hist_out[pixel] = vec4<f32>(out_col, out_len);
+  accum[pixel] = vec4<f32>(out_col, 1.0);
 }
 
 // ── VIII-0 AOV EXPORT BEGIN ──────────────────────────────────────────────
