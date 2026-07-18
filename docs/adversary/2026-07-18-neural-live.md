@@ -159,3 +159,61 @@ Real target: a FUSED GPU forward that keeps MPSGraph's ~6.6 ms GPU and sheds its
    gather→net). Worth a revisit.
 3. Prior gaps 2–4 (default = slower path, static 96×64 weights, legacy bilinear)
    carry forward unchanged.
+
+---
+
+## VERDICT — S13 (SHIFTS 12–13): frame overlap (N0.i) → the outside-9ms hunt (N0.j)
+
+**HOLDS parity · frame overlap is a REAL +37% throughput win · 60 fps STILL
+UNMET (~48 fps wall-clock) · the "outside 9 ms" is NAMED: it is world advance.**
+
+Concordance brought current from S11 (stale) through S13:
+
+- **S13 frame overlap (N0.i) — HOLDS, real win, honest ceiling.** Deferring the
+  `commit_net` `waitUntilCompleted` one frame downstream drove net_wall
+  12.99 → 0.012 ms and moved **wall-clock throughput 35.55 → 48.75 fps (+37%)**
+  on the same binary (A/B `GAIA_NATIVE_NET_NOOVERLAP=1`). Output-or-nothing
+  intact (each image its own frame's complete evidence; +1 frame display
+  latency, 2 frames-in-flight). **[STILL FLAGGED for the Architect: 2 frames in
+  flight / +1 frame display latency — his frame-latency ruling is pending; the
+  NOOVERLAP toggle is kept alive per that.]** The median stage-sum (11.69 ms →
+  "85 fps") was correctly called NOT the throughput — the shift ADDED wall-clock
+  fps precisely because ~9 ms lived outside the stage table.
+
+- **S13 outside-9ms hunt (N0.j) — the 9 ms is LOCATED, honestly.** New `/budget`
+  `outside` block: **world advance ~7.0 ms is the entire gap**; the other two
+  N0.i suspects are cleared — readback ~0, http 0.2 ms. World advance re-splices
+  and re-uploads the BVH every animating frame (naruko presence spheres move).
+  - **Readback tax KILLED but it was never a thief.** On-demand `capture_presented`
+    replaces the per-frame copy; measured render-thread cost of the old copy was
+    **0.002 ms** (async GPU/worker), so throughput held flat (48.6 → 48.3, noise).
+    Correct hygiene, proven path (both eyes served through it), zero fps.
+  - **World-advance overlap TRIED, DOES NOT HELP (47.6 vs 48.4 fps).** Trace is
+    synchronous on the render thread (submits+polls the GPU for the AOV feeding
+    the gather) → no GPU flight to hide the world CPU under. Serial kept default;
+    overlap behind `GAIA_NATIVE_WORLD_OVERLAP=1`. Honest null result, not buried.
+
+- **Parity** — HOLDS. `n0b_gather_and_shared_forward_match_cpu` ok,
+  `n0_gate1_live_net_matches_cpu_reference` ok (release, `GAIA_NEURAL_LIVE=1`).
+  The overlap loop change + outside instrumentation + on-demand readback do not
+  touch the net sync/ordeal path.
+
+- **Absolutes** — 60 FPS: **STILL VIOLATED (~48 fps, ~20.5 ms/frame).** The
+  frame overlap is a genuine step (35.55 → 48.75). The remaining wall is now
+  fully VISIBLE and honestly attributed: world advance ~7 ms (CPU BVH re-splice/
+  upload) + synchronous trace ~6 ms (part GPU-blocking on the render thread) +
+  net_gpu ~4.7 ms (single-M1-GPU contention). NO LODs / no neural upscale / one
+  light pass / no hardcoded res: HOLDS.
+
+## Gaps carried forward (S13)
+1. **60 fps unmet, ~3.8 ms short of 60 at throughput.** Three thieves, all
+   named: world advance (cache the BVH harder / skin without full re-splice /
+   gate re-splice on real >ε geometry change), trace (make it ASYNC so world
+   advance can finally overlap it — the overlap substrate already works, trace's
+   synchronous poll is what blocks it), net_gpu (cut it — N1 quality pass).
+   Cutting work, not rescheduling — as N0.i and N0.j both conclude.
+2. **2 frames-in-flight / +1 display-latency ruling still PENDING** with the
+   Architect. NOOVERLAP toggle preserved until he plays the word.
+3. Prior gaps (default = slower path is now RESOLVED — S8 flipped MPSGraph to
+   default; static 96×64 weights / N1 quality; legacy bilinear) carry forward
+   otherwise unchanged.

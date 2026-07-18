@@ -584,3 +584,129 @@ back-to-back) is bit-identical to before.
 - env: `GAIA_NEURAL_LIVE=1 GAIA_NATIVE_OFFSCREEN=true GAIA_NATIVE_NET_PRESENT=true
   GAIA_NATIVE_HUD=false`, release, world `worlds/naruko`, M1/macOS 26. Tag `[n0i]`.
   `/budget` now carries `wall_fps`, `net_commit`, `net_wait`.
+
+---
+
+# N0.j — S13 THE OUTSIDE-9ms HUNT (SHIFT 13): the 9ms named, the tax killed, overlap tried
+
+N0.i left the truth: wall-clock 48.75 fps (20.5 ms/frame) while the stage-sum
+median was 11.69 ms — **~9 ms of frame-loop work lived OUTSIDE the per-stage net
+budget**, named-but-unmeasured (world advance skin·tick·splice · per-frame
+offscreen readback feeding `/scry` · HTTP). S13 INSTRUMENTS that outside-work,
+KILLS the readback tax (on-demand), TRIES to overlap the world advance, and
+brings back the honest number. Live, offscreen 640×480, release, M1/macOS 26,
+`worlds/naruko`, `GAIA_NATIVE_OFFSCREEN=true`.
+
+## (1) INSTRUMENT — where the 9 ms lives (`/budget` `outside` block)
+`OutsideBudget` wraps the non-stage frame-loop segments with named timers, one
+per frame, spliced into `/budget`. First measurement (on-demand default):
+
+| segment    | median | p95   | note                                              |
+|------------|--------|-------|---------------------------------------------------|
+| world      | 6.96   | 7.20  | **THE 9 ms — it is ALL world advance**             |
+| readback   | 0.000  | 0.000 | on-demand default (per-frame copy gone)            |
+| http       | 0.19   | 0.37  | scry drain + /budget + /state JSON on render thread |
+| loop_total | 18.19  | 26.06 | whole iteration wall, sans deadline sleep          |
+
+**VERDICT of the hunt: the ~9 ms is `advance_world`** — skin·tick·splice + a
+FRESH BVH build/upload EVERY animating frame (naruko's presence spheres move, so
+`command_bodies_walked` returns true every tick → `splice.update` +
+`integrator.update_bvh` re-run + reset accum). The other two named suspects are
+NOT thieves: readback ~0, http 0.2 ms. `stage_sum(10.86) + world(6.96) +
+http(0.19) ≈ loop_total(18.19)` — the books balance.
+
+## (2) KILL THE MEASUREMENT TAX — readback is now ON-DEMAND
+The per-frame offscreen readback (`copy_texture_to_buffer` + map submit that fed
+`latest` EVERY frame) is gone from the render loop. `capture_presented` reads
+the current offscreen texture back to the CPU ONLY when a bare `/scry` asks (the
+offscreen BLIT still runs every frame, so the texture always holds the latest
+presented image). A/B toggle `GAIA_NATIVE_PERFRAME_READBACK=1` restores the old
+per-frame copy.
+
+**Honest finding — the readback was NEVER a render-thread thief.** The per-frame
+copy costs **0.002 ms** to ENCODE on the render thread (the copy + map callback
+run async on the GPU + capture-worker thread), so killing it moves wall-clock
+throughput by **noise** (perframe 48.6 → on-demand 48.3 fps). On-demand is still
+the right design (no wasted GPU bandwidth/copy when nobody is scrying), and it
+**proves the on-demand path** (both eyes below served through `capture_presented`),
+but it does NOT buy fps. The N0.i suspect list was wrong about this one.
+
+## (3) OVERLAP THE REAL WORK — TRIED, MEASURED, DOES NOT HELP
+Intent: advance the NEXT frame's world AFTER this frame's GPU submit, so the
+7 ms world CPU hides under the in-flight GPU trace (`update_bvh` allocs fresh
+buffers each tick, in-flight submission retains its own → the reorder is SAFE).
+Measured neutral-to-worse: **47.6 vs 48.4 fps**, AND it costs one frame of
+world-state latency. **Root cause: `trace` is SYNCHRONOUS on the render thread**
+— it submits+POLLS the GPU for the AOV that feeds the gather (N0.d "2
+submits+polls"), so by the time the deferred advance runs the GPU is already
+idle. There is no GPU flight to hide the world CPU under. Serial is the default;
+overlap kept behind `GAIA_NATIVE_WORLD_OVERLAP=1` for the record — a real win
+only once trace stops blocking the render thread.
+
+## (4) MEASURE — wall-clock fps A/B (release, offscreen, player-shaped, ≥600 frames)
+
+| arm                                  | WALL-FPS | stage TOTAL med | world med | readback |
+|--------------------------------------|----------|-----------------|-----------|----------|
+| on-demand + serial (S13 DEFAULT)     | **48.3** | 10.2–11.9       | 7.05      | 0.000    |
+| per-frame readback (`PERFRAME=1`, N0.i) | 48.6  | 10.3            | 7.12      | 0.002    |
+| world-overlap (`WORLD_OVERLAP=1`)    | 47.6     | 11.5            | 7.32      | 0.000    |
+
+All three within ~2% — contention-band noise (numbers drift with sibling load,
+per N0.e's honesty note). The A/B delta from either cut is inside the noise: **no
+throughput was bought this shift.** What WAS bought: the 9 ms is now NAMED and in
+`/budget`, and one non-thief (readback) is retired from the render loop.
+
+## 60 FPS THROUGHPUT VERDICT — NOT MET at ~48 fps wall-clock; the 9 ms is world advance
+`60fps throughput NOT MET at ~48 fps wall-clock (~20.5 ms/frame). The N0.i
+"~9 ms outside the stage table" is now LOCATED: it is ~7 ms of world advance
+(BVH re-splice + upload every animating frame) — readback (~0) and http (0.2)
+are NOT thieves. The per-frame readback tax was killed (on-demand,
+capture_presented) but was only ~0.002 ms render-thread cost, so throughput held
+flat; world-advance overlap does not help because trace is synchronous on the
+render thread (no GPU flight to hide the CPU under).` Remaining-thief table:
+
+| thief             | ms   | why it stands / next attack                                   |
+|-------------------|------|---------------------------------------------------------------|
+| world advance     | ~7.0 | fresh BVH re-splice+upload EVERY animating frame — cache the   |
+|                   |      | static BVH harder / skin without full re-splice / only when    |
+|                   |      | geometry actually changes >ε (dynamic partition already split) |
+| trace (synchronous)| ~6.0| submits+polls GPU on the render thread for the AOV — make it   |
+|                   |      | async so world advance CAN overlap it; also cuts trace GPU     |
+| net_gpu contention| ~4.7 | single-M1-GPU serialization (N0.i) — cut net_gpu (N1 quality)  |
+
+The honest sum: ~7 (world) + ~6 (trace, part GPU-blocking) + ~4.7 (net GPU,
+contends) ≈ the 20.5 ms wall. 60 fps needs CUTTING work (async trace + a cheaper
+world advance + net_gpu), not rescheduling it — as N0.i already warned.
+
+## Parity ordeal — HOLDS
+- `n0b_gather_and_shared_forward_match_cpu` — **ok** (release, `GAIA_NEURAL_LIVE=1`).
+- `n0_gate1_live_net_matches_cpu_reference` — **ok**.
+The outside-work instrumentation + on-demand readback do not touch the net
+sync/ordeal path.
+
+## Proof — both eyes (READ, pixel words — served through the ON-DEMAND path)
+- presented: `s14-presented.png` (960×640, bare `/scry` → `capture_presented`).
+- belief: `s14-belief.png` (640×480, `/scry?eye=belief`).
+- **Pixel words (both, READ):** coherent naruko dusk scene — pale green-flecked
+  translucent glass panel (reflecting), stacked brown crates + a small orange
+  crate on the ground, central dark tower/lighthouse ringed by white/pink
+  concentric halos, pale presence spheres (left of the tower, an amber one
+  upper-right, two by the platform), a large green-tinted translucent glass orb
+  on a dark cylindrical pedestal, a dark chimneyed factory block with lit
+  windows at right, pink→mauve sky over a purple-mauve ground. Colours natural,
+  radiance bounded → GPU demod wired right. Belief eye = same geometry,
+  brighter/desaturated over a cream ground (albedo not undone), as designed.
+  **Both eyes render — the on-demand readback path is thereby PROVEN, no black,
+  no wedge.**
+
+## Source
+- commits: instrument+on-demand `0991c63`, world-overlap toggle (this shift).
+- logs: `s14-overlap.log`/`s14-default.log` (on-demand default),
+  `s14-perframe.log` (`PERFRAME_READBACK=1`), `s14-worldoverlap.log`
+  (`WORLD_OVERLAP=1`), `s14-worldserial.log` under
+  `packages/scrying-glass/proof/neural-live/`.
+- env: `GAIA_NEURAL_LIVE=1 GAIA_NATIVE_OFFSCREEN=true GAIA_NATIVE_NET_PRESENT=true
+  GAIA_NATIVE_HUD=false`, release, world `worlds/naruko`, M1/macOS 26. Tag `[n0i]`.
+  `/budget` now carries an `outside` block (world/readback/http/loop_total).
+  Toggles: `GAIA_NATIVE_PERFRAME_READBACK=1`, `GAIA_NATIVE_WORLD_OVERLAP=1`,
+  `GAIA_NATIVE_NET_NOOVERLAP=1` (N0.i, still live).
