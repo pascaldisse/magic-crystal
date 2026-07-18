@@ -1184,6 +1184,14 @@ struct WorldStages {
     command: f64,
     /// `tick_with_ops` alone (dynamics solver step + op application).
     tick: f64,
+    /// S15 sub-split of `tick`: KAMI decorative eval / apply ops / physics.step
+    /// / re-derive models (`scene.last_tick_breakdown`).
+    kami: f64,
+    apply: f64,
+    physics: f64,
+    rederive: f64,
+    solver_step: f64,
+    poll: f64,
     /// `dynamic_leaf_triangles_for_eye` (gather the dynamic partition's tris).
     gather: f64,
     /// `splice.update` — dynamic refit/rebuild + CPU merge onto the static tree.
@@ -1200,6 +1208,12 @@ struct OutsideBudget {
     w_skin: Vec<f64>,
     w_command: Vec<f64>,
     w_tick: Vec<f64>,
+    w_kami: Vec<f64>,
+    w_apply: Vec<f64>,
+    w_physics: Vec<f64>,
+    w_rederive: Vec<f64>,
+    w_solver_step: Vec<f64>,
+    w_poll: Vec<f64>,
     w_gather: Vec<f64>,
     w_splice: Vec<f64>,
     w_upload: Vec<f64>,
@@ -1228,6 +1242,12 @@ impl OutsideBudget {
         self.w_skin.push(s.skin);
         self.w_command.push(s.command);
         self.w_tick.push(s.tick);
+        self.w_kami.push(s.kami);
+        self.w_apply.push(s.apply);
+        self.w_physics.push(s.physics);
+        self.w_rederive.push(s.rederive);
+        self.w_solver_step.push(s.solver_step);
+        self.w_poll.push(s.poll);
         self.w_gather.push(s.gather);
         self.w_splice.push(s.splice);
         self.w_upload.push(s.upload);
@@ -1249,11 +1269,19 @@ impl OutsideBudget {
     fn world_stages_json(&self) -> String {
         format!(
             "\"world_stages\":{{\"skin\":[{:.3},{:.3}],\"command\":[{:.3},{:.3}],\
-             \"tick\":[{:.3},{:.3}],\"gather\":[{:.3},{:.3}],\
+             \"tick\":[{:.3},{:.3}],\"kami\":[{:.3},{:.3}],\"apply\":[{:.3},{:.3}],\
+             \"physics\":[{:.3},{:.3}],\"rederive\":[{:.3},{:.3}],\
+             \"solver_step\":[{:.3},{:.3}],\"poll\":[{:.3},{:.3}],\"gather\":[{:.3},{:.3}],\
              \"splice\":[{:.3},{:.3}],\"upload\":[{:.3},{:.3}]}}",
             pct(&self.w_skin, 0.5), pct(&self.w_skin, 0.95),
             pct(&self.w_command, 0.5), pct(&self.w_command, 0.95),
             pct(&self.w_tick, 0.5), pct(&self.w_tick, 0.95),
+            pct(&self.w_kami, 0.5), pct(&self.w_kami, 0.95),
+            pct(&self.w_apply, 0.5), pct(&self.w_apply, 0.95),
+            pct(&self.w_physics, 0.5), pct(&self.w_physics, 0.95),
+            pct(&self.w_rederive, 0.5), pct(&self.w_rederive, 0.95),
+            pct(&self.w_solver_step, 0.5), pct(&self.w_solver_step, 0.95),
+            pct(&self.w_poll, 0.5), pct(&self.w_poll, 0.95),
             pct(&self.w_gather, 0.5), pct(&self.w_gather, 0.95),
             pct(&self.w_splice, 0.5), pct(&self.w_splice, 0.95),
             pct(&self.w_upload, 0.5), pct(&self.w_upload, 0.95),
@@ -2374,6 +2402,14 @@ impl Renderer {
         let t_tick = Instant::now();
         self.scene.tick_with_ops(push_ops);
         self.last_world_stages.tick = t_tick.elapsed().as_secs_f64() * 1000.0;
+        let [kami, apply, physics, rederive, solver_step, poll] =
+            self.scene.last_tick_breakdown();
+        self.last_world_stages.kami = kami;
+        self.last_world_stages.apply = apply;
+        self.last_world_stages.physics = physics;
+        self.last_world_stages.rederive = rederive;
+        self.last_world_stages.solver_step = solver_step;
+        self.last_world_stages.poll = poll;
         self.last_world_stages.skin =
             self.last_world_stages.command + self.last_world_stages.tick;
         let models = self.scene.dynamics.model_matrices();

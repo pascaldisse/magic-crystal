@@ -983,6 +983,19 @@ impl RenderScene {
         self.dynamics.tick_with_ops(ops);
     }
 
+    /// S15: the last `tick_with_ops` sub-breakdown `[kami, apply, physics,
+    /// rederive]` (ms) — splits the ~5.5 ms `tick` thief for `/budget`.
+    pub fn last_tick_breakdown(&self) -> [f64; 6] {
+        [
+            self.dynamics.last_kami_ms,
+            self.dynamics.last_apply_ms,
+            self.dynamics.last_physics_ms,
+            self.dynamics.last_rederive_ms,
+            self.dynamics.last_solver_step_ms,
+            self.dynamics.last_poll_ms,
+        ]
+    }
+
     /// RITE V · V1 — drive every embodied body one fixed tick against the
     /// walker's `commanded_speed` (the embodiment velocity magnitude). Each body
     /// steps its SAMA state machine, takes the emitted pose, and re-skins its
@@ -1783,6 +1796,17 @@ pub struct Dynamics {
     seed: u64,
     dt: f64,
     clock: u64,
+    /// S15 sub-breakdown of the last `tick_with_ops` (ms): KAMI decorative eval
+    /// (`tick_decorative`) / applying its ops to the ECS / physics.step /
+    /// re-deriving every entity model. Splits the ~5.5 ms `tick` thief.
+    pub last_kami_ms: f64,
+    pub last_apply_ms: f64,
+    pub last_physics_ms: f64,
+    pub last_rederive_ms: f64,
+    /// S15 split of `last_physics_ms`: the solver.step() alone vs the per-tick
+    /// `poll_bonded` fracture flood-fill.
+    pub last_solver_step_ms: f64,
+    pub last_poll_ms: f64,
 }
 
 impl Dynamics {
@@ -1798,6 +1822,12 @@ impl Dynamics {
             seed: 0,
             dt: 1.0 / 60.0,
             clock: 0,
+            last_kami_ms: 0.0,
+            last_apply_ms: 0.0,
+            last_physics_ms: 0.0,
+            last_rederive_ms: 0.0,
+            last_solver_step_ms: 0.0,
+            last_poll_ms: 0.0,
         }
     }
 
@@ -1872,7 +1902,10 @@ impl Dynamics {
             entropy: self.clock,
             dt: self.dt,
         };
+        let t_kami = std::time::Instant::now();
         let ops = kami::tick_decorative(&self.world, reg, &self.binds, &ctx);
+        self.last_kami_ms = t_kami.elapsed().as_secs_f64() * 1000.0;
+        let t_apply = std::time::Instant::now();
         for op in &ops {
             let Op::Set(set) = op else {
                 continue;
@@ -1883,6 +1916,8 @@ impl Dynamics {
                     .set_component(entity, reg.transform, set.value.clone());
             }
         }
+        self.last_apply_ms = t_apply.elapsed().as_secs_f64() * 1000.0;
+        let t_physics = std::time::Instant::now();
         // PHYSICS (the Elements bound into the realm): fold any incoming
         // impulses in first, advance every declared body one tick, then
         // write its pose (centroid + fitted rotation) back to the ECS
@@ -1896,7 +1931,9 @@ impl Dynamics {
                         physics.apply_impulse(&impulse.id, impulse.delta_velocity);
                     }
                 }
+                let t_step = std::time::Instant::now();
                 physics.step();
+                self.last_solver_step_ms = t_step.elapsed().as_secs_f64() * 1000.0;
                 physics
                     .bindings()
                     .iter()
@@ -1918,6 +1955,7 @@ impl Dynamics {
         // geometry path) spliced into the dynamic BVH by pushing a
         // `DynamicEntity` per fragment (picked up by `dynamic_leaf_
         // triangles` this exact tick, same as any other dynamic entity).
+        let t_poll = std::time::Instant::now();
         if let Some(physics) = self.physics.as_mut() {
             let (still_whole, newly_broken) = physics.poll_bonded();
             for (id, position) in still_whole {
@@ -1989,6 +2027,9 @@ impl Dynamics {
                 let _ = self.world.set_component(entity, reg.transform, value);
             }
         }
+        self.last_poll_ms = t_poll.elapsed().as_secs_f64() * 1000.0;
+        self.last_physics_ms = t_physics.elapsed().as_secs_f64() * 1000.0;
+        let t_rederive = std::time::Instant::now();
         for de in &mut self.entities {
             let Some(entity) = self.world.entity_for_gaia(&de.gaia_id) else {
                 continue;
@@ -2006,6 +2047,7 @@ impl Dynamics {
             );
             de.model = animated * de.bind_model.inverse();
         }
+        self.last_rederive_ms = t_rederive.elapsed().as_secs_f64() * 1000.0;
         self.clock += 1;
     }
 
