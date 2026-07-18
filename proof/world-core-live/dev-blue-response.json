@@ -1,0 +1,26 @@
+{
+  "applied": [
+    {
+      "component": "mesh",
+      "id": "proof_box",
+      "op": "set",
+      "value": {
+        "parts": [
+          {
+            "color": "#2050ff",
+            "emissive": "#0820ff",
+            "shape": "box",
+            "size": [
+              5,
+              4,
+              4
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "entropy": 3,
+  "latest": 11,
+  "ok": true
+}
