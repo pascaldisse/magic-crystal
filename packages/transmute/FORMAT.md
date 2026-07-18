@@ -20,7 +20,7 @@ ray-footprint residency research can range-read it without decoding all geometry
 ## Byte layout
 ```
 [0..4)   magic          = b"CBDG"                (ASCII, fixed)
-[4..6)   format_version  : u16 LE                 (current = 2)
+[4..6)   format_version  : u16 LE                 (current = 3)
 [6..8)   flags           : u16 LE                 (0)
 [8..16)  dir_offset      : u64 LE                 (byte offset of the directory)
 [16..20) dir_len         : u32 LE                 (directory length in bytes)
@@ -32,6 +32,8 @@ ray-footprint residency research can range-read it without decoding all geometry
   rejected loudly (`UnsupportedVersion`), never mis-decoded.
 - each **page** is a standalone `bincode(Page)` — decodable from its byte range
   alone, no other page or the directory required.
+- v3 supersedes v2: mandatory METIS with entropy-derived seeds replaces the
+  former fixed-seed/fallback bake semantics; v2 readers reject it loudly.
 - the **directory** is bounded (index-sized, NOT geometry-sized): levels, group
   records, and a `PageRef` table (offset/len/level/cluster-ids/deps).
 
@@ -67,9 +69,9 @@ key order), so identical DAGs serialize byte-identically (finding 8).
 | field | type | meaning |
 |---|---|---|
 | `input_tri_count` | `u32` | input mesh tri count (leaf-sum invariant) |
-| `partitioner` | `String` | backend(s) ACTUALLY used: `"metis"`\|`"greedy"`\|`"metis,greedy"` |
+| `partitioner` | `String` | sole mandatory backend: `"metis"` |
 | `levels` | `Vec<Vec<u32>>` | superseded bake lineage; `[0]` = live loss-free leaves |
-| `groups` | `Vec<Group>` | group records (shared child/parent set + LOD sphere + error) |
+| `groups` | `Vec<Group>` | superseded bake-lineage child/parent sets + bounds/error |
 | `pages` | `Vec<PageRef>` | page index table (order = page id) |
 | `roots` | `Vec<u32>` | coarsest-level page ids (load first) |
 | `cluster_page` | `Vec<u32>` | cluster id → owning page id |
@@ -82,8 +84,8 @@ key order), so identical DAGs serialize byte-identically (finding 8).
 | `level` | `u32` | level of the CHILDREN this group consumes |
 | `children` | `Vec<u32>` | child cluster ids sharing this cut |
 | `parents` | `Vec<u32>` | parent cluster ids produced by simplifying the group |
-| `bounds` | `Bounds` | SHARED LOD bounding sphere (merged child geometry) |
-| `error` | `f32` | SHARED monotone LOD error |
+| `bounds` | `Bounds` | superseded bake-lineage sphere (merged child geometry) |
+| `error` | `f32` | superseded bake-lineage monotone simplify error |
 
 ## `Cluster`
 | field | type | meaning |
@@ -96,8 +98,8 @@ key order), so identical DAGs serialize byte-identically (finding 8).
 | `parent_error` | `f32` | switch-UP threshold; `∞` when terminal; == consuming group error |
 | `children` | `Vec<u32>` | child cluster ids (empty for leaves) |
 | `bounds` | `Bounds` | self bounding sphere (frustum CULLING only) |
-| `group` | `Option<u32>` | PRODUCING group (its shared LOD metric); `None` for leaves |
-| `parent_group` | `Option<u32>` | CONSUMING group (shared metric of the switch-up); `None` for root |
+| `group` | `Option<u32>` | producing bake-lineage group; `None` for leaves |
+| `parent_group` | `Option<u32>` | consuming bake-lineage group; `None` for terminal nodes |
 
 ### `Vertex`  (`repr(C)`, 32 B, position at offset 0)
 `position:[f32;3]` · `normal:[f32;3]` · `uv:[f32;2]`
