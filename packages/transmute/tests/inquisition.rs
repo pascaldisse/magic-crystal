@@ -733,6 +733,21 @@ fn finding8_metis_default_in_process_double_build_identical() {
     );
 }
 
+/// A nonzero world coordinate is reproducible: identical
+/// `(world_seed, entropy, canonical geometry)` produces identical pages.
+#[test]
+fn finding8_entropy_state_is_byte_identical() {
+    let mesh = uv_sphere(1.0, 96, 64);
+    let params = TransmuteParams {
+        world_seed: 0x4d43_2026,
+        entropy: 731,
+        ..TransmuteParams::default()
+    };
+    let a = transmute_default(&mesh, &params).unwrap();
+    let b = transmute_default(&mesh, &params).unwrap();
+    assert_eq!(serialize(&a).unwrap(), serialize(&b).unwrap());
+}
+
 /// The real gate: two independent METIS process runs with the same canonical
 /// input and entropy state produce byte-identical `.cbdg` pages.
 #[test]
