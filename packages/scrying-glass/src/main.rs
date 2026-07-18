@@ -110,6 +110,13 @@ struct ScryingGlassConfig {
     /// flag DIES at lane cutover — the merged state presents the net
     /// unconditionally, no flag. macOS-only (the MPSGraph net is macOS-only).
     net_present: bool,
+    /// WINDOW-BAN OFFSCREEN mode (`GAIA_NATIVE_OFFSCREEN`, default off). When
+    /// on, NO NSWindow is ever created: the whole tauri/winit surface path is
+    /// skipped, the render loop draws only to the offscreen texture (the
+    /// presented eye), and `/scry` serves it over HTTP. The mandated proof
+    /// surface — measurement runs never put a window on the Architect's
+    /// desktop. Width/height come from the window-size config fields.
+    offscreen: bool,
 }
 
 impl ScryingGlassConfig {
@@ -283,6 +290,12 @@ impl ScryingGlassConfig {
                 })?,
                 Err(_) => false,
             },
+            offscreen: match std::env::var("GAIA_NATIVE_OFFSCREEN") {
+                Ok(value) => value.parse::<bool>().map_err(|_| {
+                    format!("GAIA_NATIVE_OFFSCREEN must be true or false, got {value:?}")
+                })?,
+                Err(_) => false,
+            },
         };
         if config.window_width <= 0.0
             || config.window_height <= 0.0
@@ -354,6 +367,15 @@ struct CapturedFrame {
 }
 
 type LatestFrame = Arc<RwLock<Option<Arc<CapturedFrame>>>>;
+
+/// S12.5 AI DEBUG DOOR: the latest per-stage budget + forward-state JSON, kept
+/// fresh by the render loop and served by `/budget` and `/state`.
+#[derive(Default)]
+struct DebugSnapshot {
+    budget: String,
+    state: String,
+}
+type DebugCell = Arc<RwLock<DebugSnapshot>>;
 
 struct CaptureReady {
     result: Result<(), String>,
@@ -513,6 +535,8 @@ struct HttpContext {
     player: Arc<Mutex<Player>>,
     ground: Arc<Ground>,
     tick_dt: f32,
+    /// S12.5: live budget/state JSON for `/budget` and `/state`.
+    debug: DebugCell,
 }
 
 /// Read one bounded HTTP request, including its Content-Length body.
@@ -724,6 +748,41 @@ fn handle_http(mut stream: TcpStream, ctx: &HttpContext) {
         respond_push(&mut stream, ctx, &body);
         return;
     }
+    // S12.5 AI DEBUG DOOR: live per-stage budget + forward state as JSON.
+    if path == "/budget" && method == "GET" {
+        let json = ctx
+            .debug
+            .read()
+            .ok()
+            .map(|d| d.budget.clone())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "{\"frames\":0}".to_string());
+        let _ = write_response(
+            &mut stream,
+            "200 OK",
+            "application/json; charset=utf-8",
+            json.as_bytes(),
+            "",
+        );
+        return;
+    }
+    if path == "/state" && method == "GET" {
+        let json = ctx
+            .debug
+            .read()
+            .ok()
+            .map(|d| d.state.clone())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "{\"note\":\"warming up\"}".to_string());
+        let _ = write_response(
+            &mut stream,
+            "200 OK",
+            "application/json; charset=utf-8",
+            json.as_bytes(),
+            "",
+        );
+        return;
+    }
 
     if method != "GET" {
         let _ = write_response(
@@ -782,7 +841,7 @@ fn handle_http(mut stream: TcpStream, ctx: &HttpContext) {
         return;
     }
 
-    // Moving eye: parse the pose overrides and ask the render thread for a fresh frame.
+    // Parse the query (pose overrides and/or the S12.5 eye selector).
     let params = match parse_scry_query(query) {
         Ok(params) => params,
         Err(error) => {
@@ -796,6 +855,31 @@ fn handle_http(mut stream: TcpStream, ctx: &HttpContext) {
             return;
         }
     };
+    // S12.5: `eye=presented` alone (no pose/resolve/size override) serves the
+    // live net-present frame — same as an empty query. Only the belief eye and
+    // real pose captures round-trip to the render thread.
+    let no_capture_override = params.pos.is_none()
+        && params.yaw.is_none()
+        && params.pitch.is_none()
+        && params.fov.is_none()
+        && params.resolve.is_none()
+        && params.width.is_none()
+        && params.height.is_none();
+    if !params.belief && no_capture_override {
+        match latest.read().ok().and_then(|frame| frame.clone()) {
+            Some(frame) => respond_frame(&mut stream, &frame),
+            None => {
+                let _ = write_response(
+                    &mut stream,
+                    "503 Service Unavailable",
+                    "text/plain; charset=utf-8",
+                    b"framebuffer not ready\n",
+                    "Retry-After: 1\r\n",
+                );
+            }
+        }
+        return;
+    }
     let (reply_tx, reply_rx) = mpsc::channel();
     if scry
         .send(RenderRequest::Scry(ScryRequest {
@@ -1147,6 +1231,8 @@ struct NetPresent {
     target_w: u32,
     target_h: u32,
     n: usize,
+    /// S12.5: the buffer set the last frame's net wrote (for the belief eye).
+    last_set: usize,
     // Rolling per-stage budget samples for the N0.d table.
     s_trace: Vec<f64>,
     s_gather: Vec<f64>,
@@ -1231,6 +1317,7 @@ impl NetPresent {
             target_w,
             target_h,
             n,
+            last_set: 0,
             s_trace: Vec::new(),
             s_gather: Vec::new(),
             s_net: Vec::new(),
@@ -1356,9 +1443,13 @@ impl NetPresent {
             &self.net_aov,
             &self.present_accum,
             self.n as u32,
+            false, // presented (undo albedo demod); belief eye is the /scry?eye=belief capture
         );
         queue.submit(Some(enc.finish()));
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        // S12.5: remember which set the net just wrote, so a /scry?eye=belief
+        // capture can re-demod THIS frame's net output in belief mode.
+        self.last_set = set;
         // The present blit resolves present_accum (w=1) 1:1 nearest to screen.
         queue.write_buffer(&integrator.uniform_buf, 0, bytemuck::bytes_of(blit_uniform));
         let resolve_ms = t3.elapsed().as_secs_f64() * 1000.0;
@@ -1405,6 +1496,42 @@ impl NetPresent {
             );
         }
     }
+
+    /// S12.5 AI DEBUG DOOR — `/budget` JSON: the latest rolling per-stage
+    /// median/p95 (ms) plus the frame count and the 16.67 ms wall.
+    fn budget_json(&self) -> String {
+        let path = if self.live.use_mpsgraph_now() { "mpsgraph" } else { "chain" };
+        format!(
+            "{{\"frames\":{},\"wall_ms\":16.67,\"path\":\"{path}\",\
+             \"canvas\":[{},{}],\"stages\":{{\
+             \"trace\":[{:.3},{:.3}],\"gather\":[{:.3},{:.3}],\
+             \"net_wall\":[{:.3},{:.3}],\"net_gpu\":[{:.3},{:.3}],\
+             \"demod\":[{:.3},{:.3}],\"present\":[{:.3},{:.3}],\
+             \"total\":[{:.3},{:.3}]}}}}",
+            self.frames,
+            self.target_w,
+            self.target_h,
+            pct(&self.s_trace, 0.5), pct(&self.s_trace, 0.95),
+            pct(&self.s_gather, 0.5), pct(&self.s_gather, 0.95),
+            pct(&self.s_net, 0.5), pct(&self.s_net, 0.95),
+            pct(&self.s_net_gpu, 0.5), pct(&self.s_net_gpu, 0.95),
+            pct(&self.s_demod, 0.5), pct(&self.s_demod, 0.95),
+            pct(&self.s_present, 0.5), pct(&self.s_present, 0.95),
+            pct(&self.s_total, 0.5), pct(&self.s_total, 0.95),
+        )
+    }
+
+    /// S12.5 `/state` JSON: forward path, canvas res, frame count, weights id.
+    fn state_json(&self) -> String {
+        let path = if self.live.use_mpsgraph_now() { "mpsgraph" } else { "chain" };
+        format!(
+            "{{\"path\":\"{path}\",\"canvas\":[{},{}],\"pixels\":{},\
+             \"frames\":{},\"weights\":\"rdirect-weights-v1\",\
+             \"in_features\":{},\"out_channels\":{},\"max_pixels\":{}}}",
+            self.target_w, self.target_h, self.n, self.frames,
+            self.live.in_features(), self.live.out_channels(), self.live.max_pixels(),
+        )
+    }
 }
 
 /// undo the net's log-demod residual by the native albedo (bit-identical to
@@ -1439,7 +1566,9 @@ fn pct(samples: &[f64], q: f64) -> f64 {
 struct Renderer {
     // Safety: created from the native Tauri Window's raw handles; the app owns that Window
     // until shutdown, and the render worker stops before process exit.
-    surface: wgpu::Surface<'static>,
+    // `None` in GAIA_NATIVE_OFFSCREEN mode — no NSWindow, no surface; the render
+    // loop draws only to `offscreen` and `/scry` serves that.
+    surface: Option<wgpu::Surface<'static>>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
@@ -1521,8 +1650,13 @@ struct Renderer {
 }
 
 impl Renderer {
+    /// `window` is `Some` for the normal on-screen surface path and `None` in
+    /// GAIA_NATIVE_OFFSCREEN mode (no NSWindow, no wgpu surface). `fallback_dims`
+    /// sizes the offscreen present/capture surface when `window` is `None`.
+    #[allow(clippy::too_many_arguments)]
     fn new(
-        window: &tauri::Window,
+        window: Option<&tauri::Window>,
+        fallback_dims: (u32, u32),
         capture_sender: mpsc::Sender<CaptureReady>,
         scene: RenderScene,
         int_params: IntegratorParams,
@@ -1537,18 +1671,26 @@ impl Renderer {
         net_present_enabled: bool,
     ) -> Result<Self, String> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-        let target = unsafe {
-            wgpu::SurfaceTargetUnsafe::from_display_and_window(window, window)
-                .map_err(|error| format!("raw-window-handle target: {error}"))?
-        };
-        let surface = unsafe {
-            instance
-                .create_surface_unsafe(target)
-                .map_err(|error| format!("wgpu surface: {error}"))?
+        // Build the surface (windowed) or none (offscreen); pick the adapter
+        // compatible with whichever we have.
+        let surface = match window {
+            Some(window) => {
+                let target = unsafe {
+                    wgpu::SurfaceTargetUnsafe::from_display_and_window(window, window)
+                        .map_err(|error| format!("raw-window-handle target: {error}"))?
+                };
+                let surface = unsafe {
+                    instance
+                        .create_surface_unsafe(target)
+                        .map_err(|error| format!("wgpu surface: {error}"))?
+                };
+                Some(surface)
+            }
+            None => None,
         };
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: Some(&surface),
+            compatible_surface: surface.as_ref(),
             force_fallback_adapter: false,
             ..Default::default()
         }))
@@ -1556,24 +1698,41 @@ impl Renderer {
         let (device, queue) =
             pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
                 .map_err(|error| format!("wgpu device: {error}"))?;
-        let size = window.inner_size().map_err(|error| error.to_string())?;
-        let capabilities = surface.get_capabilities(&adapter);
-        let format = [
-            wgpu::TextureFormat::Bgra8UnormSrgb,
-            wgpu::TextureFormat::Rgba8UnormSrgb,
-            wgpu::TextureFormat::Bgra8Unorm,
-            wgpu::TextureFormat::Rgba8Unorm,
-        ]
-        .into_iter()
-        .find(|candidate| capabilities.formats.contains(candidate))
-        .ok_or_else(|| {
-            "surface has no 8-bit RGBA/BGRA format for framebuffer capture".to_string()
-        })?;
-        let pixel_order = match format {
-            wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb => {
-                PixelOrder::Bgra
+        // Size + format: from the surface when windowed; from `fallback_dims`
+        // with a fixed BGRA8-sRGB (M1's native surface format) when offscreen,
+        // so the captured PNGs match the on-screen path byte-for-byte.
+        let (size, format, pixel_order, alpha_mode) = match (&surface, window) {
+            (Some(surface), Some(window)) => {
+                let size = window.inner_size().map_err(|error| error.to_string())?;
+                let capabilities = surface.get_capabilities(&adapter);
+                let format = [
+                    wgpu::TextureFormat::Bgra8UnormSrgb,
+                    wgpu::TextureFormat::Rgba8UnormSrgb,
+                    wgpu::TextureFormat::Bgra8Unorm,
+                    wgpu::TextureFormat::Rgba8Unorm,
+                ]
+                .into_iter()
+                .find(|candidate| capabilities.formats.contains(candidate))
+                .ok_or_else(|| {
+                    "surface has no 8-bit RGBA/BGRA format for framebuffer capture".to_string()
+                })?;
+                let pixel_order = match format {
+                    wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb => {
+                        PixelOrder::Bgra
+                    }
+                    _ => PixelOrder::Rgba,
+                };
+                (size, format, pixel_order, capabilities.alpha_modes[0])
             }
-            _ => PixelOrder::Rgba,
+            _ => {
+                let (w, h) = fallback_dims;
+                (
+                    PhysicalSize { width: w.max(1), height: h.max(1) },
+                    wgpu::TextureFormat::Bgra8UnormSrgb,
+                    PixelOrder::Bgra,
+                    wgpu::CompositeAlphaMode::Auto,
+                )
+            }
         };
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -1581,12 +1740,14 @@ impl Renderer {
             width: size.width.max(1),
             height: size.height.max(1),
             present_mode: wgpu::PresentMode::Fifo,
-            alpha_mode: capabilities.alpha_modes[0],
+            alpha_mode,
             view_formats: vec![],
             color_space: wgpu::SurfaceColorSpace::Auto,
             desired_maximum_frame_latency: 2,
         };
-        surface.configure(&device, &config);
+        if let Some(surface) = &surface {
+            surface.configure(&device, &config);
+        }
 
         // The acceleration: a STATIC BVH over the Great Chain's EXACT non-behavior
         // leaf triangles (built once, cached), with the living layer's dynamic
@@ -2089,9 +2250,13 @@ impl Renderer {
         {
             self.config.width = size.width;
             self.config.height = size.height;
-            self.surface.configure(&self.device, &self.config);
-            // The surface alone changed. God's canvas, accumulation, and
-            // offscreen capture remain untouched.
+            if let Some(surface) = &self.surface {
+                surface.configure(&self.device, &self.config);
+            }
+            // The surface (window-size) alone changed. God's canvas is fixed
+            // resolution (canvas_width/canvas_height); accumulation and
+            // offscreen capture ride the canvas, not the window, and remain
+            // untouched here.
         }
     }
 
@@ -2180,16 +2345,20 @@ impl Renderer {
             }
         }
 
-        let surface_frame = match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(frame)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => Some(frame),
-            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
-                self.surface.configure(&self.device, &self.config);
+        let surface_frame = match self.surface.as_ref().map(|s| s.get_current_texture()) {
+            Some(
+                wgpu::CurrentSurfaceTexture::Success(frame)
+                | wgpu::CurrentSurfaceTexture::Suboptimal(frame),
+            ) => Some(frame),
+            Some(wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost) => {
+                if let Some(surface) = &self.surface {
+                    surface.configure(&self.device, &self.config);
+                }
                 None
             }
-            wgpu::CurrentSurfaceTexture::Timeout
-            | wgpu::CurrentSurfaceTexture::Occluded
-            | wgpu::CurrentSurfaceTexture::Validation => None,
+            // Offscreen mode (surface None) or any transient state → no surface
+            // present; the offscreen present + capture below still runs.
+            _ => None,
         };
 
         let mut encoder = self
@@ -2416,11 +2585,15 @@ impl Renderer {
 
         // —— STAGE: present (blit the net frame to surface + offscreen, capture) ——
         let t_present = Instant::now();
-        let surface_frame = match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(frame)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => Some(frame),
-            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
-                self.surface.configure(&self.device, &self.config);
+        let surface_frame = match self.surface.as_ref().map(|s| s.get_current_texture()) {
+            Some(
+                wgpu::CurrentSurfaceTexture::Success(frame)
+                | wgpu::CurrentSurfaceTexture::Suboptimal(frame),
+            ) => Some(frame),
+            Some(wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost) => {
+                if let Some(surface) = &self.surface {
+                    surface.configure(&self.device, &self.config);
+                }
                 None
             }
             _ => None,
@@ -2511,6 +2684,148 @@ impl Renderer {
         });
         self.net_present = Some(np);
         Ok(Some(submission))
+    }
+
+    /// S12.5 AI DEBUG DOOR — the BELIEF eye. Re-demods THIS frame's net output
+    /// (the last committed set, still resident in the pooled MTLBuffer) in
+    /// belief mode (raw `exp(dl)-1`, NO albedo multiply) into a fresh canvas-res
+    /// offscreen and reads it back — the accum-belief PNG owed since n0e. Runs
+    /// on the render thread (like `capture_pose`); does not disturb the live
+    /// present accum's next frame (it recomputes it). macOS-only / net-present.
+    #[cfg(target_os = "macos")]
+    fn capture_belief(&mut self) -> Result<CapturedFrame, String> {
+        if self.net_present.is_none() {
+            return Err(
+                "belief eye needs the net-present rig (GAIA_NATIVE_NET_PRESENT=true)".into(),
+            );
+        }
+        let np = self.net_present.take().expect("net-present rig present");
+        let out = self.capture_belief_inner(&np);
+        self.net_present = Some(np);
+        out
+    }
+
+    #[cfg(target_os = "macos")]
+    fn capture_belief_inner(&mut self, np: &NetPresent) -> Result<CapturedFrame, String> {
+        let (w, h) = (np.target_w, np.target_h);
+        let net_out = np
+            .live
+            .output_buffer_set(np.last_set)
+            .ok_or_else(|| "belief: no pooled net output buffer".to_string())?;
+        // Belief demod: raw net radiance into the present accum (overwritten
+        // next live frame). One dispatch, canvas-res.
+        let mut enc = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("belief demod"),
+            });
+        np.demod.encode(
+            &self.device,
+            &self.queue,
+            &mut enc,
+            net_out,
+            &np.net_aov,
+            &np.present_accum,
+            np.n as u32,
+            true, // BELIEF
+        );
+        self.queue.submit(Some(enc.finish()));
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+
+        // 1:1 nearest blit present_accum → a fresh canvas-res sRGB target.
+        let mut blit_uniform = IntegratorUniform::build(
+            &self.camera,
+            &self.sun,
+            self.sky_top,
+            self.sky_horizon,
+            w,
+            h,
+            self.integrator.node_count,
+            self.integrator.tri_count,
+            0,
+            &self.int_params,
+            None,
+        );
+        blit_uniform.surface = [w, h, 1, 0]; // nearest 1:1 canvas→target
+        self.queue
+            .write_buffer(&self.integrator.uniform_buf, 0, bytemuck::bytes_of(&blit_uniform));
+
+        let target = OffscreenTarget::new(&self.device, self.config.format, w, h);
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("belief present + capture"),
+            });
+        self.integrator
+            .blit(&mut encoder, &target.view, &np.present_blit_bg, "belief present");
+        let slot = &target.slots[0];
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &target.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &slot.buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(target.padded_bytes_per_row),
+                    rows_per_image: Some(h),
+                },
+            },
+            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        );
+        let buffer = slot.buffer.clone();
+        let (done_tx, done_rx) = mpsc::channel::<Result<(), String>>();
+        encoder.map_buffer_on_submit(&buffer, wgpu::MapMode::Read, .., move |result| {
+            let _ = done_tx.send(result.map(|_| ()).map_err(|e| e.to_string()));
+        });
+        self.queue.submit(Some(encoder.finish()));
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        done_rx
+            .recv()
+            .map_err(|e| format!("belief readback channel closed: {e}"))??;
+        let mapped = buffer
+            .get_mapped_range(..)
+            .map_err(|e| format!("belief framebuffer map: {e}"))?;
+        let row_bytes = (w * BYTES_PER_PIXEL) as usize;
+        let mut rgba = Vec::with_capacity(row_bytes * h as usize);
+        for row in mapped
+            .chunks(target.padded_bytes_per_row as usize)
+            .take(h as usize)
+        {
+            rgba.extend_from_slice(&row[..row_bytes]);
+        }
+        if matches!(self.pixel_order, PixelOrder::Bgra) {
+            for pixel in rgba.chunks_exact_mut(BYTES_PER_PIXEL as usize) {
+                pixel.swap(0, 2);
+            }
+        }
+        drop(mapped);
+        buffer.unmap();
+        Ok(CapturedFrame { width: w, height: h, rgba })
+    }
+
+    /// S12.5: the live per-stage budget JSON (`/budget`) and forward-state JSON
+    /// (`/state`), or an honest "net-present off" stub.
+    fn debug_budget_json(&self) -> String {
+        #[cfg(target_os = "macos")]
+        if let Some(np) = &self.net_present {
+            return np.budget_json();
+        }
+        "{\"frames\":0,\"note\":\"net-present off\"}".to_string()
+    }
+
+    fn debug_state_json(&self) -> String {
+        #[cfg(target_os = "macos")]
+        if let Some(np) = &self.net_present {
+            return np.state_json();
+        }
+        format!(
+            "{{\"path\":\"raster\",\"canvas\":[{},{}],\"note\":\"net-present off\"}}",
+            self.config.width, self.config.height
+        )
     }
 
     /// The moving eye: integrate `capture_frames` accumulation frames from an
@@ -2963,6 +3278,15 @@ struct ScryParams {
     fov: Option<f32>,
     /// Explicit lab gate for the de-chartered teacher/benchmark chain.
     teacher_benchmark: bool,
+    width: Option<u32>,
+    height: Option<u32>,
+    /// S12.5 AI DEBUG DOOR: which eye to serve. `false`/absent = presented (the
+    /// live net-present frame / a pose capture); `true` = belief (the net's raw
+    /// radiance, re-demodded from THIS frame's net output with no albedo).
+    belief: bool,
+    /// The resolve to capture with: 0 bilinear, 1 nearest, 2 neural. Absent =
+    /// the window's GAIA_NATIVE_UPSCALE default. THE ONE RENDER PATH A/B knob.
+    resolve: Option<u32>,
 }
 
 struct ScryRequest {
@@ -3074,6 +3398,43 @@ fn parse_scry_query(query: &str) -> Result<ScryParams, String> {
                     return Err(format!("lab must be teacher-benchmark, got {other:?}"));
                 }
             },
+            "resolve" => {
+                params.resolve = Some(match value.trim().to_ascii_lowercase().as_str() {
+                    "bilinear" => 0,
+                    "nearest" => 1,
+                    "neural" => 2,
+                    other => {
+                        return Err(format!(
+                            "resolve must be bilinear, nearest, or neural, got {other:?}"
+                        ));
+                    }
+                });
+            }
+            "w" => {
+                params.width = Some(
+                    value
+                        .parse::<u32>()
+                        .ok()
+                        .filter(|width| *width > 0)
+                        .ok_or_else(|| format!("w must be a positive integer, got {value:?}"))?,
+                )
+            }
+            "h" => {
+                params.height = Some(
+                    value
+                        .parse::<u32>()
+                        .ok()
+                        .filter(|height| *height > 0)
+                        .ok_or_else(|| format!("h must be a positive integer, got {value:?}"))?,
+                )
+            }
+            "eye" => match value.trim().to_ascii_lowercase().as_str() {
+                "presented" | "present" => params.belief = false,
+                "belief" => params.belief = true,
+                other => {
+                    return Err(format!("eye must be presented or belief, got {other:?}"));
+                }
+            },
             other => return Err(format!("unknown scry parameter {other:?}")),
         }
     }
@@ -3169,6 +3530,14 @@ fn main() {
         render_scene.chains.len(),
         cluster_count,
     );
+
+    // WINDOW-BAN OFFSCREEN mode: no NSWindow, no tauri/winit surface. Build the
+    // renderer headless, serve /scry over HTTP off the offscreen texture, and
+    // drive the render loop on this thread until killed. This is the mandated
+    // proof surface — measurement runs never open a window on the desktop.
+    if config.offscreen {
+        run_offscreen(config, render_scene);
+    }
 
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![panel_pressed])
@@ -3301,7 +3670,8 @@ fn main() {
             input::install_player_input(player.clone()).map_err(std::io::Error::other)?;
 
             let renderer = Renderer::new(
-                &window,
+                Some(&window),
+                (config.window_width as u32, config.window_height as u32),
                 capture_sender,
                 render_scene,
                 config.integrator,
@@ -3349,6 +3719,7 @@ fn main() {
                 let renderer_moved = renderer;
                 let (scry_tx, scry_rx) = mpsc::channel::<RenderRequest>();
                 let (world_tx, world_rx) = mpsc::channel::<WorldRequest>();
+                let debug: DebugCell = Arc::new(RwLock::new(DebugSnapshot::default()));
                 start_screenshot_server(
                     native_port,
                     HttpContext {
@@ -3362,6 +3733,7 @@ fn main() {
                         player: player.clone(),
                         ground: ground.clone(),
                         tick_dt,
+                        debug: debug.clone(),
                     },
                 )
                 .map_err(std::io::Error::other)?;
@@ -3396,6 +3768,7 @@ fn main() {
                             &hud_overlay,
                             hud_enabled,
                             hud_window,
+                            &debug,
                         );
                     })
                     .map_err(std::io::Error::other)?;
@@ -3436,6 +3809,139 @@ fn main() {
         });
 }
 
+/// WINDOW-BAN OFFSCREEN driver: no NSWindow, no tauri/winit. Builds a
+/// surface-less renderer, serves `/scry` (+ the S12.5 door) off the offscreen
+/// texture, and runs the render loop on this thread until the process is
+/// killed. The mandated proof surface for measurement runs.
+fn run_offscreen(config: ScryingGlassConfig, render_scene: RenderScene) -> ! {
+    let native_port = config.native_port;
+    let render_interval = config.frame_interval();
+    let tick_dt = (1.0 / config.fps) as f32;
+    let dims = (config.window_width as u32, config.window_height as u32);
+
+    let ground = Arc::new(Ground::from_positions(&render_scene.leaf_positions()));
+    let spawn_axis = |name: &str, world: f32| -> f32 {
+        std::env::var(name)
+            .ok()
+            .and_then(|v| v.parse::<f32>().ok())
+            .filter(|p| p.is_finite())
+            .unwrap_or(world)
+    };
+    let world_eye = render_scene.camera.eye;
+    let spawn_eye = Vec3::new(
+        spawn_axis("GAIA_NATIVE_SPAWN_X", world_eye.x),
+        spawn_axis("GAIA_NATIVE_SPAWN_Y", world_eye.y),
+        spawn_axis("GAIA_NATIVE_SPAWN_Z", world_eye.z),
+    );
+    let spawn_yaw = spawn_axis("GAIA_NATIVE_SPAWN_YAW", render_scene.camera.yaw);
+    let player_params =
+        PlayerParams::from_env().unwrap_or_else(|e| panic!("offscreen player params: {e}"));
+    let player = Arc::new(Mutex::new(Player::new(player_params, spawn_eye, spawn_yaw)));
+    eprintln!(
+        "[embodiment] spawn eye={spawn_eye:?} yaw={spawn_yaw} floor_triangles={} tick_dt={tick_dt}",
+        ground.triangle_count()
+    );
+
+    let latest: LatestFrame = Arc::new(RwLock::new(None));
+    let capture_sender = spawn_capture_worker(latest.clone());
+    let mut renderer = Renderer::new(
+        None,
+        dims,
+        capture_sender,
+        render_scene,
+        config.integrator,
+        &config.bvh,
+        config.refit,
+        config.capture_frames,
+        config.render_width,
+        config.render_height,
+        config.upscale_mode,
+        config.draw_own_body,
+        config.temporal_enabled,
+        config.temporal,
+        config.net_present,
+    )
+    .unwrap_or_else(|e| panic!("offscreen renderer: {e}"));
+
+    let (median, mean) = renderer.measure_trace_ms(60);
+    eprintln!(
+        "[frame] trace {}x{} → offscreen {}x{}: median {median:.2}ms mean {mean:.2}ms/frame (spp={}, 60-frame sample)",
+        config.render_width, config.render_height, dims.0, dims.1, config.integrator.spp,
+    );
+
+    let (scry_tx, scry_rx) = mpsc::channel::<ScryRequest>();
+    let debug: DebugCell = Arc::new(RwLock::new(DebugSnapshot::default()));
+    start_screenshot_server(
+        native_port,
+        HttpContext {
+            latest,
+            scry: scry_tx,
+            player: player.clone(),
+            ground: ground.clone(),
+            tick_dt,
+            debug: debug.clone(),
+        },
+    )
+    .unwrap_or_else(|e| panic!("offscreen http server: {e}"));
+    eprintln!(
+        "[offscreen] GAIA_NATIVE_OFFSCREEN=true: NO NSWindow — rendering to offscreen {}x{}; \
+         /scry (?eye=belief|presented), /budget, /state on http://127.0.0.1:{native_port}",
+        dims.0, dims.1,
+    );
+
+    let size = PhysicalSize { width: dims.0.max(1), height: dims.1.max(1) };
+    let mut deadline = Instant::now();
+    let mut pending: Option<wgpu::SubmissionIndex> = None;
+    loop {
+        let _ = renderer.device.poll(wgpu::PollType::Poll);
+        while let Ok(request) = scry_rx.try_recv() {
+            let frame = if request.params.belief {
+                #[cfg(target_os = "macos")]
+                {
+                    renderer.capture_belief()
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    Err("belief eye is macOS-only".to_string())
+                }
+            } else {
+                renderer.capture_pose(&request.params)
+            };
+            let _ = request.reply.send(frame);
+        }
+        let mut body_speed = 0.0f32;
+        let mut walker_pose = None;
+        if let Ok(mut body) = player.lock() {
+            body.step(tick_dt, &ground);
+            let pose = body.pose();
+            body_speed = body.velocity.length();
+            walker_pose = Some(WalkerPose { position: pose.position, yaw: pose.yaw });
+            drop(body);
+            renderer.set_view_pose(pose.position, pose.yaw, pose.pitch);
+        }
+        renderer.advance_world(body_speed, walker_pose, &[]);
+        let idx = renderer.render(size);
+        if let Some(prev) = pending.take() {
+            let _ = renderer.device.poll(wgpu::PollType::Wait {
+                submission_index: Some(prev),
+                timeout: None,
+            });
+        }
+        pending = idx;
+        if let Ok(mut d) = debug.write() {
+            d.budget = renderer.debug_budget_json();
+            d.state = renderer.debug_state_json();
+        }
+        deadline += render_interval;
+        let now = Instant::now();
+        if deadline > now {
+            thread::sleep(deadline - now);
+        } else {
+            deadline = now;
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_render_loop(
     renderer: &mut Renderer,
@@ -3453,6 +3959,7 @@ fn run_render_loop(
     hud_overlay: &tauri::webview::Webview<tauri::Wry>,
     hud_enabled: bool,
     hud_window: usize,
+    debug: &DebugCell,
 ) {
     let mut deadline = Instant::now();
     // FPS COUNTER BURST — the REAL frame clock: the same std::time::Instant
@@ -3527,7 +4034,21 @@ fn run_render_loop(
         // momentarily collapses the overlap; harmless (verification organ).
         while let Ok(request) = scry_rx.try_recv() {
             match request {
-                RenderRequest::Scry(request) => { let _ = request.reply.send(renderer.capture_pose(&request.params)); }
+                RenderRequest::Scry(request) => {
+                    let frame = if request.params.belief {
+                        #[cfg(target_os = "macos")]
+                        {
+                            renderer.capture_belief()
+                        }
+                        #[cfg(not(target_os = "macos"))]
+                        {
+                            Err("belief eye is macOS-only".to_string())
+                        }
+                    } else {
+                        renderer.capture_pose(&request.params)
+                    };
+                    let _ = request.reply.send(frame);
+                }
                 RenderRequest::Retina { params, reply } => { let _ = reply.send(renderer.capture_retina(&params)); }
             }
         }
@@ -3592,6 +4113,11 @@ fn run_render_loop(
                 });
             }
             pending = idx;
+        }
+        // S12.5 AI DEBUG DOOR: refresh the /budget + /state JSON (cheap strings).
+        if let Ok(mut d) = debug.write() {
+            d.budget = renderer.debug_budget_json();
+            d.state = renderer.debug_state_json();
         }
         deadline += render_interval;
         let now = Instant::now();

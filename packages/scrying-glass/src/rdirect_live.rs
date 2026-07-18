@@ -994,14 +994,24 @@ kernel void bias_relu(
             Ok(())
         }
 
-        /// S12: release the gather→net fence on the RENDER queue. Call AFTER the
-        /// gather submit and BEFORE `commit_net`: a tiny command buffer on the
-        /// wgpu render queue signals the shared event to THIS frame's wait value,
-        /// releasing the net command buffer (which waits on that value on the
-        /// dedicated net queue) to read the freshly-gathered feature buffer.
-        /// Committed in-order on the render queue → the signal lands only after
-        /// the gather's GPU work. No-op if the current buffer carries no fence.
-        /// Render-thread only.
+        /// S12: release the gather→net fence. Call AFTER the gather submit AND
+        /// its `device.poll(wait)` (the render loop already CPU-waits the gather
+        /// to full GPU completion before the net stage), BEFORE `commit_net`.
+        ///
+        /// The event stays the cross-queue primitive: the net command buffer
+        /// `encodeWaitForEvent`s its value V on the net queue, and this signals
+        /// the SAME V. The signal is CPU-side (`setSignaledValue`), NOT a GPU
+        /// command buffer on the render queue — the first S12 cut tried the
+        /// GPU-queue signal (charter's literal protocol) and it DEADLOCKED: wgpu
+        /// owns the render queue's submission timeline, so a raw signal buffer
+        /// injected onto it never scheduled and the net's wait timed out (black
+        /// frame, GPU 0.00). The CPU signal is correct here BECAUSE the gather is
+        /// already CPU-confirmed complete by the preceding `device.poll(wait)`,
+        /// so V=1 truthfully means "the feature buffer for this frame is fully
+        /// written" — the same guarantee the GPU signal would have carried, with
+        /// no foreign buffer on wgpu's queue. `setSignaledValue` from the CPU
+        /// unblocks the GPU waiter on the net queue (that is its purpose).
+        /// No-op if the current buffer carries no fence. Render-thread only.
         pub fn signal_gather_ready(&self) {
             let guard = self.pipeline.borrow();
             let pipe = guard
@@ -1013,16 +1023,7 @@ kernel void bias_relu(
                 .expect("rdirect_live: signal_gather_ready without begin_frame")
                 .wait_value;
             if let Some(v) = wait_value {
-                // A bare command buffer off the render queue that only signals
-                // the event, then commits (no wait). Same queue as the gather →
-                // GPU-ordered after it.
-                let cmd = self
-                    .queue
-                    .commandBuffer()
-                    .expect("rdirect_live: signal command buffer alloc failed");
-                let ev = ProtocolObject::from_ref(&*self.event);
-                cmd.encodeSignalEvent_value(ev, v);
-                cmd.commit();
+                self.event.setSignaledValue(v);
             }
         }
 
@@ -1039,6 +1040,11 @@ kernel void bias_relu(
             if let Some(pool) = self.pool.as_ref() {
                 pool.ctx.use_mpsgraph.store(on, Ordering::Relaxed);
             }
+        }
+
+        /// S12.5: the live forward path (true = MPSGraph default, false = chain).
+        pub fn use_mpsgraph_now(&self) -> bool {
+            self.use_mpsgraph.get()
         }
 
         /// Ceiling passed at construction (max target pixels per forward).

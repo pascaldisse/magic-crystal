@@ -14,7 +14,7 @@ const ALBEDO_DEMOD_EPS: f32 = 1e-3;
 
 struct DemodU {
     n: u32,          // pixel count (target_w * target_h)
-    _pad0: u32,
+    mode: u32,       // S12.5: 0 = presented (undo albedo demod), 1 = belief (raw net radiance)
     _pad1: u32,
     _pad2: u32,
 };
@@ -41,7 +41,8 @@ fn demod(@builtin(global_invocation_id) gid: vec3<u32>) {
     } else {
         divisor = vec3<f32>(1.0);
     }
-    let e = exp(dl) - vec3<f32>(1.0);
-    let lin = max(e, vec3<f32>(0.0)) * divisor;
+    let e = max(exp(dl) - vec3<f32>(1.0), vec3<f32>(0.0));
+    // S12.5 belief eye (mode 1): the net's RAW radiance, no albedo multiply.
+    let lin = select(e * divisor, e, u.mode == 1u);
     present[i] = vec4<f32>(lin, 1.0);
 }

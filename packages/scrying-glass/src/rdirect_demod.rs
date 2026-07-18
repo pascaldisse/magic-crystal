@@ -17,7 +17,11 @@ pub const DEMOD_SHADER: &str = include_str!("rdirect_demod.wgsl");
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct DemodUniform {
     n: u32,
-    _pad: [u32; 3],
+    /// S12.5 AI DEBUG DOOR: 0 = presented (undo the albedo log-demod, the
+    /// shipped final), 1 = belief (the net's RAW radiance `exp(dl)-1`, no
+    /// albedo multiply — the accum-belief eye owed since n0e).
+    mode: u32,
+    _pad: [u32; 2],
 }
 
 /// A built GPU-demod compute pass.
@@ -92,8 +96,9 @@ impl DemodPass {
         aov: &wgpu::Buffer,
         present: &wgpu::Buffer,
         n: u32,
+        belief: bool,
     ) {
-        let uniform = DemodUniform { n, _pad: [0; 3] };
+        let uniform = DemodUniform { n, mode: belief as u32, _pad: [0; 2] };
         queue.write_buffer(&self.uniform_buf, 0, bytemuck::bytes_of(&uniform));
         let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("rdirect demod bind"),
