@@ -52,12 +52,11 @@ pub struct IntegratorUniform {
     /// rgb = the light's colour tint (multiplied outside the scalar scatter);
     /// w = light KIND (0 = directional sun/moon, 1 = point emitter glow).
     pub med_light_color: [f32; 4],
-    /// RESOLUTION OF GOD — the window surface being drawn: surface_w,
-    /// surface_h, upscale_mode (0 = bilinear, 1 = nearest), unused. `params`
-    /// carries the (smaller) internal traced resolution; the blit upscales
-    /// `params.xy` → `surface.xy`. `build` defaults it to the trace dims
-    /// (identity upscale) so every non-window caller is unchanged; the window
-    /// render loop overrides it with the true surface + mode.
+    /// Present target: target_w, target_h, lab_filter (0 = bilinear,
+    /// 1 = nearest), unused. Native present keeps these dimensions equal to
+    /// `params.xy` and uses nearest for a pixel-exact 1:1 copy. `build`
+    /// defaults to that identity; differing dimensions/filtering belong only
+    /// to explicit lab benchmark surfaces.
     pub surface: [u32; 4],
     // ── LIGHT-NOT-DOTS: temporal accumulation with reprojection ──
     /// Previous frame's eye (xyz) for reprojection.

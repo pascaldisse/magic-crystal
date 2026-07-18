@@ -55,14 +55,6 @@ struct ScryingGlassConfig {
     refit: RefitParams,
     /// Accumulation frames a /scry moving-eye capture integrates for a crisp shot.
     capture_frames: u32,
-    /// RESOLUTION OF GOD — the internal traced resolution (the whole path trace
-    /// runs at exactly this size), independent of the window surface. The blit
-    /// upscales this to the surface each frame.
-    render_width: u32,
-    render_height: u32,
-    /// Interim upscale mode uploaded to the blit: 0 = bilinear (default),
-    /// 1 = nearest. The clean seam for the neural upscaler (VIII-3).
-    upscale_mode: u32,
     /// LIGHT-NOT-DOTS: temporal accumulation with reprojection on the live
     /// present path (GAIA_NATIVE_TEMPORAL, default ON). When off the legacy
     /// reset-on-move accum path runs (the escape hatch).
@@ -212,31 +204,6 @@ impl ScryingGlassConfig {
                 max_refits: integer("GAIA_NATIVE_BVH_REFIT_MAX", 0)?,
             },
             capture_frames: integer("GAIA_NATIVE_CAPTURE_FRAMES", 48)?,
-            // The trace runs small (~8× fewer rays than a 1920×1280 surface),
-            // then upscales to the window. Both dims are explicit params.
-            render_width: integer("GAIA_NATIVE_RENDER_W", 640)?,
-            render_height: integer("GAIA_NATIVE_RENDER_H", 480)?,
-            upscale_mode: match std::env::var("GAIA_NATIVE_UPSCALE") {
-                Ok(value) => match value.trim().to_ascii_lowercase().as_str() {
-                    "bilinear" => 0,
-                    "nearest" => 1,
-                    // THE ONE RENDER PATH — neural = new value in this param
-                    // family. The chartered trace→denoise→upscale resolve. It is
-                    // the DEFAULT resolve for /scry A/B captures; the 60-fps
-                    // surface present stays bilinear (the neural resolve is
-                    // ~26× over the 16.67 ms wall at production res — see
-                    // docs/perf/2026-07-17-onepath-budget.md — so it is the
-                    // capture-surface A/B, not the live present, until the
-                    // Architect's pixel/net ruling lands).
-                    "neural" => 2,
-                    other => {
-                        return Err(format!(
-                            "GAIA_NATIVE_UPSCALE must be bilinear, nearest, or neural, got {other:?}"
-                        ));
-                    }
-                },
-                Err(_) => 0,
-            },
             temporal_enabled: match std::env::var("GAIA_NATIVE_TEMPORAL") {
                 Ok(value) => value.parse::<bool>().map_err(|_| {
                     format!("GAIA_NATIVE_TEMPORAL must be true or false, got {value:?}")
@@ -267,9 +234,6 @@ impl ScryingGlassConfig {
             },
             worker_window,
         };
-        if config.render_width == 0 || config.render_height == 0 {
-            return Err("GAIA_NATIVE_RENDER_W and GAIA_NATIVE_RENDER_H must be positive".into());
-        }
         if config.window_width <= 0.0
             || config.window_height <= 0.0
             || config.panel_width <= 0.0
@@ -914,14 +878,13 @@ struct Renderer {
     int_params: IntegratorParams,
     /// Accumulation frames a /scry moving-eye capture integrates.
     capture_frames: u32,
-    /// RESOLUTION OF GOD — the internal traced resolution. The path trace and
-    /// the accumulation buffer live at this size; the blit upscales to surface.
-    render_width: u32,
-    render_height: u32,
-    /// Upscale mode uploaded to the blit (0 bilinear, 1 nearest).
-    upscale_mode: u32,
-    /// Persistent window accumulation at the TRACE resolution: progressive
-    /// while the eye is still, reset the instant it moves or the surface resizes.
+    /// Persistent window accumulation, ALWAYS sized to the live surface
+    /// (`self.config.width`/`.height`) — THE DESIGN IS THE LAW (Architect,
+    /// 07-18): nothing is traced small then enlarged, so there is no separate
+    /// internal trace resolution to track or drift out of sync. Progressive
+    /// while the eye is still, reset the instant it moves or the surface
+    /// resizes (`reset_surface_accum` always rebuilds at `self.config`'s
+    /// CURRENT dims).
     surface_accum: wgpu::Buffer,
     surface_compute_bg: wgpu::BindGroup,
     surface_blit_bg: wgpu::BindGroup,
@@ -961,9 +924,6 @@ impl Renderer {
         bvh_params: &BvhParams,
         refit_params: RefitParams,
         capture_frames: u32,
-        render_width: u32,
-        render_height: u32,
-        upscale_mode: u32,
         draw_own_body: bool,
         temporal_enabled: bool,
         temporal_params: TemporalParams,
@@ -1058,54 +1018,47 @@ impl Renderer {
         let sky_top = scene.sky_top;
         let sky_horizon = scene.sky_horizon;
 
-        // The accumulation buffer is sized to the INTERNAL trace resolution
-        // (RESOLUTION OF GOD) — the offscreen readback target stays at the
-        // surface resolution (it captures the upscaled window image).
-        let surface_accum = integrator.make_accum(&device, render_width, render_height);
+        // ITEM 1 (present-path law conformance, 07-18): the internal trace
+        // resolution IS the surface resolution, always — `config.width`/
+        // `.height` (already the live window's surface dims). No separate
+        // internal-res buffer, no upscale: `nothing is made small then
+        // enlarged`.
+        let surface_accum = integrator.make_accum(&device, config.width, config.height);
         let surface_compute_bg = integrator.compute_bind_group(&device, &surface_accum);
         let surface_blit_bg = integrator.blit_bind_group(&device, &surface_accum);
-        // LIGHT-NOT-DOTS temporal buffers (trace-resolution): one current-frame
+        // LIGHT-NOT-DOTS temporal buffers (surface-resolution): one current-frame
         // color buffer + ping-pong history/gbuffer, and the two parity bind
         // groups. Built even when temporal is off (cheap; kept valid so the
         // toggle needs no reallocation).
         let t_packed = [
-            integrator.make_temporal_packed(&device, render_width, render_height),
-            integrator.make_temporal_packed(&device, render_width, render_height),
+            integrator.make_temporal_packed(&device, config.width, config.height),
+            integrator.make_temporal_packed(&device, config.width, config.height),
         ];
         let t_hist = [
-            integrator.make_temporal_buffer(&device, render_width, render_height),
-            integrator.make_temporal_buffer(&device, render_width, render_height),
+            integrator.make_temporal_buffer(&device, config.width, config.height),
+            integrator.make_temporal_buffer(&device, config.width, config.height),
         ];
         let t_bind = [
             integrator.temporal_bind_group(
-                &device, &t_packed[0], &t_packed[1], &t_hist[0], &t_hist[1],
+                &device,
+                &t_packed[0],
+                &t_packed[1],
+                &t_hist[0],
+                &t_hist[1],
             ),
             integrator.temporal_bind_group(
-                &device, &t_packed[1], &t_packed[0], &t_hist[1], &t_hist[0],
+                &device,
+                &t_packed[1],
+                &t_packed[0],
+                &t_hist[1],
+                &t_hist[0],
             ),
         ];
         let offscreen = OffscreenTarget::new(&device, format, config.width, config.height);
         eprintln!(
-            "[wgpu] traced {render_width}x{render_height} → upscale → surface {}x{} ({}); {format:?}",
-            config.width,
-            config.height,
-            match upscale_mode {
-                1 => "nearest",
-                // Neural is selected: the LIVE surface still presents bilinear
-                // (the neural resolve is ~26× over the 16.67 ms wall — the
-                // honest budget), and neural becomes the DEFAULT /scry A/B
-                // resolve so the accounting is visible per screenshot.
-                2 => "bilinear (live) · neural default on /scry A/B",
-                _ => "bilinear",
-            },
+            "[wgpu] traced native {}x{} — no upscale, no internal-res selector ({format:?})",
+            config.width, config.height,
         );
-        if upscale_mode == 2 {
-            eprintln!(
-                "[onepath] GAIA_NATIVE_UPSCALE=neural — the chartered trace→denoise→upscale resolve \
-                 is the /scry capture A/B (GET /scry?resolve=neural|bilinear|nearest). The 60-fps \
-                 present stays bilinear until the budget wall is ruled (docs/perf/2026-07-17-onepath-budget.md)."
-            );
-        }
         Ok(Self {
             surface,
             device,
@@ -1125,9 +1078,6 @@ impl Renderer {
             sky_horizon,
             int_params,
             capture_frames,
-            render_width,
-            render_height,
-            upscale_mode,
             surface_accum,
             surface_compute_bg,
             surface_blit_bg,
@@ -1326,24 +1276,79 @@ impl Renderer {
 
     /// Rebuild the window accumulation buffer (zeroed) for the current surface
     /// size and drop the accumulated samples — the reset gesture on move/resize.
+    /// ITEM 1: always sized to `self.config`'s CURRENT surface dims — there is
+    /// no separate internal resolution to resync, so a resize can never leave
+    /// the trace buffer and the surface out of step.
     fn reset_surface_accum(&mut self) {
         let accum = self
             .integrator
-            .make_accum(&self.device, self.render_width, self.render_height);
+            .make_accum(&self.device, self.config.width, self.config.height);
         self.surface_compute_bg = self.integrator.compute_bind_group(&self.device, &accum);
         self.surface_blit_bg = self.integrator.blit_bind_group(&self.device, &accum);
         self.surface_accum = accum;
         self.samples_before = 0;
     }
 
-    /// MEASURE (RESOLUTION OF GOD, ordeal item 3): the honest per-frame GPU cost
-    /// of the path trace at the CURRENT internal resolution. Dispatches `frames`
-    /// accumulation passes into a throwaway accum from the live spawn camera,
-    /// force-flushing the GPU (`poll(wait)`) after each so the timing is real
-    /// GPU work, not an async submit. Returns (median_ms, mean_ms). Runs once at
-    /// startup off the frame loop, so it never perturbs live frames.
+    /// Rebuild every trace-sized resource after a surface resize. The temporal
+    /// buffers used to stay at the fixed internal trace size; now trace ==
+    /// surface, so they must follow the surface just like `surface_accum`.
+    fn resize_trace_resources(&mut self) {
+        self.reset_surface_accum();
+        let packed = [
+            self.integrator.make_temporal_packed(
+                &self.device,
+                self.config.width,
+                self.config.height,
+            ),
+            self.integrator.make_temporal_packed(
+                &self.device,
+                self.config.width,
+                self.config.height,
+            ),
+        ];
+        let history = [
+            self.integrator.make_temporal_buffer(
+                &self.device,
+                self.config.width,
+                self.config.height,
+            ),
+            self.integrator.make_temporal_buffer(
+                &self.device,
+                self.config.width,
+                self.config.height,
+            ),
+        ];
+        self.t_bind = [
+            self.integrator.temporal_bind_group(
+                &self.device,
+                &packed[0],
+                &packed[1],
+                &history[0],
+                &history[1],
+            ),
+            self.integrator.temporal_bind_group(
+                &self.device,
+                &packed[1],
+                &packed[0],
+                &history[1],
+                &history[0],
+            ),
+        ];
+        self.t_packed = packed;
+        self.t_hist = history;
+        self.t_prev = None;
+        self.t_parity = 0;
+    }
+
+    /// MEASURE (ordeal item 3): the honest per-frame GPU cost of the path
+    /// trace at the LIVE surface resolution (native — no internal-res
+    /// selector). Dispatches `frames` accumulation passes into a throwaway
+    /// accum from the live spawn camera, force-flushing the GPU
+    /// (`poll(wait)`) after each so the timing is real GPU work, not an
+    /// async submit. Returns (median_ms, mean_ms). Runs once at startup off
+    /// the frame loop, so it never perturbs live frames.
     fn measure_trace_ms(&mut self, frames: u32) -> (f64, f64) {
-        let (width, height) = (self.render_width, self.render_height);
+        let (width, height) = (self.config.width, self.config.height);
         let accum = self.integrator.make_accum(&self.device, width, height);
         let compute_bg = self.integrator.compute_bind_group(&self.device, &accum);
         let mut samples_before = 0u32;
@@ -1520,10 +1525,8 @@ impl Renderer {
                 self.config.width,
                 self.config.height,
             );
-            self.reset_surface_accum();
+            self.resize_trace_resources();
             self.last_view = None;
-            // Aspect/scale changed — last frame's reprojection basis is stale.
-            self.t_prev = None;
         }
     }
 
@@ -1568,11 +1571,12 @@ impl Renderer {
         }
         self.last_view = Some(key);
 
-        // RESOLUTION OF GOD: the path trace runs at the INTERNAL resolution;
-        // the blit upscales it to the surface. `width`/`height` here are the
-        // trace dims (accum + dispatch); the surface is a separate size.
-        let (width, height) = (self.render_width, self.render_height);
-        let (surface_w, surface_h) = (self.config.width, self.config.height);
+        // ITEM 1: the path trace runs AT the surface resolution, always —
+        // `width`/`height` (accum + dispatch dims) and `surface_w`/`surface_h`
+        // (the blit target) are the SAME pair by construction (no separate
+        // internal-res buffer exists to diverge from the surface).
+        let (width, height) = (self.config.width, self.config.height);
+        let (surface_w, surface_h) = (width, height);
         let mut uniform = IntegratorUniform::build(
             &self.camera,
             &self.sun,
@@ -1586,10 +1590,7 @@ impl Renderer {
             &self.int_params,
             None,
         );
-        // Aspect must track the SURFACE, not the (possibly differently-shaped)
-        // trace buffer — otherwise the upscale would stretch the image. The
-        // low-res buffer then holds a surface-aspect image (anisotropic pixels),
-        // which the upscale restores to the window's true aspect.
+        // Aspect tracks the surface (== the trace buffer now, always).
         let (right, up, _forward) = self.camera.basis();
         let surface_aspect = surface_w as f32 / surface_h.max(1) as f32;
         let half = (self.camera.fov_y_radians * 0.5).tan();
@@ -1597,8 +1598,11 @@ impl Renderer {
         let up = up * half;
         uniform.right = [right.x, right.y, right.z, 0.0];
         uniform.up = [up.x, up.y, up.z, 0.0];
-        // Tell the blit the true surface + upscale mode (params.xy stays trace dims).
-        uniform.surface = [surface_w, surface_h, self.upscale_mode, 0];
+        // ITEM 1: blit mode fixed to nearest (1) — trace dims == surface dims
+        // exactly, so this is a pixel-exact 1:1 copy (no bilinear blend can
+        // ever engage); nearest just makes that guarantee float-exact instead
+        // of relying on fragment-center alignment landing on integer texels.
+        uniform.surface = [surface_w, surface_h, 1, 0];
 
         // LIGHT-NOT-DOTS: hand the resolve the previous frame's camera + dials.
         if self.temporal_enabled {
@@ -1773,11 +1777,11 @@ impl Renderer {
         if params.teacher_benchmark {
             return self.capture_pose_teacher_benchmark(&camera, width, height);
         }
+        let resolve = params.resolve.unwrap_or(0);
 
         // OWN-EYE CULL — the persistent `self.integrator` buffers already carry
         // the OWN-eye-culled geometry (`advance_world` keeps them in lockstep
         // with `self.camera.eye`, the walker's own eye). A default `/scry` (no
-        let resolve = params.resolve.unwrap_or(0);
         // `pos` override) IS that same eye, so the fast path below needs no
         // rebuild. An EXPLICIT moving eye (`?pos=...`) may be a FOREIGN eye —
         // any eye that is not the walker's own must still see her — so when one
@@ -1819,11 +1823,11 @@ impl Renderer {
         camera: &Camera,
         width: u32,
         height: u32,
+        filter: u32,
     ) -> Result<CapturedFrame, String> {
         let accum = self.integrator.make_accum(&self.device, width, height);
         let compute_bg = self.integrator.compute_bind_group(&self.device, &accum);
         let blit_bg = self.integrator.blit_bind_group(&self.device, &accum);
-        filter: u32,
 
         let mut samples_before = 0u32;
         for _ in 0..self.capture_frames.max(1) {
@@ -1859,10 +1863,6 @@ impl Renderer {
         }
 
         // Present the converged mean to a fresh sRGB target, then read it back.
-        let target = OffscreenTarget::new(&self.device, self.config.format, width, height);
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
         // Source and target dimensions are identical; the filter is retained
         // only as an explicit plain-capture lab comparison.
         let mut uniform = IntegratorUniform::build(
@@ -1884,6 +1884,10 @@ impl Renderer {
             0,
             bytemuck::bytes_of(&uniform),
         );
+        let target = OffscreenTarget::new(&self.device, self.config.format, width, height);
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("scry present + capture"),
             });
         self.integrator
@@ -2171,12 +2175,12 @@ struct ScryParams {
     /// Plain capture filter: 0 bilinear, 1 nearest. Absent = 0. This cannot
     /// select the de-chartered chain.
     resolve: Option<u32>,
+    /// Explicit lab gate for the de-chartered teacher/benchmark chain.
+    teacher_benchmark: bool,
 }
 
 struct ScryRequest {
     params: ScryParams,
-    /// Explicit lab gate for the de-chartered teacher/benchmark chain.
-    teacher_benchmark: bool,
     reply: mpsc::Sender<Result<CapturedFrame, String>>,
 }
 
@@ -2223,16 +2227,16 @@ fn parse_scry_query(query: &str) -> Result<ScryParams, String> {
                     }
                 });
             }
-            "w" => {
-                params.width = Some(
-                    value
-                        .parse::<u32>()
             "lab" => match value.trim().to_ascii_lowercase().as_str() {
                 "teacher-benchmark" => params.teacher_benchmark = true,
                 other => {
                     return Err(format!("lab must be teacher-benchmark, got {other:?}"));
                 }
             },
+            "w" => {
+                params.width = Some(
+                    value
+                        .parse::<u32>()
                         .ok()
                         .filter(|width| *width > 0)
                         .ok_or_else(|| format!("w must be a positive integer, got {value:?}"))?,
@@ -2472,9 +2476,6 @@ fn main() {
                 &config.bvh,
                 config.refit,
                 config.capture_frames,
-                config.render_width,
-                config.render_height,
-                config.upscale_mode,
                 config.draw_own_body,
                 config.temporal_enabled,
                 config.temporal,
@@ -2501,16 +2502,15 @@ fn main() {
             });
             {
                 // MEASURE (item 3): print the honest GPU trace cost at the
-                // configured internal resolution before the frame loop starts.
+                // NATIVE surface resolution (ITEM 1 — trace == surface,
+                // always; no internal-res selector to report separately).
                 let mut renderer = renderer;
                 renderer.bloodbend = bloodbend_state;
                 let (median, mean) = renderer.measure_trace_ms(60);
                 eprintln!(
-                    "[frame] trace {}x{} → surface {}x{}: median {median:.2}ms mean {mean:.2}ms/frame (spp={}, 60-frame sample)",
-                    config.render_width,
-                    config.render_height,
-                    config.window_width as u32,
-                    config.window_height as u32,
+                    "[frame] trace {}x{} native (no upscale): median {median:.2}ms mean {mean:.2}ms/frame (spp={}, 60-frame sample)",
+                    renderer.config.width,
+                    renderer.config.height,
                     config.integrator.spp,
                 );
                 let renderer_moved = renderer;

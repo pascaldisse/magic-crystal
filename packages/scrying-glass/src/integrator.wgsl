@@ -26,9 +26,9 @@ struct Uniform {
   med_dims: vec4<u32>,     // grid dims xyz, w unused
   med_light: vec4<f32>,    // bound light: xyz = unit dir TOWARD it (directional) or world position (point); w = intensity
   med_light_color: vec4<f32>, // rgb = light colour tint; w = kind (0 directional, 1 point)
-  // ── RESOLUTION OF GOD: the window surface being drawn. params.xy is the
-  // internal traced resolution; the blit upscales params.xy → surface.xy.
-  surface: vec4<u32>,      // surface_w, surface_h, upscale_mode (0 bilinear, 1 nearest), _
+  // Present target dimensions. Native present keeps params.xy == surface.xy
+  // and mode 1 (a 1:1 copy); differing dimensions/modes are lab-only.
+  surface: vec4<u32>,      // target_w, target_h, lab_filter (0 bilinear, 1 nearest), _
   // ── LIGHT-NOT-DOTS: temporal accumulation with reprojection ──
   // The PREVIOUS frame's camera, so `temporal_resolve` can reproject this
   // frame's world points into last frame's screen and fetch their history.
@@ -868,9 +868,9 @@ fn accum_radiance(tx: u32, ty: u32, tw: u32, th: u32) -> vec3<f32> {
 
 @fragment
 fn blit_fs(in: BlitOut) -> @location(0) vec4<f32> {
-  // params.xy = the internal traced resolution (accum dimensions);
-  // surface.xy = the window surface being drawn. The two are decoupled
-  // (RESOLUTION OF GOD): the trace runs small, this blit upscales it.
+  // params.xy = source accum dimensions; surface.xy = target dimensions.
+  // Native present sets them equal. A differing pair is an explicit lab
+  // benchmark surface, never a configurable present path.
   let tw = u.params.x;
   let th = u.params.y;
   let sw = max(u.surface.x, 1u);
@@ -880,11 +880,10 @@ fn blit_fs(in: BlitOut) -> @location(0) vec4<f32> {
   let fy = (in.position.y / f32(sh)) * f32(th) - 0.5;
   var rgb: vec3<f32>;
   if (u.surface.z == 1u) {
-    // Nearest — the honest cheapest interim upscale.
+    // Nearest; native present uses this as a pixel-exact 1:1 copy.
     rgb = accum_radiance(u32(max(fx + 0.5, 0.0)), u32(max(fy + 0.5, 0.0)), tw, th);
   } else {
-    // Bilinear — the default interim upscale (a clean seam for the neural
-    // upscaler: replace this branch with the learned resolve, same in/out).
+    // Bilinear filtering for explicit lab comparisons only.
     let x0f = floor(fx);
     let y0f = floor(fy);
     let x0 = u32(max(x0f, 0.0));
