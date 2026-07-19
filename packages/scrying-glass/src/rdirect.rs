@@ -177,6 +177,26 @@ impl Mlp {
     /// input layer to [`HIST_FEATURES`] (27) for the reprojected-history channels.
     pub fn new_random_with_input(config: RdirectConfig, input_features: usize, seed: u64) -> Self {
         let sizes = config.layer_sizes_with(input_features);
+        Self::new_random_with_sizes(config, &sizes, seed)
+    }
+
+    /// v7 TWO-HEAD: explicit input AND output width (bypasses the global
+    /// `OUTPUT_CHANNELS` constant — needed for the 6-out split-head net).
+    pub fn new_random_with_shape(
+        config: RdirectConfig,
+        input_features: usize,
+        output_features: usize,
+        seed: u64,
+    ) -> Self {
+        let mut sizes = vec![input_features];
+        for _ in 0..config.hidden_layers {
+            sizes.push(config.hidden_width);
+        }
+        sizes.push(output_features);
+        Self::new_random_with_sizes(config, &sizes, seed)
+    }
+
+    fn new_random_with_sizes(config: RdirectConfig, sizes: &[usize], seed: u64) -> Self {
         let mut rng = SplitMix64::new(seed);
         let mut layers = Vec::with_capacity(sizes.len() - 1);
         for pair in sizes.windows(2) {
@@ -189,6 +209,30 @@ impl Mlp {
             layers.push(layer);
         }
         Self { config, layers }
+    }
+
+    /// v7 TWO-HEAD WARM START: body (every layer but the last) copied
+    /// byte-identical from `base` (a converged 3-output net); the last layer
+    /// is rebuilt 6-wide — rows 0..3 (the E head) copied from `base`'s
+    /// output layer so the net starts exactly where the 3-out checkpoint
+    /// left off, rows 3..6 (the new D head) SMALL-random He-init (0.1x
+    /// scale) since nothing trained them yet. Panics if `base` isn't 3-out.
+    pub fn warm_start_two_head(base: &Mlp, seed: u64) -> Mlp {
+        let mut layers = base.layers.clone();
+        let n = layers.len();
+        let last = layers[n - 1].clone();
+        assert_eq!(last.out_dim, 3, "warm_start_two_head expects a 3-output base net");
+        let in_dim = last.in_dim;
+        let mut new_last = Layer::zeros(in_dim, 6);
+        new_last.w[..in_dim * 3].copy_from_slice(&last.w);
+        new_last.b[..3].copy_from_slice(&last.b);
+        let mut rng = SplitMix64::new(seed);
+        let scale = (2.0 / in_dim.max(1) as f32).sqrt() * 0.1;
+        for i in 0..in_dim * 3 {
+            new_last.w[in_dim * 3 + i] = rng.next_signed_unit() * scale;
+        }
+        layers[n - 1] = new_last;
+        Mlp { config: base.config, layers }
     }
 
     pub fn config(&self) -> RdirectConfig {
@@ -217,7 +261,8 @@ impl Mlp {
     }
 
     #[allow(clippy::needless_range_loop)]
-    pub fn forward(&self, input: &[f32]) -> [f32; OUTPUT_CHANNELS] {
+    #[allow(clippy::needless_range_loop)]
+    fn forward_raw(&self, input: &[f32]) -> Vec<f32> {
         let mut activation = input.to_vec();
         for (li, layer) in self.layers.iter().enumerate() {
             let is_last = li == self.layers.len() - 1;
@@ -232,7 +277,35 @@ impl Mlp {
             }
             activation = next;
         }
-        [activation[0], activation[1], activation[2]]
+        activation
+    }
+
+    /// v7 TWO-HEAD: the RAW last-layer output, untruncated (len == out_dim —
+    /// 6 for a two-head net: [E_dl(3), D_dl(3)]). The trainer needs this to
+    /// backprop separate E/D losses; ordinary 3-out nets get the same 3
+    /// values `forward()` returns.
+    pub fn forward_full(&self, input: &[f32]) -> Vec<f32> {
+        self.forward_raw(input)
+    }
+
+    pub fn forward(&self, input: &[f32]) -> [f32; OUTPUT_CHANNELS] {
+        let raw = self.forward_raw(input);
+        if raw.len() == 6 && input.len() >= 29 {
+            // v7 TWO-HEAD PRESENTATION: raw = [E_dl(3), D_dl(3)] against the
+            // split-feature layout's embedded hi-res albedo (input[26..29] —
+            // same offset in INPUT_FEATURES_SPLIT and HIST_FEATURES_SPLIT).
+            // Undo each head in LINEAR space, sum (E+D = the presented
+            // image), re-encode as ONE demod-log value so every existing
+            // caller's `expm1(forward())*divisor` reconstructs the right
+            // image untouched — ordeal/settle_still need zero changes.
+            let hi_albedo = Vec3::new(input[26], input[27], input[28]);
+            let divisor = demod_divisor(hi_albedo);
+            let e_lin = undo_log_demod(Vec3::new(raw[0], raw[1], raw[2]), divisor);
+            let d_lin = undo_log_demod(Vec3::new(raw[3], raw[4], raw[5]), divisor);
+            let combined = log_demod(e_lin + d_lin, divisor);
+            return [combined.x, combined.y, combined.z];
+        }
+        [raw[0], raw[1], raw[2]]
     }
 
     #[allow(clippy::needless_range_loop)]
@@ -279,7 +352,7 @@ impl Mlp {
     fn backward_from_delta(
         &self,
         input: &[f32],
-        delta0: &[f32; OUTPUT_CHANNELS],
+        delta0: &[f32],
     ) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
         let (pre_activations, activations) = self.forward_train(input);
         let n_layers = self.layers.len();
@@ -1041,6 +1114,48 @@ pub fn accumulate_backward_firefly_gated_slice(
         }
     }
     (mse_loss, ff_loss)
+}
+
+/// v7 STRUCTURAL FIX: two-headed backward. `out` is the net's RAW 6-length
+/// [`Mlp::forward_full`] output (E_dl(3), D_dl(3)) for `feat`. `target_e` is
+/// the SHARP E teacher (exact, unblurred); `target_d` is the SMOOTHED D
+/// teacher (box-blurred at the source). Two independent MSE terms, summed —
+/// the single shared 3-out target that let the net trade real-light
+/// sharpness for variance-chasing (v7's first structural attempt) cannot
+/// recur: each head only ever sees its own teacher. Returns (mse_e, mse_d).
+#[allow(clippy::too_many_arguments)]
+pub fn accumulate_backward_two_head_slice(
+    mlp: &Mlp,
+    feat: &[f32],
+    out: &[f32],
+    target_e: &[f32; 3],
+    target_d: &[f32; 3],
+    w_grads: &mut [Vec<f32>],
+    b_grads: &mut [Vec<f32>],
+    scale: f32,
+) -> (f64, f64) {
+    assert_eq!(out.len(), 6, "two-head backward expects a 6-wide raw output");
+    let mut delta = [0.0f32; 6];
+    let mut mse_e = 0.0f64;
+    let mut mse_d = 0.0f64;
+    for c in 0..3 {
+        let de = out[c] - target_e[c];
+        mse_e += (de * de) as f64;
+        delta[c] = 2.0 * de / 6.0;
+        let dd = out[c + 3] - target_d[c];
+        mse_d += (dd * dd) as f64;
+        delta[c + 3] = 2.0 * dd / 6.0;
+    }
+    let (wg, bg) = mlp.backward_from_delta(feat, &delta);
+    for li in 0..w_grads.len() {
+        for k in 0..w_grads[li].len() {
+            w_grads[li][k] += wg[li][k] * scale;
+        }
+        for k in 0..b_grads[li].len() {
+            b_grads[li][k] += bg[li][k] * scale;
+        }
+    }
+    (mse_e, mse_d)
 }
 
 /// Allocate zero grad buffers shaped like the MLP.

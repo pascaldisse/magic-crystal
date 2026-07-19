@@ -1,0 +1,15 @@
+[v7] rendered 3+1 SPLIT poses (K=8, 480x360, teacher 96, D-blur r=2) in 2.2s
+[v7] WARM-START two-head (body copied, D-head small-random) from 3-out /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/data/rdirect-weights-v7.bin
+[v7] arch RdirectConfig { hidden_layers: 5, hidden_width: 64 } in=39 out=6 (two-head) macs/px=19264 — 120 epochs (wall<=1100s), subsample 20000px/pose, split MSE: E vs sharp, D vs smoothed
+[v7] MONITOR epoch -1 (fresh init): val sparkle 46.3/Mpx resid 0.0361
+[v7] epoch 0/120 mse=0.009787 (32.9s)
+[v7] MONITOR epoch 9: val sparkle 69.4/Mpx resid 0.0368 score=1.736 (tgt sp<16 resid<0.036) *BEST->saved
+[v7] epoch 10/120 mse=0.008362 (379.9s)
+[v7] MONITOR epoch 19: val sparkle 156.2/Mpx resid 0.0329 score=3.906 (tgt sp<16 resid<0.036)
+[v7] epoch 20/120 mse=0.008277 (725.7s)
+[v7] MONITOR epoch 29: val sparkle 225.7/Mpx resid 0.0314 score=5.642 (tgt sp<16 resid<0.036)
+[v7] epoch 30/120 mse=0.008688 (1070.9s)
+[v7] WALL budget 1100s reached MID-epoch 31 (batch 53504/60000) — stopping, keeping best
+[v7] training done in 1100.0s (best score=1.736 sparkle 69.4 resid 0.0368)
+[v7] wrote /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/data/rdirect-weights-v7.bin sha256=4e163f5f3e2154ce7ef33b7ac446df1abf52ad6a0531133c2504305f5ccc19d3
+[v7] wrote provenance. NEXT: real_image_ordeal (GAIA_ORDEAL_WEIGHTS=v7) to earn the stamp.

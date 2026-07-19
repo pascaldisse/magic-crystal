@@ -26,6 +26,7 @@
 //!   GAIA_V7_REF, GAIA_V7_BLUR (D box-blur radius, default 2),
 //!   GAIA_V7_SPARK_TGT, GAIA_V7_RESID_GATE, GAIA_V7_MONITOR, GAIA_V7_WALL
 
+use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
 
@@ -37,7 +38,7 @@ use scrying_glass::integrator::{
 };
 use scrying_glass::rdirect::{
     Adam, HIST_FEATURES_SPLIT, Mlp, RdirectConfig, OUTPUT_CHANNELS,
-    accumulate_backward_firefly_gated_slice, adam_apply, deserialize_weights, hist_features_split,
+    accumulate_backward_two_head_slice, adam_apply, deserialize_weights, hist_features_split,
     pixel_features_split, serialize_weights, target_demod_log, weights_sha256, zero_grads,
 };
 use scrying_glass::scene::{Camera, LeafTriangle, RenderScene};
@@ -110,8 +111,9 @@ struct Pose {
     lows_d: Vec<Vec<GVec3>>,
     albedo: Vec<GVec3>,
     normal: Vec<GVec3>,
-    teacher: Vec<GVec3>,             // EXACT (E_full + D_full), metrics only
-    target_dl: Vec<[f32; OUTPUT_CHANNELS]>, // SMOOTHED (E_full + blur(D_full)), trains the net
+    teacher: Vec<GVec3>,       // EXACT (E_full + D_full), metrics only
+    target_e: Vec<[f32; 3]>,  // E head target: SHARP (exact E_full), demod-log
+    target_d: Vec<[f32; 3]>,  // D head target: SMOOTHED (blur(D_full)), demod-log
     low_w: u32,
     low_h: u32,
     tw: u32,
@@ -162,12 +164,15 @@ fn render_pose(
 
     let n = (tw * th) as usize;
     let teacher: Vec<GVec3> = (0..n).map(|i| e_full[i] + d_full[i]).collect();
-    let smoothed: Vec<GVec3> = (0..n).map(|i| e_full[i] + d_blurred[i]).collect();
-    let target_dl: Vec<[f32; OUTPUT_CHANNELS]> =
-        (0..n).map(|px| target_demod_log(smoothed[px], albedo[px])).collect();
+    // TWO-HEADED TARGET (the structural fix): E kept EXACT/sharp, D smoothed
+    // at the source, each demod-logged against the SAME albedo divisor as
+    // the split input taps (completes the input/target symmetry) — no
+    // single shared target for the net to trade sharpness for variance on.
+    let target_e: Vec<[f32; 3]> = (0..n).map(|px| target_demod_log(e_full[px], albedo[px])).collect();
+    let target_d: Vec<[f32; 3]> = (0..n).map(|px| target_demod_log(d_blurred[px], albedo[px])).collect();
 
     Pose {
-        lows_e, lows_d, albedo, normal, teacher, target_dl,
+        lows_e, lows_d, albedo, normal, teacher, target_e, target_d,
         low_w, low_h, tw, th, depth_field: depth,
     }
 }
@@ -284,19 +289,28 @@ fn main() {
         hidden_layers: env_u32("GAIA_V7_LAYERS", 5) as usize,
         hidden_width: env_u32("GAIA_V7_WIDTH", 64) as usize,
     };
-    // FRESH init (same shape as v6: 39-in / 3-out - target engineering only),
-    // unless GAIA_V7_RESUME=1 and a v7 checkpoint already exists (warm start).
+    // TWO-HEAD net: 39-in / 6-out (E_dl(3) + D_dl(3)). GAIA_V7_RESUME=1 with
+    // an existing checkpoint either resumes a two-head net directly, or
+    // WARM-STARTS the body from a prior 3-out v7 checkpoint (new D-head
+    // columns small-random init) — see `Mlp::warm_start_two_head`.
     let resume = matches!(std::env::var("GAIA_V7_RESUME").as_deref(), Ok("1" | "true"));
     let mut mlp = if resume && wpath.exists() {
-        let m = deserialize_weights(&std::fs::read(&wpath).unwrap()).expect("resume v7");
-        eprintln!("[v7] RESUMED from {}", wpath.display());
-        m
+        let base = deserialize_weights(&std::fs::read(&wpath).unwrap()).expect("resume v7");
+        let out_dim = base.layer_dims().last().unwrap().1 as usize;
+        if out_dim == 6 {
+            eprintln!("[v7] RESUMED two-head net from {}", wpath.display());
+            base
+        } else {
+            eprintln!("[v7] WARM-START two-head (body copied, D-head small-random) from 3-out {}", wpath.display());
+            Mlp::warm_start_two_head(&base, INIT_SEED ^ 0xBEEF)
+        }
     } else {
-        Mlp::new_random_with_input(config, HIST_FEATURES_SPLIT, INIT_SEED)
+        Mlp::new_random_with_shape(config, HIST_FEATURES_SPLIT, 6, INIT_SEED)
     };
     assert_eq!(mlp.layer_dims()[0].0 as usize, HIST_FEATURES_SPLIT, "v7 net must be 39-input");
+    assert_eq!(mlp.layer_dims().last().unwrap().1 as usize, 6, "v7 net must be two-head 6-output");
     let mut adam = Adam::new(&mlp, lr0, 0.9, 0.999, 1e-8);
-    eprintln!("[v7] arch {:?} in={HIST_FEATURES_SPLIT} macs/px={} — {epochs} epochs (wall<={wall_budget}s), subsample {subsample}px/pose, PLAIN MSE vs split-smoothed target",
+    eprintln!("[v7] arch {:?} in={HIST_FEATURES_SPLIT} out=6 (two-head) macs/px={} — {epochs} epochs (wall<={wall_budget}s), subsample {subsample}px/pose, split MSE: E vs sharp, D vs smoothed",
         config, mlp.macs());
 
     {
@@ -310,12 +324,16 @@ fn main() {
     let mut rng = Rng(INIT_SEED ^ 0xF00D);
     let t_train = Instant::now();
     let mut best_bytes: Vec<u8> = serialize_weights(&mlp);
-    let mut best_sp = f64::INFINITY;
-    let mut best_resid = f64::INFINITY;
-    let mut have_pass = false;
-    let zero_cap = [f32::NEG_INFINITY; OUTPUT_CHANNELS]; // unused: gate=0 -> no firefly term
+    // (B) bar-normalized checkpoint criterion: score = max(sparkle/40,
+    // resid/0.035), save on new MIN. Replaces the old resid-primary rule
+    // that let a passing-resid/exploding-sparkle epoch overwrite a strictly
+    // better (lower on BOTH bars) checkpoint — the exact failure that lost
+    // the 46.3-sparkle state to a 92.6-sparkle one in the interrupted run.
+    let mut best_score = f64::INFINITY;
+    let mut best_sp_log = 0.0f64;
+    let mut best_rs_log = 0.0f64;
 
-    for epoch in 0..epochs {
+    'train: for epoch in 0..epochs {
         if t_train.elapsed().as_secs_f64() > wall_budget as f64 {
             eprintln!("[v7] WALL budget {wall_budget}s reached at epoch {epoch} — stopping, keeping best");
             break;
@@ -333,6 +351,15 @@ fn main() {
         }
         let mut bstart = 0usize;
         while bstart < samples.len() {
+            // (C) WALL BUG FIX: check the budget INSIDE the epoch too — a
+            // single epoch (K * subsample * 3 poses steps) can itself run
+            // long; the old check only fired at epoch boundaries and let a
+            // run go 3x over wall, silent, before this fix.
+            if t_train.elapsed().as_secs_f64() > wall_budget as f64 {
+                eprintln!("[v7] WALL budget {wall_budget}s reached MID-epoch {epoch} (batch {bstart}/{}) — stopping, keeping best", samples.len());
+                std::io::stderr().flush().ok();
+                break 'train;
+            }
             let bend = (bstart + batch).min(samples.len());
             let (mut wg, mut bg) = zero_grads(&mlp);
             let blen = (bend - bstart) as f32;
@@ -341,7 +368,8 @@ fn main() {
                 let tx = (px as u32) % p.tw;
                 let ty = (px as u32) / p.tw;
                 let albedo = p.albedo[px];
-                let target = p.target_dl[px]; // the SMOOTHED target — this is the escape
+                let target_e = p.target_e[px]; // sharp E teacher
+                let target_d = p.target_d[px]; // smoothed D teacher
                 let mut prev_dl = [0.0f32; 3];
                 let mut valid = 0.0f32;
                 for step in 0..k as usize {
@@ -350,15 +378,23 @@ fn main() {
                         albedo, p.normal[px], p.depth_field[px], Vec2::ZERO,
                     );
                     let feat = hist_features_split(&base, prev_dl, valid);
-                    let out = mlp.forward(&feat);
-                    // gate=0.0, ff_w=0.0 -> pure MSE against `target` (plain, no cap/penalty).
-                    let (mse, _ff) = accumulate_backward_firefly_gated_slice(
-                        &mlp, &feat, &out, &target, &zero_cap, 0.0, 0.0, &mut wg, &mut bg,
+                    let raw = mlp.forward_full(&feat); // [E_dl(3), D_dl(3)]
+                    let (mse_e, mse_d) = accumulate_backward_two_head_slice(
+                        &mlp, &feat, &raw, &target_e, &target_d, &mut wg, &mut bg,
                         1.0 / (blen * k as f32),
                     );
-                    epoch_mse += mse;
+                    epoch_mse += mse_e + mse_d;
                     n_steps += 1;
-                    prev_dl = out;
+                    // recurrent feedback = the PRESENTED (E+D) demod-log —
+                    // undo each head, sum in LINEAR space, re-encode (same
+                    // math `Mlp::forward` does internally for a 6-out net;
+                    // inlined here via `target_demod_log` to avoid a second
+                    // full forward pass through the net every step).
+                    let div = if albedo.length_squared() > 1e-8 { albedo + GVec3::splat(1e-3) } else { GVec3::ONE };
+                    let e_expm1 = GVec3::new((raw[0].exp() - 1.0).max(0.0), (raw[1].exp() - 1.0).max(0.0), (raw[2].exp() - 1.0).max(0.0));
+                    let d_expm1 = GVec3::new((raw[3].exp() - 1.0).max(0.0), (raw[4].exp() - 1.0).max(0.0), (raw[5].exp() - 1.0).max(0.0));
+                    let combined_lin = e_expm1 * div + d_expm1 * div;
+                    prev_dl = target_demod_log(combined_lin, albedo);
                     valid = 1.0;
                 }
             }
@@ -367,9 +403,10 @@ fn main() {
         }
 
         if epoch % 10 == 0 || epoch + 1 == epochs {
-            let denom = (n_steps as f64 * OUTPUT_CHANNELS as f64).max(1.0);
+            let denom = (n_steps as f64 * 6.0).max(1.0);
             println!("[v7] epoch {}/{} mse={:.6} ({:.1}s)",
                 epoch, epochs, epoch_mse / denom, t_train.elapsed().as_secs_f64());
+            std::io::stdout().flush().ok();
         }
 
         if (epoch + 1) % monitor_every == 0 || epoch + 1 == epochs {
@@ -377,27 +414,23 @@ fn main() {
             let sp = sparkle_resid_per_mpx(&net, &val_pose.teacher, tw, th);
             let rs = rmse_lin(&net, &val_pose.teacher);
             let passes = sp < spark_target as f64 && rs < resid_gate as f64;
-            let mut better = false;
-            if passes {
-                if !have_pass || rs < best_resid {
-                    have_pass = true;
-                    best_resid = rs;
-                    better = true;
-                }
-            } else if !have_pass && sp < best_sp {
-                best_sp = sp;
-                better = true;
-            }
+            let score = (sp / 40.0).max(rs / 0.035);
+            let better = score < best_score;
             if better {
+                best_score = score;
+                best_sp_log = sp;
+                best_rs_log = rs;
                 best_bytes = serialize_weights(&mlp);
                 std::fs::write(&wpath, &best_bytes).unwrap();
             }
-            eprintln!("[v7] MONITOR epoch {}: val sparkle {sp:.1}/Mpx resid {rs:.4} (tgt sp<{spark_target} resid<{resid_gate}){}",
-                epoch, if better { " *BEST->saved" } else { "" });
+            eprintln!("[v7] MONITOR epoch {}: val sparkle {sp:.1}/Mpx resid {rs:.4} score={score:.3}{} (tgt sp<{spark_target} resid<{resid_gate}){}",
+                epoch, if passes { " PASS" } else { "" }, if better { " *BEST->saved" } else { "" });
+            std::io::stderr().flush().ok();
         }
     }
-    eprintln!("[v7] training done in {:.1}s (best: pass={have_pass} resid {best_resid:.4} / fallback sparkle {best_sp:.1})",
+    eprintln!("[v7] training done in {:.1}s (best score={best_score:.3} sparkle {best_sp_log:.1} resid {best_rs_log:.4})",
         t_train.elapsed().as_secs_f64());
+    std::io::stderr().flush().ok();
 
     std::fs::write(&wpath, &best_bytes).unwrap();
     let mlp = deserialize_weights(&best_bytes).expect("reload best");
@@ -408,9 +441,10 @@ fn main() {
         "weights_sha256": wsha,
         "supersedes": "rdirect-weights-v6.bin",
         "architecture": {
-            "kind": "N6 SIGNED EVIDENCE, TARGET-SMOOTHED — recurrent direct-render MLP, split radiance input (E+D), single combined output trained against an E-exact/D-blurred target",
+            "kind": "N7 TWO-HEAD, structural fix — recurrent direct-render MLP, split radiance input (E+D), TWO separate output heads (E_dl, D_dl) each supervised against its own teacher (E sharp/exact, D box-blurred), summed at present time",
             "input_features": HIST_FEATURES_SPLIT,
-            "output_channels": OUTPUT_CHANNELS,
+            "output_channels": 6,
+            "output_heads": "E_dl[0..3] vs sharp E teacher, D_dl[3..6] vs smoothed D teacher; Mlp::forward() head-sums them back to one 3-channel demod-log for every existing caller (ordeal/live-loader unchanged)",
             "hidden_layers": config.hidden_layers,
             "hidden_width": config.hidden_width,
             "macs_per_pixel": mlp.macs(),
@@ -418,9 +452,10 @@ fn main() {
         "training": {
             "epochs": epochs, "unroll_steps": k, "batch": batch, "lr0": lr0,
             "subsample_px_per_pose_per_epoch": subsample, "ref_frames": ref_frames,
-            "init": if resume { "WARM (resumed from prior v7 checkpoint)" } else { "FRESH (same shape as v6, 39-in/3-out)" },
-            "loss": "PLAIN MSE vs split-smoothed target (no cap, no gate, no firefly weight)",
-            "target_construction": "target = E_full (exact, ref_frames) + box_blur(D_full, radius) — E kept sharp, D smoothed at the SOURCE before demod-log; escapes the sparkle<->resid Pareto front structurally instead of penalizing the output",
+            "init": if resume { "WARM-START two-head (body copied from prior v7 3-out checkpoint if needed, D-head columns small-random) or direct two-head resume" } else { "FRESH two-head (39-in/6-out)" },
+            "loss": "TWO separate MSE terms summed: E head vs sharp E teacher, D head vs smoothed D teacher (no cap, no gate, no firefly weight, no shared target)",
+            "target_construction": "target_e = demod_log(E_full exact, ref_frames); target_d = demod_log(box_blur(D_full, radius)) — separate per-head targets, not a single combined smoothed target (v7's first attempt traded E sharpness for D variance under one target; this cannot recur since each head only ever sees its own teacher)",
+            "best_checkpoint_criterion": "bar-normalized score = max(sparkle/40, resid/0.035), save on new MIN (replaces resid-primary rule that could overwrite a strictly-better checkpoint)",
             "d_blur_radius": blur_radius,
             "split": "E = radiance via zero-or-more specular/low-roughness bounces (SPEC_CHAIN_MAX_ROUGHNESS 0.25); D = radiance after a diffuse/rough scatter (~0.88% of frame energy)",
         },
