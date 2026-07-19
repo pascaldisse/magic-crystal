@@ -20,7 +20,7 @@
 //! Run: cargo run -p scrying-glass --release --example rdirect_train_v4
 //!   GAIA_V4_EPOCHS, GAIA_V4_STILL (K), GAIA_V4_SUBSAMPLE, GAIA_V4_W/H, GAIA_V4_CKPT,
 //!   GAIA_V4_FF (firefly weight), GAIA_V4_FFK (cap window radius), GAIA_V4_FFMARGIN,
-//!   GAIA_V4_SPARK_STOP (early-stop sparkle target), GAIA_V4_MONITOR (epochs/check)
+//!   GAIA_V4_SPARK_TGT / GAIA_V4_RESID_GATE (combined best-checkpoint gates), GAIA_V4_MONITOR (epochs/check)
 
 use std::path::Path;
 use std::time::Instant;
@@ -147,6 +147,17 @@ fn lum(c: GVec3) -> f32 {
     0.2126 * c.x + 0.7152 * c.y + 0.0722 * c.z
 }
 
+/// Linear RMSE vs the teacher (the ordeal's resid metric) — monitored so the
+/// firefly term does not silently darken the image (collateral over-clamp).
+fn rmse_lin(net: &[GVec3], teacher: &[GVec3]) -> f64 {
+    let mut s = 0.0f64;
+    for (a, b) in net.iter().zip(teacher) {
+        let d = *a - *b;
+        s += (d.x * d.x + d.y * d.y + d.z * d.z) as f64;
+    }
+    (s / (net.len() as f64 * 3.0)).sqrt()
+}
+
 /// The ORDEAL's exact sparkle metric: isolated bright dots the net invented
 /// over the converged teacher, per megapixel. Used as a training monitor.
 fn sparkle_resid_per_mpx(net: &[GVec3], teacher: &[GVec3], w: u32, h: u32) -> f64 {
@@ -231,8 +242,11 @@ fn main() {
     // ── IRON firefly params ──
     let ff_w = env_f32("GAIA_V4_FF", 6.0); // firefly clamp weight
     let cap_radius = env_u32("GAIA_V4_FFK", 2) as i32; // k×k window = (2r+1)²
-    let cap_margin = env_f32("GAIA_V4_FFMARGIN", 0.05); // demod-log slack over teacher nbhd max
-    let spark_stop = env_f32("GAIA_V4_SPARK_STOP", 30.0); // early-stop under this (bar 40)
+    let cap_margin = env_f32("GAIA_V4_FFMARGIN", 0.20); // demod-log slack: ONLY true outliers (surgical)
+    // 480-monitor sparkle scales ~2.2× to the 640×480 ordeal, so aim well under
+    // the 40 bar; and keep resid near v3's 0.0325 (the ordeal resid bar is 0.035).
+    let spark_target = env_f32("GAIA_V4_SPARK_TGT", 16.0); // 480-monitor sparkle to clear the 640 bar
+    let resid_gate = env_f32("GAIA_V4_RESID_GATE", 0.036); // reject over-clamped (dark) nets
     let monitor_every = env_u32("GAIA_V4_MONITOR", 10);
 
     let all = scrying_glass::denoiser_dataset::law_poses(&params);
@@ -288,10 +302,14 @@ fn main() {
     let n_px: Vec<usize> = poses.iter().map(|p| (p.tw * p.th) as usize).collect();
     let mut rng = Rng(INIT_SEED ^ 0xF00D ^ ((epoch_start as u64) << 21));
     let t_train = Instant::now();
-    let mut best_sp = f64::INFINITY;
-    // KEEP THE BEST net by held-out sparkle (MSE refit re-sharpens dots as it
-    // trains, so the LATEST net is not the cleanest — the artifact is the best).
+    // KEEP THE BEST net by a COMBINED held-out criterion: among nets whose
+    // sparkle clears the target, the LOWEST resid; if none clear it yet, the
+    // lowest sparkle. (MSE refit re-sharpens dots AND ff over-clamp darkens the
+    // image — the artifact must balance both bars, not just kill sparkle.)
     let mut best_bytes: Vec<u8> = serialize_weights(&mlp);
+    let mut best_sp = f64::INFINITY; // best-so-far sparkle (for the no-pass regime)
+    let mut best_resid = f64::INFINITY; // best resid among sparkle-passing nets
+    let mut have_pass = false;
 
     for epoch in 0..epochs {
         let frac = (epoch_start + epoch) as f32 / epoch_total as f32;
@@ -351,23 +369,31 @@ fn main() {
             );
         }
 
-        // ── sparkle monitor on held-out val pose ──
+        // ── sparkle + resid monitor on held-out val pose ──
         if (epoch + 1) % monitor_every == 0 || epoch + 1 == epochs {
             let net = settle_still(&mlp, &val_pose, k);
             let sp = sparkle_resid_per_mpx(&net, &val_pose.teacher, tw, th);
-            let better = sp < best_sp;
-            if better {
+            let rs = rmse_lin(&net, &val_pose.teacher);
+            let passes = sp < spark_target as f64 && rs < resid_gate as f64;
+            let mut better = false;
+            if passes {
+                // sparkle+resid both clear — keep the lowest-resid such net.
+                if !have_pass || rs < best_resid {
+                    have_pass = true;
+                    best_resid = rs;
+                    better = true;
+                }
+            } else if !have_pass && sp < best_sp {
+                // no combined-pass yet — track lowest sparkle as fallback.
                 best_sp = sp;
+                better = true;
+            }
+            if better {
                 best_bytes = serialize_weights(&mlp);
-                std::fs::write(&wpath, &best_bytes).unwrap(); // best-so-far is the checkpoint
+                std::fs::write(&wpath, &best_bytes).unwrap();
             }
-            eprintln!("[v4] MONITOR epoch {}: val sparkle {sp:.1}/Mpx (bar 40, stop<{spark_stop}){}",
+            eprintln!("[v4] MONITOR epoch {}: val sparkle {sp:.1}/Mpx resid {rs:.4} (tgt sp<{spark_target} resid<{resid_gate}){}",
                 epoch_start + epoch, if better { " *BEST→saved" } else { "" });
-            if sp < spark_stop as f64 {
-                eprintln!("[v4] EARLY STOP @ epoch {}: val sparkle {sp:.1} < {spark_stop} (best net saved)",
-                    epoch_start + epoch);
-                break;
-            }
         }
     }
     eprintln!("[v4] training done in {:.1}s (best val sparkle {best_sp:.1})", t_train.elapsed().as_secs_f64());
