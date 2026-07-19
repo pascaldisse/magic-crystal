@@ -101,7 +101,7 @@ const PRIOR_LR: f32 = 0.002;
 /// cross-run rule: this run may only overwrite that checkpoint by beating
 /// this floor, and every subsequent save must beat the PREVIOUS best — a
 /// worse run can never clobber the best state again.
-const START_SCORE_FLOOR: f64 = 1.157;
+const START_SCORE_FLOOR: f64 = 1.058; // 636c8743 WITH clamp: max(27.67/40, 0.03704/0.035)
 
 fn env_u32(n: &str, d: u32) -> u32 {
     std::env::var(n).ok().and_then(|v| v.parse().ok()).unwrap_or(d)
