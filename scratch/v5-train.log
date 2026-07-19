@@ -1,0 +1,14 @@
+    Finished `release` profile [optimized] target(s) in 0.43s
+     Running `target/release/examples/rdirect_train_v5`
+[v5]   pose dark_ceiling=0.1413 (pct 0.8) gate ON for 133214/172800 px (77%)
+[v5]   pose dark_ceiling=0.0551 (pct 0.8) gate ON for 122578/172800 px (71%)
+[v5]   pose dark_ceiling=0.1416 (pct 0.8) gate ON for 132842/172800 px (77%)
+[v5]   pose dark_ceiling=0.1328 (pct 0.8) gate ON for 133483/172800 px (77%)
+[v5] rendered 3+1 poses (K=4, 480x360, teacher 96, cap 5×5 margin 0.05, ff_w 15, dark_pct 0.8) in 1.5s
+[v5] WARM-STARTED from v3 /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/data/rdirect-weights-v3.bin
+[v5] arch RdirectConfig { hidden_layers: 5, hidden_width: 64 } in=27 macs/px=18304 — training 90 epochs, subsample 6000px/pose
+[v5] MONITOR epoch -1 (start=v3): val sparkle 243.1/Mpx resid 0.0355
+[v5] epoch 0/90 mse=0.022045 ff=0.000153 (4.6s)
+[v5] MONITOR epoch 4: val sparkle 179.4/Mpx resid 0.0380 (tgt sp<16 resid<0.036) *BEST→saved
+[v5] MONITOR epoch 9: val sparkle 75.2/Mpx resid 0.0394 (tgt sp<16 resid<0.036) *BEST→saved
+[v5] epoch 10/90 mse=0.020383 ff=0.000029 (67.3s)
