@@ -1,0 +1,59 @@
+[v7-autopsy] weights=data/rdirect-weights-v7.bin val pose=orbit_-20 K=8 ref_frames=96 blur_r=2 topn=50
+
+[v7-autopsy] ===== 480x360 (sparkle 46.3/Mpx) =====
+[v7-autopsy] 480x360: 8 outliers found (requested top 50) -> COPIED=6 INVENTED=2
+   x    y      err      net  teacher   smooth        E    D_raw   D_blur    tgt_exc   verdict
+ 246  189   0.8733   1.1533   0.2800   0.2800   0.2793   0.0007   0.0007     0.2012    COPIED
+ 243  189   0.7708   1.0715   0.3007   0.3005   0.2997   0.0011   0.0008     0.2269    COPIED
+ 248  189   0.4847   0.7136   0.2289   0.2280   0.2273   0.0016   0.0007     0.1563    COPIED
+ 258  189   0.3929   0.6472   0.2542   0.2542   0.2535   0.0007   0.0006     0.0213  INVENTED
+ 255  189   0.3448   0.5940   0.2492   0.2490   0.2483   0.0009   0.0006     0.0376  INVENTED
+ 260  189   0.2405   0.4951   0.2546   0.2539   0.2533   0.0013   0.0006     0.1035    COPIED
+  31  189   0.1968   0.9596   0.7629   0.7628   0.7619   0.0010   0.0009     0.3746    COPIED
+ 239  189   0.1835   0.4228   0.2392   0.2387   0.2378   0.0015   0.0009     0.1573    COPIED
+RAW 480x360 x=246 y=189 err=0.87332 net=1.15329 teacher=0.27998 smoothed=0.27997 E=0.27927 D_raw=0.00071 D_blur=0.00070 tgt_excess=0.20122 verdict=COPIED
+RAW 480x360 x=243 y=189 err=0.77080 net=1.07155 teacher=0.30075 smoothed=0.30052 E=0.29969 D_raw=0.00106 D_blur=0.00083 tgt_excess=0.22689 verdict=COPIED
+RAW 480x360 x=248 y=189 err=0.48473 net=0.71365 teacher=0.22891 smoothed=0.22800 E=0.22730 D_raw=0.00161 D_blur=0.00070 tgt_excess=0.15629 verdict=COPIED
+RAW 480x360 x=258 y=189 err=0.39292 net=0.64715 teacher=0.25423 smoothed=0.25417 E=0.25353 D_raw=0.00070 D_blur=0.00064 tgt_excess=0.02127 verdict=INVENTED
+RAW 480x360 x=255 y=189 err=0.34480 net=0.59401 teacher=0.24921 smoothed=0.24897 E=0.24835 D_raw=0.00086 D_blur=0.00063 tgt_excess=0.03758 verdict=INVENTED
+RAW 480x360 x=260 y=189 err=0.24047 net=0.49507 teacher=0.25460 smoothed=0.25390 E=0.25332 D_raw=0.00128 D_blur=0.00058 tgt_excess=0.10353 verdict=COPIED
+RAW 480x360 x=31 y=189 err=0.19675 net=0.95964 teacher=0.76289 smoothed=0.76277 E=0.76188 D_raw=0.00101 D_blur=0.00089 tgt_excess=0.37465 verdict=COPIED
+RAW 480x360 x=239 y=189 err=0.18355 net=0.42279 teacher=0.23924 smoothed=0.23866 E=0.23777 D_raw=0.00147 D_blur=0.00089 tgt_excess=0.15734 verdict=COPIED
+
+[v7-autopsy] ===== 640x480 (sparkle 52.1/Mpx) =====
+[v7-autopsy] 640x480: 16 outliers found (requested top 50) -> COPIED=15 INVENTED=1
+   x    y      err      net  teacher   smooth        E    D_raw   D_blur    tgt_exc   verdict
+  16  257   0.3721   0.8339   0.4618   0.4615   0.4605   0.0013   0.0010     0.3402    COPIED
+   6  257   0.3494   0.7890   0.4396   0.4395   0.4387   0.0009   0.0008     0.3287    COPIED
+ 290  247   0.3045   0.4042   0.0997   0.0997   0.0994   0.0003   0.0003     0.0707    COPIED
+ 284  247   0.2865   0.4380   0.1515   0.1508   0.1504   0.0011   0.0004     0.1058    COPIED
+ 274  250   0.2658   0.5994   0.3337   0.3328   0.3322   0.0014   0.0005     0.2282    COPIED
+ 288  247   0.2498   0.3961   0.1463   0.1457   0.1453   0.0010   0.0004     0.0955    COPIED
+ 344  252   0.2482   0.5951   0.3469   0.3470   0.3461   0.0007   0.0009     0.1501    COPIED
+  19  257   0.2438   0.4887   0.2448   0.2450   0.2443   0.0006   0.0008     0.1597    COPIED
+ 271  250   0.2436   0.6094   0.3658   0.3645   0.3640   0.0018   0.0005     0.2480    COPIED
+ 340  252   0.2366   0.6043   0.3677   0.3673   0.3666   0.0011   0.0008     0.2528    COPIED
+... (6 more rows omitted, see raw dump)
+RAW 640x480 x=16 y=257 err=0.37210 net=0.83393 teacher=0.46183 smoothed=0.46151 E=0.46049 D_raw=0.00133 D_blur=0.00102 tgt_excess=0.34018 verdict=COPIED
+RAW 640x480 x=6 y=257 err=0.34941 net=0.78903 teacher=0.43962 smoothed=0.43952 E=0.43875 D_raw=0.00087 D_blur=0.00077 tgt_excess=0.32868 verdict=COPIED
+RAW 640x480 x=290 y=247 err=0.30453 net=0.40422 teacher=0.09969 smoothed=0.09971 E=0.09937 D_raw=0.00032 D_blur=0.00034 tgt_excess=0.07073 verdict=COPIED
+RAW 640x480 x=284 y=247 err=0.28652 net=0.43800 teacher=0.15149 smoothed=0.15081 E=0.15040 D_raw=0.00109 D_blur=0.00042 tgt_excess=0.10575 verdict=COPIED
+RAW 640x480 x=274 y=250 err=0.26576 net=0.59944 teacher=0.33368 smoothed=0.33276 E=0.33224 D_raw=0.00144 D_blur=0.00053 tgt_excess=0.22819 verdict=COPIED
+RAW 640x480 x=288 y=247 err=0.24983 net=0.39613 teacher=0.14630 smoothed=0.14568 E=0.14528 D_raw=0.00102 D_blur=0.00039 tgt_excess=0.09546 verdict=COPIED
+RAW 640x480 x=344 y=252 err=0.24824 net=0.59511 teacher=0.34686 smoothed=0.34699 E=0.34612 D_raw=0.00074 D_blur=0.00086 tgt_excess=0.15006 verdict=COPIED
+RAW 640x480 x=19 y=257 err=0.24382 net=0.48865 teacher=0.24484 smoothed=0.24501 E=0.24426 D_raw=0.00058 D_blur=0.00076 tgt_excess=0.15966 verdict=COPIED
+RAW 640x480 x=271 y=250 err=0.24365 net=0.60945 teacher=0.36580 smoothed=0.36450 E=0.36398 D_raw=0.00182 D_blur=0.00053 tgt_excess=0.24801 verdict=COPIED
+RAW 640x480 x=340 y=252 err=0.23664 net=0.60433 teacher=0.36770 smoothed=0.36734 E=0.36657 D_raw=0.00112 D_blur=0.00076 tgt_excess=0.25277 verdict=COPIED
+RAW 640x480 x=286 y=247 err=0.22474 net=0.39675 teacher=0.17200 smoothed=0.17150 E=0.17106 D_raw=0.00094 D_blur=0.00044 tgt_excess=0.12385 verdict=COPIED
+RAW 640x480 x=287 y=261 err=0.18833 net=1.18922 teacher=1.00090 smoothed=1.00167 E=1.00076 D_raw=0.00013 D_blur=0.00090 tgt_excess=0.52615 verdict=COPIED
+RAW 640x480 x=34 y=254 err=0.18360 net=0.86943 teacher=0.68583 smoothed=0.68238 E=0.68113 D_raw=0.00469 D_blur=0.00124 tgt_excess=0.12525 verdict=COPIED
+RAW 640x480 x=268 y=250 err=0.16405 net=0.44269 teacher=0.27864 smoothed=0.27694 E=0.27643 D_raw=0.00221 D_blur=0.00051 tgt_excess=0.16440 verdict=COPIED
+RAW 640x480 x=317 y=253 err=0.15208 net=0.17498 teacher=0.02289 smoothed=0.02231 E=0.02142 D_raw=0.00147 D_blur=0.00089 tgt_excess=-0.20350 verdict=INVENTED
+RAW 640x480 x=339 y=256 err=0.15119 net=1.16137 teacher=1.01018 smoothed=1.01076 E=1.00997 D_raw=0.00021 D_blur=0.00080 tgt_excess=0.61709 verdict=COPIED
+
+[v7-autopsy] ===== RES MISMATCH =====
+  480x360: sparkle 46.3/Mpx
+  640x480: sparkle 52.1/Mpx
+  delta: 640x480 - 480x360 = +5.8/Mpx (+12.5%)
+
+[v7-autopsy] done in 48.1s
