@@ -37,10 +37,13 @@ use scrying_glass::bvh::{Bvh, BvhParams};
 use scrying_glass::error_metric::rmse;
 use scrying_glass::integrator::{
     IntegratorParams, headless_device, resolve, split_aov, trace_headless, trace_headless_aov,
+    trace_headless_split,
 };
 use scrying_glass::rdirect::{
-    CamPose, HistFrame, INPUT_FEATURES, Mlp, deserialize_weights, direct_render_sequence_hist,
-    hist_features, pixel_features, stamp_pass_text, stamp_path_for,
+    CamPose, HistFrame, HistFrameSplit, HIST_FEATURES_SPLIT, INPUT_FEATURES, Mlp,
+    deserialize_weights, direct_render_sequence_hist, direct_render_sequence_hist_split,
+    hist_features, hist_features_split, pixel_features, pixel_features_split, stamp_pass_text,
+    stamp_path_for,
 };
 use scrying_glass::scene::{Camera, LeafTriangle, RenderScene};
 
@@ -76,6 +79,10 @@ fn cam_pose(cam: &Camera, w: u32, h: u32) -> CamPose {
 
 struct FrameBufs {
     low: Vec<GVec3>,
+    // N5 split radiance (E, D) — populated only when the weights are the 39-in
+    // split net; empty otherwise.
+    low_e: Vec<GVec3>,
+    low_d: Vec<GVec3>,
     albedo: Vec<GVec3>,
     normal: Vec<GVec3>,
     depth: Vec<f32>,
@@ -94,6 +101,7 @@ fn render_frame(
     low_h: u32,
     target_w: u32,
     target_h: u32,
+    is_split: bool,
 ) -> FrameBufs {
     let bvh = Bvh::build(base_tris, &BvhParams::default());
     let np = IntegratorParams { spp: 1, seed, ..IntegratorParams::default() };
@@ -101,10 +109,17 @@ fn render_frame(
         device, queue, &bvh, cam, &scene.sun, scene.sky_top, scene.sky_horizon, low_w, low_h, 1,
         &np, None,
     ));
+    let (low_e, low_d) = if is_split {
+        trace_headless_split(
+            device, queue, &bvh, cam, &scene.sun, scene.sky_top, scene.sky_horizon, low_w, low_h, 1, &np,
+        )
+    } else {
+        (Vec::new(), Vec::new())
+    };
     let (albedo, normal, depth) = split_aov(&trace_headless_aov(
         device, queue, &bvh, cam, &scene.sun, scene.sky_top, scene.sky_horizon, target_w, target_h,
     ));
-    FrameBufs { low, albedo, normal, depth, cam: cam_pose(cam, target_w, target_h) }
+    FrameBufs { low, low_e, low_d, albedo, normal, depth, cam: cam_pose(cam, target_w, target_h) }
 }
 
 fn render_teacher(
@@ -214,18 +229,27 @@ fn render_single(mlp: &Mlp, f: &FrameBufs, tw: u32, th: u32, low_w: u32, low_h: 
     let motion = vec![Vec2::ZERO; (tw * th) as usize];
     let n = (tw * th) as usize;
     let mut out = vec![GVec3::ZERO; n];
-    let uses_hist = mlp.layer_dims()[0].0 as usize == INPUT_FEATURES + 4;
+    let in_dim = mlp.layer_dims()[0].0 as usize;
+    let is_split = in_dim == HIST_FEATURES_SPLIT;
+    let uses_hist = in_dim == INPUT_FEATURES + 4;
     for ty in 0..th {
         for tx in 0..tw {
             let i = (ty * tw + tx) as usize;
             let albedo = f.albedo[i];
-            let base = pixel_features(
-                &f.low, low_w, low_h, tw, th, tx, ty, albedo, f.normal[i], f.depth[i], motion[i],
-            );
-            let dl = if uses_hist {
-                mlp.forward(&hist_features(&base, [0.0; 3], 0.0))
+            let dl = if is_split {
+                let base = pixel_features_split(
+                    &f.low_e, &f.low_d, low_w, low_h, tw, th, tx, ty, albedo, f.normal[i], f.depth[i], motion[i],
+                );
+                mlp.forward(&hist_features_split(&base, [0.0; 3], 0.0))
             } else {
-                mlp.forward(&base)
+                let base = pixel_features(
+                    &f.low, low_w, low_h, tw, th, tx, ty, albedo, f.normal[i], f.depth[i], motion[i],
+                );
+                if uses_hist {
+                    mlp.forward(&hist_features(&base, [0.0; 3], 0.0))
+                } else {
+                    mlp.forward(&base)
+                }
             };
             // undo log-demod
             let div = if albedo.length_squared() > 1e-8 { albedo + GVec3::splat(1e-3) } else { GVec3::ONE };
@@ -234,6 +258,42 @@ fn render_single(mlp: &Mlp, f: &FrameBufs, tw: u32, th: u32, low_w: u32, low_h: 
         }
     }
     out
+}
+
+/// Render a still/pan SEQUENCE through the recurrent net, branching on whether
+/// the weights are the N5 split net (39-in, two radiance channels) or the
+/// v3/v5 single-channel net (27-in).
+#[allow(clippy::too_many_arguments)]
+fn sequence_render(
+    mlp: &Mlp,
+    bufs: &[FrameBufs],
+    low_w: u32,
+    low_h: u32,
+    target_w: u32,
+    target_h: u32,
+    is_split: bool,
+) -> Vec<Vec<GVec3>> {
+    if is_split {
+        let hf: Vec<HistFrameSplit> = bufs
+            .iter()
+            .map(|b| HistFrameSplit {
+                low_e: &b.low_e, low_d: &b.low_d, low_w, low_h,
+                hi_albedo: &b.albedo, hi_normal: &b.normal, hi_depth: &b.depth,
+                target_w, target_h, cam: b.cam,
+            })
+            .collect();
+        direct_render_sequence_hist_split(mlp, &hf, DEPTH_TOL, NORMAL_THRESH)
+    } else {
+        let hf: Vec<HistFrame> = bufs
+            .iter()
+            .map(|b| HistFrame {
+                low_radiance: &b.low, low_w, low_h,
+                hi_albedo: &b.albedo, hi_normal: &b.normal, hi_depth: &b.depth,
+                target_w, target_h, cam: b.cam,
+            })
+            .collect();
+        direct_render_sequence_hist(mlp, &hf, DEPTH_TOL, NORMAL_THRESH)
+    }
 }
 
 fn main() {
@@ -267,6 +327,7 @@ fn main() {
         "v3" => "data/rdirect-weights-v3.bin".to_string(),
         "v4" => "data/rdirect-weights-v4.bin".to_string(),
         "v5" => "data/rdirect-weights-v5.bin".to_string(),
+        "v6" => "data/rdirect-weights-v6.bin".to_string(),
         other => other.to_string(),
     };
     let wpath: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join(&wrel);
@@ -279,9 +340,12 @@ fn main() {
     };
     let mlp = deserialize_weights(&wbytes).expect("weights parse");
     let in_dim = mlp.layer_dims()[0].0 as usize;
+    let is_split = in_dim == HIST_FEATURES_SPLIT;
     println!(
         "[ordeal] weights={wrel} in_dim={in_dim} ({}) res {target_w}x{target_h} still={still_len} pan={pan_len}",
-        if in_dim == INPUT_FEATURES + 4 { "N2 recurrent (27)" } else { "v2 current-frame (23) — no memory" }
+        if is_split { "N5 split recurrent (39)" }
+        else if in_dim == INPUT_FEATURES + 4 { "N2 recurrent (27)" }
+        else { "v2 current-frame (23) — no memory" }
     );
 
     let val_poses = scrying_glass::denoiser_dataset::law_poses(&params);
@@ -301,18 +365,10 @@ fn main() {
     for (pname, cam) in &poses {
         // ── STILL: same camera, fresh seed each frame ──────────────────────
         let still_bufs: Vec<FrameBufs> = (0..still_len)
-            .map(|k| render_frame(&device, &queue, &base_tris, &scene, cam, 0x5eed + k * 101 + 7, low_w, low_h, target_w, target_h))
+            .map(|k| render_frame(&device, &queue, &base_tris, &scene, cam, 0x5eed + k * 101 + 7, low_w, low_h, target_w, target_h, is_split))
             .collect();
         let teacher_still = render_teacher(&device, &queue, &base_tris, &scene, cam, ref_still, target_w, target_h);
-        let hist_frames: Vec<HistFrame> = still_bufs
-            .iter()
-            .map(|b| HistFrame {
-                low_radiance: &b.low, low_w, low_h,
-                hi_albedo: &b.albedo, hi_normal: &b.normal, hi_depth: &b.depth,
-                target_w, target_h, cam: b.cam,
-            })
-            .collect();
-        let outs = direct_render_sequence_hist(&mlp, &hist_frames, DEPTH_TOL, NORMAL_THRESH);
+        let outs = sequence_render(&mlp, &still_bufs, low_w, low_h, target_w, target_h, is_split);
         let settled = outs.last().unwrap();
         let r = rmse(settled, &teacher_still) as f64;
         let sp = sparkle_resid_per_mpx(settled, &teacher_still, target_w, target_h);
@@ -337,17 +393,9 @@ fn main() {
         let pan_bufs: Vec<FrameBufs> = pan_cams
             .iter()
             .enumerate()
-            .map(|(k, c)| render_frame(&device, &queue, &base_tris, &scene, c, 0x1234 + k as u32 * 97 + 3, low_w, low_h, target_w, target_h))
+            .map(|(k, c)| render_frame(&device, &queue, &base_tris, &scene, c, 0x1234 + k as u32 * 97 + 3, low_w, low_h, target_w, target_h, is_split))
             .collect();
-        let pan_hist: Vec<HistFrame> = pan_bufs
-            .iter()
-            .map(|b| HistFrame {
-                low_radiance: &b.low, low_w, low_h,
-                hi_albedo: &b.albedo, hi_normal: &b.normal, hi_depth: &b.depth,
-                target_w, target_h, cam: b.cam,
-            })
-            .collect();
-        let pan_outs = direct_render_sequence_hist(&mlp, &pan_hist, DEPTH_TOL, NORMAL_THRESH);
+        let pan_outs = sequence_render(&mlp, &pan_bufs, low_w, low_h, target_w, target_h, is_split);
         // mid-pan frame (history has built up but camera is moving = ghost test)
         let mid = (pan_len - 1) as usize;
         let teacher_mid = render_teacher(&device, &queue, &base_tris, &scene, &pan_cams[mid], ref_move, target_w, target_h);
@@ -372,13 +420,15 @@ fn main() {
 
     // ── proof PNGs ──────────────────────────────────────────────────────────
     let proof = Path::new(env!("CARGO_MANIFEST_DIR")).join("proof/neural-live");
+    // N5 writes the s25 panels (both eyes: net vs teacher); older nets keep s21.
+    let sp = std::env::var("GAIA_ORDEAL_SHOT").unwrap_or_else(|_| if is_split { "s25".into() } else { "s21".into() });
     if let Some((net, teacher)) = &shot_still {
-        write_panel(net, target_w, target_h, exposure, &proof.join("s21-still.png"));
-        write_panel(teacher, target_w, target_h, exposure, &proof.join("s21-still-teacher.png"));
+        write_panel(net, target_w, target_h, exposure, &proof.join(format!("{sp}-still.png")));
+        write_panel(teacher, target_w, target_h, exposure, &proof.join(format!("{sp}-still-teacher.png")));
     }
     if let Some((net, teacher)) = &shot_move {
-        write_panel(net, target_w, target_h, exposure, &proof.join("s21-moving.png"));
-        write_panel(teacher, target_w, target_h, exposure, &proof.join("s21-moving-teacher.png"));
+        write_panel(net, target_w, target_h, exposure, &proof.join(format!("{sp}-moving.png")));
+        write_panel(teacher, target_w, target_h, exposure, &proof.join(format!("{sp}-moving-teacher.png")));
     }
 
     // ── VERDICT ──────────────────────────────────────────────────────────────
