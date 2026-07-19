@@ -700,4 +700,4 @@ window BLACK correctly · LASHES rows 13-15 · RIDING: N2 memory/recurrence
 (kills dots at root) · light ordeal (20-light ocean + 1000-echo laser @
 R=0.999 his order) · manifest crack (neural-cores wall). His ratifications:
 low samples = less accurate guess NEVER dots · unlimited lights = R5 next.
-RULING 07-19 08:50 (his words): PLEROMA RUNS THROUGH METAL, NOT ANE [source: his ruling, room 08:50] — GPU is her silicon by his word; encoder/ANE door work [source: metal4-neural-recon.md] continues for the TINY TIER only (voice/minds; dispatch lane riding).
+RULING 07-19 08:52 CORRECTED (his words: 'IT RUNS ON NEURAL CORES THROUGH METAL') [source: room 08:52]: PLEROMA = NEURAL CORES as silicon, METAL as the only API road (MTL4 ML encoder [source: metal4-neural-recon.md]) — Metal end-to-end, ANE execution; dispatch lane carries her package + locus proof; GPU stays her measured home until the encoder dispatch lands numbers.
