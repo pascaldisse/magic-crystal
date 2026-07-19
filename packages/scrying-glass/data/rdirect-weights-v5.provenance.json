@@ -1,0 +1,52 @@
+{
+  "architecture": {
+    "hidden_layers": 5,
+    "hidden_width": 64,
+    "input_features": 27,
+    "kind": "N4 recurrent direct-render MLP — v3 arch + TEACHER-GATED SPATIAL FIREFLY LOSS",
+    "macs_per_pixel": 18304,
+    "output_channels": 3
+  },
+  "artifact": "rdirect-weights-v5.bin",
+  "dataset": {
+    "low": [
+      240,
+      180
+    ],
+    "native": [
+      480,
+      360
+    ],
+    "realm": "naruko",
+    "train": [
+      "front",
+      "wide",
+      "orbit_+20"
+    ],
+    "val": [
+      "orbit_-20"
+    ]
+  },
+  "gate": "presents ONLY if real_image_ordeal writes a PASS stamp beside this file",
+  "supersedes": "rdirect-weights-v4.bin",
+  "training": {
+    "batch": 64,
+    "epochs": 90,
+    "firefly_loss": {
+      "cap_margin": 0.05000000074505806,
+      "cap_window": 5,
+      "dark_percentile": 0.800000011920929,
+      "form": "MSE + gate·ff_w·Σ_c relu(out_c − teacher_kxk_max_c − margin)² in demod-log space",
+      "gate": "1 where teacher k×k neighbourhood max-luminance < dark_pct-percentile ceiling, else 0",
+      "note": "penalises invented dots ONLY over dark teacher neighbourhoods; real neon/windows are plain MSE (gate=0) — fixes N3 v4's over-clamp of the cyan waterline",
+      "weight_ff": 15.0
+    },
+    "lr0": 0.0020000000949949026,
+    "monitor": "ordeal sparkle + resid on held-out val pose orbit_-20, keep lowest-resid sparkle-passing net",
+    "ref_frames": 96,
+    "subsample_px_per_pose_per_epoch": 6000,
+    "unroll_steps": 4,
+    "warm_start": "v3 (sharp, sparkle-fail)"
+  },
+  "weights_sha256": "01b67a4550f84a2511d32ce5e8b9131a8963add7b9d92267f7d7956fa556da40"
+}
