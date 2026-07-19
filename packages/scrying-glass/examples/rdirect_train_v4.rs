@@ -227,7 +227,7 @@ fn main() {
     let subsample = env_u32("GAIA_V4_SUBSAMPLE", 6000) as usize;
     let batch = env_u32("GAIA_V4_BATCH", 64) as usize;
     let lr0 = env_f32("GAIA_V4_LR", 0.002);
-    let ckpt_every = env_u32("GAIA_V4_CKPT", 20);
+    let _ckpt_every = env_u32("GAIA_V4_CKPT", 20);
     // ── IRON firefly params ──
     let ff_w = env_f32("GAIA_V4_FF", 6.0); // firefly clamp weight
     let cap_radius = env_u32("GAIA_V4_FFK", 2) as i32; // k×k window = (2r+1)²
@@ -289,6 +289,9 @@ fn main() {
     let mut rng = Rng(INIT_SEED ^ 0xF00D ^ ((epoch_start as u64) << 21));
     let t_train = Instant::now();
     let mut best_sp = f64::INFINITY;
+    // KEEP THE BEST net by held-out sparkle (MSE refit re-sharpens dots as it
+    // trains, so the LATEST net is not the cleanest — the artifact is the best).
+    let mut best_bytes: Vec<u8> = serialize_weights(&mlp);
 
     for epoch in 0..epochs {
         let frac = (epoch_start + epoch) as f32 / epoch_total as f32;
@@ -352,26 +355,26 @@ fn main() {
         if (epoch + 1) % monitor_every == 0 || epoch + 1 == epochs {
             let net = settle_still(&mlp, &val_pose, k);
             let sp = sparkle_resid_per_mpx(&net, &val_pose.teacher, tw, th);
-            eprintln!("[v4] MONITOR epoch {}: val sparkle {sp:.1}/Mpx (bar 40, stop<{spark_stop})",
-                epoch_start + epoch);
-            if sp < best_sp {
+            let better = sp < best_sp;
+            if better {
                 best_sp = sp;
+                best_bytes = serialize_weights(&mlp);
+                std::fs::write(&wpath, &best_bytes).unwrap(); // best-so-far is the checkpoint
             }
+            eprintln!("[v4] MONITOR epoch {}: val sparkle {sp:.1}/Mpx (bar 40, stop<{spark_stop}){}",
+                epoch_start + epoch, if better { " *BEST→saved" } else { "" });
             if sp < spark_stop as f64 {
-                std::fs::write(&wpath, serialize_weights(&mlp)).unwrap();
-                eprintln!("[v4] EARLY STOP @ epoch {}: val sparkle {sp:.1} < {spark_stop} (checkpoint saved)",
+                eprintln!("[v4] EARLY STOP @ epoch {}: val sparkle {sp:.1} < {spark_stop} (best net saved)",
                     epoch_start + epoch);
                 break;
             }
         }
-        if (epoch + 1) % ckpt_every == 0 {
-            std::fs::write(&wpath, serialize_weights(&mlp)).unwrap();
-            eprintln!("[v4] checkpoint @ {} → {}", epoch + 1, wpath.display());
-        }
     }
     eprintln!("[v4] training done in {:.1}s (best val sparkle {best_sp:.1})", t_train.elapsed().as_secs_f64());
 
-    std::fs::write(&wpath, serialize_weights(&mlp)).unwrap();
+    // THE ARTIFACT IS THE BEST NET (by held-out sparkle), not the last epoch.
+    std::fs::write(&wpath, &best_bytes).unwrap();
+    let mlp = deserialize_weights(&best_bytes).expect("reload best");
     let wsha = weights_sha256(&mlp);
     println!("[v4] wrote {} sha256={wsha}", wpath.display());
     let prov = serde_json::json!({
