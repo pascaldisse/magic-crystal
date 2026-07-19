@@ -536,6 +536,117 @@ fn radiance(ray_o: vec3<f32>, ray_d: vec3<f32>, pixel: u32, sample: u32, first_h
   return L;
 }
 
+// ── N5 SIGNED EVIDENCE: E/D radiance split ─────────────────────────────────
+// The tracer knows each path's termination. `radiance_ed` runs the SAME path
+// loop as `radiance` (byte-identical transport) but tags every radiance
+// contribution by whether the path has yet taken a DIFFUSE / rough scatter:
+//   E (emissive/direct evidence) = radiance gathered while the chain is still
+//     specular — direct neon + its mirror/low-roughness reflections + the
+//     sun's next-event off the primary surface + the background sky. Low
+//     variance at 1spp, trustworthy — the net keeps it sharp.
+//   D (diffuse-bounce evidence) = everything gathered AFTER a diffuse or rough
+//     scatter enters the chain — the indirect GI that hits small bright
+//     emitters and explodes into fireflies at 1spp. The net smooths it hard.
+// Invariant: E + D == the `radiance` total, term for term (only the bucket
+// differs), so the converged teacher (sum) is unchanged. A metallic lobe with
+// roughness <= SPEC_CHAIN_MAX_ROUGHNESS keeps the chain specular; a diffuse
+// lobe OR a rougher specular bounce flips `diffuse_seen`.
+const SPEC_CHAIN_MAX_ROUGHNESS: f32 = 0.25;
+
+struct RadPair { e: vec3<f32>, d: vec3<f32> };
+
+fn radiance_ed(ray_o: vec3<f32>, ray_d: vec3<f32>, pixel: u32, sample: u32, first_hit: Hit) -> RadPair {
+  var o = ray_o;
+  var d = ray_d;
+  var throughput = vec3<f32>(1.0, 1.0, 1.0);
+  var e_acc = vec3<f32>(0.0, 0.0, 0.0);
+  var d_acc = vec3<f32>(0.0, 0.0, 0.0);
+  var diffuse_seen = false;
+  let eps = u.misc.y;
+  let rr_start = u32(u.misc.z);
+  let max_bounces = u.params.w;
+  var bounce = 0u;
+  var pending_hit = first_hit;
+  var have_pending = true;
+  loop {
+    var hit: Hit;
+    if (have_pending) {
+      hit = pending_hit;
+      have_pending = false;
+    } else {
+      hit = trace_closest(o, d, eps, INF);
+    }
+    if (!hit.ok) {
+      let ambient = select(u.misc.x, 1.0, bounce == 0u);
+      let contrib = throughput * sky(d) * ambient;
+      if (diffuse_seen) { d_acc = d_acc + contrib; } else { e_acc = e_acc + contrib; }
+      break;
+    }
+    let tri = tris[hit.tri];
+    let p = o + d * hit.t;
+    let n = tri_normal(hit.tri, d);
+    let metallic = tri.albedo.w;
+    let roughness = tri.emission.w;
+
+    let emis = throughput * tri.emission.xyz;
+    if (diffuse_seen) { d_acc = d_acc + emis; } else { e_acc = e_acc + emis; }
+
+    let ndl = dot(n, u.sun_dir.xyz);
+    if (u.sun_color.w > 0.0 && ndl > 0.0 && metallic < 1.0) {
+      if (!occluded(p + n * eps, u.sun_dir.xyz, eps, INF)) {
+        let sun_c = throughput * (1.0 - metallic) * tri.albedo.xyz
+              * u.sun_color.rgb * u.sun_color.w * ndl;
+        if (diffuse_seen) { d_acc = d_acc + sun_c; } else { e_acc = e_acc + sun_c; }
+      }
+    }
+
+    if (bounce >= max_bounces) { break; }
+    let base = bounce * 4u;
+    let u1 = urand(pixel, sample, base + 0u);
+    let u2 = urand(pixel, sample, base + 1u);
+    let u_lobe = urand(pixel, sample, base + 3u);
+    var dir: vec3<f32>;
+    if (u_lobe < metallic) {
+      if (roughness <= MIRROR_ROUGHNESS) {
+        dir = reflect(d, n);
+        throughput = throughput * tri.albedo.xyz;
+      } else {
+        let alpha = roughness * roughness;
+        let wo = -d;
+        let m = ggx_half(n, alpha, u1, u2);
+        let wi = reflect(d, m);
+        let cos_i = dot(wi, n);
+        if (cos_i <= 0.0) { break; }
+        let cos_o = max(abs(dot(wo, n)), 1e-6);
+        let cos_h = max(abs(dot(m, n)), 1e-6);
+        let g = smith_g2(cos_o, cos_i, alpha);
+        let w = g * abs(dot(wo, m)) / (cos_o * cos_h);
+        throughput = throughput * tri.albedo.xyz * w;
+        dir = wi;
+      }
+      // A rough specular scatter is no longer a trustworthy mirror chain.
+      if (roughness > SPEC_CHAIN_MAX_ROUGHNESS) { diffuse_seen = true; }
+    } else {
+      dir = cosine_hemisphere(n, u1, u2);
+      throughput = throughput * tri.albedo.xyz;
+      diffuse_seen = true;
+    }
+    if (max(throughput.x, max(throughput.y, throughput.z)) <= 0.0) { break; }
+
+    if (bounce + 1u >= rr_start) {
+      let q = clamp(max(throughput.x, max(throughput.y, throughput.z)), 0.0, 1.0);
+      let r = urand(pixel, sample, base + 2u);
+      if (r >= q) { break; }
+      throughput = throughput / q;
+    }
+
+    o = p + n * eps;
+    d = dir;
+    bounce = bounce + 1u;
+  }
+  return RadPair(e_acc, d_acc);
+}
+
 @compute @workgroup_size(8, 8, 1)
 fn integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
   let w = u.params.x;
@@ -914,6 +1025,53 @@ fn integrate_aov(@builtin(global_invocation_id) gid: vec3<u32>) {
   }
 }
 // ── VIII-0 AOV EXPORT END ────────────────────────────────────────────────
+
+// ── N5 SIGNED EVIDENCE: split-radiance export ────────────────────────────
+// A SECOND @group(1) output (own pipeline, like AOV), 2 vec4<f32> cells per
+// pixel accumulated across frames exactly like `accum`:
+//   accum_ed[2*pixel + 0] = (E.rgb sum, sample count)
+//   accum_ed[2*pixel + 1] = (D.rgb sum, sample count)
+// `resolve()` on either half gives that half's radiance. E + D resolves to the
+// same image `integrate` produces (transport is byte-identical; only the
+// bucket split is added). @group(0) is the ordinary compute layout so accum
+// (binding 3) is present-but-unused here; the split lives in accum_ed alone.
+@group(1) @binding(0) var<storage, read_write> accum_ed: array<vec4<f32>>;
+
+@compute @workgroup_size(8, 8, 1)
+fn integrate_split(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let w = u.params.x;
+  let h = u.params.y;
+  if (gid.x >= w || gid.y >= h) { return; }
+  let pixel = gid.y * w + gid.x;
+  let spp = u.params.z;
+  let samples_before = u.counters.y;
+  let inv_w = 1.0 / f32(w);
+  let inv_h = 1.0 / f32(h);
+  var e_sum = vec3<f32>(0.0, 0.0, 0.0);
+  var d_sum = vec3<f32>(0.0, 0.0, 0.0);
+  for (var s = 0u; s < spp; s = s + 1u) {
+    let sample = samples_before + s;
+    let jx = urand(pixel, sample, 900000u);
+    let jy = urand(pixel, sample, 900001u);
+    let sx = (2.0 * (f32(gid.x) + jx) * inv_w) - 1.0;
+    let sy = 1.0 - (2.0 * (f32(gid.y) + jy) * inv_h);
+    let dir = normalize(u.forward.xyz + u.right.xyz * sx + u.up.xyz * sy);
+    let prim = trace_closest(u.eye.xyz, dir, u.misc.y, INF);
+    let t_first = select(u.med_params.w, prim.t, prim.ok);
+    let rp = radiance_ed(u.eye.xyz, dir, pixel, sample, prim);
+    // Medium: in-scattered light is a low-variance volumetric direct term → E;
+    // transmittance attenuates both buckets equally (naruko has no medium, so
+    // med = (0,0,0, 1) and this is the identity there).
+    let med = medium_primary(u.eye.xyz, dir, t_first);
+    e_sum = e_sum + med.xyz + med.w * rp.e;
+    d_sum = d_sum + med.w * rp.d;
+  }
+  let total = f32(samples_before + spp);
+  let pe = accum_ed[2u * pixel + 0u].xyz;
+  let pd = accum_ed[2u * pixel + 1u].xyz;
+  accum_ed[2u * pixel + 0u] = vec4<f32>(pe + e_sum, total);
+  accum_ed[2u * pixel + 1u] = vec4<f32>(pd + d_sum, total);
+}
 
 // ---- present: resolve the accumulation buffer to the (sRGB) target ----
 struct BlitOut {
