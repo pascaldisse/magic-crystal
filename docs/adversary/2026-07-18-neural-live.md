@@ -1,3 +1,37 @@
+# ADVERSARY — neural-live (N4, teacher-gated firefly loss): v5 VERDICT — BLACK STANDS (both bars)
+
+## N4 FINISHER (2026-07-19) — VERDICT: BLACK STANDS. v5 fails resid_still +0.00970 AND sparkle_still +8.83 @640×480.
+- **The window stays BLACK by law.** v5 (teacher-gated firefly-loss net, sha
+  `01b67a4550f8`, warm v3 → resumed ep9 → 90 ep) REAL ordeal @640×480:
+  resid_still 0.04470 vs 0.035 → **FAIL +0.00970**; sparkle_still 48.83 vs 40
+  → **FAIL +8.83**; tvar/resid_move/ghost PASS w/ margin. No stamp →
+  `verify_stamp` false → present black. Gate re-pinned: real_image_gate 2/2
+  (unstamped denied). Bars UNTOUCHED.
+- **The teacher gate MOVED along the Pareto front, it did not escape it.**
+  v4→v5: resid 0.051→0.0447 (real cyan waterline partly recovered, ~0.006 of
+  the N3 over-clamp back) BUT sparkle 39→49 (invented dots now survive in
+  mid-bright neighbourhoods the gate scored not-dark). Two-of-five fail where
+  v4 failed one. Same front, worse point.
+- **The seesaw (training curve, § scratch/v5-train-resume.log):** across 90 ep
+  val sparkle oscillates 40→330→64→168→185→52→318→197→156 while resid holds
+  0.035–0.041 — no joint minimum, `pass=false` all epochs, best saved = ep9
+  fallback (lowest sparkle 40.5 / resid 0.0411). A scalar per-channel
+  excess-over-cap penalty, gated or not, rides ONE front: crushing an invented
+  dot in a mid-bright neighbourhood also dims the real emissive there.
+- **Defect read (both eyes @640×480, § proof/neural-live/s24-*.png):** fireflies
+  NOT gone — cyan/blue specks scatter the water/waterline; cyan waterline still
+  broken dashes, right building-base glow missing (resid climb); lit windows
+  CRISP (gate off, MSE rules). Better cyan than v4's smear; sparkle worse.
+- **One sentence:** the teacher gate proved the diagnosis exactly — it recovered
+  the real cyan v4 over-clamped and paid it straight back in fireflies, sliding
+  along the sparkle↔resid front instead of stepping off it, so BLACK stands and
+  the next attempt must separate invented energy from real energy structurally
+  (temporal flicker / matched high-freq residual), not with a spatial cap.
+- Proof: `scratch/v5-train-resume.log`, `scratch/v5-ordeal.log`,
+  `proof/neural-live/s24-{still,moving}{,-teacher}.png`, `docs/perf/2026-07-19-neural-live-n4.md`.
+
+---
+
 # ADVERSARY — neural-live (N3, firefly loss): v4 VERDICT — HONEST BLACK (resid)
 
 ## N3 FINISHER (2026-07-19) — VERDICT: BLACK STANDS. v4 fails resid_still +0.01599 @640×480.
