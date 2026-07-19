@@ -1,0 +1,45 @@
+{
+  "architecture": {
+    "hidden_layers": 5,
+    "hidden_width": 64,
+    "input_features": 39,
+    "kind": "N5 SIGNED EVIDENCE — recurrent direct-render MLP over SPLIT radiance (E direct/specular-chain + D diffuse-bounce)",
+    "macs_per_pixel": 19072,
+    "output_channels": 3
+  },
+  "artifact": "rdirect-weights-v6.bin",
+  "dataset": {
+    "low": [
+      240,
+      180
+    ],
+    "native": [
+      480,
+      360
+    ],
+    "realm": "naruko",
+    "train": [
+      "front",
+      "wide",
+      "orbit_+20"
+    ],
+    "val": [
+      "orbit_-20"
+    ]
+  },
+  "gate": "presents ONLY if real_image_ordeal writes a PASS stamp beside this file",
+  "supersedes": "rdirect-weights-v5.bin",
+  "training": {
+    "batch": 64,
+    "epochs": 120,
+    "firefly_weight_ff": 0.0,
+    "init": "FRESH (input width 27->39, warm-start impossible)",
+    "loss": "PLAIN MSE",
+    "lr0": 0.0020000000949949026,
+    "ref_frames": 96,
+    "split": "E = radiance via zero-or-more specular/low-roughness bounces (SPEC_CHAIN_MAX_ROUGHNESS 0.25); D = radiance after a diffuse/rough scatter",
+    "subsample_px_per_pose_per_epoch": 6000,
+    "unroll_steps": 4
+  },
+  "weights_sha256": "4a4dc9f8d04fa8d566b5dea630e2251fe15659e33f573481a5852a1d106c22c4"
+}

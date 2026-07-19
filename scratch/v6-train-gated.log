@@ -1,0 +1,6 @@
+[v6] rendered 3+1 SPLIT poses (K=4, 480x360, teacher 96, ff_w 6) in 1.5s
+[v6] arch RdirectConfig { hidden_layers: 5, hidden_width: 64 } in=39 macs/px=19072 — 120 epochs (wall<=540s), subsample 6000px/pose, ff_w 6
+[v6] MONITOR epoch -1 (fresh init): val sparkle 0.0/Mpx resid 0.1284
+[v6] epoch 0/120 mse=0.028048 ff=0.000351 (4.9s)
+[v6] epoch 10/120 mse=0.018360 ff=0.000100 (53.2s)
+[v6] MONITOR epoch 14: val sparkle 289.4/Mpx resid 0.0496 (tgt sp<16 resid<0.036) *BEST->saved

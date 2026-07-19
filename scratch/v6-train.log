@@ -1,0 +1,23 @@
+[v6] rendered 3+1 SPLIT poses (K=4, 480x360, teacher 96, ff_w 0) in 1.7s
+[v6] arch RdirectConfig { hidden_layers: 5, hidden_width: 64 } in=39 macs/px=19072 — 120 epochs (wall<=540s), subsample 6000px/pose, ff_w 0
+[v6] MONITOR epoch -1 (fresh init): val sparkle 0.0/Mpx resid 0.1284
+[v6] epoch 0/120 mse=0.027696 ff=0.000000 (5.0s)
+[v6] epoch 10/120 mse=0.018449 ff=0.000000 (55.4s)
+[v6] MONITOR epoch 14: val sparkle 277.8/Mpx resid 0.0451 (tgt sp<16 resid<0.036) *BEST->saved
+[v6] epoch 20/120 mse=0.020707 ff=0.000000 (113.8s)
+[v6] MONITOR epoch 29: val sparkle 173.6/Mpx resid 0.0360 (tgt sp<16 resid<0.036) *BEST->saved
+[v6] epoch 30/120 mse=0.017816 ff=0.000000 (171.9s)
+[v6] epoch 40/120 mse=0.021050 ff=0.000000 (221.2s)
+[v6] MONITOR epoch 44: val sparkle 179.4/Mpx resid 0.0357 (tgt sp<16 resid<0.036)
+[v6] epoch 50/120 mse=0.017568 ff=0.000000 (278.5s)
+[v6] MONITOR epoch 59: val sparkle 179.4/Mpx resid 0.0352 (tgt sp<16 resid<0.036)
+[v6] epoch 60/120 mse=0.018823 ff=0.000000 (335.9s)
+[v6] epoch 70/120 mse=0.016879 ff=0.000000 (385.1s)
+[v6] MONITOR epoch 74: val sparkle 150.5/Mpx resid 0.0349 (tgt sp<16 resid<0.036) *BEST->saved
+[v6] epoch 80/120 mse=0.016518 ff=0.000000 (442.5s)
+[v6] MONITOR epoch 89: val sparkle 260.4/Mpx resid 0.0350 (tgt sp<16 resid<0.036)
+[v6] epoch 90/120 mse=0.017437 ff=0.000000 (500.2s)
+[v6] WALL budget 540s reached at epoch 100 — stopping, keeping best
+[v6] training done in 544.7s (best: pass=false resid inf / fallback sparkle 150.5)
+[v6] wrote /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/data/rdirect-weights-v6.bin sha256=4a4dc9f8d04fa8d566b5dea630e2251fe15659e33f573481a5852a1d106c22c4
+[v6] wrote provenance. NEXT: real_image_ordeal (GAIA_ORDEAL_WEIGHTS=v6) to earn the stamp.
