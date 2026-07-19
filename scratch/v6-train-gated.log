@@ -4,3 +4,8 @@
 [v6] epoch 0/120 mse=0.028048 ff=0.000351 (4.9s)
 [v6] epoch 10/120 mse=0.018360 ff=0.000100 (53.2s)
 [v6] MONITOR epoch 14: val sparkle 289.4/Mpx resid 0.0496 (tgt sp<16 resid<0.036) *BEST->saved
+[v6] epoch 20/120 mse=0.020972 ff=0.000069 (110.8s)
+[v6] MONITOR epoch 29: val sparkle 254.6/Mpx resid 0.0371 (tgt sp<16 resid<0.036) *BEST->saved
+[v6] epoch 30/120 mse=0.018285 ff=0.000072 (168.3s)
+[v6] epoch 40/120 mse=0.021472 ff=0.000043 (216.9s)
+[v6] MONITOR epoch 44: val sparkle 422.5/Mpx resid 0.0416 (tgt sp<16 resid<0.036)

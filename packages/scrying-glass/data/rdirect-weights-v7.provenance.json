@@ -1,0 +1,46 @@
+{
+  "architecture": {
+    "hidden_layers": 5,
+    "hidden_width": 64,
+    "input_features": 39,
+    "kind": "N6 SIGNED EVIDENCE, TARGET-SMOOTHED — recurrent direct-render MLP, split radiance input (E+D), single combined output trained against an E-exact/D-blurred target",
+    "macs_per_pixel": 19072,
+    "output_channels": 3
+  },
+  "artifact": "rdirect-weights-v7.bin",
+  "dataset": {
+    "low": [
+      320,
+      240
+    ],
+    "native": [
+      640,
+      480
+    ],
+    "realm": "naruko",
+    "train": [
+      "front",
+      "wide",
+      "orbit_+20"
+    ],
+    "val": [
+      "orbit_-20"
+    ]
+  },
+  "gate": "presents ONLY if real_image_ordeal writes a PASS stamp beside this file",
+  "supersedes": "rdirect-weights-v6.bin",
+  "training": {
+    "batch": 64,
+    "d_blur_radius": 2,
+    "epochs": 120,
+    "init": "FRESH (same shape as v6, 39-in/3-out)",
+    "loss": "PLAIN MSE vs split-smoothed target (no cap, no gate, no firefly weight)",
+    "lr0": 0.0020000000949949026,
+    "ref_frames": 96,
+    "split": "E = radiance via zero-or-more specular/low-roughness bounces (SPEC_CHAIN_MAX_ROUGHNESS 0.25); D = radiance after a diffuse/rough scatter (~0.88% of frame energy)",
+    "subsample_px_per_pose_per_epoch": 6000,
+    "target_construction": "target = E_full (exact, ref_frames) + box_blur(D_full, radius) — E kept sharp, D smoothed at the SOURCE before demod-log; escapes the sparkle<->resid Pareto front structurally instead of penalizing the output",
+    "unroll_steps": 4
+  },
+  "weights_sha256": "ba701a929d1db6858e038264b27ff26d0748d61a95dba9fcba5af887eb883edf"
+}
