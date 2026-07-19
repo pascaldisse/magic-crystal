@@ -1,0 +1,7 @@
+[v7] rendered 3+1 SPLIT poses (K=8, 480x360, teacher 96, D-blur r=2) in 1.9s
+[v7] RESUMED from /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/data/rdirect-weights-v7.bin
+[v7] arch RdirectConfig { hidden_layers: 5, hidden_width: 64 } in=39 macs/px=19072 — 120 epochs (wall<=1200s), subsample 20000px/pose, PLAIN MSE vs split-smoothed target
+[v7] MONITOR epoch -1 (fresh init): val sparkle 63.7/Mpx resid 0.0358
+[v7] epoch 0/120 mse=0.021983 (33.3s)
+[v7] MONITOR epoch 9: val sparkle 46.3/Mpx resid 0.0361 (tgt sp<16 resid<0.036) *BEST->saved
+[v7] epoch 10/120 mse=0.016747 (382.0s)

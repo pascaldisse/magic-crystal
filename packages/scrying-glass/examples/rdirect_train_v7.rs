@@ -284,8 +284,16 @@ fn main() {
         hidden_layers: env_u32("GAIA_V7_LAYERS", 5) as usize,
         hidden_width: env_u32("GAIA_V7_WIDTH", 64) as usize,
     };
-    // FRESH init (same shape as v6: 39-in / 3-out — target engineering only).
-    let mut mlp = Mlp::new_random_with_input(config, HIST_FEATURES_SPLIT, INIT_SEED);
+    // FRESH init (same shape as v6: 39-in / 3-out - target engineering only),
+    // unless GAIA_V7_RESUME=1 and a v7 checkpoint already exists (warm start).
+    let resume = matches!(std::env::var("GAIA_V7_RESUME").as_deref(), Ok("1" | "true"));
+    let mut mlp = if resume && wpath.exists() {
+        let m = deserialize_weights(&std::fs::read(&wpath).unwrap()).expect("resume v7");
+        eprintln!("[v7] RESUMED from {}", wpath.display());
+        m
+    } else {
+        Mlp::new_random_with_input(config, HIST_FEATURES_SPLIT, INIT_SEED)
+    };
     assert_eq!(mlp.layer_dims()[0].0 as usize, HIST_FEATURES_SPLIT, "v7 net must be 39-input");
     let mut adam = Adam::new(&mlp, lr0, 0.9, 0.999, 1e-8);
     eprintln!("[v7] arch {:?} in={HIST_FEATURES_SPLIT} macs/px={} — {epochs} epochs (wall<={wall_budget}s), subsample {subsample}px/pose, PLAIN MSE vs split-smoothed target",
@@ -410,7 +418,7 @@ fn main() {
         "training": {
             "epochs": epochs, "unroll_steps": k, "batch": batch, "lr0": lr0,
             "subsample_px_per_pose_per_epoch": subsample, "ref_frames": ref_frames,
-            "init": "FRESH (same shape as v6, 39-in/3-out)",
+            "init": if resume { "WARM (resumed from prior v7 checkpoint)" } else { "FRESH (same shape as v6, 39-in/3-out)" },
             "loss": "PLAIN MSE vs split-smoothed target (no cap, no gate, no firefly weight)",
             "target_construction": "target = E_full (exact, ref_frames) + box_blur(D_full, radius) — E kept sharp, D smoothed at the SOURCE before demod-log; escapes the sparkle<->resid Pareto front structurally instead of penalizing the output",
             "d_blur_radius": blur_radius,
