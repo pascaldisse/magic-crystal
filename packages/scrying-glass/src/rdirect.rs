@@ -260,6 +260,22 @@ impl Mlp {
         out
     }
 
+    /// Polyak/EMA in-place update: `self = decay*self + (1-decay)*live`.
+    /// `self` is the shadow (evaluated/checkpointed) net, `live` is the net
+    /// Adam is actually stepping. Panics on shape mismatch (same config).
+    pub fn ema_update(&mut self, live: &Mlp, decay: f32) {
+        assert_eq!(self.layers.len(), live.layers.len(), "ema_update: layer count mismatch");
+        for (shadow, l) in self.layers.iter_mut().zip(&live.layers) {
+            assert_eq!(shadow.w.len(), l.w.len(), "ema_update: weight shape mismatch");
+            for (sw, lw) in shadow.w.iter_mut().zip(&l.w) {
+                *sw = decay * *sw + (1.0 - decay) * *lw;
+            }
+            for (sb, lb) in shadow.b.iter_mut().zip(&l.b) {
+                *sb = decay * *sb + (1.0 - decay) * *lb;
+            }
+        }
+    }
+
     #[allow(clippy::needless_range_loop)]
     #[allow(clippy::needless_range_loop)]
     fn forward_raw(&self, input: &[f32]) -> Vec<f32> {
@@ -424,6 +440,10 @@ impl Adam {
 
     /// Set the learning rate (for schedule decay — NRC lesson: lr-decay
     /// stabilizes the descent).
+    pub fn lr(&self) -> f32 {
+        self.lr
+    }
+
     pub fn set_lr(&mut self, lr: f32) {
         self.lr = lr;
     }
@@ -615,6 +635,122 @@ pub fn pixel_features_split(
     f[k] = hi_motion.x;
     f[k + 1] = hi_motion.y;
     f
+}
+
+// ── v7e EVIDENCE CLAMP (structural act, not a loss penalty) ────────────────
+// autopsy abbcb64/v7d-autopsy.log diagnosis: the net systematically
+// overshoots genuinely-bright E-structure by 1.15x-4.1x at sparkle-outlier
+// pixels (COPIED-dominant: the smoothed TARGET itself is locally bright
+// there, the net just amplifies past it). Fix at the ACT, not the loss:
+// presented_linear = min(net_linear, gamma * local_max(evidence)), where
+// evidence is the SAME E+D composite the net's own input taps are built
+// from (`low_e`/`low_d`, bilinearly reconstructed to native res exactly as
+// `pixel_features_split` samples them) and local_max is a 3x3 (r=1) max-pool
+// of that composite in native-pixel space (so a genuine bright feature that
+// only ONE nearby noisy 1-spp tap caught still clears the ceiling). Applied
+// in RAW LINEAR radiance space (post albedo-demod undo) — the same space
+// net/teacher/E/D are already compared in by the autopsy/ordeal/sparkle
+// metric. History (`prev_dl`, log-demod space) is fed forward UNCLAMPED —
+// this is a presentation ceiling, not a state edit; it never rewrites what
+// the recurrent net believes, only what pixel reaches the screen/loss.
+//
+// GAMMA DERIVATION (IRON law — derived, not picked): scratch/v7d-autopsy.log's
+// overshoot table (net_lum / (E_lum+D_raw_lum), ref_frames-converged, at
+// every top-N sparkle outlier, both resolutions) measured OVERSHOOT ratios
+// 1.149x-4.119x (matches the task's own "1.15x-4.1x" figure). But ref_frames
+// E_full/D_full costs 96 rays/px — unavailable at runtime (defeats the whole
+// 1-spp-net point) — so it can only diagnose, not gate. The runtime-honest
+// ceiling can only be built from what the net ACTUALLY reads: the low_e/
+// low_d 1-spp taps. scratch/v7e-gamma-derive.log measured this directly
+// (temporal-MEAN of the composite across the K settle taps — mean, not max:
+// max-across-time was tried FIRST and is USELESS, a single noisy 1-spp
+// specular sample spikes far above the converged value, so the outlier
+// population's own ratio against a max-across-time ceiling fell BELOW 1,
+// i.e. the "ceiling" already exceeded the net's overshoot at every gamma≥1;
+// mean over K taps approximates what the net's own recurrent averaging
+// estimates, variance ~1/K — then spatially 3x3 max-pooled per the task's
+// window) split by outlier/non-outlier: non-outlier p99.9 ratio = 1.51
+// (480x360) / 1.44 (640x480); outlier ratios cluster at 1.2-2.0 (median 1.6/
+// 2.0). GAMMA is set just above the non-outlier p99.9 ceiling (full headroom
+// for real bright detail) while sitting below the outlier median (clamps the
+// bulk of the overshoot mass) — GAMMA = 1.5.
+pub const EVIDENCE_CLAMP_GAMMA_DEFAULT: f32 = 1.5;
+
+/// `GAIA_V7_CLAMP_GAMMA` env override, else the derived default above.
+pub fn evidence_clamp_gamma() -> f32 {
+    std::env::var("GAIA_V7_CLAMP_GAMMA").ok().and_then(|v| v.parse().ok()).unwrap_or(EVIDENCE_CLAMP_GAMMA_DEFAULT)
+}
+
+/// One step/frame's evidence composite (E+D, bilinearly reconstructed to
+/// native res from the exact low-res taps the net reads — same taps
+/// `pixel_features_split` samples). The raw building block; NOT yet
+/// temporally averaged or spatially pooled.
+pub fn evidence_composite_frame(low_e: &[Vec3], low_d: &[Vec3], low_w: u32, low_h: u32, tw: u32, th: u32) -> Vec<Vec3> {
+    let e_up = bilinear_upsample(low_e, low_w, low_h, tw, th);
+    let d_up = bilinear_upsample(low_d, low_w, low_h, tw, th);
+    e_up.iter().zip(d_up.iter()).map(|(&e, &d)| e + d).collect()
+}
+
+/// Spatial 3x3 (r=1) max-pool per channel, border-clamped — the task's
+/// `local_max` window, applied to an already temporally-averaged composite.
+pub fn local_max_3x3(img: &[Vec3], w: u32, h: u32) -> Vec<Vec3> {
+    let mut out = vec![Vec3::ZERO; img.len()];
+    for y in 0..h as i32 {
+        for x in 0..w as i32 {
+            let mut m = Vec3::ZERO;
+            for dy in -1..=1 {
+                let ny = (y + dy).clamp(0, h as i32 - 1);
+                for dx in -1..=1 {
+                    let nx = (x + dx).clamp(0, w as i32 - 1);
+                    m = m.max(img[(ny as u32 * w + nx as u32) as usize]);
+                }
+            }
+            out[(y as u32 * w + x as u32) as usize] = m;
+        }
+    }
+    out
+}
+
+/// Running TEMPORAL-MEAN accumulator for the evidence-clamp ceiling across a
+/// recurrent settle (K unroll steps or a streaming frame sequence). Mean, not
+/// max — see the GAMMA DERIVATION note above for why max-across-time is a
+/// dead end. `ceiling()` applies the spatial [`local_max_3x3`] on demand (the
+/// task's window), so callers can fetch the ceiling after every push.
+pub struct EvidenceAccum {
+    sum: Vec<Vec3>,
+    n: u32,
+    w: u32,
+    h: u32,
+}
+impl EvidenceAccum {
+    pub fn new(w: u32, h: u32) -> Self {
+        Self { sum: vec![Vec3::ZERO; (w * h) as usize], n: 0, w, h }
+    }
+    /// Fold in one step's evidence composite (from [`evidence_composite_frame`]).
+    pub fn push(&mut self, frame_composite: &[Vec3]) {
+        for (s, f) in self.sum.iter_mut().zip(frame_composite.iter()) {
+            *s += *f;
+        }
+        self.n += 1;
+    }
+    /// The current clamp ceiling: temporal mean of everything pushed so far,
+    /// then spatially 3x3 max-pooled.
+    pub fn ceiling(&self) -> Vec<Vec3> {
+        let n = (self.n.max(1)) as f32;
+        let mean: Vec<Vec3> = self.sum.iter().map(|&s| s / n).collect();
+        local_max_3x3(&mean, self.w, self.h)
+    }
+}
+
+/// THE CLAMP ITSELF: `presented = min(net_linear, gamma * local_max_evidence)`,
+/// per channel, in raw linear radiance space. `local_max_evidence` comes from
+/// [`EvidenceAccum::ceiling`] at this pixel.
+pub fn clamp_evidence_lin(net_lin: Vec3, local_max_evidence: Vec3, gamma: f32) -> Vec3 {
+    Vec3::new(
+        net_lin.x.min(gamma * local_max_evidence.x.max(0.0)),
+        net_lin.y.min(gamma * local_max_evidence.y.max(0.0)),
+        net_lin.z.min(gamma * local_max_evidence.z.max(0.0)),
+    )
 }
 
 /// N5: the 39-feature recurrent split input — split base (35) + reprojected
@@ -1116,6 +1252,61 @@ pub fn accumulate_backward_firefly_gated_slice(
     (mse_loss, ff_loss)
 }
 
+/// v7e EVIDENCE CLAMP, TRAINABLE: backprop plain MSE(presented, target)
+/// through the ARCHITECTURAL clamp `presented_dl = min(out_dl, ceiling_dl)`.
+/// `ceiling_dl` is the clamp ceiling ALREADY converted to demod-log space via
+/// [`evidence_ceiling_demod_log`] (log_demod is monotonic per channel, so a
+/// log-space clamp against `log_demod(gamma*evidence)` is EXACTLY the linear-
+/// space clamp against `gamma*evidence`, no space-conversion of the gradient
+/// needed). Where the clamp is ACTIVE (`out_dl[c] > ceiling_dl[c]`) the
+/// gradient of `presented_dl[c]` w.r.t. `out_dl[c]` is 0 — the loss can no
+/// longer reward pushing the net higher there. This is NOT a loss-shape
+/// addition (no penalty term, no cap/gate weight) — same plain MSE, only the
+/// ACT the loss is computed against changes, matching what the ordeal/CPU-
+/// reference path actually presents.
+pub fn evidence_ceiling_demod_log(local_max_evidence: Vec3, gamma: f32, hi_albedo: Vec3) -> [f32; OUTPUT_CHANNELS] {
+    let divisor = demod_divisor(hi_albedo);
+    let ceiling_lin = Vec3::new(
+        (gamma * local_max_evidence.x).max(0.0),
+        (gamma * local_max_evidence.y).max(0.0),
+        (gamma * local_max_evidence.z).max(0.0),
+    );
+    let dl = log_demod(ceiling_lin, divisor);
+    [dl.x, dl.y, dl.z]
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn accumulate_backward_clamped_slice(
+    mlp: &Mlp,
+    feat: &[f32],
+    out_dl: &[f32; OUTPUT_CHANNELS],
+    ceiling_dl: &[f32; OUTPUT_CHANNELS],
+    target: &[f32; OUTPUT_CHANNELS],
+    w_grads: &mut [Vec<f32>],
+    b_grads: &mut [Vec<f32>],
+    scale: f32,
+) -> f64 {
+    let mut delta = [0.0f32; OUTPUT_CHANNELS];
+    let mut mse_loss = 0.0f64;
+    for c in 0..OUTPUT_CHANNELS {
+        let presented = out_dl[c].min(ceiling_dl[c]);
+        let d = presented - target[c];
+        mse_loss += (d * d) as f64;
+        let active = out_dl[c] <= ceiling_dl[c];
+        delta[c] = if active { 2.0 * d / OUTPUT_CHANNELS as f32 } else { 0.0 };
+    }
+    let (wg, bg) = mlp.backward_from_delta(feat, &delta);
+    for li in 0..w_grads.len() {
+        for k in 0..w_grads[li].len() {
+            w_grads[li][k] += wg[li][k] * scale;
+        }
+        for k in 0..b_grads[li].len() {
+            b_grads[li][k] += bg[li][k] * scale;
+        }
+    }
+    mse_loss
+}
+
 /// v7 STRUCTURAL FIX: two-headed backward. `out` is the net's RAW 6-length
 /// [`Mlp::forward_full`] output (E_dl(3), D_dl(3)) for `feat`. `target_e` is
 /// the SHARP E teacher (exact, unblurred); `target_d` is the SMOOTHED D
@@ -1299,14 +1490,27 @@ pub fn direct_render_sequence_hist_split(
     depth_tol: f32,
     normal_thresh: f32,
 ) -> Vec<Vec<Vec3>> {
+    let gamma = evidence_clamp_gamma();
     let mut outputs: Vec<Vec<Vec3>> = Vec::with_capacity(frames.len());
     let mut prev: Option<(Vec<[f32; 3]>, Vec<f32>, Vec<Vec3>, CamPose, u32, u32)> = None;
+    // v7e evidence clamp ceiling, TEMPORAL-MEAN accumulated across the frame
+    // sequence (a single frame's 1-spp evidence is far too noisy alone —
+    // see the GAMMA DERIVATION note above EvidenceAccum). Reset per new
+    // (tw,th) in case frames vary size (they don't in current callers).
+    let mut evidence_accum: Option<EvidenceAccum> = None;
     for f in frames {
         let tw = f.target_w;
         let th = f.target_h;
         let n = (tw * th) as usize;
         let mut out_rgb = vec![Vec3::ZERO; n];
         let mut out_dl = vec![[0.0f32; 3]; n];
+        let frame_composite = evidence_composite_frame(f.low_e, f.low_d, f.low_w, f.low_h, tw, th);
+        if evidence_accum.as_ref().map(|a| a.sum.len()) != Some(n) {
+            evidence_accum = Some(EvidenceAccum::new(tw, th));
+        }
+        let accum = evidence_accum.as_mut().unwrap();
+        accum.push(&frame_composite);
+        let evidence_max = accum.ceiling();
         for ty in 0..th {
             for tx in 0..tw {
                 let i = (ty * tw + tx) as usize;
@@ -1358,7 +1562,8 @@ pub fn direct_render_sequence_hist_split(
                 let feat = hist_features_split(&base, prev_dl, valid);
                 let dl = mlp.forward(&feat);
                 out_dl[i] = dl;
-                out_rgb[i] = undo_log_demod(Vec3::new(dl[0], dl[1], dl[2]), divisor);
+                let net_lin = undo_log_demod(Vec3::new(dl[0], dl[1], dl[2]), divisor);
+                out_rgb[i] = clamp_evidence_lin(net_lin, evidence_max[i], gamma);
             }
         }
         prev = Some((out_dl, f.hi_depth.to_vec(), f.hi_normal.to_vec(), f.cam, tw, th));

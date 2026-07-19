@@ -3,10 +3,9 @@
     "hidden_layers": 5,
     "hidden_width": 64,
     "input_features": 39,
-    "kind": "N7 TWO-HEAD, structural fix — recurrent direct-render MLP, split radiance input (E+D), TWO separate output heads (E_dl, D_dl) each supervised against its own teacher (E sharp/exact, D box-blurred), summed at present time",
-    "macs_per_pixel": 19264,
-    "output_channels": 6,
-    "output_heads": "E_dl[0..3] vs sharp E teacher, D_dl[3..6] vs smoothed D teacher; Mlp::forward() head-sums them back to one 3-channel demod-log for every existing caller (ordeal/live-loader unchanged)"
+    "kind": "N6 SIGNED EVIDENCE, TARGET-SMOOTHED — recurrent direct-render MLP, split radiance input (E+D), single combined output trained against an E-exact/D-blurred target",
+    "macs_per_pixel": 19072,
+    "output_channels": 3
   },
   "artifact": "rdirect-weights-v7.bin",
   "dataset": {
@@ -32,17 +31,20 @@
   "supersedes": "rdirect-weights-v6.bin",
   "training": {
     "batch": 64,
-    "best_checkpoint_criterion": "bar-normalized score = max(sparkle/40, resid/0.035), save on new MIN (replaces resid-primary rule that could overwrite a strictly-better checkpoint)",
+    "best_checkpoint_criterion": "bar-normalized score = max(sparkle/40, resid/0.035), save on new MIN, floor 1.157",
+    "cure": "harmonic lr-decay from ~0.3x prior lr + Polyak/EMA (decay 0.999, monitor+checkpoint evaluate EMA weights) + cross-run bar-normalized score floor (max(sparkle/40, resid/0.035), only overwrites the starting 636c8743 checkpoint if strictly better than its own score 1.157, then monotonically tightens) — the same recipe that fixed the noise-ball-outlier signature in magic-crystal-nrc/docs/perf/2026-07-17-nrc-spike-verdict.md. Two-head (v7c) is BANNED, tried and FAILED (worse seesaw).",
     "d_blur_radius": 2,
-    "epochs": 120,
-    "init": "WARM-START two-head (body copied from prior v7 3-out checkpoint if needed, D-head columns small-random) or direct two-head resume",
-    "loss": "TWO separate MSE terms summed: E head vs sharp E teacher, D head vs smoothed D teacher (no cap, no gate, no firefly weight, no shared target)",
-    "lr0": 0.0020000000949949026,
+    "ema_decay": 0.9990000128746033,
+    "epochs": 1,
+    "evidence_clamp_gamma": 1.5,
+    "init": "CURE fine-tune: resumed from restored 636c8743 3-out checkpoint",
+    "loss": "PLAIN MSE vs split-smoothed target, backprop through the v7e evidence clamp (no cap/gate/firefly-weight loss term, no two-head)",
+    "lr0": 0.0006000000284984708,
     "ref_frames": 96,
     "split": "E = radiance via zero-or-more specular/low-roughness bounces (SPEC_CHAIN_MAX_ROUGHNESS 0.25); D = radiance after a diffuse/rough scatter (~0.88% of frame energy)",
-    "subsample_px_per_pose_per_epoch": 20000,
-    "target_construction": "target_e = demod_log(E_full exact, ref_frames); target_d = demod_log(box_blur(D_full, radius)) — separate per-head targets, not a single combined smoothed target (v7's first attempt traded E sharpness for D variance under one target; this cannot recur since each head only ever sees its own teacher)",
-    "unroll_steps": 8
+    "subsample_px_per_pose_per_epoch": 6000,
+    "target_construction": "target = E_full (exact, ref_frames) + box_blur(D_full, radius) — E kept sharp, D smoothed at the SOURCE before demod-log; escapes the sparkle<->resid Pareto front structurally instead of penalizing the output",
+    "unroll_steps": 4
   },
-  "weights_sha256": "4e163f5f3e2154ce7ef33b7ac446df1abf52ad6a0531133c2504305f5ccc19d3"
+  "weights_sha256": "636c8743faf25fa3311d8752a9e5d6ff0abd4b4ad52fb2466e2cfcaf4bbdf8ce"
 }

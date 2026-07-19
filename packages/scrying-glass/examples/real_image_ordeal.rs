@@ -41,9 +41,10 @@ use scrying_glass::integrator::{
 };
 use scrying_glass::rdirect::{
     CamPose, HistFrame, HistFrameSplit, HIST_FEATURES_SPLIT, INPUT_FEATURES, Mlp,
-    deserialize_weights, direct_render_sequence_hist, direct_render_sequence_hist_split,
-    hist_features, hist_features_split, pixel_features, pixel_features_split, stamp_pass_text,
-    stamp_path_for,
+    clamp_evidence_lin, deserialize_weights, direct_render_sequence_hist,
+    direct_render_sequence_hist_split, evidence_clamp_gamma, evidence_composite_frame,
+    hist_features, hist_features_split, local_max_3x3, pixel_features, pixel_features_split,
+    stamp_pass_text, stamp_path_for,
 };
 use scrying_glass::scene::{Camera, LeafTriangle, RenderScene};
 
@@ -232,6 +233,19 @@ fn render_single(mlp: &Mlp, f: &FrameBufs, tw: u32, th: u32, low_w: u32, low_h: 
     let in_dim = mlp.layer_dims()[0].0 as usize;
     let is_split = in_dim == HIST_FEATURES_SPLIT;
     let uses_hist = in_dim == INPUT_FEATURES + 4;
+    // v7e evidence clamp: same ceiling source as direct_render_sequence_hist_split,
+    // identical act (only meaningful for the split net; empty low_e/low_d for
+    // the non-split nets makes it a zero-evidence no-op ceiling, harmless since
+    // this branch isn't hit for those nets' clamp path below).
+    let gamma = evidence_clamp_gamma();
+    // no-memory baseline: only THIS frame's evidence (matches its "no
+    // history" nature — unlike the recurrent path, there is no prior step
+    // to temporally average with).
+    let evidence_max = if is_split {
+        local_max_3x3(&evidence_composite_frame(&f.low_e, &f.low_d, low_w, low_h, tw, th), tw, th)
+    } else {
+        Vec::new()
+    };
     for ty in 0..th {
         for tx in 0..tw {
             let i = (ty * tw + tx) as usize;
@@ -254,7 +268,8 @@ fn render_single(mlp: &Mlp, f: &FrameBufs, tw: u32, th: u32, low_w: u32, low_h: 
             // undo log-demod
             let div = if albedo.length_squared() > 1e-8 { albedo + GVec3::splat(1e-3) } else { GVec3::ONE };
             let expm1 = GVec3::new(dl[0].exp() - 1.0, dl[1].exp() - 1.0, dl[2].exp() - 1.0);
-            out[i] = GVec3::new(expm1.x.max(0.0), expm1.y.max(0.0), expm1.z.max(0.0)) * div;
+            let net_lin = GVec3::new(expm1.x.max(0.0), expm1.y.max(0.0), expm1.z.max(0.0)) * div;
+            out[i] = if is_split { clamp_evidence_lin(net_lin, evidence_max[i], gamma) } else { net_lin };
         }
     }
     out

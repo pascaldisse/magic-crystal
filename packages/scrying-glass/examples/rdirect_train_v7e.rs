@@ -42,7 +42,29 @@
 //! MINIMUM that beats the starting checkpoint's own score) means this run
 //! can never regress the best state on disk even if it never beats it.
 //!
-//! Run: cargo run -p scrying-glass --release --example rdirect_train_v7
+//! v7e — THE EVIDENCE CLAMP, TRAINABLE (2026-07-19, evidence-clamp round).
+//! v7d's cure (lower LR + EMA + score floor) fixed the noise-ball-outlier
+//! SHAPE but left the underlying cause untouched: autopsy abbcb64 found the
+//! net systematically overshoots genuinely-bright E-structure by 1.15x-4.1x
+//! at sparkle outliers (COPIED-dominant — the smoothed TARGET itself is
+//! locally bright there, the net just over-amplifies past it). v7e adds a
+//! CLAMP AT THE ACT (architecture, not a loss penalty — no cap/gate/firefly
+//! weight, still banned): `presented_dl = min(out_dl, ceiling_dl)` where
+//! `ceiling_dl = log_demod(gamma * local_max(evidence))`, evidence = the SAME
+//! E+D taps the net's OWN input reads (temporal-mean over the K settle steps
+//! seen so far + spatial 3x3 max — see rdirect::EvidenceAccum's doc for why
+//! max-across-time alone is a dead end), gamma DERIVED in
+//! scratch/v7e-gamma-derive.log (non-outlier p99.9 ratio ~1.5, outlier
+//! median ~1.6-2.0 — GAMMA=1.5, see rdirect::EVIDENCE_CLAMP_GAMMA_DEFAULT).
+//! Backprop through the clamp: gradient 0 on a clamped channel (the loss can
+//! no longer reward pushing the net past the ceiling), identity otherwise —
+//! same plain MSE, only the presented ACT changes. Resumes from the restored
+//! 636c8743 checkpoint exactly like v7d (same LR/EMA/score-floor cure, now
+//! WITH the clamp active during fine-tune too, so overshoot cannot regrow).
+//!
+//! Run: cargo run -p scrying-glass --release --example rdirect_train_v7e
+//!   Same envs as rdirect_train_v7 (v7d cure), PLUS GAIA_V7_CLAMP_GAMMA
+//!   (evidence-clamp gamma override, default derived 1.5).
 //!   GAIA_V7_EPOCHS, GAIA_V7_STILL (K), GAIA_V7_SUBSAMPLE, GAIA_V7_W/H,
 //!   GAIA_V7_REF, GAIA_V7_BLUR (D box-blur radius, default 2),
 //!   GAIA_V7_SPARK_TGT, GAIA_V7_RESID_GATE, GAIA_V7_MONITOR, GAIA_V7_WALL,
@@ -64,8 +86,10 @@ use scrying_glass::integrator::{
 };
 use scrying_glass::rdirect::{
     Adam, HIST_FEATURES_SPLIT, Mlp, RdirectConfig, OUTPUT_CHANNELS,
-    accumulate_backward_firefly_gated_slice, adam_apply, deserialize_weights, hist_features_split,
-    pixel_features_split, serialize_weights, target_demod_log, weights_sha256, zero_grads,
+    EvidenceAccum, accumulate_backward_clamped_slice, adam_apply, clamp_evidence_lin,
+    deserialize_weights, evidence_clamp_gamma, evidence_ceiling_demod_log,
+    evidence_composite_frame, hist_features_split, pixel_features_split, serialize_weights,
+    target_demod_log, weights_sha256, zero_grads,
 };
 use scrying_glass::scene::{Camera, LeafTriangle, RenderScene};
 
@@ -152,6 +176,15 @@ struct Pose {
     tw: u32,
     th: u32,
     depth_field: Vec<f32>,
+    // v7e EVIDENCE CLAMP: per-settle-step ceiling, ALREADY in demod-log space
+    // (evidence_ceiling_demod_log) at every pixel — ceiling_dl_steps[step][px].
+    // Precomputed once per pose (lows_e/lows_d are fixed after render_pose;
+    // ceiling doesn't depend on epoch/weights), reused every epoch.
+    ceiling_dl_steps: Vec<Vec<[f32; OUTPUT_CHANNELS]>>,
+    // RAW (gamma-free) local_max_evidence in LINEAR space at the LAST settle
+    // step's accumulation (for settle_still's final clamp via
+    // clamp_evidence_lin, matching the ordeal/CPU-reference act exactly).
+    evidence_lin_last: Vec<GVec3>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -201,9 +234,29 @@ fn render_pose(
     let target_dl: Vec<[f32; OUTPUT_CHANNELS]> =
         (0..n).map(|px| target_demod_log(smoothed[px], albedo[px])).collect();
 
+    // v7e EVIDENCE CLAMP ceiling, precomputed once (lows_e/lows_d are fixed
+    // for this pose): temporal-mean accumulate across the K settle taps +
+    // spatial 3x3 max (EvidenceAccum), snapshotted after EVERY step so the
+    // training loop's per-step loss sees the SAME ceiling the net's own
+    // history has actually accumulated by that step.
+    let gamma = evidence_clamp_gamma();
+    let mut accum = EvidenceAccum::new(tw, th);
+    let mut ceiling_dl_steps: Vec<Vec<[f32; OUTPUT_CHANNELS]>> = Vec::with_capacity(k as usize);
+    let mut evidence_lin_last: Vec<GVec3> = Vec::new();
+    for step in 0..k as usize {
+        let frame_composite = evidence_composite_frame(&lows_e[step], &lows_d[step], low_w, low_h, tw, th);
+        accum.push(&frame_composite);
+        let local_max = accum.ceiling(); // raw evidence, gamma NOT applied yet
+        let ceiling_dl: Vec<[f32; OUTPUT_CHANNELS]> =
+            (0..n).map(|px| evidence_ceiling_demod_log(local_max[px], gamma, albedo[px])).collect();
+        ceiling_dl_steps.push(ceiling_dl);
+        evidence_lin_last = local_max;
+    }
+
     Pose {
         lows_e, lows_d, albedo, normal, teacher, target_dl,
         low_w, low_h, tw, th, depth_field: depth,
+        ceiling_dl_steps, evidence_lin_last,
     }
 }
 
@@ -267,7 +320,10 @@ fn settle_still(mlp: &Mlp, p: &Pose, k: u32) -> Vec<GVec3> {
             }
             let div = if albedo.length_squared() > 1e-8 { albedo + GVec3::splat(1e-3) } else { GVec3::ONE };
             let expm1 = GVec3::new(dl[0].exp() - 1.0, dl[1].exp() - 1.0, dl[2].exp() - 1.0);
-            out[px] = GVec3::new(expm1.x.max(0.0), expm1.y.max(0.0), expm1.z.max(0.0)) * div;
+            let net_lin = GVec3::new(expm1.x.max(0.0), expm1.y.max(0.0), expm1.z.max(0.0)) * div;
+            // v7e: clamp the PRESENTED (settled) frame exactly like the
+            // ordeal/CPU-reference act — same evidence source, same gamma.
+            out[px] = clamp_evidence_lin(net_lin, p.evidence_lin_last[px], evidence_clamp_gamma());
         }
     }
     out
@@ -371,7 +427,6 @@ fn main() {
     let mut best_score = START_SCORE_FLOOR;
     let mut best_sp_log = 0.0f64;
     let mut best_rs_log = 0.0f64;
-    let zero_cap = [f32::NEG_INFINITY; OUTPUT_CHANNELS]; // unused: gate=0 -> no firefly term
 
     'train: for epoch in 0..epochs {
         if t_train.elapsed().as_secs_f64() > wall_budget as f64 {
@@ -418,9 +473,13 @@ fn main() {
                     );
                     let feat = hist_features_split(&base, prev_dl, valid);
                     let out = mlp.forward(&feat);
-                    // gate=0.0, ff_w=0.0 -> pure MSE against `target` (plain, no cap/penalty).
-                    let (mse, _ff) = accumulate_backward_firefly_gated_slice(
-                        &mlp, &feat, &out, &target, &zero_cap, 0.0, 0.0, &mut wg, &mut bg,
+                    // v7e: backprop plain MSE(presented, target) through the
+                    // ARCHITECTURAL clamp (this step's own precomputed
+                    // ceiling) — NOT a loss penalty (no cap/gate/ff_w), the
+                    // ACT itself changes, structural per the CURE round.
+                    let ceiling_dl = &p.ceiling_dl_steps[step][px];
+                    let mse = accumulate_backward_clamped_slice(
+                        &mlp, &feat, &out, ceiling_dl, &target, &mut wg, &mut bg,
                         1.0 / (blen * k as f32),
                     );
                     epoch_mse += mse;
@@ -486,7 +545,8 @@ fn main() {
             "epochs": epochs, "unroll_steps": k, "batch": batch, "lr0": lr0,
             "subsample_px_per_pose_per_epoch": subsample, "ref_frames": ref_frames,
             "init": if resume { "CURE fine-tune: resumed from restored 636c8743 3-out checkpoint" } else { "FRESH (same shape as v6, 39-in/3-out)" },
-            "loss": "PLAIN MSE vs split-smoothed target (no cap, no gate, no firefly weight, no two-head)",
+            "loss": "PLAIN MSE vs split-smoothed target, backprop through the v7e evidence clamp (no cap/gate/firefly-weight loss term, no two-head)",
+            "evidence_clamp_gamma": evidence_clamp_gamma(),
             "target_construction": "target = E_full (exact, ref_frames) + box_blur(D_full, radius) — E kept sharp, D smoothed at the SOURCE before demod-log; escapes the sparkle<->resid Pareto front structurally instead of penalizing the output",
             "cure": "harmonic lr-decay from ~0.3x prior lr + Polyak/EMA (decay 0.999, monitor+checkpoint evaluate EMA weights) + cross-run bar-normalized score floor (max(sparkle/40, resid/0.035), only overwrites the starting 636c8743 checkpoint if strictly better than its own score 1.157, then monotonically tightens) — the same recipe that fixed the noise-ball-outlier signature in magic-crystal-nrc/docs/perf/2026-07-17-nrc-spike-verdict.md. Two-head (v7c) is BANNED, tried and FAILED (worse seesaw).",
             "ema_decay": ema_decay,
