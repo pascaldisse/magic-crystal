@@ -42,6 +42,20 @@ pub const INPUT_FEATURES: usize = RADIANCE_TAPS * 3 + 2 + 3 + 3 + 1 + 2;
 /// Output channels: the final demod-log radiance (3).
 pub const OUTPUT_CHANNELS: usize = 3;
 
+// ── N5 SIGNED EVIDENCE: split-radiance feature layout ──────────────────────
+// The N5 net takes the radiance evidence as TWO channels instead of one: E
+// (direct/specular-chain, sharp) and D (post-diffuse-bounce, noisy). Each is a
+// 2×2 demod-log tap set (12 features), so the split base is 24 radiance +
+// 2 subpixel + 3 albedo + 3 normal + 1 depth + 2 motion = 35, and the
+// recurrent split net widens to 35 + 4 history = 39. The teacher TARGET is
+// unchanged (the converged total, 3 demod-log channels) — only the INPUT
+// widens. Kept as SEPARATE constants so the 23/27 nets and their parity
+// ordeals are byte-untouched; the loader dispatches on the first layer in_dim.
+pub const INPUT_FEATURES_SPLIT: usize = RADIANCE_TAPS * 3 * 2 + 2 + 3 + 3 + 1 + 2;
+/// N5 recurrent split feature count: split base (35) + reprojected prev demod-
+/// log (3) + validity (1) = 39.
+pub const HIST_FEATURES_SPLIT: usize = INPUT_FEATURES_SPLIT + 4;
+
 /// Numerical floor under albedo before dividing (VIII-1's `ALBEDO_DEMOD_EPS`).
 pub const ALBEDO_DEMOD_EPS: f32 = 1e-3;
 /// Below this squared albedo length a pixel is a NO-HIT (sky) primary-ray
@@ -470,6 +484,79 @@ pub fn pixel_features(
     k += 1;
     f[k] = hi_motion.x;
     f[k + 1] = hi_motion.y;
+    f
+}
+
+/// N5: build one target pixel's SPLIT feature vector from CURRENT-FRAME
+/// buffers: E's 2×2 demod-log taps (12), then D's 2×2 demod-log taps (12),
+/// then subpixel offset (2), hi-res albedo (3), normal (3), log-depth (1),
+/// motion (2) = 35. Both radiance channels share this pixel's albedo demod
+/// divisor (so the net sees them in the same output space). E and D resolve
+/// from the integrator's split buffer; their sum is the ordinary radiance.
+#[allow(clippy::too_many_arguments)]
+pub fn pixel_features_split(
+    low_e: &[Vec3],
+    low_d: &[Vec3],
+    low_w: u32,
+    low_h: u32,
+    target_w: u32,
+    target_h: u32,
+    tx: u32,
+    ty: u32,
+    hi_albedo: Vec3,
+    hi_normal: Vec3,
+    hi_depth: f32,
+    hi_motion: Vec2,
+) -> [f32; INPUT_FEATURES_SPLIT] {
+    let (taps, dx, dy) = bilinear_taps(tx, ty, low_w, low_h, target_w, target_h);
+    let divisor = demod_divisor(hi_albedo);
+    let mut f = [0.0f32; INPUT_FEATURES_SPLIT];
+    let mut k = 0usize;
+    for &tap in &taps {
+        let dl = log_demod(low_e[tap], divisor);
+        f[k] = dl.x;
+        f[k + 1] = dl.y;
+        f[k + 2] = dl.z;
+        k += 3;
+    }
+    for &tap in &taps {
+        let dl = log_demod(low_d[tap], divisor);
+        f[k] = dl.x;
+        f[k + 1] = dl.y;
+        f[k + 2] = dl.z;
+        k += 3;
+    }
+    f[k] = dx;
+    f[k + 1] = dy;
+    k += 2;
+    f[k] = hi_albedo.x;
+    f[k + 1] = hi_albedo.y;
+    f[k + 2] = hi_albedo.z;
+    k += 3;
+    f[k] = hi_normal.x;
+    f[k + 1] = hi_normal.y;
+    f[k + 2] = hi_normal.z;
+    k += 3;
+    f[k] = (hi_depth.max(0.0) + 1.0).ln();
+    k += 1;
+    f[k] = hi_motion.x;
+    f[k + 1] = hi_motion.y;
+    f
+}
+
+/// N5: the 39-feature recurrent split input — split base (35) + reprojected
+/// previous demod-log radiance (3) + validity (1).
+pub fn hist_features_split(
+    base: &[f32; INPUT_FEATURES_SPLIT],
+    prev_dl: [f32; 3],
+    valid: f32,
+) -> [f32; HIST_FEATURES_SPLIT] {
+    let mut f = [0.0f32; HIST_FEATURES_SPLIT];
+    f[..INPUT_FEATURES_SPLIT].copy_from_slice(base);
+    f[INPUT_FEATURES_SPLIT] = prev_dl[0];
+    f[INPUT_FEATURES_SPLIT + 1] = prev_dl[1];
+    f[INPUT_FEATURES_SPLIT + 2] = prev_dl[2];
+    f[INPUT_FEATURES_SPLIT + 3] = valid;
     f
 }
 
@@ -910,6 +997,52 @@ pub fn accumulate_backward_firefly_gated(
     (mse_loss, ff_loss)
 }
 
+/// N5: the teacher-gated firefly loss over a SLICE feature (the 39-input split
+/// net; `feat.len()` is not a fixed array). Byte-identical math to
+/// [`accumulate_backward_firefly_gated`]. With `ff_w == 0.0` this is PLAIN MSE
+/// (the N5 default — the split is the structural escape; the gate is only
+/// re-armed at low weight if val still shows fireflies).
+#[allow(clippy::too_many_arguments)]
+pub fn accumulate_backward_firefly_gated_slice(
+    mlp: &Mlp,
+    feat: &[f32],
+    out: &[f32; OUTPUT_CHANNELS],
+    target: &[f32; OUTPUT_CHANNELS],
+    cap: &[f32; OUTPUT_CHANNELS],
+    gate: f32,
+    ff_w: f32,
+    w_grads: &mut [Vec<f32>],
+    b_grads: &mut [Vec<f32>],
+    scale: f32,
+) -> (f64, f64) {
+    let mut delta = [0.0f32; OUTPUT_CHANNELS];
+    let mut mse_loss = 0.0f64;
+    let mut ff_loss = 0.0f64;
+    let g = gate.clamp(0.0, 1.0);
+    for c in 0..OUTPUT_CHANNELS {
+        let d = out[c] - target[c];
+        mse_loss += (d * d) as f64;
+        delta[c] = 2.0 * d / OUTPUT_CHANNELS as f32;
+        if g > 0.0 && ff_w > 0.0 {
+            let e = out[c] - cap[c];
+            if e > 0.0 {
+                ff_loss += (g * ff_w * e * e) as f64;
+                delta[c] += 2.0 * g * ff_w * e;
+            }
+        }
+    }
+    let (wg, bg) = mlp.backward_from_delta(feat, &delta);
+    for li in 0..w_grads.len() {
+        for k in 0..w_grads[li].len() {
+            w_grads[li][k] += wg[li][k] * scale;
+        }
+        for k in 0..b_grads[li].len() {
+            b_grads[li][k] += bg[li][k] * scale;
+        }
+    }
+    (mse_loss, ff_loss)
+}
+
 /// Allocate zero grad buffers shaped like the MLP.
 pub fn zero_grads(mlp: &Mlp) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
     (
@@ -1021,6 +1154,99 @@ pub fn direct_render_sequence_hist(
             tw,
             th,
         ));
+        outputs.push(out_rgb);
+    }
+    outputs
+}
+
+// ── N5 SIGNED EVIDENCE: recurrent split-radiance eval ─────────────────────
+/// One frame of a reprojection sequence for the N5 split net. Same as
+/// [`HistFrame`] but carries the two radiance channels (E, D).
+pub struct HistFrameSplit<'a> {
+    pub low_e: &'a [Vec3],
+    pub low_d: &'a [Vec3],
+    pub low_w: u32,
+    pub low_h: u32,
+    pub hi_albedo: &'a [Vec3],
+    pub hi_normal: &'a [Vec3],
+    pub hi_depth: &'a [f32],
+    pub target_w: u32,
+    pub target_h: u32,
+    pub cam: CamPose,
+}
+
+/// N5: render a sequence through the recurrent split net (39-input). Identical
+/// reprojection / validity logic to [`direct_render_sequence_hist`]; only the
+/// per-pixel feature is the split base + history.
+pub fn direct_render_sequence_hist_split(
+    mlp: &Mlp,
+    frames: &[HistFrameSplit],
+    depth_tol: f32,
+    normal_thresh: f32,
+) -> Vec<Vec<Vec3>> {
+    let mut outputs: Vec<Vec<Vec3>> = Vec::with_capacity(frames.len());
+    let mut prev: Option<(Vec<[f32; 3]>, Vec<f32>, Vec<Vec3>, CamPose, u32, u32)> = None;
+    for f in frames {
+        let tw = f.target_w;
+        let th = f.target_h;
+        let n = (tw * th) as usize;
+        let mut out_rgb = vec![Vec3::ZERO; n];
+        let mut out_dl = vec![[0.0f32; 3]; n];
+        for ty in 0..th {
+            for tx in 0..tw {
+                let i = (ty * tw + tx) as usize;
+                let albedo = f.hi_albedo[i];
+                let divisor = demod_divisor(albedo);
+                let base = pixel_features_split(
+                    f.low_e, f.low_d, f.low_w, f.low_h, tw, th, tx, ty, albedo, f.hi_normal[i],
+                    f.hi_depth[i], Vec2::ZERO,
+                );
+                let (prev_dl, valid) = match &prev {
+                    None => ([0.0f32; 3], 0.0f32),
+                    Some((p_dl, p_depth, p_norm, p_cam, pw, ph)) => {
+                        let depth = f.hi_depth[i];
+                        let is_miss = depth <= 0.0;
+                        let dir = f.cam.ray_dir(tx, ty, tw, th);
+                        let dist = if is_miss { 1.0e5 } else { depth };
+                        let world = f.cam.eye + dir * dist;
+                        match p_cam.reproject(world, *pw, *ph) {
+                            None => ([0.0f32; 3], 0.0f32),
+                            Some((fx, fy)) => {
+                                let ipx = fx.round().clamp(0.0, (*pw - 1) as f32) as usize;
+                                let ipy = fy.round().clamp(0.0, (*ph - 1) as f32) as usize;
+                                let pj = ipy * *pw as usize + ipx;
+                                let prev_depth = p_depth[pj];
+                                let prev_miss = prev_depth <= 0.0;
+                                let ok = if is_miss {
+                                    prev_miss
+                                } else if prev_miss {
+                                    false
+                                } else {
+                                    let dist_prev = (world - p_cam.eye).length();
+                                    let depth_ok = (dist_prev - prev_depth).abs()
+                                        <= depth_tol * dist_prev.max(1e-4);
+                                    let normal_ok = f.hi_normal[i].dot(p_norm[pj]) >= normal_thresh;
+                                    depth_ok && normal_ok
+                                };
+                                if ok {
+                                    let img: Vec<Vec3> =
+                                        p_dl.iter().map(|d| Vec3::new(d[0], d[1], d[2])).collect();
+                                    let s = bilinear_vec3(&img, fx, fy, *pw, *ph);
+                                    ([s.x, s.y, s.z], 1.0)
+                                } else {
+                                    ([0.0f32; 3], 0.0)
+                                }
+                            }
+                        }
+                    }
+                };
+                let feat = hist_features_split(&base, prev_dl, valid);
+                let dl = mlp.forward(&feat);
+                out_dl[i] = dl;
+                out_rgb[i] = undo_log_demod(Vec3::new(dl[0], dl[1], dl[2]), divisor);
+            }
+        }
+        prev = Some((out_dl, f.hi_depth.to_vec(), f.hi_normal.to_vec(), f.cam, tw, th));
         outputs.push(out_rgb);
     }
     outputs
