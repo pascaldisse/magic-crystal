@@ -1,3 +1,26 @@
+# ADVERSARY — neural-live (N3, firefly loss): v4 VERDICT — HONEST BLACK (resid)
+
+## N3 FINISHER (2026-07-19) — VERDICT: BLACK STANDS. v4 fails resid_still +0.01599 @640×480.
+- **The window stays BLACK by law.** v4 (firefly-loss net, sha 2cc827a) ordeal
+  re-run FRESH @640×480: resid_still 0.05099 vs bar 0.035 → **FAIL +0.01599**;
+  sparkle 39.06/40 PASS, tvar/resid_move/ghost all PASS w/ margin. No stamp →
+  `verify_stamp` false → present black. Gate flip proof: gate did NOT flip to
+  allow (real_image_gate 2/2 unstamped-denied, no v4.stamp on disk).
+- **The defect (both eyes, defects first):** firefly loss killed v3's sparkle
+  (345→39, clears the bar) but OVER-CLAMPED the real emissive it bordered — the
+  **cyan waterline is a dim broken blue smear, NOT the teacher's clean cyan
+  dashes.** That suppressed emissive is the resid climb 0.0325→0.051. Lit windows
+  stay CRISP (high-cap, clamp-free). Motion no-ghost. v4 traded a sparkle-fail
+  for a resid-fail: a scalar spatial clamp cannot separate an invented dot from
+  the real cyan neon it sits on — killing one kills the other.
+- **wip 096c70e:** runaway retrain (surgical margin) killed; weights regression
+  reverted to canonical 2cc827a; combined-criterion trainer code kept. Retrain
+  log proves non-convergence (sparkle 52→196 as MSE refits). NEXT: edge-aware /
+  emissive-preserving loss — a single clamp is on a sparkle↔resid Pareto front.
+- Proof: `scratch/v4-ordeal-n3.log`, `proof/neural-live/s21-{still,moving}{,-teacher}.png`.
+
+---
+
 # ADVERSARY — neural-live (N0.g, shift 9): the ONE net presented live
 
 ## SHIFT 9 UPDATE (S8 default flip + S9 encode pipeline) — VERDICT: HOLDS parity, STILL FAILS 60fps but HALVES the gap.
