@@ -857,6 +857,59 @@ pub fn accumulate_backward_firefly(
     (mse_loss, ff_loss)
 }
 
+/// N4 THE TEACHER-GATED FIREFLY LOSS (the Pareto escape). Same delta-backward
+/// path as `accumulate_backward_firefly`, but the firefly clamp is GATED BY THE
+/// TEACHER'S LOCAL TRUTH: the excess-over-cap penalty is multiplied by `gate` —
+/// 1.0 ONLY where the teacher's k×k neighbourhood is genuinely DARK, 0.0 where
+/// the teacher itself is bright (real neon / lit windows / the cyan waterline).
+/// Where gate=0 plain MSE rules — the net is free to render the real emissive
+/// exactly, so N3's over-clamp of real cyan neon into a broken smear cannot
+/// recur. Where gate=1 (dark neighbourhood, no real light) an invented bright
+/// dot over `cap` is crushed. `gate` is precomputed per pixel from the teacher
+/// (neighbourhood luminance vs a percentile ceiling). Returns (mse, ff) losses.
+///
+///   LOSS = MSE(out, teacher) + gate · ff_w · Σ_c relu(out_c − cap_c)²
+#[allow(clippy::too_many_arguments)]
+pub fn accumulate_backward_firefly_gated(
+    mlp: &Mlp,
+    feat: &[f32; HIST_FEATURES],
+    out: &[f32; OUTPUT_CHANNELS],
+    target: &[f32; OUTPUT_CHANNELS],
+    cap: &[f32; OUTPUT_CHANNELS],
+    gate: f32,
+    ff_w: f32,
+    w_grads: &mut [Vec<f32>],
+    b_grads: &mut [Vec<f32>],
+    scale: f32,
+) -> (f64, f64) {
+    let mut delta = [0.0f32; OUTPUT_CHANNELS];
+    let mut mse_loss = 0.0f64;
+    let mut ff_loss = 0.0f64;
+    let g = gate.clamp(0.0, 1.0);
+    for c in 0..OUTPUT_CHANNELS {
+        let d = out[c] - target[c];
+        mse_loss += (d * d) as f64;
+        delta[c] = 2.0 * d / OUTPUT_CHANNELS as f32;
+        if g > 0.0 {
+            let e = out[c] - cap[c];
+            if e > 0.0 {
+                ff_loss += (g * ff_w * e * e) as f64;
+                delta[c] += 2.0 * g * ff_w * e;
+            }
+        }
+    }
+    let (wg, bg) = mlp.backward_from_delta(feat, &delta);
+    for li in 0..w_grads.len() {
+        for k in 0..w_grads[li].len() {
+            w_grads[li][k] += wg[li][k] * scale;
+        }
+        for k in 0..b_grads[li].len() {
+            b_grads[li][k] += bg[li][k] * scale;
+        }
+    }
+    (mse_loss, ff_loss)
+}
+
 /// Allocate zero grad buffers shaped like the MLP.
 pub fn zero_grads(mlp: &Mlp) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
     (
