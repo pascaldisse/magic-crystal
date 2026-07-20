@@ -175,7 +175,8 @@ struct HistU {
   prev: CamGpu,
   // params = (prev_w, prev_h, has_prev, depth_tol)
   params: vec4<f32>,
-  // params2 = (normal_thresh, pad, pad, pad)
+  // params2 = (normal_thresh, sky_reject, pad, pad) -- sky_reject is
+  // GAIA_V7_SKY_HISTORY=reject as 1.0/0.0, see rdirect.rs::sky_history_reject
   params2: vec4<f32>,
 };
 
@@ -348,7 +349,11 @@ fn gather_hist_split(@builtin(global_invocation_id) gid: vec3<u32>) {
       let prev_miss = prev_depth <= 0.0;
       var ok = false;
       if (is_miss) {
-        ok = prev_miss;
+        // GHOST AUTOPSY: mirrors CPU `direct_render_sequence_hist_split`'s
+        // `prev_miss && !sky_reject` exactly — the plain-miss accept has no
+        // distance/direction check at all; `params2.y` > 0.5 means
+        // GAIA_V7_SKY_HISTORY=reject (see rdirect.rs::sky_history_reject).
+        ok = prev_miss && (hu.params2.y < 0.5);
       } else if (prev_miss) {
         ok = false;
       } else {

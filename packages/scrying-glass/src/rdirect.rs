@@ -681,6 +681,19 @@ pub fn evidence_clamp_gamma() -> f32 {
     std::env::var("GAIA_V7_CLAMP_GAMMA").ok().and_then(|v| v.parse().ok()).unwrap_or(EVIDENCE_CLAMP_GAMMA_DEFAULT)
 }
 
+/// GHOST AUTOPSY (room: sky history smear) — `GAIA_V7_SKY_HISTORY=reject`
+/// forces history validity=0 for no-hit/sky pixels instead of the default
+/// trivial `prev_miss` accept (both-sky ⇒ valid=1 with NO distance/direction
+/// check at all, unlike the geometry branch's depth+normal guard). Default
+/// (unset, or any other value) is byte-identical to prior behavior — this is
+/// an opt-in diagnostic/fix flag, not a default change. Mirrored exactly in
+/// `gather_hist_split` (`rdirect_gather_split.wgsl`) via `HistUniform.params2.y`
+/// — see `rdirect_gather.rs::encode`. `rotate` (motion-compensated sky) is
+/// NOT implemented; only `reject` and the default are wired.
+pub fn sky_history_reject() -> bool {
+    matches!(std::env::var("GAIA_V7_SKY_HISTORY").as_deref(), Ok("reject"))
+}
+
 /// One step/frame's evidence composite (E+D, bilinearly reconstructed to
 /// native res from the exact low-res taps the net reads — same taps
 /// `pixel_features_split` samples). The raw building block; NOT yet
@@ -1515,6 +1528,7 @@ pub fn direct_render_sequence_hist_split(
     normal_thresh: f32,
 ) -> Vec<Vec<Vec3>> {
     let gamma = evidence_clamp_gamma();
+    let sky_reject = sky_history_reject();
     let mut outputs: Vec<Vec<Vec3>> = Vec::with_capacity(frames.len());
     let mut prev: Option<(Vec<[f32; 3]>, Vec<f32>, Vec<Vec3>, CamPose, u32, u32)> = None;
     // v7e evidence clamp ceiling, TEMPORAL-MEAN accumulated across the frame
@@ -1561,7 +1575,12 @@ pub fn direct_render_sequence_hist_split(
                                 let prev_depth = p_depth[pj];
                                 let prev_miss = prev_depth <= 0.0;
                                 let ok = if is_miss {
-                                    prev_miss
+                                    // GHOST AUTOPSY: the plain-`prev_miss` accept has no
+                                    // distance/direction check at all (unlike the geometry
+                                    // branch below) — under `GAIA_V7_SKY_HISTORY=reject` a
+                                    // sky pixel never carries history forward. See
+                                    // `sky_history_reject` doc.
+                                    prev_miss && !sky_reject
                                 } else if prev_miss {
                                     false
                                 } else {

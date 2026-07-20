@@ -1341,3 +1341,300 @@ N0's original rejection still stands unchallenged).
 **Artifacts this room**: `proof/neural-live/s20-v7async{1,2,3}.{log,
 budget.json,state.json,-presented.png}`, `s20-v7async1.frames.csv`
 (1189 frames, per-frame series), this note. No engine code changed.
+
+## MIRROR AUTOPSY (ghoul run 2026-07-20, ~25min timebox)
+
+**Complaint**: Architect, on the live window: "the mirror still looks
+weird". Subject: `naruko_show_chrome` — the LARGE chrome sphere
+(`worlds/naruko/scenes/main.json`, r=2.1 at `[4.5,3.6,29.5]`, metallic 1.0
+roughness 0.02, pure specular), the Rite-IV close object, standing in the
+player's own spawn sightline (`realm_shine.rs`'s doc comment). NOT
+`naruko_chrome_orb`/`naruko_mirror` (smaller, unrelated pier props).
+
+**Method**: new offscreen example `examples/mirror_autopsy.rs` (own
+process, own buffers — never touches port 8430). Camera = `spawn_eye`
+(`[0,1.7,44]` yaw0 pitch0 fov60), the exact settled gameplay eye — proven
+by the already-committed `proof/realm-shine-a.png` (128-frame/3spp
+converged ray trace, same pose) to frame the sphere squarely with visible
+reflected structure. Reused the Stage-3 pipeline
+`v7_present_parity_probe.rs` proved wired (trace-split → AOV → real v7
+net forward via `gather_hist_split` → demod → evidence-clamp), 3 identical
+still frames for steady-state history (`GAIA_NATIVE_WEIGHTS=v7`
+equivalent — v7 weights loaded + stamp-verified directly), 480×270
+(16:9, matching the proof shot's own framing), low-res 240×135 (2× ratio,
+lane convention). Dumped the LAST frame's (1) presented (post-clamp),
+(2) `evidence_composite_frame` — the CPU-side bilinear upsample of that
+frame's own low_e+low_d, i.e. the clamp ceiling's raw INPUT before
+temporal-mean/3×3-max/gamma — and (3) preclamp (post-demod net linear,
+pre-clamp `present_buf`). PNGs: `proof/neural-live/mirror-presented.png`,
+`mirror-evidence.png`, `mirror-preclamp.png` (+ `mirror-groundtruth-crop.png`,
+a crop of the pre-existing converged reference for eyes-on comparison).
+
+**Region stats** (sphere screen rect, analytically projected from world
+bbox, disc-masked to exclude background contamination — recomputed in
+Python over the PNGs since the Rust dump's rect included background
+corners):
+
+| image | mean_lum | max_lum (disc) | mean\|Δneighbor\| (disc, high-freq proxy) |
+|---|---|---|---|
+| presented (live output) | 0.2065 | 0.2864 | 0.01023 |
+| evidence (raw bilinear E+D, no net) | 0.1955 | 0.2654 | 0.00591 |
+| preclamp (net, pre-clamp) | 0.2081 | 0.3063 | 0.01064 |
+
+presented ≈ preclamp in every stat (mean_lum 0.2065 vs 0.2081, high-freq
+0.01023 vs 0.01064) — **the clamp changes almost nothing inside the disc**;
+its only visible effect is trimming the single brightest outlier pixels
+(max_lum region-wide, not disc-masked, dropped from the earlier full-rect
+reading 0.278→0.194, a ~30% peak cut) — consistent with the clamp doing
+its job (killing sparkle spikes) but not being the source of the
+complaint. The evidence image's LOWER disc high-freq energy (0.0059 vs
+0.0106) says the raw bilinear upsample is smoother pixel-to-pixel than
+the net's own output at this scale — expected (bilinear upsample of a
+2×-coarser buffer is inherently low-pass; the net's tail features carry
+native-res albedo/normal/depth edges it can sharpen against) and by
+itself not diagnostic of over- or under-smoothing — the eyes-on crop
+comparison below is what actually locates the fault.
+
+**Eyes-on (decisive)**: `mirror-groundtruth-crop.png` (128-frame
+converged reference, same pose) shows the sphere with real reflected
+structure — a violet-pink patch (the pink orb's reflection), a cyan
+sliver (the cyan orb), an amber smudge, a bright white specular glint
+top-left, and the low-poly facet bands (`radial_segments=24`, geometry,
+not noise). `mirror-presented.png` (the live v7 net output, same region)
+is a near-featureless flat gray-mauve disc — none of the colored
+reflection patches survive, only a faint smudge near the bottom-left rim.
+`mirror-preclamp.png` is visually indistinguishable from presented — so
+whatever erases the reflections happens BEFORE the clamp, in the net
+forward itself, not at presentation.
+
+**Stage located — read the WGSL split (`radiance_ed`,
+`src/integrator.wgsl:558-641`), not guessed**: `naruko_show_chrome`'s
+roughness (0.02) is under `SPEC_CHAIN_MAX_ROUGHNESS` (0.25) but ABOVE
+`MIRROR_ROUGHNESS` (1e-3) — so its bounce takes the GGX-importance-sampled
+rough-specular branch (`ggx_half`), not the exact delta `reflect()`, and
+`diffuse_seen` stays false (this bounce, and the directly-lit/emissive
+surface it reaches, both still post into the **E** "specular-chain"
+bucket, per the bucket rule: a hit's OWN direct/emissive terms use
+`diffuse_seen` as of BEFORE this bounce's own scatter choice). So the
+sphere's reflected content — the orb glints, the factory silhouette — is
+supposed to live in E, the bucket the v7 trainer does NOT box-blur (only
+D gets `BLUR_RADIUS=2`, confirmed in `rdirect_v7_autopsy.rs`'s own
+constants) — this rules out "the training TARGET was pre-blurred here"
+as the direct cause.
+
+**The real mechanism is upstream of the target: the LIVE INPUT evidence
+itself is garbage for this surface.** E's low-res taps are built from a
+**1-spp, 2×-downsampled** trace (`low_e`/`low_d`, 240×135 here — same
+ratio the shipped app uses). A GGX lobe at roughness 0.02 is *almost* a
+delta: each low-res texel's single sample is one near-random
+importance-sampled direction inside a near-point-like lobe, and because
+the sphere is strongly curved, the true reflected direction rotates
+extremely fast across even a handful of screen pixels — so the 2×2
+bilinear tap neighborhood `pixel_features_split` reads is not a coherent
+local patch of "the same reflection, slightly blurred": it is 4
+near-independent single-sample draws of *different, unrelated* points of
+the reflected environment (sky vs orb vs factory vs void), i.e. the input
+feature itself carries close to zero exploitable signal for reconstructing
+fine reflected structure — no amount of net capacity recovers detail that
+isn't coherently present in 4 uncorrelated 1-spp taps. `demod_divisor`
+itself is not degenerate here (the sphere's AOV albedo is the material's
+base color `#eef3f8`, not near-zero, so the “divisor→1 no-hit branch”
+sub-hypothesis in the brief does NOT apply — checked directly in
+`demod_divisor`, `src/rdirect.rs:65`, no special-case for metallic
+surfaces).
+
+**VERDICT**: primarily **EVIDENCE-side (a)**, compounded by **NET-side
+(b)**, with **CLAMP-side (c) ruled out as the driver** (preclamp≈presented
+above). The E bucket is architecturally correct — mirror reflections DO
+route to the unblurred sharp channel — but at the shipped low-res/1-spp
+tracing budget, a GGX-rough mirror's E taps are themselves incoherent
+noise, not a smoothed-but-honest signal; v7 (trained mostly on diffuse
+scenes where a 2×2 low-res neighborhood IS locally coherent) has learned
+a denoising prior that, fed genuinely-incoherent taps, falls back to
+something close to the neighborhood mean — a flat gray blob — rather than
+reconstructing or even preserving the sharp glints. This is
+distribution-mismatch-of-the-INPUT more than distribution-mismatch of
+scene content per se: the net was never shown coherent-vs-incoherent E
+neighborhoods as a distinguishable training signal for a strongly curved
+mirror.
+
+**Fix directions (cost class per the room's instruction — none applied
+this room):**
+1. **Raise trace spp specifically on high-metallic/low-roughness
+   surfaces** (or raise the low-res evidence resolution ratio from 2× to
+   e.g. 1.5× for the WHOLE frame) so E's taps become locally coherent
+   again for curved mirrors — **ACT change, needs re-ordeal** (changes
+   the evidence the shipped/stamped v7 net was trained against; a spp
+   bump alone is cheap to trace-side but the net itself may need
+   retraining or at minimum re-validation against the new evidence
+   statistics before it can be trusted not to regress elsewhere).
+2. **Training data**: add curved-mirror/high-frequency-reflection poses
+   to the v7/v8 training set (the current set is diffuse-scene-heavy per
+   this file's own STAGE 3 framing) so the net learns to preserve rather
+   than average away incoherent-but-real specular taps — **ACT change,
+   full retrain + re-ordeal**, the most expensive of the three, but the
+   most likely to generalize (any future curved-mirror content hits the
+   same failure otherwise).
+3. **Clamp exemption / evidence-confidence signal**: since clamp-side is
+   ruled out as today's driver, this is a smaller lever — but a per-pixel
+   "evidence coherence" feature (e.g. variance across the 4 E taps) fed
+   to the net, or gating the clamp ceiling by that variance, could let a
+   future net at least know when to trust vs. distrust its own input
+   rather than silently averaging — **ACT change** (new feature = new net
+   input shape = retrain + re-ordeal), not a stopgap.
+No bar/stamp edits made; no fixes attempted this room per the task.
+
+**Artifacts this room**: `packages/scrying-glass/examples/mirror_autopsy.rs`
+(new, additive-only, no engine/WGSL/main.rs changes),
+`proof/neural-live/mirror-{presented,evidence,preclamp}.png` +
+`mirror-groundtruth-crop.png`, this note.
+
+## GHOST AUTOPSY — SKY HISTORY SMEAR (ghoul run 2026-07-20, ~25min timebox)
+
+Architect saw ghosting in the SKY on the LIVE window under camera motion —
+NEW with v7's recurrent history (Stage 2/3, rooms 2-5 above). Autopsy of
+`CamPose::reproject` + `hist_features_split`/`direct_render_sequence_hist_split`
+(`rdirect.rs`) + `cam_reproject`/`gather_hist_split`
+(`rdirect_gather_split.wgsl`).
+
+**(1) CODE TRUTH — the accept/reject test for a no-hit (sky) pixel has NO
+distance/direction check at all.** In both `direct_render_sequence_hist_split`
+and `gather_hist_split`:
+```rust
+let is_miss = depth <= 0.0;
+let dist = if is_miss { 1.0e5 } else { depth };   // sky proxied at a FAR
+let world = f.cam.eye + dir * dist;               // but FINITE distance
+...
+let prev_miss = prev_depth <= 0.0;
+let ok = if is_miss {
+    prev_miss                       // <- ONLY this. No depth_ok, no normal_ok.
+} else if prev_miss { false } else {
+    let depth_ok = (dist_prev - prev_depth).abs() <= depth_tol * dist_prev.max(1e-4);
+    let normal_ok = normal.dot(prev_norm) >= normal_thresh;
+    depth_ok && normal_ok
+};
+```
+The geometry branch demands depth+normal agreement; the sky branch demands
+only "both frames say no-hit". The 1e5-unit proxy distance makes the
+`CamPose::reproject` geometry itself track direction correctly under
+translation (parallax at 1e5 units is sub-pixel for realistic per-frame
+motion — verified: not the mechanism) and under rotation (angle math is
+translation-invariant at that distance) — **so the reprojected screen
+coordinate is fine.** The bug is that `ok` never checks whether the
+resampled previous-frame value is a plausible match for THIS frame's sky —
+any two no-hit pixels validate each other, unconditionally. WGSL mirrors
+this exactly (`rdirect_gather_split.wgsl:348-358`) — confirmed symmetric,
+not a CPU/GPU divergence.
+
+**(2) TRAINING — the net never saw a real reprojected sky sample, only
+identity self-feedback.** `rdirect_train_v7.rs::settle_still` (the recurrent
+training loop) NEVER calls `CamPose::reproject` — it hardcodes `valid=1.0`
+after step 0 and feeds `prev_dl` = the SAME PIXEL's own previous output,
+always (single fixed camera per training `Pose`, no motion, no reprojection
+at all). `pixel_features_split`'s `hi_motion` argument is `Vec2::ZERO` in
+every caller, training AND eval alike (dead input everywhere, not itself
+the smear cause but confirms motion was never modeled). So "valid=1" in
+training means EXACTLY "trust your own last output at this exact pixel";
+the net was never shown a case where valid=1 but the previous value came
+from a genuinely different (reprojected) sample. Under live motion,
+mechanism (1) fires valid=1 for sky with a value the net has no learned
+reason to discount → it blends toward the stale/misregistered sample →
+visible smear specifically where directional sky variation (gradient, sun
+glow, per-frame trace noise) makes "stale" visibly different from "current".
+
+**VERDICT: BOTH mechanisms, compounding.** (1) is the structural gate
+failure (sky uniquely exempt from any similarity check); (2) is why the net
+can't compensate (it was never trained on a valid=1 sample that wasn't
+identity feedback). Neither alone is suficient to fully explain the
+practical ghosting without the other, but (1) is the more direct, minimal,
+symmetric-fixable defect — hence the fix below.
+
+**MEASURE — offscreen CPU probe** (`examples/rdirect_v7_sky_smear_probe.rs`,
+new, pure CPU, no world load, no GPU, real shipped v7 weights): synthetic
+64×48 frame, top half SKY (no-hit, low-res radiance gets FRESH per-frame
+noise — real Monte-Carlo variance), bottom half a constant ground plane,
+camera TRANSLATING sideways (eye.x += 0.15/frame, forward/up/right fixed —
+pure translation, the Architect's reported motion), 8 frames. Metric: mean-
+abs-diff between the PRESENTED sky pixel (recurrent) and a FRESH no-history
+render of the identical pose (length-1 sequence, valid=0 unconditionally).
+
+```
+frame 0: default-vs-fresh=0.000000e0  reject-vs-fresh=0.000000e0   (no history yet)
+frame 1: default-vs-fresh=7.018796e-2  reject-vs-fresh=0.000000e0
+frame 2: default-vs-fresh=7.867728e-2  reject-vs-fresh=3.247134e-6
+frame 3: default-vs-fresh=7.603575e-2  reject-vs-fresh=0.000000e0
+frame 4: default-vs-fresh=7.778201e-2  reject-vs-fresh=7.769714e-6
+frame 5: default-vs-fresh=7.740154e-2  reject-vs-fresh=0.000000e0
+frame 6: default-vs-fresh=8.004203e-2  reject-vs-fresh=0.000000e0
+frame 7: default-vs-fresh=8.130357e-2  reject-vs-fresh=0.000000e0
+SUMMARY max-over-frames: default-vs-fresh=8.130357e-2 reject-vs-fresh=7.769714e-6
+ground px max-diff default-vs-reject=0.0000e0 (must be 0.0)
+```
+Default behavior diverges from the true instantaneous sky value by a
+sustained ~0.077-0.081 mean-abs-diff (in [0,1] linear-ish space) once
+history kicks in — a real, persistent smear, not a one-frame transient.
+`GAIA_V7_SKY_HISTORY=reject` collapses that to ~1e-6 (residual is the
+evidence-clamp ceiling's temporal-mean differing between the 8-frame run
+and the 1-frame fresh reference — an unrelated accounting artifact, 4-5
+orders of magnitude below the smear signal, not a history-feature leak).
+Ground pixels: byte-identical between default and reject (`0.0000e0`) —
+the fix is surgically scoped to the is_miss branch, confirmed.
+
+PNGs (`proof/neural-live/sky-smear-{default,reject}-last.png`, frame 7):
+**default** shows a smooth, flat, over-averaged sky band (history low-pass
+filtering away the true per-frame noise into a hazy trail); **reject** shows
+the sky's actual grainy per-frame structure (matches what a fresh render
+would show — no false smoothing). This is the visual signature of the same
+smear the Architect saw.
+
+**FIX — `GAIA_V7_SKY_HISTORY=reject`, opt-in, IRON default unchanged.**
+Smallest possible: force `valid=0` for no-hit/sky pixels on BOTH sides,
+symmetric like `SNAP_EPS`.
+- CPU: `rdirect.rs` — new `pub fn sky_history_reject() -> bool` (env-gated,
+  same pattern as `evidence_clamp_gamma`/`GAIA_V7_CLAMP_GAMMA`), read once
+  per `direct_render_sequence_hist_split` call; `ok = prev_miss` becomes
+  `ok = prev_miss && !sky_reject` in the `is_miss` branch only.
+- GPU: `rdirect_gather_split.wgsl` — `HistUniform.params2.y` carries the
+  same flag (0.0/1.0), written by `rdirect_gather.rs::FeatureGatherHistSplit::
+  encode` (reads `sky_history_reject()` once per encode call); `gather_hist_split`'s
+  `is_miss` branch: `ok = prev_miss && (hu.params2.y < 0.5)`.
+- `rotate` (motion-compensated sky, mentioned as a future option) is **NOT
+  implemented** — out of scope for this timebox; only `reject` and the
+  default (unset/anything else = byte-identical to prior behavior) are
+  wired. Not touched: stamp/bars, weights, any non-sky path, `SNAP_EPS`,
+  the normal-hit branch.
+
+**ACT-CHANGE RE-ORDEAL (required before any stamp claim — none made here):**
+- 6 regression ordeals, flag OFF/default (`rdirect_gather_ordeals`,
+  `rdirect_gpu_ordeals` ×4, `rdirect_live_ordeals`): all `ok`, same order
+  of magnitude as every prior room (n0b gate A/B/n0g, a/b/b2/c, n0-gate1) —
+  ran, not just compiled.
+- `v7_present_parity_probe` (live GPU pipeline vs CPU reference), flag OFF:
+  `still_max=4.7684e-7 pan_max=1.5497e-6` — **byte-identical to room 8's own
+  recorded numbers**, confirming this room's changes made ZERO difference
+  to default behavior.
+- Same probe, `GAIA_V7_SKY_HISTORY=reject`: `still_max=4.7684e-7
+  pan_max=1.3001e-6` — GPU still agrees with CPU at machine precision WITH
+  the flag flipped on too, proving the WGSL `params2.y` wiring is correct
+  and symmetric on the live GPU path (not just in isolated unit math).
+- **This is act-code (not test-only): `sky_history_reject()` is read inside
+  `direct_render_sequence_hist_split` (CPU reference, load-bearing for the
+  stamped real-image ordeal) and inside `FeatureGatherHistSplit::encode`
+  (the actual live GPU dispatch `main.rs` calls). Because the default value
+  is unchanged, the shipped v7 stamp remains valid AS-IS for the default
+  path. If `GAIA_V7_SKY_HISTORY=reject` is ever flipped to non-default in
+  the live app, the real-image ordeal (residual-vs-teacher + sparkle bars)
+  MUST be re-run under that setting before any PASS claim for that mode —
+  this room did NOT do that re-stamp (out of scope: no real-image scenes
+  were rendered, only the synthetic sky probe and the existing parity/
+  regression harnesses). The Architect's own word decides whether/when to
+  flip the flag; this room only proves the mechanism and ships the opt-in
+  lever.**
+
+**Artifacts this room**: `packages/scrying-glass/src/rdirect.rs` (env flag +
+is_miss gate), `packages/scrying-glass/src/rdirect_gather_split.wgsl` (mirror
+gate + params2.y), `packages/scrying-glass/src/rdirect_gather.rs` (encode()
+writes params2.y), `packages/scrying-glass/examples/rdirect_v7_sky_smear_probe.rs`
+(new, pure-CPU offscreen probe), `proof/neural-live/sky-smear-{default,
+reject}-last.png`, this section. No world/live-app process touched, no port
+8430 activity.

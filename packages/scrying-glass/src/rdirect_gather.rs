@@ -315,7 +315,10 @@ impl From<CamPose> for CamGpu {
 
 /// The `@group(1)` history uniform — mirrors `HistU` in the WGSL exactly.
 /// `params = (prev_w, prev_h, has_prev, depth_tol)`,
-/// `params2 = (normal_thresh, 0, 0, 0)`.
+/// `params2 = (normal_thresh, sky_reject, 0, 0)` — `sky_reject` is
+/// `GAIA_V7_SKY_HISTORY=reject` as 1.0/0.0 (see
+/// `rdirect::sky_history_reject`), read once per `encode` call, mirroring
+/// the CPU reference's `direct_render_sequence_hist_split`.
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct HistUniform {
@@ -452,11 +455,12 @@ impl FeatureGatherHistSplit {
     ) {
         let uniform = GatherUniform { dims: [low_w, low_h, target_w, target_h] };
         queue.write_buffer(&self.uniform_buf, 0, bytemuck::bytes_of(&uniform));
+        let sky_reject = if crate::rdirect::sky_history_reject() { 1.0 } else { 0.0 };
         let hist_uniform = HistUniform {
             cur: cur_cam.into(),
             prev: prev_cam.into(),
             params: [prev_w as f32, prev_h as f32, if has_prev { 1.0 } else { 0.0 }, depth_tol],
-            params2: [normal_thresh, 0.0, 0.0, 0.0],
+            params2: [normal_thresh, sky_reject, 0.0, 0.0],
         };
         queue.write_buffer(&self.hist_uniform_buf, 0, bytemuck::bytes_of(&hist_uniform));
         let bind0 = device.create_bind_group(&wgpu::BindGroupDescriptor {
