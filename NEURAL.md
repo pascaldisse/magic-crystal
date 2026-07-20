@@ -150,6 +150,12 @@ Each gated: same scene, neural on/off, frame-time + image/physics-error
 metrics on the MacBook. No gate, no promotion.
 
 ## TRAINING DOCTRINE (sealed 07-18 — Architect delegated: "your field"; N1/P-N1 inherit)
+⚠ ENFORCEMENT (07-20, LASHES row 18 — the Architect caught v7/v8 running
+tier-3-only distillation, doctrine unenforced for 2 days): every training
+lane's Adversary-Report MUST carry a `DOCTRINE-CONCORDANCE:` line naming
+which tiers (1/2/3) the trainer implements, or the deviation and its
+authorization. Absent line = gate FAILS (wilde-jagd tooth). A sealed law
+is a gate, not a memo.
 No million-example diets. Three tiers, all used, strongest first:
 1. STRUCTURE — the algorithm IS the architecture: unroll the iterative solve
    (XPBD iterations / reconstruction steps) as layers; init to reproduce one
