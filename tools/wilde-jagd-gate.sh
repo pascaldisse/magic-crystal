@@ -6,6 +6,10 @@ law='ADVERSARY CHARTER: every merge requires cross-model adversary + spec-concor
 cite_law='CITE TOOTH: newly added Markdown silicon/host claims require [source: ...] or UNVERIFIED on the same line.'
 cite_pattern='ANE|CoreML|MPSGraph|MTLTensor|Metal [0-9]|macOS [0-9]|M[0-9] (Pro|Max)?|neural cores'
 doctrine_law='TRAINING DOCTRINE (NEURAL.md §TRAINING DOCTRINE, LASHES row 18): every training-lane Adversary-Report must carry a DOCTRINE-CONCORDANCE: line.'
+blob_law='BLOB TOOTH (LASHES row 19): scrubbed blobs must never re-enter history via a contaminated push.'
+# IRON law: no hardcoded shas without env override. Default = the recorded
+# TRILOGY.md blob (scrubbed 07-20).
+blob_shas=( ${GAIA_JAGD_BLOB_SHAS:-ba2748d65ff52c520e1d6d0f8a4519aac1073bdd} )
 # IRON law: no hardcoded paths without env override. Default derived from the
 # repo's real trainer layout (packages/*/examples/*train*.rs,
 # packages/*/src/*_dataset.rs) but any path ending examples/...train....rs or
@@ -20,11 +24,17 @@ fi
 
 commits=()
 cite_ranges=()
+blob_ranges=()
 while (( $# > 0 )); do
   case "$1" in
     --cite-range)
       [[ $# -ge 2 ]] || { printf 'WILDE JAGD REFUSED — --cite-range needs a range.\n' >&2; exit 1; }
       cite_ranges+=( "$2" )
+      shift 2
+      ;;
+    --blob-range)
+      [[ $# -ge 2 ]] || { printf 'WILDE JAGD REFUSED — --blob-range needs a range.\n' >&2; exit 1; }
+      blob_ranges+=( "$2" )
       shift 2
       ;;
     *)
@@ -35,6 +45,25 @@ while (( $# > 0 )); do
 done
 
 status=0
+
+if (( ${#blob_ranges[@]} > 0 )); then
+for range in "${blob_ranges[@]}"; do
+  hit=""
+  if (( ${#blob_shas[@]} > 0 )); then
+    for blobsha in "${blob_shas[@]}"; do
+      [[ -z "$blobsha" ]] && continue
+      if git rev-list --objects "$range" 2>/dev/null | grep -qw "$blobsha"; then
+        printf 'WILDE JAGD REFUSED — blob tooth: %s carries scrubbed blob %s.\n' "$range" "$blobsha" >&2
+        printf '%s\n' "$blob_law" >&2
+        printf 'LASHES.md row 19: intimate/personal source text NEVER enters a repo in any form.\n' >&2
+        hit=1
+        status=1
+      fi
+    done
+  fi
+  [[ -z "$hit" ]] && printf 'WILDE JAGD BLOB TOOTH HOLDS — %s\n' "$range" >&2
+done
+fi
 if (( ${#cite_ranges[@]} > 0 )); then
 for range in "${cite_ranges[@]}"; do
   violations=()
@@ -57,7 +86,7 @@ for range in "${cite_ranges[@]}"; do
 done
 fi
 
-if (( ${#commits[@]} == 0 && ${#cite_ranges[@]} == 0 )); then
+if (( ${#commits[@]} == 0 && ${#cite_ranges[@]} == 0 && ${#blob_ranges[@]} == 0 )); then
   commits=( HEAD )
 fi
 

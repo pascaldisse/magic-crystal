@@ -8,6 +8,12 @@ zero=0000000000000000000000000000000000000000
 commits=()
 ranges=()
 
+# BLOB TOOTH (07-20, LASHES row 19): scrubbed blobs (e.g. the TRILOGY.md
+# source text removed from history 07-20) must never re-enter via a
+# contaminated local branch. The check itself lives in the gate
+# (--blob-range), parameterized there via GAIA_JAGD_BLOB_SHAS (IRON law).
+blob_ranges=()
+
 while read -r local_ref local_sha remote_ref remote_sha; do
   [[ "$local_sha" == "$zero" ]] && continue  # deletion
   if [[ "$remote_sha" == "$zero" ]]; then
@@ -18,6 +24,8 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     printf 'WILDE JAGD REFUSED — remote tip %s is unavailable locally. Fetch before pushing.\n' "$remote_sha" >&2
     exit 1
   fi
+
+  blob_ranges+=( "$range" )
   ranges+=( "$range" )
   while read -r commit; do
     [[ -n "$commit" ]] && commits+=( "$commit" )
@@ -28,6 +36,11 @@ args=()
 if (( ${#ranges[@]} > 0 )); then
   for range in "${ranges[@]}"; do
     args+=( --cite-range "$range" )
+  done
+fi
+if (( ${#blob_ranges[@]} > 0 )); then
+  for range in "${blob_ranges[@]}"; do
+    args+=( --blob-range "$range" )
   done
 fi
 
