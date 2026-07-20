@@ -260,6 +260,40 @@ fn render_pose(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn run_monitor(
+    tag: &str,
+    ema_mlp: &Mlp,
+    val_pose: &Pose,
+    k: u32,
+    tw: u32,
+    th: u32,
+    spark_target: f32,
+    resid_gate: f32,
+    best_score: &mut f64,
+    best_sp_log: &mut f64,
+    best_rs_log: &mut f64,
+    best_bytes: &mut Vec<u8>,
+    wpath: &Path,
+) {
+    let net = settle_still(ema_mlp, val_pose, k);
+    let sp = sparkle_resid_per_mpx(&net, &val_pose.teacher, tw, th);
+    let rs = rmse_lin(&net, &val_pose.teacher);
+    let passes = sp < spark_target as f64 && rs < resid_gate as f64;
+    let score = (sp / 40.0).max(rs / 0.035);
+    let better = score < *best_score;
+    if better {
+        *best_score = score;
+        *best_sp_log = sp;
+        *best_rs_log = rs;
+        *best_bytes = serialize_weights(ema_mlp);
+        std::fs::write(wpath, &*best_bytes).unwrap();
+    }
+    eprintln!("[v7] MONITOR {tag}: val sparkle {sp:.1}/Mpx resid {rs:.4} score={score:.3}{} (tgt sp<{spark_target} resid<{resid_gate}){}",
+        if passes { " PASS" } else { "" }, if better { " *BEST->saved" } else { "" });
+    std::io::stderr().flush().ok();
+}
+
 fn rmse_lin(net: &[GVec3], teacher: &[GVec3]) -> f64 {
     let mut s = 0.0f64;
     for (a, b) in net.iter().zip(teacher) {
@@ -444,6 +478,12 @@ fn main() {
                 samples.push((pi, (rng.next() as usize) % np));
             }
         }
+        // CORNER-CRAWL: mid-epoch fine monitors at 1/3 and 2/3 of the batch
+        // stream, epochs 0..5 only (the window the 10-epoch cadence was
+        // blind to in v7f/v7d) — fired once each by watching bstart cross
+        // the fraction boundary.
+        let mid_fires: [usize; 2] = [samples.len() / 3, 2 * samples.len() / 3];
+        let mut mid_done = [false, false];
         let mut bstart = 0usize;
         while bstart < samples.len() {
             // THE CURE (d) / WALL BUG FIX: check the budget INSIDE the epoch
@@ -491,6 +531,18 @@ fn main() {
             adam_apply(&mut adam, &mut mlp, &wg, &bg);
             ema_mlp.ema_update(&mlp, ema_decay); // THE CURE (b): shadow update per optimizer step
             bstart = bend;
+
+            if epoch < 5 {
+                for (i, fire_at) in mid_fires.iter().enumerate() {
+                    if !mid_done[i] && bstart >= *fire_at {
+                        mid_done[i] = true;
+                        let frac_tag = if i == 0 { "1/3" } else { "2/3" };
+                        run_monitor(&format!("epoch {epoch} @{frac_tag}"), &ema_mlp, &val_pose, k, tw, th,
+                            spark_target, resid_gate, &mut best_score, &mut best_sp_log, &mut best_rs_log,
+                            &mut best_bytes, &wpath);
+                    }
+                }
+            }
         }
 
         if epoch % 10 == 0 || epoch + 1 == epochs {
@@ -502,22 +554,9 @@ fn main() {
 
         if (epoch + 1) % monitor_every == 0 || epoch + 1 == epochs {
             // THE CURE (b): monitor evaluates the EMA weights, not raw `mlp`.
-            let net = settle_still(&ema_mlp, &val_pose, k);
-            let sp = sparkle_resid_per_mpx(&net, &val_pose.teacher, tw, th);
-            let rs = rmse_lin(&net, &val_pose.teacher);
-            let passes = sp < spark_target as f64 && rs < resid_gate as f64;
-            let score = (sp / 40.0).max(rs / 0.035);
-            let better = score < best_score;
-            if better {
-                best_score = score;
-                best_sp_log = sp;
-                best_rs_log = rs;
-                best_bytes = serialize_weights(&ema_mlp);
-                std::fs::write(&wpath, &best_bytes).unwrap();
-            }
-            eprintln!("[v7] MONITOR epoch {}: val sparkle {sp:.1}/Mpx resid {rs:.4} score={score:.3}{} (tgt sp<{spark_target} resid<{resid_gate}){}",
-                epoch, if passes { " PASS" } else { "" }, if better { " *BEST->saved" } else { "" });
-            std::io::stderr().flush().ok();
+            run_monitor(&format!("epoch {epoch}"), &ema_mlp, &val_pose, k, tw, th,
+                spark_target, resid_gate, &mut best_score, &mut best_sp_log, &mut best_rs_log,
+                &mut best_bytes, &wpath);
         }
     }
     eprintln!("[v7] training done in {:.1}s (best score={best_score:.3} sparkle {best_sp_log:.1} resid {best_rs_log:.4}, started at floor {START_SCORE_FLOOR})",

@@ -2,3 +2,5 @@
      Running `/Users/pascaldisse/projects/magic-crystal-neural-live/target/release/examples/real_image_ordeal`
 [ordeal] weights=data/rdirect-weights-v7.bin in_dim=39 (N5 split recurrent (39)) res 640x480 still=10 pan=6
 [ordeal] orbit_-20 STILL: resid=0.03598 sparkle=16.3/Mpx (teacher 0.0) tvar=2.694e-5
+[ordeal] orbit_-20 PAN mid: resid_hist=0.03779 resid_single=0.03990 ghost_excess=-0.00212
+duplicate of scratch/v7e-ordeal-clamp.log (weights unchanged, 636c8743) - killed to free GPU for v7g crawl, 2026-07-19

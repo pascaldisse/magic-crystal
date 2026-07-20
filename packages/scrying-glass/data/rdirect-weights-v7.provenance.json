@@ -39,12 +39,12 @@
     "evidence_clamp_gamma": 1.5,
     "init": "CURE fine-tune: resumed from restored 636c8743 3-out checkpoint",
     "loss": "PLAIN MSE vs split-smoothed target, backprop through the v7e evidence clamp (no cap/gate/firefly-weight loss term, no two-head)",
-    "lr0": 0.0006000000284984708,
+    "lr0": 0.00009999999747378752,
     "ref_frames": 96,
     "split": "E = radiance via zero-or-more specular/low-roughness bounces (SPEC_CHAIN_MAX_ROUGHNESS 0.25); D = radiance after a diffuse/rough scatter (~0.88% of frame energy)",
     "subsample_px_per_pose_per_epoch": 20000,
     "target_construction": "target = E_full (exact, ref_frames) + box_blur(D_full, radius) — E kept sharp, D smoothed at the SOURCE before demod-log; escapes the sparkle<->resid Pareto front structurally instead of penalizing the output",
     "unroll_steps": 8
   },
-  "weights_sha256": "636c8743faf25fa3311d8752a9e5d6ff0abd4b4ad52fb2466e2cfcaf4bbdf8ce"
+  "weights_sha256": "55720b4592ba2c088844172d49a84ce9bfbf73ade92184b3b32a7e65cd2340ce"
 }
