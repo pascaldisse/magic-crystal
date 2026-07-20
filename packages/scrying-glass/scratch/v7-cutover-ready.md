@@ -192,6 +192,34 @@ DEFAULT weights selection) is a separate decision this room does not make.
 - `src/integrator.rs` (`make_split_buffer`) — the COPY_DST fix.
 - This file + `scratch/v7-live-lane.md` §§"STAGE 3 PROGRESS (room 2/3)".
 
+## Room 4 update (ghoul run 2026-07-20): reprojection-guard fix — STATUS STILL OPEN
+
+- Root cause found this room: `gather_hist_split`'s `cam_reproject`
+  off-screen bounds check (`fpx < 0 || fpy < 0 || fpx > w-1 || fpy > h-1`)
+  sits geometrically AT 0/w-1 for a still camera's self-reprojected edge
+  pixels (algebraic identity, `sx == cx` when cur==prev); a sub-ULP
+  GPU-vs-CPU difference in the underlying dot products flips which side
+  of the boundary the coordinate lands on, converting into a full
+  history valid=0/1 disagreement at ~1% of pixels (the still-sequence
+  "plateau" from room 4's earlier finding). The other leading suspect
+  (WGSL `round()` half-to-even vs Rust `f32::round()` half-away-from-zero)
+  was tested and FALSIFIED — fixing it changed nothing.
+- Fix: `REPROJ_EDGE_EPS = 1.0e-3` slack on the bounds check + clamp the
+  admitted fpx/fpy into range (`src/rdirect_gather_split.wgsl`).
+- Result: still-sequence max-abs-diff **6.07e-2 → 1.28e-2** (~2x), flipped
+  pixel count **58-62 → 30-32** (~2x) — real improvement, but NOT collapsed
+  to the pan-class 1e-6 floor, and the fix is asymmetric (only GPU's side
+  moved) so it introduced a small new pan-sequence delta (2.93e-4 at one
+  frame, still px>1e-3=0). **Cutover-blocking status UNCHANGED**: the
+  shipped-equals-ordealed-act seam is NOT closed. Full numbers, the exact
+  divergent lines, and next steps: `scratch/v7-live-lane.md` §"STAGE 3
+  room 4".
+- Regression guard: all 6 pre-existing ordeals re-run this room, still
+  byte-identical (the WGSL edit doesn't touch their code paths).
+- FPS: one s20 run (flag ON, v7+split), TOTAL median 18.15ms/WALL-FPS 42.7
+  — within noise of room 3's 16.57-16.63ms, not independently re-confirmed
+  with a second run.
+
 No gate was weakened or bypassed. Nothing launched with a window, no running
 session touched (whip 154). All new claims in this file were played through
 the real offscreen server + read back from real output (image bytes, /budget

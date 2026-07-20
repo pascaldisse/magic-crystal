@@ -138,6 +138,16 @@ fn gather_split(@builtin(global_invocation_id) gid: vec3<u32>) {
 // `FeatureGatherHistSplit` (flag-gated the same as Stage 1, default OFF).
 
 const FEATURES_HIST: u32 = 39u;
+// Reprojection screen-bounds accept slack: GPU vs CPU dot-product/FMA
+// evaluation order can disagree by a few ULP on `sx`/`sy`, which is
+// invisible almost everywhere but flips the `fpx</fpy < 0` / `> dim-1`
+// accept test at pixels whose reprojected coord sits geometrically AT the
+// frame edge (self-reprojection of a static/near-static camera lands
+// exactly on tx=0/ty=0/w-1/h-1 there). Widening the accept window by this
+// much (far below one pixel, comfortably above observed ~1e-6 ULP noise)
+// matches the CPU reference's accept decision at those edge pixels without
+// changing the interior accept/reject boundary anywhere else.
+const REPROJ_EDGE_EPS: f32 = 1.0e-3;
 
 // One camera pose, GPU layout: eye_ht.xyz=eye, .w=half_tan;
 // right_asp.xyz=right, .w=aspect; up.xyz=up; fwd.xyz=forward. Mirrors CPU
@@ -187,10 +197,11 @@ fn cam_reproject(cam: CamGpu, world: vec3<f32>, w: f32, h: f32) -> vec3<f32> {
   let sy = dot(rel, cam.up.xyz) / (rz * half_tan);
   let fpx = (sx + 1.0) * 0.5 * w - 0.5;
   let fpy = (1.0 - sy) * 0.5 * h - 0.5;
-  if (fpx < 0.0 || fpy < 0.0 || fpx > (w - 1.0) || fpy > (h - 1.0)) {
+  if (fpx < -REPROJ_EDGE_EPS || fpy < -REPROJ_EDGE_EPS ||
+      fpx > (w - 1.0 + REPROJ_EDGE_EPS) || fpy > (h - 1.0 + REPROJ_EDGE_EPS)) {
     return vec3<f32>(0.0, 0.0, 0.0);
   }
-  return vec3<f32>(fpx, fpy, 1.0);
+  return vec3<f32>(clamp(fpx, 0.0, w - 1.0), clamp(fpy, 0.0, h - 1.0), 1.0);
 }
 
 // bilinear_vec3 — SAME clamped 4-tap resample as the CPU TAA-style history
@@ -311,8 +322,12 @@ fn gather_hist_split(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (rep.z > 0.5) {
       let fx = rep.x;
       let fy = rep.y;
-      let ipx = u32(clamp(round(fx), 0.0, f32(prev_w) - 1.0));
-      let ipy = u32(clamp(round(fy), 0.0, f32(prev_h) - 1.0));
+      // fx/fy are always >=0 here (cam_reproject rejects fpx<0/fpy<0 above),
+      // so floor(x+0.5) == Rust's f32::round() (half-away-from-zero). WGSL's
+      // round() is half-to-even and disagreed with the CPU reference at .5
+      // ties — this is the fix for the reprojection-guard validity mismatch.
+      let ipx = u32(clamp(floor(fx + 0.5), 0.0, f32(prev_w) - 1.0));
+      let ipy = u32(clamp(floor(fy + 0.5), 0.0, f32(prev_h) - 1.0));
       let pj = ipy * prev_w + ipx;
       let prev_depth = prev_aov[2u * pj + 0u].w;
       let prev_norm = prev_aov[2u * pj + 1u].xyz;

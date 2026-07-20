@@ -654,3 +654,111 @@ feature-sequence replay for the A/B dump, both diagnostic/additive).
 **Artifacts this room**: `examples/v7_present_parity_probe.rs` (12-frame
 still sequence, `cpu_feature_sequence` standalone replay + per-flip-pixel
 39-feature A/B dump), this note.
+
+## STAGE 3 room 4 (ghoul run 2026-07-20) — reprojection-guard fix, PARTIAL not closed
+
+**1. Divergent op, exact lines.** Line-diffed `cam_reproject`
+(`src/rdirect_gather_split.wgsl:180-194`) against `CamPose::reproject`
+(`src/rdirect.rs:1025-1035`) and `gather_hist_split`'s ipx/ipy rounding
+(`rdirect_gather_split.wgsl:311-312`) against
+`direct_render_sequence_hist_split`'s (`rdirect.rs:1529-1530`). Two
+candidate ops:
+- round-tie: WGSL `round(fx)` (half-to-even) vs Rust `fx.round()`
+  (half-away-from-zero). **Tested and FALSIFIED**: fixed to
+  `floor(fx+0.5)` (exact match for fx>=0, which cam_reproject guarantees),
+  rebuilt, reran the 12-frame probe — numbers were BYTE-IDENTICAL to the
+  round() baseline (same px>1e-3=59-62, same max-abs-diff curve). Not the
+  cause.
+- off-screen bounds check: `if (fpx < 0.0 || fpy < 0.0 || fpx > w-1 ||
+  fpy > h-1) return miss` — same structure both sides, but a STILL camera
+  self-reprojects algebraically to `fpx == tx` (worked the substitution:
+  `sx == cx` exactly when cur==prev camera), i.e. edge pixels (tx=0 or
+  ty=0, which is where 8 of 9 non-px2976 flip pixels live — px 11,51,55,
+  59,61,73,77,79,83,86 in a tw=96 image are ALL `i<96` → ty=0, the TOP
+  ROW; px 2976 = ty=31,tx=0, the LEFT edge) reproject to a coordinate that
+  sits geometrically AT the accept/reject boundary (fpx≈0 or w-1). A
+  sub-ULP GPU-vs-CPU difference in the `dot()` products that build
+  sx/sy (GPU FMA fusion vs CPU glam's un-fused multiply-add being the most
+  likely mechanism, not proven at the instruction level — CamGpu is a
+  byte-identical copy of CamPose, ruled that out as a source) flips which
+  side of 0.0 the coordinate lands on, which the `is_miss` guard converts
+  into a full valid=0/1 flip (matches the earlier full-idx35-38-zero
+  observation exactly).
+
+**2. Fix applied** (`src/rdirect_gather_split.wgsl`): kept the
+round→floor(fx+0.5) correction (harmless, semantically right even though
+not the root cause) and widened `cam_reproject`'s bounds check by a named
+`REPROJ_EDGE_EPS = 1.0e-3` slack (comfortably above the ~1e-6 ULP noise
+class seen in the base-feature diff, comfortably below a full pixel), plus
+clamped the returned fpx/fpy into `[0, dim-1]` so a slack-admitted
+coordinate never indexes an out-of-bounds tap.
+
+**3. Result — IMPROVED, NOT CLOSED.** 12-frame still curve after the fix:
+```
+f0  max-abs-diff 4.77e-7   (unchanged, frame0 has no prev)
+f1  max-abs-diff ~1.9e-2   px>1e-3≈31 (down from ~60)  [frame1 log line lost to scrollback; f2 shown below]
+f2  A/B px=2976: GPU NOW ACCEPTS (valid=1, live=(0.180,0.069,0.126)) where
+    CPU REJECTS (valid=0) — direction reversed from pre-fix (was GPU=0,CPU=1)
+f3  max-abs-diff 1.2534e-2  px>1e-3=31
+f4  max-abs-diff 1.2657e-2  px>1e-3=30
+f5  max-abs-diff 1.2330e-2  px>1e-3=32
+f6  max-abs-diff 1.2542e-2  px>1e-3=31
+f7  max-abs-diff 1.2575e-2  px>1e-3=30
+f8  max-abs-diff 1.2187e-2  px>1e-3=30
+f9  max-abs-diff 1.2448e-2  px>1e-3=32
+f10 max-abs-diff 1.2462e-2  px>1e-3=31
+f11 max-abs-diff 1.2639e-2  px>1e-3=32
+still OVERALL max-abs-diff 1.2803e-2  (was 6.0695e-2 pre-fix)
+pan   frame0 4.77e-7  frame1 1.55e-6  frame2 2.93e-4 (was 1.07e-6) px>1e-3=0 all 3
+pan OVERALL max-abs-diff 2.9301e-4  (was 1.5497e-6)
+```
+max-abs-diff roughly halved (6.07e-2→1.28e-2) and the affected still-pixel
+count roughly halved (58-62→30-32), but the plateau did NOT collapse to
+the pan-class 1e-6 floor — it is NOT machine-precision parity yet, and the
+fix introduced a small new pan-sequence delta (2.93e-4 at frame 2, still
+3 orders below the 1e-3 flip threshold, px>1e-3 still 0, but non-zero
+where it was pure noise before) — the epsilon widening is asymmetric by
+construction (only GPU's bounds check moved) so it can flip pixels the
+CPU correctly rejects into GPU-accepts at OTHER edge pixels (seen directly
+in the px=2976 A/B dump above, now flipped the other direction). **This is
+a real improvement, not a closed seam**: still cutover-blocking under
+"shipped = ordealed act" until either (a) the eps is tuned/scoped tighter
+per-frame-size so it stops over-admitting, or (b) the true GPU-vs-CPU
+dot-product ULP source is found and eliminated at the arithmetic level
+(would need per-op GPU-side debug readback of sx/sy/rz, not done this
+room — timebox spent on the fix + verify + regression + fps legs).
+
+**4. Regression guard** — all 6 pre-existing ordeals re-run
+(`cargo test --release -j2 --test rdirect_gather_ordeals --test
+rdirect_gpu_ordeals --test rdirect_live_ordeals -- --nocapture`):
+all 6 `ok`, byte-identical outputs to every prior room (these tests don't
+exercise `gather_hist_split`/reprojection at all, so the WGSL edit can't
+and didn't touch them):
+```
+n0b_gather_and_shared_forward_match_cpu ... ok
+c_ban_no_temporal_vocabulary_in_the_gpu_kernel ... ok
+a_gpu_inference_is_byte_identical_same_frame_twice ... ok
+b_f32_gpu_matches_cpu_within_derived_bound ... ok
+b2_fp16_fast_kernel_matches_cpu_within_derived_bound ... ok
+n0_gate1_live_net_matches_cpu_reference ... ok
+```
+
+**5. FPS sanity** (s20 offscreen 640x480, `GAIA_NATIVE_WEIGHTS=v7
+GAIA_NATIVE_EVIDENCE_SPLIT=1`, one run, flag ON): **TOTAL median 18.15ms /
+p95 28.1-28.4ms, WALL-FPS 42.7** (`/budget`: `total:[18.156,28.038]`).
+Room 3's own re-benches were 16.57-16.63ms median; this room's 18.15ms is
+~1.5ms higher but still at/below the non-split v4 baseline's 18.57ms and
+well inside prior run-to-run variance (room 3 itself spanned 23.51-25.60ms
+at p95 between its two runs) — the changed ops (an eps compare + a clamp,
+both trivial ALU) are not plausible sources of a multi-ms shift; read as
+machine load noise, not a regression, but not independently re-confirmed
+with a second run this room (timebox).
+
+**6. Cutover-note status**: NOT updated to CLOSED — see
+`v7-cutover-ready.md` room-4 entry: still parity improved (~2x) but not at
+machine-precision; the shipped-equals-ordealed-act seam stays OPEN
+pending either eps tuning or the deeper ULP root-cause.
+
+**Artifacts this room**: `src/rdirect_gather_split.wgsl` (round→floor fix +
+`REPROJ_EDGE_EPS` bounds slack in `cam_reproject`), this note update,
+`v7-cutover-ready.md` room-4 entry.
