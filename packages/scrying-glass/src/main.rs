@@ -33,7 +33,7 @@ use scrying_glass::integrator::{
 };
 // NEURAL-LIVE N0.c construction scaffold: the ONE net presented per live frame.
 #[cfg(target_os = "macos")]
-use scrying_glass::rdirect::ALBEDO_DEMOD_EPS;
+use scrying_glass::rdirect::{ALBEDO_DEMOD_EPS, INPUT_FEATURES};
 #[cfg(target_os = "macos")]
 use scrying_glass::rdirect_demod::DemodPass;
 #[cfg(target_os = "macos")]
@@ -1453,6 +1453,22 @@ impl NetPresent {
             ));
         }
         let live = RdirectLive::from_wgpu_queue(device, queue, &weights, n)?;
+        // v7-live lane STAGE 3 guard: the frame loop below (FeatureGather ->
+        // live.forward -> DemodPass) is still hard-wired to the 23-in composite
+        // gather/present act. RdirectLive::build now LOADS any in_features shape
+        // the weights carry (v7's 39-in split-recurrent included), but feeding a
+        // 39-wide net a 23-wide gathered row is a silent stride mismatch, not a
+        // safe smaller act — REAL OR BLACK bars a wrong image, not just an
+        // unstamped one. Refuse here instead of building a corrupted pipeline
+        // until the gather_hist_split -> net -> evidence-clamp wiring lands
+        // (scratch/v7-live-lane.md §4 STAGE 3 items 2-4).
+        if live.in_features() != INPUT_FEATURES {
+            return Err(format!(
+                "v7-live lane STAGE 3 incomplete: weights {weights_file} want {}-in but the live frame loop only feeds the {}-in composite gather (39-in gather/history/clamp not wired yet, see scratch/v7-live-lane.md section 4) -- present BLACK rather than a corrupted stride-mismatched image",
+                live.in_features(),
+                INPUT_FEATURES
+            ));
+        }
         // SHIFT 17 CUT A: opt into the fused native demod (encode the demod on
         // the net's OWN queue right after the forward, killing N0.m's
         // cross-queue demod tail). MUST run BEFORE `start_pipeline`. Returns the
