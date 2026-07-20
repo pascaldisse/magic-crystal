@@ -102,6 +102,26 @@ pub const DATASET_HEIGHT: u32 = 64;
 /// asked to close.
 pub const DATASET_REF_FRAMES: u32 = 128;
 
+/// MIRROR AUTOPSY pose (v8 lane, mandate b) — `spawn_eye`
+/// (`realm_shine.rs`'s doc comment), the settled gameplay eye that frames
+/// `naruko_show_chrome` (the large chrome sphere, r=2.1 at
+/// `[4.5,3.6,29.5]`, metallic 1.0 roughness 0.02 — pure specular) squarely,
+/// proven by `proof/realm-shine-a.png` (128-frame converged reference) and
+/// reused verbatim from `examples/mirror_autopsy.rs`. NOT added to
+/// `law_poses`/TRAIN/VALIDATION (those lists are load-bearing for the
+/// shipped ordeal and other lanes — this is a standalone, additive helper
+/// so nothing existing can silently pick up a new pose).
+pub fn mirror_camera() -> Camera {
+    Camera {
+        eye: GVec3::new(0.0, 1.7, 44.0),
+        yaw: 0.0,
+        pitch: 0.0,
+        fov_y_radians: 60f32.to_radians(),
+        near: 0.1,
+        far: 4_000.0,
+    }
+}
+
 /// The fixed law-pose list — see module docs for the honest dataset scope.
 /// `params` should be [`naruko_params`] (or an equivalent `SceneParameters`)
 /// so the front pose matches its authored camera exactly.

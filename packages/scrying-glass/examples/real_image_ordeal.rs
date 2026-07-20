@@ -344,6 +344,7 @@ fn main() {
         "v5" => "data/rdirect-weights-v5.bin".to_string(),
         "v6" => "data/rdirect-weights-v6.bin".to_string(),
         "v7" => "data/rdirect-weights-v7.bin".to_string(),
+        "v8" => "data/rdirect-weights-v8.bin".to_string(),
         other => other.to_string(),
     };
     let wpath: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join(&wrel);

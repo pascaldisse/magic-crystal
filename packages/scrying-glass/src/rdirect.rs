@@ -1077,8 +1077,11 @@ impl CamPose {
 }
 
 /// Bilinear fetch of a Vec3 image at a fractional position (clamped) — the
-/// standard TAA history resample (light-fix `t_hist_bilinear`).
-fn bilinear_vec3(img: &[Vec3], fx: f32, fy: f32, w: u32, h: u32) -> Vec3 {
+/// standard TAA history resample (light-fix `t_hist_bilinear`). `pub` (v8
+/// lane, mandate a): the trainer needs this to sample a reprojected-history
+/// image outside this module, same as the eval path already does internally
+/// — visibility widened only, body byte-identical, no behavior change.
+pub fn bilinear_vec3(img: &[Vec3], fx: f32, fy: f32, w: u32, h: u32) -> Vec3 {
     let x0 = fx.floor() as i32;
     let y0 = fy.floor() as i32;
     let tx = fx - x0 as f32;
