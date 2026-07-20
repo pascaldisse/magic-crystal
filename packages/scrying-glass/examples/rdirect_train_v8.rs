@@ -238,7 +238,7 @@ fn render_pose_seq(
 }
 
 /// Reproject step `s-1`'s real net output (`prev_out_dl`, full native-res
-/// image, LIVE weights snapshotted at epoch start — see `history_forward`)
+/// image, EMA weights snapshotted at epoch start — see `history_forward`)
 /// into step `s`'s screen at pixel (tx,ty). Byte-for-byte the same
 /// accept/reject rule `direct_render_sequence_hist_split` runs (is_miss /
 /// sky_reject / depth+normal guard), just standalone so it can be called
@@ -293,17 +293,33 @@ fn reproject_prev(
 }
 
 /// Precompute the FULL native-res out_dl chain for every step of a pose
-/// sequence, using the CURRENT (epoch-start) weights, forward-only (no
-/// grad). This is the "target network" for the epoch's training batches:
-/// batches within the epoch look up `prev_dl` from this FROZEN chain (built
-/// once, before any of the epoch's Adam steps) via real reprojection,
-/// exactly mirroring what `direct_render_sequence_hist_split` does at eval
-/// — the only difference is WHICH weights compute the live forward/backward
-/// pass for the sampled pixel (the epoch's progressively-updated `mlp`) vs
-/// which weights built the history it reprojects from (frozen at epoch
-/// start). Standard truncated-BPTT-with-a-target-chain; recomputing this on
-/// every SGD step would need a full-image forward per batch, computationally
-/// infeasible for this trainer's per-pixel MLP.
+/// sequence, using the EMA (Polyak-averaged) weights snapshotted at epoch
+/// start, forward-only (no grad). This is the "target network" for the
+/// epoch's training batches: batches within the epoch look up `prev_dl`
+/// from this FROZEN chain (built once, before any of the epoch's Adam
+/// steps) via real reprojection, exactly mirroring what
+/// `direct_render_sequence_hist_split` does at eval — the only difference
+/// is WHICH weights compute the live forward/backward pass for the sampled
+/// pixel (the epoch's progressively-updated raw `mlp`) vs which weights
+/// built the history it reprojects from (the smoothed `ema_mlp`, frozen at
+/// epoch start). Sourcing the recurrent-feedback chain from the EMA rather
+/// than the raw iterate is deliberate, not incidental: v7d's cure principle
+/// ("the checkpoint that gets measured/saved is a slow-moving average...
+/// which cannot itself develop a sharp outlier the way the raw SGD/Adam
+/// iterate can") was previously applied only to monitor/checkpoint
+/// selection; v8's diagnosed sparkle<->resid seesaw (epoch 2->21, sparkle
+/// 45->795/Mpx while resid plateaus above bar) traced to this function
+/// reading the RAW `mlp` as its once-per-epoch history source — any local
+/// sparkle/overshoot in that epoch-start raw net got baked into the
+/// `prev_dl` training-input feature for every later step of every pixel
+/// that reprojects near it, a feedback path for exactly the observed
+/// runaway signature. Reading `ema_mlp` here instead applies the same
+/// noise-ball-isolation principle one level deeper: the recurrent input the
+/// network trains against is now itself smoothed, matching what the
+/// monitor/checkpoint already relied on. Standard truncated-BPTT-with-a-
+/// target-chain; recomputing this on every SGD step would need a full-image
+/// forward per batch, computationally infeasible for this trainer's
+/// per-pixel MLP.
 fn history_forward(mlp: &Mlp, seq: &PoseSeq, sky_reject: bool) -> Vec<Vec<GVec3>> {
     let (tw, th) = (seq.tw, seq.th);
     let n = (tw * th) as usize;
@@ -586,7 +602,7 @@ fn main() {
         // see history_forward's own doc for why this is once-per-epoch, not
         // once-per-batch.
         let t_hist = Instant::now();
-        let history: Vec<Vec<Vec<GVec3>>> = poses.iter().map(|seq| history_forward(&mlp, seq, sky_reject)).collect();
+        let history: Vec<Vec<Vec<GVec3>>> = poses.iter().map(|seq| history_forward(&ema_mlp, seq, sky_reject)).collect();
         let hist_ms = t_hist.elapsed().as_secs_f64() * 1000.0;
 
         let mut epoch_mse = 0.0f64;
