@@ -46,7 +46,7 @@ pub fn enabled() -> bool {
 
 #[cfg(target_os = "macos")]
 mod imp {
-    use crate::rdirect::{deserialize_weights, Mlp, INPUT_FEATURES, OUTPUT_CHANNELS};
+    use crate::rdirect::{deserialize_weights, Mlp, OUTPUT_CHANNELS};
     use objc2::rc::Retained;
     use objc2::runtime::ProtocolObject;
     use objc2::{AnyThread, Message};
@@ -722,13 +722,20 @@ kernel void demod_fused(
             let cpu_ref = deserialize_weights(weights)
                 .ok_or_else(|| "rdirect_live: weights blob failed to parse".to_string())?;
             let dims = cpu_ref.layer_dims();
-            if dims.first().map(|d| d.0 as usize) != Some(INPUT_FEATURES) {
-                return Err(format!(
-                    "rdirect_live: first layer in_dim {:?} != INPUT_FEATURES {}",
-                    dims.first(),
-                    INPUT_FEATURES
-                ));
-            }
+            // IRON: in_features is DERIVED from the loaded weights' own first-layer
+            // dim, not hardcoded. The 23-in (INPUT_FEATURES, old plain-net) and
+            // 39-in (HIST_FEATURES_SPLIT, v7 split-recurrent) shapes both load
+            // through this same path — whatever the blob says IS the shape; only
+            // a missing/degenerate first layer is an error.
+            let in_features = match dims.first().map(|d| d.0 as usize) {
+                Some(n) if n > 0 => n,
+                other => {
+                    return Err(format!(
+                        "rdirect_live: weights blob has no valid first layer in_dim (got {:?})",
+                        other
+                    ))
+                }
+            };
             let flat = cpu_ref.flat_weights();
 
             // SAFETY: objc2 message sends to live Metal + MPSGraph objects.
@@ -768,7 +775,7 @@ kernel void demod_fused(
                 }
 
                 // input placeholder: [N, in_features]; N is dynamic (-1).
-                let in_shape = shape(&[usize::MAX, INPUT_FEATURES]); // MAX → -1 sentinel
+                let in_shape = shape(&[usize::MAX, in_features]); // MAX → -1 sentinel
                 let input = graph
                     .placeholderWithShape_dataType_name(
                         Some(&in_shape),
@@ -804,7 +811,7 @@ kernel void demod_fused(
                     input,
                     output,
                     cpu_ref,
-                    in_features: INPUT_FEATURES,
+                    in_features,
                     out_channels: OUTPUT_CHANNELS,
                     pool: None,
                     event,

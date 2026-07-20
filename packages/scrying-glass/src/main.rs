@@ -1428,6 +1428,14 @@ impl NetPresent {
             "v2" => "data/rdirect-weights-v2.bin".to_string(),
             "v3" => "data/rdirect-weights-v3.bin".to_string(),
             "v4" => "data/rdirect-weights-v4.bin".to_string(),
+            // v7-live lane STAGE 3: 39-in split-recurrent net. Loadable now that
+            // RdirectLive::build derives in_features from the weights' own first
+            // layer instead of hardcoding INPUT_FEATURES (see rdirect_live.rs).
+            // NOTE: the frame loop below (gather/history/clamp) is still the
+            // 23-in composite path — selecting v7 here loads the net but the
+            // live present path does not yet feed it 39-feature rows or apply
+            // the evidence clamp (STAGE 3 TODO, scratch/v7-live-lane.md §5).
+            "v7" => "data/rdirect-weights-v7.bin".to_string(),
             other => other.to_string(),
         };
         let weights_abs = Path::new(env!("CARGO_MANIFEST_DIR")).join(&weights_file);
