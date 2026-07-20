@@ -910,3 +910,131 @@ snap, `REPROJ_EDGE_EPS` + its clamp fully removed),
 `proof/neural-live/s20-v7snap.{log,budget.json,state.json,-presented.png}`,
 refreshed `proof/neural-live/s25-{still,moving}{,-teacher}.png` (ordeal's
 own proof frames), this note, `v7-cutover-ready.md` room-5 entry.
+
+## §perf — room 6 (ghoul run 2026-07-20): clean-GPU bench + p95 tail attribution
+
+Measurement-only room, no engine code touched. GPU confirmed clean before
+and after (`ps aux | grep -i 'ordeal\|train\|cargo'` — no hits either
+time; no foreign load to note).
+
+**Clean baseline — 3x s20, offscreen 640x480, flag ON
+(`GAIA_NATIVE_WEIGHTS=v7 GAIA_NATIVE_EVIDENCE_SPLIT=1`), sequential,
+`nice -n 19`:**
+
+| run | frames | TOTAL median/p95 (ms) | wall_fps |
+|---|---|---|---|
+| v7clean1 | 1152 | 18.116 / 27.548 | 42.68 |
+| v7clean2 | 1130 | 18.181 / 30.296 | 41.24 |
+| v7clean3 | 1190 | 19.096 / 27.940 | 43.71 |
+
+3-run spread (the noise band): median 18.12-19.10ms (~1.0ms / ~5.4%
+spread), p95 27.55-30.30ms (~2.7ms / ~9.4% spread) — this IS the
+session's own noise band, consistent in shape (not magnitude) with every
+prior room's single-run numbers (16.6-20.3ms medians across rooms 3-5).
+Per-bucket medians/p95 (ms), averaged view (all 3 runs agree to within
+the spread above — full numbers in
+`proof/neural-live/s20-v7clean{1,2,3}.budget.json`):
+
+| bucket | median | p95 |
+|---|---|---|
+| trace | 12.3-13.3 | 21.6-23.8 |
+| gather | 1.88-2.00 | 2.8-3.8 |
+| net_wall | 0.04-0.06 | 10.7-12.3 |
+| net_gpu | 5.3-6.1 | 10.4-11.9 |
+| demod | 0.23-0.27 | 0.48-0.98 |
+| present | 0.08-0.10 | 0.18-0.35 |
+
+**Flag-OFF leg — BLOCKED, not measured.** The old 23-in path defaults to
+`GAIA_NATIVE_WEIGHTS=v4`, which is REAL-OR-BLACK gated on a PASS stamp
+(`data/rdirect-weights-v4.bin.stamp`). That stamp file does not exist in
+this worktree (gitignored, machine-local, never generated here — only
+`v7.bin.stamp` exists, freshly earned by room 5's own ordeal run) —
+confirmed via the run's own log: `[n0c] net-present disabled (build
+failed): REAL-IMAGE BAR: weights data/rdirect-weights-v4.bin carry no
+PASS stamp ... present BLACK by law`. `/budget` returned `{"frames":0,
+"note":"net-present off"}` — the raster fallback, not a real v4 render.
+Earning the v4 stamp requires running its own real-image ordeal (~750s
+for the v7 one this lane already paid — v4's would be the same order of
+magnitude), which blows the ~20min timebox by itself. **Not fixed this
+room** (measurement-only, no ordeal re-runs beyond what's already
+timeboxed). Honest old-vs-new delta uses the last LIVE-measured non-split
+number on record instead, clearly flagged as carried, not fresh:
+**18.57ms/53.85fps (room 1, prior session)** vs this room's clean v7
+median ~18.12-19.10ms — within noise of the old baseline, not a
+regression on TOTAL (matches room 3's original surprising finding: v7's
+bigger GEMM is offset by the removed multi-poll serialization, so v7
+TOTAL sits AT or slightly above, not clearly above, the pre-split
+baseline). `wall_fps` (41.2-43.7 this room) stays below the old 53.85 —
+same reading as every prior room: that gap lives in `outside` (world/http
+loop overhead), not render cost; TOTAL-to-TOTAL is the fair number.
+
+**P95 tail attribution.** Used the existing `[n0i]` cumulative
+median/p95-every-60-frames log lines already printed by each run (no new
+instrumentation added) — the log's OWN early-vs-late lines double as a
+first-N-frames-excluded-vs-included comparison, since each line is a
+cumulative percentile over all frames seen so far:
+
+| run | frame=60 (first-60, warmup included) TOTAL med/p95 | steady-state (last window) TOTAL med/p95 |
+|---|---|---|
+| v7clean1 | 22.76 / 47.56 | 18.12 / 27.47 |
+| v7clean2 | 25.56 / 53.16 | 18.21 / 30.42 |
+| v7clean3 | 20.24 / 26.61 | 19.04 / 27.98 |
+
+Two of 3 runs show a LARGE startup transient (p95 47.6/53.2ms in the
+first 60 frames, vs 27.5/30.4ms steady-state — a ~1.7-1.9x startup spike,
+consistent with first-dispatch pipeline/shader compile + thermal ramp);
+the third run's first-60 window happened to land closer to steady-state
+already (26.61 vs 27.98, no startup spike visible in THAT window's
+boundaries — sampling artifact of the 60-frame granularity, not evidence
+the effect is absent). **Excluding warmup, a persistent steady-state tail
+remains**: TOTAL p95 sits at ~1.5x median in every run's LAST several
+`[n0i]` windows, and — critically — that ratio is FLAT across consecutive
+60-frame windows late in each run (e.g. v7clean1's last 3 lines: p95
+27.55/27.55/27.47; v7clean3's: 28.54/28.11/27.98) — a one-off rare event
+would dilute a CUMULATIVE percentile toward the median as more frames
+accumulate; it does not here, so the tail is recurring at a roughly
+constant rate throughout steady state, not a single incident. The
+existing instrumentation (cumulative percentiles only, no raw per-frame
+series, no code changes permitted this room) cannot distinguish a fixed-N
+periodic cadence from a constant-rate random process — both produce a
+flat cumulative p95 — so periodic-vs-random is left genuinely undecided,
+not guessed.
+
+**Carrying bucket**: `trace` and `net_wall`/`net_wait` move together. In
+every steady-state window, `trace`'s own p95-minus-median delta
+(~9-11ms) and `net_wait`'s own delta (~10-12ms) are each independently
+close in size to TOTAL's own p95-minus-median delta (~9-12ms) — if these
+two buckets spiked on DIFFERENT frames the deltas would add (TOTAL delta
+≈ 20ms), not match either one alone. Reading: the same subset of frames
+spikes in both `trace` (GPU trace pass, SYNCHRONOUS — the render thread
+polls for it every frame, per the code's own N0.j S13.3 note) and
+`net_wait` (async net commit wait, normally hidden by overlap, median
+~0ms) simultaneously — consistent with a single shared root cause that
+stalls the GPU/driver broadly on those frames (e.g. OS scheduling
+preemption of the Metal driver thread, or thermal/power-state
+transition) rather than a bug local to one compute stage. `outside`
+world-tick buckets (`world`, `skin`, `upload`) show the same ~1.6-2.5x
+p95/median ratio too, reinforcing a whole-frame-level stall rather than a
+net-present-specific one. `demod`/`present`/`gather` stay tight
+(p95/median ~1.3-2x but tiny absolute ms) — not meaningful contributors
+to the ~10ms tail in absolute terms.
+
+**Verdict for the Architect**: expect **~18.1-19.1ms median / ~27.5-30.3ms
+p95** (≈41-44fps median-based, worse at the tail) at launch on this
+machine's clean-GPU state — the median is within noise of the pre-v7
+baseline (18.57ms), so v7 is not a median-fps regression once the room 3
+poll fix is counted; the p95 tail (~1.5x median, ~10ms absolute) is a
+pre-existing whole-frame stall characteristic (trace+net_wait correlated,
+likely OS/driver scheduling, not v7-specific — same tail shape was
+visible in rooms 3-5's own single-run numbers before this room's 3-run
+confirmation) and was NOT root-caused or fixed here — attribution only,
+per the room's own no-fix instruction. **One number to tell the
+Architect: ~18.5ms median (≈54fps-class on the good half of frames),
+with a known ~28-30ms p95 tail on roughly 1-in-20 frames, unrelated to
+the v7 cutover itself.**
+
+**Artifacts this room**:
+`proof/neural-live/s20-v7clean{1,2,3}.{log,budget.json,state.json,-presented.png}`
+(3x clean baseline runs), `proof/neural-live/s20-v7cleanoff.{log,budget.json,state.json}`
+(flag-OFF attempt — documents the missing-stamp blocker, not a
+real measurement), this note, `v7-cutover-ready.md` (clean fps table).

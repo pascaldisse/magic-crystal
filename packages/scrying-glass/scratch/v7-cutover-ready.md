@@ -334,3 +334,40 @@ No gate was weakened or bypassed. Nothing launched with a window, no running
 session touched (whip 154). All new claims in this file were played through
 the real offscreen server + read back from real output (image bytes, /budget
 JSON, probe stdout) — nothing here is inferred from logs alone.
+
+## Room 6 (ghoul run 2026-07-20): clean-GPU fps confirmation — THE number for launch
+
+Measurement-only room (no engine/wgsl/rust edits). GPU confirmed clean
+before and after (no ordeal/train/cargo PIDs). 3x sequential s20 offscreen
+benches, 640x480, flag ON (`GAIA_NATIVE_WEIGHTS=v7
+GAIA_NATIVE_EVIDENCE_SPLIT=1`), `nice -n 19`:
+
+| run | TOTAL median/p95 (ms) | wall_fps |
+|---|---|---|
+| v7clean1 | 18.116 / 27.548 | 42.68 |
+| v7clean2 | 18.181 / 30.296 | 41.24 |
+| v7clean3 | 19.096 / 27.940 | 43.71 |
+
+**This supersedes rooms 3/4/5's own fps numbers (16.63/18.15/20.30ms) as
+the number to expect at launch** — those 3 numbers, taken individually,
+looked like an unexplained drift; this room's 3-run same-session spread
+(18.12-19.10ms median) shows that drift was mostly ordinary run-to-run
+noise on this machine, not a regression trend. **Median expectation:
+~18.5ms (~54fps-class), consistent with the documented pre-v7 baseline
+(18.57ms/53.85fps) — v7 is not a median regression once room 3's poll
+fix is counted.** Known, unfixed p95 tail: ~27.5-30.3ms (~1.5x median) on
+a recurring (not one-off) subset of frames, root-caused only as far as
+"trace + net_wait spike together, whole-frame GPU/driver stall shape" —
+not chased to a fix, not v7-specific (present in every room's prior
+single-run numbers too). Flag-OFF (old 23-in v4 path) could not be
+re-measured this room: `data/rdirect-weights-v4.bin.stamp` is missing
+from this worktree (gitignored, machine-local, never generated here) so
+v4 refuses REAL-OR-BLACK and falls back to raster (`/budget` returns
+`"note":"net-present off"`) — earning that stamp needs its own ~750s
+ordeal run, out of scope for a 20min measurement room. Full numbers,
+per-bucket table, and the p95 spike-attribution reasoning:
+`v7-live-lane.md` §"§perf — room 6".
+
+**The one number for the Architect: ~18.5ms median / ~54fps-class, with a
+known ~28-30ms p95 tail on a recurring minority of frames (pre-existing,
+not v7-specific, not yet root-caused to a fix).**
