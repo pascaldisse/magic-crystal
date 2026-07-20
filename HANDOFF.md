@@ -734,9 +734,9 @@ Act changed → ordeal RE-RUN 640x480 → stamp RE-EARNED, bars byte-identical
 1.55e-6 · 0/6144 px — machine precision both. 6 regressions structural-
 green. CLEAN-GPU BENCH (room6, b4c7ef0): median 18.1-19.1ms · p95 27.5-30.3
 · wall 41-44fps (room3's 16.63 = outlier, corrected). Old path median parity
-(18.57 carried) but old wall 53.85 vs v7 41-44 — tail comparison UNPROVEN
-(v4 stamp machine-local, absent in worktree → flag-off refused, REAL-OR-
-BLACK correct). Tail = startup transient + recurring whole-frame GPU stall
+(18.57 carried) but old wall 53.85 vs v7 41-44 — comparison permanently
+MOOT: v4 stamp exists NOWHERE (v7 = first weights ever to pass; v4 can
+never lawfully render; 18.57/53.85 = dead act's number). Tail = startup transient + recurring whole-frame GPU stall
 (trace+net_wall spike together, not additive); periodic-vs-random undecided.
 Budget gap to 16.67: ~1.5-2.4ms median + tail.
 LAUNCH (HIS act only, works NOW):
