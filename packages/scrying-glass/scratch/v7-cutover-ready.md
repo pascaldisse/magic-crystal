@@ -1,5 +1,16 @@
 # v7 cutover status — RUNS LIVE NOW, small known parity gap, fps regression measured
 
+> **CORRECTION (room 7, 2026-07-20):** every "v4 baseline" / "non-split
+> baseline (v4, room 1)" mention below of 18.57ms/53.85fps is mislabeled.
+> That number is from `docs/perf/2026-07-18-neural-live-n0.md` SHIFT 18
+> (N0.n), BEFORE the `GAIA_NATIVE_WEIGHTS` v1..v7 scheme existed (it
+> shipped one shift later, SHIFT 19, default v2) — it is not a v4
+> measurement and cannot be reproduced under a version label. v4 itself
+> has no PASS stamp anywhere in this worktree (v7 is the first-ever
+> weights to earn one here) and is REAL-OR-BLACK gated, so it **cannot
+> lawfully render right now**; 18.57/53.85 is a dead, unversioned number
+> carried forward as an informal target only.
+
 Ghoul run 2026-07-20 room 2 (Stage 3 continuation, ~timeboxed). Previous
 verdict (this file, prior room): v7 loads but the frame loop refuses to
 drive it (present BLACK by the REAL-OR-BLACK guard). **That blocker is now
@@ -156,7 +167,7 @@ DEFAULT weights selection) is a separate decision this room does not make.
   |---|---|---|---|
   | before (room 2, 3 polls) | 23.32/31.09 | 8.39/13.69 | 39.81 |
   | after (room 3, 1 submit) | 16.57-16.63 / 23.51-25.60 | 0.26-0.27/0.44-0.47 | 45.36-45.39 |
-  | non-split baseline (v4, room 1) | 18.57 | — | 53.85 |
+  | unversioned pre-v1..v7 baseline (SHIFT 18/N0.n, NOT v4) | 18.57 | — | 53.85 |
 
   TOTAL now sits BELOW the non-split baseline (16.6ms vs 18.57ms) — target
   was <=18.6ms, beaten. `wall_fps` (full server loop incl. world/http) is

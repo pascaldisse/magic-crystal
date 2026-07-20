@@ -1,5 +1,22 @@
 # v7-live lane — STAGE 1 (feature-map + GPU evidence split)
 
+> **CORRECTION (room 7, 2026-07-20) — the "18.57ms/53.85fps" number is NOT
+> a v4 baseline.** It traces to `docs/perf/2026-07-18-neural-live-n0.md`
+> SHIFT 18 (N0.n, "CUT A" fused-demod measurement) — a run that predates
+> the entire `GAIA_NATIVE_WEIGHTS` v1..v7 versioning scheme, which was
+> introduced one shift LATER (SHIFT 19, "N1 SHIP + THE PURGE", default
+> v2). It cannot be re-measured under any weights label because no
+> version tag applied to it at capture time. `data/rdirect-weights-v4.bin`
+> exists on disk but has **no PASS stamp anywhere in this worktree** (only
+> `v7.bin.stamp` does — v7 is the first-ever weights to earn one here) and
+> is REAL-OR-BLACK gated, so v4 **cannot lawfully render at all right
+> now** — every below mention of "non-split v4 baseline" is this
+> mislabel; read "18.57ms/53.85fps" as an unversioned historical number
+> carried forward as an informal target, not a reproducible v4 measurement.
+> The 18.57/53.85 comparisons below are left in place for the historical
+> record but are NOT a v4 number and NOT re-earnable without running v4's
+> own ordeal (~750s, not done in this lane).
+
 Ghoul run 2026-07-20. Lane goal: rdirect_live.rs hosts the v7 act (39-in
 split E/D + recurrent history + evidence clamp). Blocker map:
 scratch/v7-cutover-ready.md (commit 7333316) — live path is 23-in plain-net,
@@ -469,7 +486,7 @@ GAIA_NATIVE_EVIDENCE_SPLIT=1`) — target was <=18.6ms, RESULT BEATS IT:**
 | room-2 (3 polls/frame) | 8.73/15.80 | 1.80/2.18 | 0.05/3.51 | **8.39/13.69** | 0.10/0.18 | **23.32/31.09** | 39.81 |
 | room-3 (1 submit, 0 polls) run A | 12.76/23.33 | 1.84/2.06 | 0.04/8.36 | **0.26/0.44** | 0.12/0.18 | **16.63/25.60** | 45.36 |
 | room-3 run B (repeat) | 13.03/20.84 | 1.86/2.07 | 0.04/8.01 | **0.27/0.47** | 0.12/0.19 | **16.57/23.51** | 45.39 |
-| non-split baseline (documented, room 1) | — | — | — | — | — | **18.57** | 53.85 |
+| unversioned pre-v1..v7 baseline (SHIFT 18/N0.n, NOT v4 — see room 7 correction above) | — | — | — | — | — | **18.57** | 53.85 |
 
 The "demod" bucket (Stage 3's `resolve_ms`, folding in evidence/pack/swap)
 collapsed from 8.39ms median to 0.26-0.27ms — confirms the 3 blocking polls
@@ -747,7 +764,7 @@ n0_gate1_live_net_matches_cpu_reference ... ok
 GAIA_NATIVE_EVIDENCE_SPLIT=1`, one run, flag ON): **TOTAL median 18.15ms /
 p95 28.1-28.4ms, WALL-FPS 42.7** (`/budget`: `total:[18.156,28.038]`).
 Room 3's own re-benches were 16.57-16.63ms median; this room's 18.15ms is
-~1.5ms higher but still at/below the non-split v4 baseline's 18.57ms and
+~1.5ms higher but still at/below the unversioned pre-v1..v7 baseline's 18.57ms (mislabeled "v4" here — see room 7 correction) and
 well inside prior run-to-run variance (room 3 itself spanned 23.51-25.60ms
 at p95 between its two runs) — the changed ops (an eps compare + a clamp,
 both trivial ALU) are not plausible sources of a multi-ms shift; read as
@@ -1038,3 +1055,165 @@ the v7 cutover itself.**
 (3x clean baseline runs), `proof/neural-live/s20-v7cleanoff.{log,budget.json,state.json}`
 (flag-OFF attempt — documents the missing-stamp blocker, not a
 real measurement), this note, `v7-cutover-ready.md` (clean fps table).
+
+## §perf — room 7 (ghoul run 2026-07-20): raw per-frame CSV, periodic-vs-random settled
+
+Resumed on a wedged room's UNCOMMITTED partial (`GAIA_FRAME_CSV` env-gated
+per-frame dump in `main.rs`, `/frame_csv` shutdown-flush trigger, `s20-bench.sh`
+wiring) — committed first (`0f47347`), no re-instrumentation, no re-benches.
+Analyzed the existing capture: `proof/neural-live/s20-v7csv1.frames.csv`
+(1189 frames, v7 weights, evidence-split ON, offscreen 640×480).
+
+**Steady-state (frame>60, n=1129, excludes the launch transient — see (b)):**
+
+| bucket | median | p90 | p95 | p99 |
+|---|---|---|---|---|
+| trace | 12.614 | 19.903 | 24.024 | 27.211 |
+| gather | 1.874 | 2.153 | 2.468 | 7.987 |
+| net_wall | 0.039 | 10.435 | 11.742 | 16.675 |
+| net_gpu | 6.035 | 9.904 | 11.458 | 14.746 |
+| net_commit | 0.007 | 0.012 | 0.015 | 0.042 |
+| net_wait | 0.002 | 10.410 | 11.710 | 16.616 |
+| demod | 0.229 | 0.335 | 0.380 | 0.939 |
+| present | 0.086 | 0.115 | 0.136 | 0.211 |
+| **total** | **18.532** | **25.546** | **28.138** | **31.471** |
+
+Median sits ~1.86ms above the 16.67ms wall — matches room 6's "~2ms median
+gap" and the clean-run family (18.1-19.1ms) closely; this single run is
+consistent with, not an outlier from, room 6's 3-run spread.
+
+**(b) Launch transient, wider than the 60-frame exclusion assumed.** Spike
+frames (TOTAL > steady p90 = 25.546ms) cluster HEAVILY from frame 61 to
+~160 (61,62,64-68,70-72,74,77,78,80-82,...,156 — dozens of hits, near-
+continuous) before thinning to sparse, isolated episodes after frame ~200.
+The first-60-frames exclusion room 6 used is not enough on this run; the
+real warm-up/thermal-ramp tail runs to roughly frame 150-200 (~3s at this
+frame rate). Steady-state numbers above still hold in aggregate (the tail
+is a small fraction of 1129 frames) but a frame>200 cut would be the more
+honest "post-launch" cut for future rooms.
+
+**Spike periodicity — settled, mixed verdict, no single fixed period.**
+Grouping the 113 raw spike frames into contiguous bursts (frame-adjacent
+spikes merged) gives 47 bursts; late-run (frame>200) burst-start intervals:
+`36,16,62,1,3,114,6,233,5,1,3,39,3,7,3,4,3,3,111,3,3,3,232,3,15,26,12,4`.
+
+- **Between episodes**: irregular — 3 to 233 frames apart, heavy-tailed
+  (two isolated ~232-233-frame gaps, several 100+ gaps, no common divisor
+  across the full set). This half is RANDOM/geometric-shaped, not a fixed
+  period — consistent with room 6's "OS/driver scheduling" reading.
+- **Within an episode**: a 3-frame spacing dominates (10 of 28 late
+  intervals = 36%, the single largest bucket by far) — spikes inside a
+  stall episode tend to recur every 3rd frame, not randomly.
+- **Verdict: MIXED, not FIXED PERIOD.** The run is better described as
+  rare, randomly-timed stall EPISODES (no fixed inter-episode period) that,
+  once triggered, echo at a 3-frame cadence for a few beats before dying
+  out. Neither a pure fixed-period nor a pure constant-rate-random model
+  fits alone; report both halves rather than forcing one label.
+
+**(c) Per-spike decomposition — carrying bucket.** Steady-population
+spikes (total > p90) vs steady median, by bucket:
+
+| bucket | steady median | spike-frame median | delta | % of total excess |
+|---|---|---|---|---|
+| trace | 12.614 | 24.030 | **11.417** | **118.5%** |
+| gather | 1.874 | 1.914 | 0.040 | 0.4% |
+| net_wall | 0.039 | 0.044 | 0.005 | 0.1% |
+| net_gpu | 6.035 | 5.701 | -0.334 | -3.5% |
+| net_commit | 0.007 | 0.007 | -0.000 | -0.0% |
+| net_wait | 0.002 | 0.002 | 0.000 | 0.0% |
+| demod | 0.229 | 0.226 | -0.003 | -0.0% |
+| present | 0.086 | 0.080 | -0.005 | -0.1% |
+| total | 18.532 | 28.166 | 9.634 | — |
+
+`trace` alone carries >100% of the median TOTAL excess (net_gpu drops
+slightly on spike frames, partially offsetting) — for the BULK of p90+
+spikes, `trace` (the CPU-wall time of `resolve_frame`'s trace stage,
+which `device.poll(wait_indefinitely)`-blocks twice per frame when
+`GAIA_NATIVE_ASYNC_TRACE` is unset — the default, and this run's config)
+is the whole story, not net_wait. **This contradicts a clean trace/net_wait
+co-spike**: of the 113 spike frames, only 1 has BOTH `trace` and
+`net_wait` above their OWN steady p90 simultaneously (71 trace-only,
+30 net_wait-only, 11 neither) — trace-driven and net_wait-driven spikes
+are mostly on DIFFERENT frames here, not the shared whole-frame stall
+room 6 read from cumulative percentiles alone (room 6 had no raw series
+to tell the two apart; the raw CSV now shows they mostly don't coincide).
+
+**(d) Frames > 33ms (11 of 1189), bucket blame:**
+
+| frame | total (ms) | blame bucket | trace | net_wait | net_gpu |
+|---|---|---|---|---|---|
+| 3 | 91.659 | net_wall/net_wait | 14.41 | 74.94 | 5.14 |
+| 5 | 56.352 | net_wall/net_wait | 10.22 | 43.77 | 5.46 |
+| 142 | 35.218 | net_gpu | 20.79 | 12.11 | 20.84 |
+| 318 | 36.469 | net_wall/net_wait | 10.59 | 15.39 | 11.27 |
+| 680 | 46.444 | trace | 34.00 | 0.00 | 22.02 |
+| 681 | 58.247 | net_wall/net_wait | 18.48 | 29.58 | 7.27 |
+| 684 | 50.480 | net_wall/net_wait | 7.26 | 40.69 | 7.73 |
+| 723 | 35.383 | net_wall/net_wait | 14.23 | 16.81 | 5.25 |
+| 733 | 34.199 | net_wall/net_wait | 15.88 | 16.04 | 6.23 |
+| 740 | 33.780 | net_wall/net_wait | 7.65 | 23.31 | 14.88 |
+| 743 | 42.233 | net_wall/net_wait | 13.15 | 21.71 | 5.36 |
+
+Frames 3/5 are launch (cold pipeline). The worst STEADY-run outliers
+(318, 680-743) are dominated by `net_wall`/`net_wait`, not `trace` — the
+two failure modes split by severity: the common, moderate p90-class spikes
+are trace-bound; the rare, extreme (>33ms) outliers are net-wait-bound.
+This reconciles with (c): trace carries the BULK by frame-count, net_wait
+carries the FEW worst frames by magnitude.
+
+**(3) Code read for a 3-frame periodic candidate — no match found in this
+crate.** `resolve_frame`'s trace stage (`src/main.rs`, the `t0`/`trace_ms`
+block) calls `device.poll(wait_indefinitely())` twice per frame unless
+`GAIA_NATIVE_ASYNC_TRACE=1` (unset in this run — CUT B, N0 lane, was
+measured and REJECTED there, so this is the shipped default) — that is a
+CPU-blocking wait for GPU completion and is the natural place for a
+driver/OS-scheduling stall to land as `trace_ms`. Checked every explicit
+ring/buffer-count construct that could produce a period-3 cadence:
+`rdirect_live.rs`'s `SET_COUNT = 2` (ping-pong feature/output buffer sets)
+and `NetPresent::t_parity` (0/1 camera-reprojection parity) are both
+period-**2**, not 3 — neither matches. This is an OFFSCREEN run
+(`GAIA_NATIVE_OFFSCREEN=true`, no `NSWindow`/`CAMetalLayer` surface), so
+macOS's well-known default `maximumDrawableCount=3` triple-buffered
+swapchain stall (the usual period-3 suspect on Metal) does not apply
+either — there is no presentable drawable in this config. **No matching
+periodic construct found in this crate.** Best remaining candidate is
+outside this crate's visibility: wgpu-hal's Metal backend internal
+command-buffer/encoder pooling, or a macOS scheduler-quantum effect —
+neither confirmable without instrumenting wgpu-hal or the OS scheduler,
+out of this room's scope. Name: **none found in-crate; open item.**
+
+**Verdict for the Architect (root class + evidence, NO fixes this room):**
+the ~1.86ms median gap to 16.67ms is not one thing — it is (a) `trace`'s
+CPU-blocking `device.poll` wait absorbing ordinary scheduling jitter on
+~10% of frames (the p90-class spikes, common, moderate, ~11ms each when
+they hit), stacked on (b) a much rarer (~1%) `net_wall`/`net_wait` stall
+that produces the true tail (>33ms, up to 92ms at launch) and is NOT the
+same frames as (a) (only 1/113 overlap) — two separate mechanisms sharing
+the `total` budget, not one shared whole-frame stall as room 6's
+cumulative-only view suggested. Evidence: per-bucket blame table (c),
+the 71/30/1/11 trace-vs-net_wait split, and the >33ms worst-frame table
+(d) where net_wait, not trace, dominates the true outliers. **Top-2 shave
+proposals (no fixes applied):**
+1. Land `GAIA_NATIVE_ASYNC_TRACE` properly this time — N0 lane's CUT B
+   rejection predates v7/the fused-queue/evidence-split changes; the
+   regression reasons cited then (gather ballooning, contention) may not
+   hold under v7's different queue shape. Re-measuring async-trace
+   UNDER v7, isolated from CUT B's original context, is the highest-
+   leverage untried lever on the `trace`-carried majority of spikes.
+2. The `net_wall`/`net_wait` tail (the true >33ms outliers) looks like
+   GPU/driver backpressure on the net commit, not trace — profiling
+   `resolve_frame`'s net-submit path specifically around frames like
+   680-743 (a real, reproducible cluster in this CSV) with
+   `tools/profile-seam.mjs`-equivalent instrumentation would separate
+   "net queue genuinely behind" from "OS preempted the driver thread",
+   which point to different fixes (queue depth tuning vs thread priority).
+
+**Regression guard**: all 6 pre-existing ordeals (`rdirect_live_ordeals`,
+`rdirect_gpu_ordeals`, `rdirect_gather_ordeals`) re-run with `GAIA_FRAME_CSV`
+unset (default OFF) — byte-identical to every prior room's numbers (see
+commit below for the run log).
+
+**Artifacts this room**: analysis only, no new files (reused room 6's
+wedged-partial capture); `main.rs`/`s20-bench.sh` instrumentation +
+`s20-v7csv1.*` committed at `0f47347`; this note + the room-6-falsehood
+corrections at the top of this file and `v7-cutover-ready.md`.
