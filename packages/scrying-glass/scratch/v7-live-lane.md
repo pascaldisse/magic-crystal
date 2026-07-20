@@ -278,6 +278,75 @@ measure the fps cost:
    number rather than assume it. `tools/profile-seam.mjs` if a stage looks
    disproportionately hot.
 
+## STAGE 3 PROGRESS (ghoul run 2026-07-20, ~25min timebox — resume point)
+
+Done (commits d0a9240, 602d8bf, this branch):
+
+- **Net loader generalized (spec item 1, first half)**: `RdirectLive::build`
+  (rdirect_live.rs) no longer hard-asserts `INPUT_FEATURES` (23) against the
+  weights blob. `in_features` is now DERIVED from
+  `cpu_ref.layer_dims().first().0` — whatever the blob's own first layer says
+  IS the shape, used for the MPSGraph input placeholder and everywhere else
+  (`attach_pool`/`forward`/`start_pipeline` were already parametric on
+  `self.in_features`; only `build()`'s check+placeholder were hardcoded).
+  IRON-clean: no new hardcode, old 23-in weights (v1-v4) unaffected.
+  **Verified live**: `cargo run --release -j2 --example v7_live_load_probe`
+  now prints `LOADED OK in_features=39 out_channels=3` — this WAS
+  cutover-ready.md's documented architecture blocker (`in_dim 39 !=
+  INPUT_FEATURES 23`), now false. `main.rs` `NetPresent::new` gained a
+  `GAIA_NATIVE_WEIGHTS=v7` convenience mapping (loads + stamp-checks
+  `data/rdirect-weights-v7.bin` exactly like v4's REAL-IMAGE-BAR path).
+- **Refuse-not-corrupt guard**: the frame loop below `NetPresent::new`'s load
+  (FeatureGather 23-wide gather -> `live.forward` -> DemodPass) is UNCHANGED
+  this room — still only feeds 23-wide rows. Feeding those into a 39-wide
+  net's MPSGraph input is a silent PER-ROW STRIDE MISMATCH (not a smaller/
+  degraded image — a wrong one, every pixel after the first reads across the
+  wrong row boundary). Added a hard check: `live.in_features() !=
+  INPUT_FEATURES` -> `Err` -> `present_black`, same failure shape as an
+  unstamped weights file. So `GAIA_NATIVE_WEIGHTS=v7` today LOADS the net
+  (proving the loader) then CLEANLY REFUSES to drive it, instead of a
+  corrupted present. This is the honest state for the Architect: v7 is not
+  yet selectable for real use, and trying it fails safe (black, not wrong).
+- Regression guard: all 6 pre-existing parity ordeals
+  (`rdirect_live_ordeals`, `rdirect_gpu_ordeals`, `rdirect_gather_ordeals`)
+  green, numbers byte-identical to Stage 1/2's own baseline (n0-gate1 abs
+  1.311e-6, n0b max abs 9.537e-7/7.749e-7, b_f32 parity_rel 5.636e-7, b2_fp16
+  parity_rel 5.791e-4) — nothing this room touches the 23-in path's behavior.
+
+NOT done this room (real remaining scope, unchanged from cutover-ready.md's
+own estimate — "real engineering days, not a port"):
+
+1. **WGSL/Metal forward for in_dim 39**: the MPSGraph forward itself
+   (rdirect_live.rs) needed NO shader change — it builds its graph ops from
+   `dims` (now `in_features`-wide) at construction time, so a 39-in blob
+   already produces a correctly-shaped MPSGraph automatically (verified by
+   the load probe above: `LOADED OK in_features=39`). The standalone fused
+   WGSL kernels (`rdirect.wgsl`/`rdirect_fast.wgsl`, `GpuRdirect` in
+   rdirect_gpu.rs) are a SEPARATE, non-live code path — used only by the
+   offline bench (`examples/rdirect_kernel.rs`) and the 23-in `b_f32`/
+   `b2_fp16` ordeals (still 23-in on purpose, those gates are unrelated to
+   this lane) — confirmed by grep, nothing in `main.rs`'s live present path
+   references `GpuRdirect`. So spec item 1's "WGSL forward kernel" framing
+   doesn't map onto a real gap: the live forward is Metal/MPSGraph-only and
+   is now shape-generic. Recording this so nobody goes looking for a WGSL
+   net kernel that isn't part of the live loop.
+1. **`gather_hist_split` wired into `NetPresent`'s frame loop**: Stage 2
+   built `FeatureGatherHistSplit` + `HistoryBuffers` as free-standing types
+   (only the probe example constructs them). `NetPresent::new`/
+   `resolve_frame` need a THIRD net-buffer family (39-wide `net_feats_v7` +
+   `HistoryBuffers` instance, sized/pooled once) and a branch parallel to
+   today's `evidence_split` one that runs `gather_hist_split` instead of
+   `gather`/`gather_split`, feeds `live.forward`, and calls
+   `history.swap()` after present. NOT STARTED.
+2. **Evidence clamp at present**: `clamp_evidence_lin` (rdirect.rs) needs a
+   GPU port (`DemodPass` new variant or the fused MSL demod) plus a NEW
+   per-pixel temporal-mean evidence accumulator (spec's own §4 item 2 warns
+   this is not just `local_max_3x3` — the accumulator is the actual new GPU
+   state, another `HistoryBuffers`-shaped ping-pong). NOT STARTED.
+3. **Full-frame parity gate + fps table**: both depend on 1-2 above being
+   real; nothing to honestly measure yet. NOT STARTED — do not fabricate
+   numbers for either.
+
 ## 5. Build/process state (resume)
 
 No background build left running by this room (single-token, sequential
