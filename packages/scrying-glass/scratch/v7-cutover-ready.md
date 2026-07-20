@@ -382,3 +382,29 @@ per-bucket table, and the p95 spike-attribution reasoning:
 **The one number for the Architect: ~18.5ms median / ~54fps-class, with a
 known ~28-30ms p95 tail on a recurring minority of frames (pre-existing,
 not v7-specific, not yet root-caused to a fix).**
+
+**UPDATE (§perf room 8, 2026-07-20) — opt-in flag improves this.** With
+`GAIA_NATIVE_ASYNC_TRACE=1` added on top of the same v7+evidence-split
+config (flag stays default-OFF, this is an A/B, not a new default): 3-run
+mean **46.29 fps / 16.31ms median / 25.47ms p95** vs the clean baseline's
+42.54 fps / 18.46ms median / 28.60ms p95 above — **+3.75fps, −2.16ms
+median, −3.13ms p95**, consistent across all 3 pairs. Root cause: purely
+CPU-side (net_gpu, the actual GPU-compute bucket, stays flat 6.0→6.4ms) —
+collapsing 2 blocking `device.poll` waits in the trace stage into fewer
+sync points removes real wall-clock wake/scheduling overhead; the freed
+time does show up in `gather`'s own (unconditional, unchanged) poll, but
+by a smaller amount than trace saved. This REVERSES the pre-v7 N0-lane
+CUT B rejection (which found the same move net-negative, −4 to −5fps)
+specifically under v7's queue shape (fused single-submission resolve
+tail + frame overlap + evidence split) — the old rejection was scoped to
+"pre-v7 queue shape" by room 7 and that scoping holds. Parity: the
+live-path safety argument is structural (wgpu FIFO hazard tracking makes
+poll timing irrelevant to pixel correctness); `v7_present_parity_probe`
+ran flag ON (`still_max=4.7684e-7` px>1e-3=0, `pan_max=1.5497e-6`
+px>1e-3=0) but is a standalone harness that doesn't read the flag at all
+(confirmed byte-identical to a flag-OFF re-run) — not itself proof, just
+a clean sanity re-run. 6 regression ordeals byte-identical, flag OFF,
+no code changed. Full tables: `v7-live-lane.md` §"§perf — room 8".
+Recommend the Architect consider flipping the default ON for the v7 path
+(not the 23-in v4 path, untested here, where N0's rejection still
+stands).

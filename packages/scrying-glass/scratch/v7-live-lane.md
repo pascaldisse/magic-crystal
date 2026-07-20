@@ -1217,3 +1217,127 @@ commit below for the run log).
 wedged-partial capture); `main.rs`/`s20-bench.sh` instrumentation +
 `s20-v7csv1.*` committed at `0f47347`; this note + the room-6-falsehood
 corrections at the top of this file and `v7-cutover-ready.md`.
+
+## §perf — room 8 (ghoul run 2026-07-20): async-trace RE-MEASURE under v7 — REVERSES CUT B, flag stays opt-in
+
+Proposal 1 from room 7's verdict, re-measured. **Compose-check first (no
+code changes made this room):** `GAIA_NATIVE_ASYNC_TRACE` (`main.rs`,
+`NetPresent`) gates only the two `device.poll(wait_indefinitely())` calls
+inside the TRACE stage (`resolve_frame`'s `t0`/`trace_ms` block, before the
+`is_v7` branch). It composes cleanly with v7's queue shape as-is: the v7
+gather branch (`hist_gather.encode` → its own unconditional poll) and the
+fused evidence-resolve tail (room 3: accumulate+demod+clamp+pack+swap, ONE
+encoder/submit, no polls) are both untouched by this flag — they sit
+downstream of the trace stage and neither reads nor is read by it. No
+wiring needed, no gap found; ran as-is.
+
+**3x s20 bench, offscreen 640×480, `GAIA_NATIVE_WEIGHTS=v7
+GAIA_NATIVE_EVIDENCE_SPLIT=1 GAIA_NATIVE_ASYNC_TRACE=1`** (run 1 also
+`GAIA_FRAME_CSV`):
+
+| run | wall_fps | TOTAL median (ms) | TOTAL p95 (ms) |
+|---|---|---|---|
+| v7async1 | 45.87 | 16.342 | 25.854 |
+| v7async2 | 46.27 | 16.346 | 25.884 |
+| v7async3 | 46.73 | 16.239 | 24.665 |
+| **mean** | **46.29** | **16.309** | **25.468** |
+
+vs room 6's flag-OFF 3-run baseline (same script/config, `v7clean1-3`):
+
+| run | wall_fps | TOTAL median (ms) | TOTAL p95 (ms) |
+|---|---|---|---|
+| v7clean1 | 42.68 | 18.116 | 27.548 |
+| v7clean2 | 41.24 | 18.181 | 30.296 |
+| v7clean3 | 43.71 | 19.096 | 27.940 |
+| **mean** | **42.54** | **18.464** | **28.595** |
+
+**Delta: +3.75 fps mean (+8.8%), TOTAL median −2.16ms, p95 −3.13ms.**
+Consistent across all 3 pairs (async always beats its clean counterpart by
+a similar margin — not one lucky run).
+
+**Steady-state per-bucket (raw CSV, `s20-v7async1.frames.csv`, frame>200,
+n=1058) vs room 7's own flag-OFF raw-CSV baseline (`s20-v7csv1`, same cut):**
+
+| bucket | room7 (OFF) median | room8 (ON) median | delta |
+|---|---|---|---|
+| trace | 12.614 | 0.222 | **−12.39** |
+| gather | 1.874 | 10.764 | **+8.89** |
+| net_wall | 0.039 | 2.485 | +2.45 |
+| net_gpu | 6.035 | 6.413 | +0.38 |
+| net_wait | 0.002 | 2.398 | +2.40 |
+| demod | 0.229 | 0.310 | +0.08 |
+| present | 0.086 | 0.091 | +0.01 |
+| **total** | **18.532** | **15.806** | **−2.73** |
+
+**(2) Did gather balloon again (CUT B's old failure)? YES, same
+mechanism, DIFFERENT outcome.** `gather` absorbs almost exactly what
+`trace` lost (+8.89 vs −12.39) — the same "moved, not cut" pattern N0's
+CUT B measured. But `net_gpu` stays flat (6.035→6.413, +0.38ms, noise-
+class) — **no contention growth this time**, unlike the old N0 CUT B
+note ("gather ballooned... now carries the merged wait + contention").
+Net: the trace-side saving (−12.4ms) exceeds the gather-side cost
+(+8.9ms) by ~2.7-3.5ms, landing as a real TOTAL/fps win instead of N0's
+−4 to −5fps regression.
+
+**(3) VERDICT — CPU-bubble, not GPU-work-bound.** fps improved
+substantially (+3.75 mean, +8.8%) and TOTAL median fell 2.16-2.73ms,
+MORE than the entire 1.86ms median-to-wall gap room 7 measured — the gap
+is now fully closed and negative on the raw-CSV steady cut (15.806ms <
+16.67ms). `net_gpu` — the actual GPU compute bucket — is unchanged
+(6.035→6.413ms, within run-to-run noise), proving the single M1 GPU is
+doing the SAME amount of work either way; what changed is purely
+CPU-side: collapsing 2 blocking `device.poll` wakeups into fewer sync
+points removes real wall-clock scheduling/wake overhead. Under v4/pre-v7
+(N0's queue shape) this same move regressed because the freed CPU time
+had nowhere useful to go and the merged wait itself cost more than the
+polls it replaced; under v7 (fused single-submission resolve tail +
+frame overlap + evidence split) the queue shape apparently changed enough
+that the trade nets positive. **CUT B's original rejection is REVERSED
+under v7 — it does not generalize across queue shapes, exactly as room 7
+flagged as "verdict stale."**
+
+**(4) ACT SAFETY.**
+- `v7_present_parity_probe`, `GAIA_NATIVE_ASYNC_TRACE=1`: `still_max=
+  4.7684e-7` (px>1e-3=0, all 12 still frames) `pan_max=1.5497e-6`
+  (px>1e-3=0, all 3 pan frames) — machine-precision class, matches the
+  task's own reference numbers exactly. **Honest caveat**: this probe is
+  a standalone harness (per room 3's own note) that does not call
+  `main.rs`'s `NetPresent::resolve_frame` and does not read
+  `GAIA_NATIVE_ASYNC_TRACE` at all (confirmed by grep — zero occurrences
+  in the probe file) — re-ran it WITHOUT the env var and got the
+  IDENTICAL numbers (`still_max=4.7684e-7 pan_max=1.5497e-6`), proving
+  the flag has literally zero effect on this harness. So this is not
+  empirical proof the live path's pixels are unchanged under the flag —
+  it only re-confirms the harness's own (flag-blind) baseline. The real
+  safety argument for the live path is structural: wgpu enforces
+  buffer read-after-write hazards within one FIFO queue regardless of
+  when the CPU polls, so removing timing-only polls cannot reorder GPU
+  commands or change any pixel — same house argument room 3 used to
+  justify the fused resolve-tail's own poll removal. Supporting (not
+  proving) evidence: all 3 live async-flag bench runs produced coherent,
+  non-degenerate presented PNGs (~150-155KB each, `s20-v7async{1,2,3}
+  -presented.png`) — no black frame, no crash, no wedge.
+- 6 regression ordeals, flag OFF (unchanged code path, sanity re-run):
+  `rdirect_gather_ordeals` (n0b gate A 9.537e-7, gate B 7.749e-7, n0g
+  2.384e-7), `rdirect_gpu_ordeals` (byte-identical same-frame, b_f32
+  parity_rel 5.636e-7, b2_fp16 parity_rel 5.791e-4), `rdirect_live_ordeals`
+  (n0-gate1 abs 1.311e-6 rel 5.960e-5) — byte-identical to every prior
+  room's numbers. No code touched this room, so this is a sanity check,
+  not new evidence.
+
+**Recommendation (flag stays opt-in per the room's own charter — default
+is the Architect's word, not this room's):** the evidence here reverses
+N0's CUT B verdict FOR V7's queue shape specifically: +3.75fps mean
+(42.54→46.29), TOTAL median −2.2 to −2.7ms (now under the 16.67ms wall on
+the steady-state cut), net_gpu flat (no contention growth), regression
+gates clean. The old rejection was correctly scoped by room 7 as
+"proven only for the poll-collapse form... pre-v7 queue shape" — this
+room confirms that scoping was right: the SAME poll-collapse form now
+wins under v7. Recommend the Architect consider flipping
+`GAIA_NATIVE_ASYNC_TRACE` default ON for the v7 path specifically (not
+necessarily the 23-in v4 path, which was never re-tested here and where
+N0's original rejection still stands unchallenged).
+
+**Artifacts this room**: `proof/neural-live/s20-v7async{1,2,3}.{log,
+budget.json,state.json,-presented.png}`, `s20-v7async1.frames.csv`
+(1189 frames, per-frame series), this note. No engine code changed.
