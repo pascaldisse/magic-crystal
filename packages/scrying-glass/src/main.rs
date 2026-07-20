@@ -33,11 +33,13 @@ use scrying_glass::integrator::{
 };
 // NEURAL-LIVE N0.c construction scaffold: the ONE net presented per live frame.
 #[cfg(target_os = "macos")]
-use scrying_glass::rdirect::{ALBEDO_DEMOD_EPS, INPUT_FEATURES};
+use scrying_glass::rdirect::{ALBEDO_DEMOD_EPS, CamPose, HIST_FEATURES_SPLIT, INPUT_FEATURES};
 #[cfg(target_os = "macos")]
 use scrying_glass::rdirect_demod::DemodPass;
 #[cfg(target_os = "macos")]
-use scrying_glass::rdirect_gather::{FeatureGather, FeatureGatherSplit};
+use scrying_glass::rdirect_evidence::EvidenceClamp;
+#[cfg(target_os = "macos")]
+use scrying_glass::rdirect_gather::{FeatureGather, FeatureGatherHistSplit, FeatureGatherSplit, HistoryBuffers};
 #[cfg(target_os = "macos")]
 use scrying_glass::rdirect_live::RdirectLive;
 use scrying_glass::scene::{
@@ -1359,6 +1361,42 @@ struct NetPresent {
     /// V7-LIVE LANE STAGE 1: the split gather compute pass. `None` unless
     /// `evidence_split`.
     gather_split: Option<FeatureGatherSplit>,
+    /// V7-LIVE LANE STAGE 3: true when the loaded net is the 39-in
+    /// (`HIST_FEATURES_SPLIT`) recurrent split net (`live.in_features() ==
+    /// HIST_FEATURES_SPLIT`). Requires `evidence_split` (checked at
+    /// construction — see `NetPresent::new`'s guard). When true the gather
+    /// stage below drives `hist_gather`/`history`/`evidence` instead of the
+    /// 23-in `gather`/observational Stage-1 `gather_split`.
+    is_v7: bool,
+    /// V7-LIVE LANE STAGE 3: the 39-in recurrent-history gather pass. `None`
+    /// unless `is_v7`.
+    hist_gather: Option<FeatureGatherHistSplit>,
+    /// V7-LIVE LANE STAGE 3: GPU-resident ping-pong history (previous
+    /// frame's net output + AOV + camera). `None` unless `is_v7`.
+    history: Option<HistoryBuffers>,
+    /// V7-LIVE LANE STAGE 3: evidence-clamp compute passes (accumulate +
+    /// clamp-present + the out_dl repack for the history swap). `None`
+    /// unless `is_v7`.
+    evidence: Option<EvidenceClamp>,
+    /// V7-LIVE LANE STAGE 3: persistent native-res temporal-mean numerator
+    /// (`rdirect::EvidenceAccum`'s `sum`, GPU-resident) — one vec4/px, added
+    /// to every frame by `evidence.encode_accumulate`. `None` unless `is_v7`.
+    evidence_sum: Option<wgpu::Buffer>,
+    /// V7-LIVE LANE STAGE 3: frames folded into `evidence_sum` so far (the
+    /// `EvidenceAccum::n` mirror) — divides the clamp ceiling.
+    evidence_count: u32,
+    /// V7-LIVE LANE STAGE 3: scratch vec4-padded buffer
+    /// (`FeatureGatherHistSplit::out_dl_bytes(n)` sized) the pack pass writes
+    /// before `history.swap` copies it into `history.prev_out_dl`. `None`
+    /// unless `is_v7`.
+    out_dl_padded: Option<wgpu::Buffer>,
+    /// V7-LIVE LANE STAGE 3: the camera pose used when buffer-set `i` was
+    /// last GATHERED (indexed by buffer set, not frame) — the frame-overlap
+    /// pipeline means the net output finishing THIS iteration (`dset`) was
+    /// gathered a past iteration, under a DIFFERENT camera than this
+    /// iteration's own `cur_cam`; `history.swap` needs THAT pose to remember
+    /// as `prev_cam` for the next reprojection, not the current one.
+    cam_by_set: Vec<Option<CamPose>>,
     low_w: u32,
     low_h: u32,
     target_w: u32,
@@ -1398,6 +1436,31 @@ struct NetPresent {
 // cutover.
 #[cfg(target_os = "macos")]
 unsafe impl Send for NetPresent {}
+
+// V7-LIVE LANE STAGE 3: reprojection guards, same values the CPU parity
+// reference (`examples/real_image_ordeal.rs`, the ordeal that stamped
+// 55720b45) and the Stage-2 probes use — not re-derived here.
+#[cfg(target_os = "macos")]
+const V7_DEPTH_TOL: f32 = 0.05;
+#[cfg(target_os = "macos")]
+const V7_NORMAL_THRESH: f32 = 0.85;
+
+/// V7-LIVE LANE STAGE 3: build a `rdirect::CamPose` from the live window
+/// camera — field-for-field the same conversion `examples/v7_live_hist_probe.rs`
+/// uses (`cam_pose`), duplicated here since this crate's `main.rs` binary
+/// doesn't share code with `examples/`.
+#[cfg(target_os = "macos")]
+fn v7_cam_pose(cam: &Camera, w: u32, h: u32) -> CamPose {
+    let (right, up, forward) = cam.basis();
+    CamPose {
+        eye: cam.eye,
+        right,
+        up,
+        forward,
+        half_tan: (cam.fov_y_radians * 0.5).tan(),
+        aspect: w as f32 / h.max(1) as f32,
+    }
+}
 
 #[cfg(target_os = "macos")]
 impl NetPresent {
@@ -1462,11 +1525,36 @@ impl NetPresent {
         // unstamped one. Refuse here instead of building a corrupted pipeline
         // until the gather_hist_split -> net -> evidence-clamp wiring lands
         // (scratch/v7-live-lane.md §4 STAGE 3 items 2-4).
-        if live.in_features() != INPUT_FEATURES {
+        // v7-live lane STAGE 3: the frame loop now drives BOTH shapes. 23-in
+        // (INPUT_FEATURES) keeps the original composite gather byte-untouched.
+        // 39-in (HIST_FEATURES_SPLIT) is the v7 recurrent split net -- it needs
+        // the split trace (GAIA_NATIVE_EVIDENCE_SPLIT) to feed gather_hist_split
+        // (net_accum_ed) below; refuse (present BLACK, REAL OR BLACK) rather
+        // than build a half-wired pipeline if that flag is off. Any OTHER
+        // in_features (a future/unknown architecture) still refuses exactly as
+        // before.
+        let is_v7 = live.in_features() == HIST_FEATURES_SPLIT;
+        if live.in_features() != INPUT_FEATURES && !is_v7 {
             return Err(format!(
-                "v7-live lane STAGE 3 incomplete: weights {weights_file} want {}-in but the live frame loop only feeds the {}-in composite gather (39-in gather/history/clamp not wired yet, see scratch/v7-live-lane.md section 4) -- present BLACK rather than a corrupted stride-mismatched image",
+                "v7-live lane STAGE 3: weights {weights_file} want {}-in, which is neither the \
+                 shipped {}-in composite net nor the {}-in v7 recurrent-split net -- present BLACK \
+                 rather than a corrupted stride-mismatched image",
                 live.in_features(),
-                INPUT_FEATURES
+                INPUT_FEATURES,
+                HIST_FEATURES_SPLIT
+            ));
+        }
+        if is_v7
+            && !matches!(
+                std::env::var("GAIA_NATIVE_EVIDENCE_SPLIT").as_deref(),
+                Ok("1" | "true" | "on")
+            )
+        {
+            return Err(format!(
+                "v7-live lane STAGE 3: weights {weights_file} are the {}-in v7 net, which needs \
+                 GAIA_NATIVE_EVIDENCE_SPLIT=1 (drives the split trace + gather_hist_split feeding \
+                 it) -- present BLACK rather than a corrupted stride-mismatched image",
+                HIST_FEATURES_SPLIT
             ));
         }
         // SHIFT 17 CUT A: opt into the fused native demod (encode the demod on
@@ -1542,7 +1630,7 @@ impl NetPresent {
             std::env::var("GAIA_NATIVE_EVIDENCE_SPLIT").as_deref(),
             Ok("1" | "true" | "on")
         );
-        let (net_accum_ed, net_feats_split, gather_split_pass) = if evidence_split {
+        let (net_accum_ed, net_feats_split, gather_split_pass) = if evidence_split && !is_v7 {
             (
                 Some(integrator.make_split_buffer(device, low_w, low_h)),
                 Some(device.create_buffer(&wgpu::BufferDescriptor {
@@ -1556,13 +1644,54 @@ impl NetPresent {
         } else {
             (None, None, None)
         };
+        // V7-LIVE LANE STAGE 3: the real 39-in wiring. `net_accum_ed` (split
+        // trace) is shared with Stage 1's dispatch above but allocated HERE
+        // instead when `is_v7` (Stage 1's own 35-in observational buffers stay
+        // unallocated — nothing reads them once the real net is live).
+        let (net_accum_ed, hist_gather, history, evidence, evidence_sum, out_dl_padded) = if is_v7 {
+            let accum_ed = integrator.make_split_buffer(device, low_w, low_h);
+            let hist_gather = FeatureGatherHistSplit::new(device);
+            let history = HistoryBuffers::new(device, target_w, target_h);
+            let evidence = EvidenceClamp::new(device);
+            let evidence_sum = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("v7 evidence temporal-mean sum (native res)"),
+                size: EvidenceClamp::sum_bytes(n).max(1),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let out_dl_padded = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("v7 net out_dl (vec4-padded, history swap source)"),
+                size: FeatureGatherHistSplit::out_dl_bytes(n).max(1),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            (
+                Some(accum_ed),
+                Some(hist_gather),
+                Some(history),
+                Some(evidence),
+                Some(evidence_sum),
+                Some(out_dl_padded),
+            )
+        } else {
+            (net_accum_ed, None, None, None, None, None)
+        };
+        let cam_by_set = vec![None; live.set_count()];
         Ok(Self {
             fused,
             async_trace,
             evidence_split,
+            is_v7,
             net_accum_ed,
             net_feats_split,
             gather_split: gather_split_pass,
+            hist_gather,
+            history,
+            evidence,
+            evidence_sum,
+            evidence_count: 0,
+            out_dl_padded,
+            cam_by_set,
             live,
             gather,
             demod,
@@ -1613,6 +1742,7 @@ impl NetPresent {
         uni_low: &IntegratorUniform,
         uni_target: &IntegratorUniform,
         blit_uniform: &IntegratorUniform,
+        cur_cam: CamPose,
     ) -> (f64, f64, f64, f64) {
         // S9: claim this frame's pre-encoded net command buffer. Returns the
         // buffer SET the gather must fill; the net (committed in the net stage
@@ -1684,47 +1814,91 @@ impl NetPresent {
             .feature_buffer_set(set)
             .expect("net-present pooled feature buffer");
         let t1 = Instant::now();
-        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("net gather"),
-        });
-        self.gather.encode(
-            device,
-            queue,
-            &mut enc,
-            &self.net_accum,
-            &self.net_aov[set],
-            feats,
-            self.low_w,
-            self.low_h,
-            self.target_w,
-            self.target_h,
-        );
-        queue.submit(Some(enc.finish()));
-        let _ = device.poll(wgpu::PollType::wait_indefinitely());
-        // V7-LIVE LANE STAGE 1: additive split gather (35-in, no history) into
-        // `net_feats_split` — nothing downstream reads it yet this stage (the
-        // net forward below still consumes the ordinary 23-in `feats` only).
-        if self.evidence_split {
-            if let (Some(net_accum_ed), Some(net_feats_split), Some(gs)) =
-                (&self.net_accum_ed, &self.net_feats_split, &self.gather_split)
-            {
-                let mut enc_split = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("net gather split"),
-                });
-                gs.encode(
-                    device,
-                    queue,
-                    &mut enc_split,
-                    net_accum_ed,
-                    &self.net_aov[set],
-                    net_feats_split,
-                    self.low_w,
-                    self.low_h,
-                    self.target_w,
-                    self.target_h,
-                );
-                queue.submit(Some(enc_split.finish()));
-                let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        if self.is_v7 {
+            // V7-LIVE LANE STAGE 3: the 39-in recurrent path. `feats` is sized
+            // for HIST_FEATURES_SPLIT (RdirectLive::build derives in_features
+            // from the loaded weights) — the 23-in composite `gather` below
+            // would write the wrong stride into it, so it must NOT run here.
+            let net_accum_ed = self
+                .net_accum_ed
+                .as_ref()
+                .expect("v7: split trace accum (checked at construction)");
+            let hist_gather = self
+                .hist_gather
+                .as_ref()
+                .expect("v7: hist_gather (checked at construction)");
+            let history = self.history.as_ref().expect("v7: history (checked at construction)");
+            let prev_cam = history.prev_cam.unwrap_or(cur_cam);
+            let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("net gather hist split"),
+            });
+            hist_gather.encode(
+                device,
+                queue,
+                &mut enc,
+                net_accum_ed,
+                &self.net_aov[set],
+                feats,
+                &history.prev_out_dl,
+                &history.prev_aov,
+                cur_cam,
+                prev_cam,
+                history.has_prev,
+                history.w,
+                history.h,
+                V7_DEPTH_TOL,
+                V7_NORMAL_THRESH,
+                self.low_w,
+                self.low_h,
+                self.target_w,
+                self.target_h,
+            );
+            queue.submit(Some(enc.finish()));
+            let _ = device.poll(wgpu::PollType::wait_indefinitely());
+            self.cam_by_set[set] = Some(cur_cam);
+        } else {
+            let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("net gather"),
+            });
+            self.gather.encode(
+                device,
+                queue,
+                &mut enc,
+                &self.net_accum,
+                &self.net_aov[set],
+                feats,
+                self.low_w,
+                self.low_h,
+                self.target_w,
+                self.target_h,
+            );
+            queue.submit(Some(enc.finish()));
+            let _ = device.poll(wgpu::PollType::wait_indefinitely());
+            // V7-LIVE LANE STAGE 1: additive split gather (35-in, no history)
+            // into `net_feats_split` — observational only (non-v7 debug A/B;
+            // the v7 path above uses `hist_gather` instead).
+            if self.evidence_split {
+                if let (Some(net_accum_ed), Some(net_feats_split), Some(gs)) =
+                    (&self.net_accum_ed, &self.net_feats_split, &self.gather_split)
+                {
+                    let mut enc_split = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("net gather split"),
+                    });
+                    gs.encode(
+                        device,
+                        queue,
+                        &mut enc_split,
+                        net_accum_ed,
+                        &self.net_aov[set],
+                        net_feats_split,
+                        self.low_w,
+                        self.low_h,
+                        self.target_w,
+                        self.target_h,
+                    );
+                    queue.submit(Some(enc_split.finish()));
+                    let _ = device.poll(wgpu::PollType::wait_indefinitely());
+                }
             }
         }
         let gather_ms = t1.elapsed().as_secs_f64() * 1000.0;
@@ -1756,6 +1930,32 @@ impl NetPresent {
         // undoes the log-demod, writes present_accum. Skipped on the first frame
         // (demod_set None) — present_accum stays as-is (black on boot).
         let t3 = Instant::now();
+        // V7-LIVE LANE STAGE 3: fold THIS frame's own low-res E/D trace into
+        // the persistent temporal-mean evidence sum every v7 frame — mirrors
+        // rdirect.rs `EvidenceAccum::push` being called once per rendered
+        // frame in the CPU reference. HONEST ASYNC CAVEAT: the CPU reference
+        // accumulates evidence[f] and clamps frame f's OWN net output in
+        // lock-step; this pipeline's frame overlap means the net output
+        // finishing THIS iteration (`dset`) was actually GATHERED ~1
+        // iteration ago, so the clamp below applies the CURRENT running
+        // sum/count (already includes this iteration's own composite) to a
+        // frame-old net output — a ~1-frame lag on a slow temporal-mean
+        // filter, not a semantic difference. See scratch/v7-live-lane.md.
+        if self.is_v7 {
+            let net_accum_ed = self.net_accum_ed.as_ref().expect("v7: net_accum_ed");
+            let evidence = self.evidence.as_ref().expect("v7: evidence");
+            let evidence_sum = self.evidence_sum.as_ref().expect("v7: evidence_sum");
+            let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("v7 evidence accumulate"),
+            });
+            evidence.encode_accumulate(
+                queue, device, &mut enc, net_accum_ed, evidence_sum,
+                self.low_w, self.low_h, self.target_w, self.target_h,
+            );
+            queue.submit(Some(enc.finish()));
+            let _ = device.poll(wgpu::PollType::wait_indefinitely());
+            self.evidence_count += 1;
+        }
         if let Some(dset) = demod_set {
             // SHIFT 17 CUT A: on the fused path the native demod ALREADY ran on
             // the net queue (in `commit_net`) and wrote present_accum[dset] — no
@@ -1778,6 +1978,41 @@ impl NetPresent {
                     self.n as u32,
                     false, // presented (undo albedo demod); belief eye is /scry?eye=belief
                 );
+                queue.submit(Some(enc.finish()));
+                let _ = device.poll(wgpu::PollType::wait_indefinitely());
+            }
+            // V7-LIVE LANE STAGE 3: evidence clamp at present (in-place on
+            // whichever present_accum slot the demod just filled) + recurrent
+            // history swap. History gets this frame's RAW/UNCLAMPED out_dl
+            // (matches the CPU reference's `prev = Some((out_dl, ...))` —
+            // the clamp is presentation-only, never fed back).
+            if self.is_v7 {
+                let evidence = self.evidence.as_ref().expect("v7: evidence");
+                let evidence_sum = self.evidence_sum.as_ref().expect("v7: evidence_sum");
+                let out_dl_padded = self.out_dl_padded.as_ref().expect("v7: out_dl_padded");
+                let net_out = self
+                    .live
+                    .output_buffer_set(dset)
+                    .expect("v7: net-present pooled output buffer");
+                let gamma = scrying_glass::rdirect::evidence_clamp_gamma();
+                let present = self.present_accum_for(dset);
+                let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("v7 evidence clamp + history pack"),
+                });
+                evidence.encode_clamp(
+                    queue, device, &mut enc, evidence_sum, present,
+                    self.target_w, self.target_h, self.evidence_count, gamma,
+                );
+                evidence.encode_pack(queue, device, &mut enc, net_out, out_dl_padded, self.n as u32);
+                queue.submit(Some(enc.finish()));
+                let _ = device.poll(wgpu::PollType::wait_indefinitely());
+
+                let swap_cam = self.cam_by_set[dset].unwrap_or(cur_cam);
+                let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("v7 history swap"),
+                });
+                let history = self.history.as_mut().expect("v7: history");
+                history.swap(&mut enc, out_dl_padded, &self.net_aov[dset], swap_cam, self.target_w, self.target_h);
                 queue.submit(Some(enc.finish()));
                 let _ = device.poll(wgpu::PollType::wait_indefinitely());
             }
@@ -2885,6 +3120,11 @@ impl Renderer {
         let mut blit_uniform = uni_target;
         blit_uniform.surface = [surface_w, surface_h, 1, 0]; // nearest canvas→window.
 
+        // V7-LIVE LANE STAGE 3: this frame's camera pose, for the recurrent
+        // history reprojection (gather_hist_split) — built once here (cheap)
+        // regardless of whether the loaded net is v7; unused otherwise.
+        let cur_cam = v7_cam_pose(&self.camera, target_w, target_h);
+
         // Take the rig out to avoid borrowing `self` twice; put it back after.
         let mut np = self.net_present.take().expect("net-present rig present");
         let (trace_ms, gather_ms, net_ms, resolve_ms) = np.resolve_frame(
@@ -2894,6 +3134,7 @@ impl Renderer {
             &uni_low,
             &uni_target,
             &blit_uniform,
+            cur_cam,
         );
 
         // —— STAGE: present (blit the net frame to surface + offscreen, capture) ——

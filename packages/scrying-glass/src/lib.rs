@@ -12,6 +12,7 @@ pub mod integrator;
 pub mod physics;
 pub mod rdirect;
 pub mod rdirect_demod;
+pub mod rdirect_evidence;
 pub mod rdirect_gather;
 pub mod rdirect_gpu;
 pub mod rdirect_live;
