@@ -738,7 +738,17 @@ green. CLEAN-GPU BENCH (room6, b4c7ef0): median 18.1-19.1ms · p95 27.5-30.3
 MOOT: v4 stamp exists NOWHERE (v7 = first weights ever to pass; v4 can
 never lawfully render; 18.57/53.85 = dead act's number). Tail = startup transient + recurring whole-frame GPU stall
 (trace+net_wall spike together, not additive); periodic-vs-random undecided.
-Budget gap to 16.67: ~1.5-2.4ms median + tail.
+Budget gap to 16.67: ~1.9ms median + tail. → ROOM 8 (63d024c): GAIA_NATIVE_
+ASYNC_TRACE re-tried under v7 — CUT B verdict REVERSED (old queue shape
+dead): median 16.31ms / 46.3 wall fps — UNDER BUDGET. trace 12.61→0.22
+(CPU poll bubble deleted), gather absorbs +8.9, net_gpu flat → pure
+CPU-bubble win, GPU not saturated. Flag stays OPT-IN; default-ON = his
+word. Act-safety: structural (single queue FIFO + hazard tracking; polls
+can't reorder GPU work) + parity probe machine-precision; empirical A/B
+inconclusive-by-instrument (bench capture = free-running → run-to-run
+history noise 6258px ≈ flag delta 6516px); fixed-N scripted A/B = the
+sealing instrument if wanted. Remaining tail: rare (~1%) net_wait stalls
+>33ms (proposal 2, unattacked) + p95 25.5 still over.
 LAUNCH (HIS act only, works NOW):
   cd ../magic-crystal-neural-live/packages/scrying-glass &&
   GAIA_NATIVE_WEIGHTS=v7 GAIA_NATIVE_EVIDENCE_SPLIT=1 ./target/release/scrying-glass
