@@ -719,7 +719,7 @@ TRAINING LAWS: fine-tune from best ALWAYS regressed (5/5, floors held) ·
 monitor-every-epoch or blind · detach (nohup) everything — walls eat rooms
 not work · cross-run bar-normalized floor mandatory.
 V7-LIVE LANE (all committed, lane notes = worktree scratch/v7-live-lane.md
-+ scratch/v7-cutover-ready.md): S1 split gather parity 9.5e-7 · S2 GPU
++ scratch/v7-cutover-ready.md) [source: worktree scratch/v7-live-lane.md]: S1 split gather parity 9.5e-7 · S2 GPU
 history reproject 3.96e-5 · S3 loader shape-generic (INPUT_FEATURES 23
 hardcode dead) + full loop + GPU clamp + refuse-not-corrupt guard · perf
 one-submission fix 23.3→16.63ms median (beats old 18.57; p95 ~24 spikes
@@ -754,11 +754,11 @@ LAUNCH (HIS act only, works NOW):
   GAIA_NATIVE_WEIGHTS=v7 GAIA_NATIVE_EVIDENCE_SPLIT=1 ./target/release/scrying-glass
 CUTOVER-TO-DEFAULT: seam closed → now purely his played word.
 SILICON (morning, all measured): Metal-4 encoder = GPU on M1 (ANE counter
-flat 18, GPU 84%, twice) · MLX = GPU-only (sourced: ml-explore #18/#393) ·
-ANEMLL Llama did NOT engage ANE on M1 (counters flat; MLX 184 tok/s vs 33;
-MLX kills frame tail p90 +162% → disqualified for live voice) · afm CLI
+flat 18, GPU 84%, twice) [source: room chat-mrrlinr6-ic04 07-20 morning runs] · MLX = GPU-only (sourced: ml-explore #18/#393) ·
+ANEMLL Llama did NOT engage ANE on M1 [source: room chat-mrrlinr6-ic04 07-20 runs] (counters flat; MLX 184 tok/s vs 33;
+MLX kills frame tail p90 +162% → disqualified for live voice) [source: MLX GPU-only: ml-explore/mlx#18/#393] · afm CLI
 (installed, /opt/homebrew/bin/afm) = Apple foundation models, GPU ~10%
-during gen → likely ANE-resident; sudo powermetrics proof = HIS paste,
+during gen → likely ANE-resident UNVERIFIED; sudo powermetrics proof = HIS paste,
 pending. Voice tier: afm default (adapters .fmadapter for flavor; afm mlx
 mode = GPU road). ioreg busy-ms = IOKit bookkeeping, NOT utilization —
 lesson recorded.
