@@ -732,9 +732,13 @@ BOTH sides (CamPose::reproject + cam_reproject WGSL), SNAP_EPS=1e-3 param.
 Act changed → ordeal RE-RUN 640x480 → stamp RE-EARNED, bars byte-identical
 (resid 0.03487 · sparkle 35.81 · PASS). Parity NOW: still 4.77e-7 · pan
 1.55e-6 · 0/6144 px — machine precision both. 6 regressions structural-
-green. Remaining: p95 tail ~24-29ms unattributed; fps medians noisy across
-rooms (16.6/18.15/20.3 — room5 bench ran DURING detached ordeal = GPU
-contention; room3 16.63 = cleanest number; re-bench clean before budget hunt).
+green. CLEAN-GPU BENCH (room6, b4c7ef0): median 18.1-19.1ms · p95 27.5-30.3
+· wall 41-44fps (room3's 16.63 = outlier, corrected). Old path median parity
+(18.57 carried) but old wall 53.85 vs v7 41-44 — tail comparison UNPROVEN
+(v4 stamp machine-local, absent in worktree → flag-off refused, REAL-OR-
+BLACK correct). Tail = startup transient + recurring whole-frame GPU stall
+(trace+net_wall spike together, not additive); periodic-vs-random undecided.
+Budget gap to 16.67: ~1.5-2.4ms median + tail.
 LAUNCH (HIS act only, works NOW):
   cd ../magic-crystal-neural-live/packages/scrying-glass &&
   GAIA_NATIVE_WEIGHTS=v7 GAIA_NATIVE_EVIDENCE_SPLIT=1 ./target/release/scrying-glass
