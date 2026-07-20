@@ -538,3 +538,119 @@ NOT done this room: root-causing the still-sequence net-output gap itself
 (scoped above, not fixed); the `wall_fps` vs non-split-baseline `wall_fps`
 gap (world/http overhead, out of this room's render-only scope); cutover
 itself.
+
+## STAGE 3 PROGRESS (room 4, ghoul run 2026-07-20) — root cause FOUND, verdict
+
+Picked up room 3's open item ("still-sequence net-output gap, mechanism not
+what was assumed"). Extended `examples/v7_present_parity_probe.rs` (example
+file only — no engine/main.rs/wgsl changes this room):
+
+**1. 12-frame STILL drift curve (task 1) — raw numbers:**
+```
+f0  max-abs-diff 4.7684e-7  px>1e-3=0
+f1  max-abs-diff 1.7205e-2  px>1e-3=59
+f2  max-abs-diff 1.9002e-2  px>1e-3=60
+f3  max-abs-diff 1.7880e-2  px>1e-3=61
+f4  max-abs-diff 1.8377e-2  px>1e-3=58
+f5  max-abs-diff 1.9242e-2  px>1e-3=61
+f6  max-abs-diff 6.0695e-2  px>1e-3=61   <- one-frame outlier, see below
+f7  max-abs-diff 1.8978e-2  px>1e-3=59
+f8  max-abs-diff 1.8525e-2  px>1e-3=59
+f9  max-abs-diff 1.8358e-2  px>1e-3=62
+f10 max-abs-diff 1.8046e-2  px>1e-3=61
+f11 max-abs-diff 1.8040e-2  px>1e-3=61
+```
+mean-abs-diff stays 7.8e-5..8.9e-5 every frame (never grows). Shape: **flat
+plateau from frame 1 onward** — jumps to ~1.7-1.9e-2 at f1 and stays there
+through f11, not a monotonic climb. The affected pixel COUNT is stable
+(58-62 of 6144, ~1%) across all 12 frames — same small population, not a
+spreading one. The one f6 spike (6.07e-2, px=86 newly appears in that
+frame's worst-5 list, not seen at other frames) is a single transient extra
+flip, not a trend. Pan sequence re-confirmed unchanged: all 3 frames
+~1e-6, px>1e-3=0.
+
+**2. A/B localization (task 2) — does the INPUT already differ?** Extended
+the probe with an independent standalone CPU replay
+(`cpu_feature_sequence`, byte-for-byte copy of
+`direct_render_sequence_hist_split`'s own feature-building loop, returning
+the 39-wide rows instead of only the presented image) and dumped the worst
+flipped pixel's full feature row, live GPU vs this CPU replay, at the first
+two mismatching frames (f1, f2), pixel 2976 both times:
+```
+f1 px=2976  base(idx0-34) max-diff=1.192e-7   history(idx35-38) max-diff=1.000e0
+  idx35 (prev_dl.x) live=0.000000 cpu=0.281246 diff=2.812e-1
+  idx36 (prev_dl.y) live=0.000000 cpu=0.117278 diff=1.173e-1
+  idx37 (prev_dl.z) live=0.000000 cpu=0.185439 diff=1.854e-1
+  idx38 (valid)      live=0.000000 cpu=1.000000 diff=1.000e0
+f2 px=2976  base(idx0-34) max-diff=1.043e-7   history(idx35-38) max-diff=1.000e0
+  idx35 live=0.000000 cpu=0.291872 diff=2.919e-1
+  idx36 live=0.000000 cpu=0.125193 diff=1.252e-1
+  idx37 live=0.000000 cpu=0.191482 diff=1.915e-1
+  idx38 live=0.000000 cpu=1.000000 diff=1.000e0
+```
+**Answer: the INPUT already differs — at the history slots specifically,
+not the base slots.** idx0-34 (the E/D taps, subpixel, albedo/normal/depth,
+motion — Stage 1/2's own bit-exact territory) sit at ~1e-7, the same
+float-ULP class as every other gate in this lane. idx35-38 (the
+reprojected-history carrier) sit at a FULL 1.0 diff on the validity flag
+alone: **GPU decides `valid=0` (drops history, feeds zero) while CPU
+decides `valid=1` (accepts, feeds the real reprojected previous output)**,
+for the exact same static camera pose, same depth, same normal, same
+previous frame. This is not a forward-kernel numeric gap — it never
+reaches the net's forward pass at all; it is a **discrete branch
+disagreement in the depth/normal reprojection accept test**
+(`gather_hist_split`'s WGSL port vs `direct_render_sequence_hist_split`'s
+Rust body — both meant to be the same bit-for-bit port Stage 2 proved
+equal on a moving-camera probe). Once GPU's accept test rejects at a
+pixel, that pixel's history is zeroed EVERY frame thereafter (its own
+reprojection keeps landing on the same disagreement, same static pose) —
+explaining the flat plateau shape from task 1 directly: it is not fp error
+accumulating, it is a fixed WRONG DECISION replayed unchanged every frame.
+
+**3. VERDICT.** Room 2's "benign fp equilibrium" framing and room 3's own
+"per-frame numeric gap in the net forward or the reprojection's
+fractional-pixel resample" framing are BOTH superseded: the gap is
+neither noise nor a resample-precision issue — it is a same-vs-different
+BOOLEAN accept/reject outcome on the depth+normal reprojection guard,
+isolated to a small (~1%), STABLE, geometrically-fixed set of pixels
+(consistent frame to frame under a static pose — almost certainly
+silhouette/depth-discontinuity pixels, where `ipx=fx.round()`/`ipy=
+fy.round()` sits near a .5 tie or the reprojected depth sits right at the
+`depth_tol` boundary, so a sub-ULP GPU/CPU difference upstream in the
+fractional reproject coordinate — not in the guard itself — flips which
+side of a hard threshold the pixel lands on). Classification: **BOUNDED,
+not diverging** — the plateau does not grow past f1, mean-abs-diff stays
+flat, the affected population size stays flat — but it is **not a benign
+fp-noise bound to "derive and accept"**: it is a real, deterministic,
+per-pixel-persistent defect (wrong history retention decision at edge
+pixels), previously mischaracterized twice. Under "shipped = ordealed
+act": **cutover-blocking** in its current form — it is small in
+aggregate (mean-abs-diff ~8e-5, 1% of pixels) but the mechanism is exactly
+the kind of thing an ordeal's residual/sparkle bars are built to catch at
+silhouette edges, and it is not yet understood well enough (WGSL vs Rust
+reproject-guard line-by-line diff not done this room) to certify safe.
+**Recommended fix**: diff `gather_hist_split`'s WGSL reprojection-guard
+block against `direct_render_sequence_hist_split`'s Rust block
+line-by-line for the exact boundary condition (round-half behavior of
+WGSL's `round()` vs Rust's `f32::round()` at a .5 tie is the leading
+suspect, cheap to test in isolation: feed both sides an `fx`/`fy` pair
+synthetically constructed to sit at x.5000000 and x.5000001 and compare);
+failing a fast fix, a periodic re-sync (drop history every N frames to
+bound any pixel's wrong-branch persistence) is a viable stopgap but was
+not needed to explain THIS lane's numbers (the plateau already doesn't
+grow) — the real fix is matching the two branches' boundary behavior, not
+bounding a growth that isn't happening.
+
+**4. FPS spike attribution (task 4)** — NOT reached this room (root-cause
+work above filled the timebox; no fix attempted here either, per the
+room's own no-fix instruction).
+
+Regression guard: all 6 pre-existing ordeals (`rdirect_live_ordeals`,
+`rdirect_gpu_ordeals`, `rdirect_gather_ordeals`) re-run, byte-identical to
+every prior room's numbers — this room's changes are example-file-only
+(`v7_present_parity_probe.rs`: 12-frame still sequence, standalone CPU
+feature-sequence replay for the A/B dump, both diagnostic/additive).
+
+**Artifacts this room**: `examples/v7_present_parity_probe.rs` (12-frame
+still sequence, `cpu_feature_sequence` standalone replay + per-flip-pixel
+39-feature A/B dump), this note.

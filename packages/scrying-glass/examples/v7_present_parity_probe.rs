@@ -32,7 +32,8 @@ use scrying_glass::integrator::{
     headless_device, split_aov, trace_headless_aov, Integrator, IntegratorParams, IntegratorUniform,
 };
 use scrying_glass::rdirect::{
-    direct_render_sequence_hist_split, evidence_clamp_gamma, verify_stamp, CamPose, HistFrameSplit,
+    direct_render_sequence_hist_split, evidence_clamp_gamma, hist_features_split, pixel_features_split,
+    verify_stamp, CamPose, HistFrameSplit, HIST_FEATURES_SPLIT,
 };
 use scrying_glass::rdirect_demod::DemodPass;
 use scrying_glass::rdirect_evidence::EvidenceClamp;
@@ -131,6 +132,10 @@ fn run_sequence(
     // BOUNDARY-FLIP PROBE: per-frame (pre-clamp net_linear, clamp ceiling),
     // both [n] Vec3, so a flipped pixel can be checked against the ceiling.
     let mut boundary_probe: Vec<(Vec<f32>, Vec<glam::Vec3>)> = Vec::new();
+    // A/B LOCALIZATION (task 2): the exact 39-in feature row the live GPU
+    // fed the net, per frame, so it can be diffed against the CPU reference's
+    // own row for the same pixel.
+    let mut gpu_feats_per_frame: Vec<Vec<f32>> = Vec::new();
 
     // Own the per-frame CPU-side low_e/low_d/albedo/normal/depth so the
     // HistFrameSplit borrows stay alive for the single direct_render call
@@ -181,6 +186,7 @@ fn run_sequence(
         queue.submit(Some(enc.finish()));
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
         let gpu_feats = read_f32(device, queue, &feats_buf, feat_bytes);
+        gpu_feats_per_frame.push(gpu_feats.clone());
 
         // ── REAL net forward (the shape-generic MPSGraph, synchronous) ──
         let out_dl = live.forward_cpu_roundtrip(&gpu_feats).expect("v7 forward");
@@ -267,6 +273,13 @@ fn run_sequence(
     }
 
     let cpu_out = direct_render_sequence_hist_split(live.cpu_ref(), &cpu_frames, DEPTH_TOL, NORMAL_THRESH);
+    // A/B LOCALIZATION (task 2): the CPU reference's own 39-in feature rows,
+    // re-derived by an independent standalone replay of the same recurrence
+    // (not read out of direct_render_sequence_hist_split, which doesn't
+    // expose them) — diffed below against the live GPU's gather output for
+    // the worst-mismatch pixel of the first 2 flipped frames.
+    let cpu_feats = cpu_feature_sequence(live.cpu_ref(), &cpu_frames, DEPTH_TOL, NORMAL_THRESH);
+    let mut ab_dumped = 0u32;
 
     let mut max_all = 0f32;
     for (f, (gpu, cpu)) in gpu_presented.iter().zip(cpu_out.iter()).enumerate() {
@@ -314,10 +327,148 @@ fn run_sequence(
                     u.x, u.y, u.z, c.x, c.y, c.z, dist.x, dist.y, dist.z
                 );
             }
+
+            // A/B LOCALIZATION (task 2): the worst pixel's full 39-in
+            // feature row, live GPU gather vs the CPU reference's own
+            // recurrence-derived row — does the INPUT already differ
+            // (history feedback carrier, idx 35-38 or upstream) or only the
+            // net's OUTPUT for an identical input (forward kernel)? Limited
+            // to the first 2 mismatching frames per the room's ask.
+            if ab_dumped < 2 {
+                ab_dumped += 1;
+                let worst = idx[0];
+                let live_row = &gpu_feats_per_frame[f][worst * HIST_FEATURES_SPLIT..worst * HIST_FEATURES_SPLIT + HIST_FEATURES_SPLIT];
+                let cpu_row = &cpu_feats[f][worst];
+                let mut base_max = 0f32;
+                let mut hist_max = 0f32;
+                for k in 0..HIST_FEATURES_SPLIT {
+                    let d = (live_row[k] - cpu_row[k]).abs();
+                    if k < 35 {
+                        base_max = base_max.max(d);
+                    } else {
+                        hist_max = hist_max.max(d);
+                    }
+                }
+                println!(
+                    "[v7-present-parity]   {label} f{f} A/B px={worst} INPUT base(0-34) max-diff={base_max:.3e} history(35-38) max-diff={hist_max:.3e}"
+                );
+                for k in 0..HIST_FEATURES_SPLIT {
+                    let lv = live_row[k];
+                    let cv = cpu_row[k];
+                    let d = (lv - cv).abs();
+                    println!(
+                        "[v7-present-parity]     idx{k:02} live={lv:.6} cpu={cv:.6} diff={d:.3e}"
+                    );
+                }
+            }
         }
     }
     println!("[v7-present-parity] {label} OVERALL max-abs-diff {max_all:.4e}");
     max_all
+}
+
+/// Standalone CPU feature-sequence replay: re-derives the EXACT 39-feature
+/// row `direct_render_sequence_hist_split` builds internally (same
+/// `pixel_features_split` + reprojection/validity + `hist_features_split`
+/// call, same recurrent state carried via THIS mlp's own forward output —
+/// not a synthetic stand-in), but returns the feature rows themselves
+/// instead of only the final presented image. Does not call the real
+/// function (it doesn't expose features) — duplicated on purpose, byte-for-
+/// byte, so a diff against it is a diff against the true CPU reference path,
+/// not a re-derivation that could drift. Diagnostic-only (task 2 A/B).
+fn cpu_feature_sequence(
+    mlp: &scrying_glass::rdirect::Mlp,
+    frames: &[HistFrameSplit],
+    depth_tol: f32,
+    normal_thresh: f32,
+) -> Vec<Vec<[f32; HIST_FEATURES_SPLIT]>> {
+    let mut all_feats: Vec<Vec<[f32; HIST_FEATURES_SPLIT]>> = Vec::with_capacity(frames.len());
+    let mut prev: Option<(Vec<[f32; 3]>, Vec<f32>, Vec<glam::Vec3>, CamPose, u32, u32)> = None;
+    for f in frames {
+        let tw = f.target_w;
+        let th = f.target_h;
+        let n = (tw * th) as usize;
+        let mut out_dl = vec![[0.0f32; 3]; n];
+        let mut feats = Vec::with_capacity(n);
+        for ty in 0..th {
+            for tx in 0..tw {
+                let i = (ty * tw + tx) as usize;
+                let albedo = f.hi_albedo[i];
+                let base = pixel_features_split(
+                    f.low_e, f.low_d, f.low_w, f.low_h, tw, th, tx, ty, albedo, f.hi_normal[i],
+                    f.hi_depth[i], glam::Vec2::ZERO,
+                );
+                let (prev_dl, valid) = match &prev {
+                    None => ([0.0f32; 3], 0.0f32),
+                    Some((p_dl, p_depth, p_norm, p_cam, pw, ph)) => {
+                        let depth = f.hi_depth[i];
+                        let is_miss = depth <= 0.0;
+                        let dir = f.cam.ray_dir(tx, ty, tw, th);
+                        let dist = if is_miss { 1.0e5 } else { depth };
+                        let world = f.cam.eye + dir * dist;
+                        match p_cam.reproject(world, *pw, *ph) {
+                            None => ([0.0f32; 3], 0.0f32),
+                            Some((fx, fy)) => {
+                                let ipx = fx.round().clamp(0.0, (*pw - 1) as f32) as usize;
+                                let ipy = fy.round().clamp(0.0, (*ph - 1) as f32) as usize;
+                                let pj = ipy * *pw as usize + ipx;
+                                let prev_depth = p_depth[pj];
+                                let prev_miss = prev_depth <= 0.0;
+                                let ok = if is_miss {
+                                    prev_miss
+                                } else if prev_miss {
+                                    false
+                                } else {
+                                    let dist_prev = (world - p_cam.eye).length();
+                                    let depth_ok = (dist_prev - prev_depth).abs()
+                                        <= depth_tol * dist_prev.max(1e-4);
+                                    let normal_ok = f.hi_normal[i].dot(p_norm[pj]) >= normal_thresh;
+                                    depth_ok && normal_ok
+                                };
+                                if ok {
+                                    let img: Vec<glam::Vec3> =
+                                        p_dl.iter().map(|d| glam::Vec3::new(d[0], d[1], d[2])).collect();
+                                    let s = local_bilinear_vec3(&img, fx, fy, *pw, *ph);
+                                    ([s.x, s.y, s.z], 1.0)
+                                } else {
+                                    ([0.0f32; 3], 0.0)
+                                }
+                            }
+                        }
+                    }
+                };
+                let feat = hist_features_split(&base, prev_dl, valid);
+                let dl = mlp.forward(&feat);
+                out_dl[i] = dl;
+                feats.push(feat);
+            }
+        }
+        prev = Some((out_dl, f.hi_depth.to_vec(), f.hi_normal.to_vec(), f.cam, tw, th));
+        all_feats.push(feats);
+    }
+    all_feats
+}
+
+/// Local copy of `rdirect::bilinear_vec3` (private in that module) — the
+/// standard TAA history resample. Byte-for-byte port, diagnostic use only.
+fn local_bilinear_vec3(img: &[glam::Vec3], fx: f32, fy: f32, w: u32, h: u32) -> glam::Vec3 {
+    let x0 = fx.floor() as i32;
+    let y0 = fy.floor() as i32;
+    let tx = fx - x0 as f32;
+    let ty = fy - y0 as f32;
+    let cl = |v: i32, hi: u32| v.clamp(0, hi as i32 - 1) as usize;
+    let x0c = cl(x0, w);
+    let x1c = cl(x0 + 1, w);
+    let y0c = cl(y0, h);
+    let y1c = cl(y0 + 1, h);
+    let idx = |x: usize, y: usize| y * w as usize + x;
+    let a = img[idx(x0c, y0c)];
+    let b = img[idx(x1c, y0c)];
+    let c = img[idx(x0c, y1c)];
+    let d = img[idx(x1c, y1c)];
+    let top = a * (1.0 - tx) + b * tx;
+    let bot = c * (1.0 - tx) + d * tx;
+    top * (1.0 - ty) + bot * ty
 }
 
 fn split_from_cells(cells: &[f32], n: usize) -> (Vec<glam::Vec3>, Vec<glam::Vec3>) {
@@ -365,8 +516,11 @@ fn main() {
     let (low_w, low_h, target_w, target_h) = (48u32, 32u32, 96u32, 64u32);
     let pivot = [0.0, 2.0, 0.0];
 
+    // 12-frame STILL sequence (task 1): repeated identical pose, to read the
+    // SHAPE of the live-vs-CPU drift curve (bounded/oscillating vs monotone
+    // diverging) rather than just 2 recurrent steps.
     let still_cam = orbit_camera(params.camera_position, pivot, 0.0, params.fov_y_degrees);
-    let still: Vec<Camera> = vec![still_cam; 3];
+    let still: Vec<Camera> = vec![still_cam; 12];
     let pan: Vec<Camera> = [-3.0f32, 0.0, 3.0]
         .iter()
         .map(|yaw| orbit_camera(params.camera_position, pivot, *yaw, params.fov_y_degrees))
