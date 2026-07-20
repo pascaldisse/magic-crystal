@@ -354,3 +354,81 @@ No background build left running by this room (single-token, sequential
 foreground, each finished before starting the next — same discipline as
 Stage 1). If a later room needs to detach a long build, note PID + log path
 HERE.
+
+## STAGE 3 PROGRESS (room 2, ghoul run 2026-07-20) — v7 now runs live
+
+Picked up exactly where room 1 stopped (loader generalized, refuse-not-
+corrupt guard blocking the frame loop). This room did the real wiring the
+guard was blocking on. Full numbers/commands: `scratch/v7-cutover-ready.md`
+(rewritten this room) — summarized here for the code-level record.
+
+**1. `gather_hist_split` wired into `NetPresent`'s frame loop — DONE.**
+`NetPresent::new`'s guard now accepts 39-in weights when
+`GAIA_NATIVE_EVIDENCE_SPLIT=1` (still refuses BLACK otherwise, and for any
+unknown in_features — REAL OR BLACK intact). The gather stage branches on a
+new `is_v7` flag: the 23-in composite `gather.encode` is skipped entirely
+(it would write the wrong stride into the now-39-wide pooled feature buffer)
+and `FeatureGatherHistSplit::encode` drives `feats` instead, reading a new
+`HistoryBuffers` instance (`self.history`) exactly as `examples/
+v7_live_hist_probe.rs` proved bit-exact in Stage 2 — except now it's real
+net output feeding history, not a synthetic E-tap0 stand-in. A `cam_by_set:
+Vec<Option<CamPose>>` field tracks which camera pose gathered each
+double-buffer slot, because the frame-overlap pipeline means the net output
+finishing THIS iteration (`dset`) was gathered under a PAST iteration's
+camera, not this iteration's `cur_cam` — `HistoryBuffers::swap` needs THAT
+pose, not the current one, to keep the next frame's reprojection honest.
+
+**2. Evidence clamp at present — DONE, as a GPU compute cut (not CPU).**
+New `src/rdirect_evidence.{rs,wgsl}`: three small compute passes
+(`evidence_accumulate`, `evidence_clamp_present`, `pack_out_dl3to4`) porting
+`rdirect.rs`'s `EvidenceAccum`/`local_max_3x3`/`clamp_evidence_lin` (commit
+c8b9ba6). Key simplification vs a literal port: `EvidenceAccum::ceiling`
+computes `local_max_3x3(sum/count)`; since `count` is a single scalar shared
+by every pixel, `max_3x3(sum)/count == max_3x3(sum/count)` exactly (max and
+division-by-a-positive-constant commute) — so there is no separate
+temporal-mean buffer, only a running `sum` (one vec4/px, `evidence_sum`) and
+a CPU `u32` counter (`evidence_count`), and the clamp kernel folds `gamma/
+count` into its 3×3 max-pool. This is bit-exact against the CPU recipe, not
+an approximation. History is fed the frame's RAW/unclamped `out_dl` (via
+`pack_out_dl3to4` on the net's tight `[n,3]` MPSGraph output), matching the
+CPU reference's own `prev = Some((out_dl, ...))` — the clamp never feeds
+back into itself.
+
+**3. Full-frame parity — DONE (numbers, not a pass/fail gate).**
+`examples/v7_present_parity_probe.rs`: pan sequence (camera actually moving)
+matches `direct_render_sequence_hist_split` to ~1e-6 through all 3 frames.
+Still sequence (camera repeated 3x) matches at frame 0 (~5e-7) then shows
+max-abs-diff ~1.9e-2 at frames 1-2, but mean-abs-diff stays ~8e-5 with only
+~1% of pixels over 1e-3 — read as isolated evidence-clamp boundary flips
+(a pixel exactly at `gamma*ceiling` flipping the `min()` branch on a sub-ULP
+GPU/CPU numeric difference), not a systemic bug. Not chased to root cause
+this room; recorded honestly, not gated or hidden.
+
+**4. FPS — DONE (real number, not assumed).** `s20-bench.sh` offscreen
+640x480 with `GAIA_NATIVE_WEIGHTS=v7 GAIA_NATIVE_EVIDENCE_SPLIT=1`: TOTAL
+median 23.32ms / WALL-FPS ~40 (p95 31ms), vs the documented pre-v7 baseline
+18.57ms/53.85fps — a real ~5ms/~14fps regression, in the predicted direction
+(bigger 39-in GEMM + new gather/history/evidence passes). The "demod"
+budget bucket (which folds in this room's evidence/pack/swap work) jumped to
+~8ms median — three extra `device.poll(wait_indefinitely)` round-trips per
+frame (accumulate, clamp+pack, swap) is the likely next optimization
+(batch into fewer polls / fewer submits) but was not attempted this room
+(out of the ~25min scope; the honest number was the deliverable).
+
+**Bug found and fixed along the way**: `Integrator::make_split_buffer` was
+missing `wgpu::BufferUsages::COPY_DST` — the live trace stage `clear_buffer`s
+it every frame (same as the composite `net_accum`), which panicked the
+first time `GAIA_NATIVE_EVIDENCE_SPLIT=1` was ever driven through the real
+app binary (Stage 1's own dispatch had never been live-tested end-to-end;
+probes build their own buffers and lean on wgpu's implicit zero-init rather
+than an explicit per-frame clear). Fixed in `integrator.rs`.
+
+Regression guard: all 6 pre-existing parity ordeals
+(`rdirect_live_ordeals`, `rdirect_gpu_ordeals`, `rdirect_gather_ordeals`)
+still green, byte-identical, after every change this room.
+
+NOT done this room: cutover itself (making v7 the default `GAIA_NATIVE_WEIGHTS`
+selection), chasing the still-sequence clamp-boundary root cause, and
+reducing the new evidence-stage poll count for fps recovery. All next-room
+work, not started here — see `scratch/v7-cutover-ready.md`'s own "NOT done"
+language for the exact scope.

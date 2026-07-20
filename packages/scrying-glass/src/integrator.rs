@@ -873,7 +873,15 @@ impl Integrator {
         device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("integrator split radiance"),
             size: (cells.max(1)) * ACCUM_CELL * 2,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            // V7-LIVE LANE STAGE 3: COPY_DST is required by `NetPresent`'s live
+            // trace stage, which `clear_buffer`s this every frame (like the
+            // composite `net_accum` buffer already does) before re-accumulating
+            // — a real gap surfaced only once Stage 3 actually drove this buffer
+            // through the live app for the first time (Stage 1 was
+            // additive/observational and never previously exercised this path
+            // end-to-end; probes construct their own single-shot buffers and
+            // rely on wgpu's implicit zero-init instead of an explicit clear).
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         })
     }
