@@ -5,6 +5,12 @@ set -euo pipefail
 law='ADVERSARY CHARTER: every merge requires cross-model adversary + spec-concordance.'
 cite_law='CITE TOOTH: newly added Markdown silicon/host claims require [source: ...] or UNVERIFIED on the same line.'
 cite_pattern='ANE|CoreML|MPSGraph|MTLTensor|Metal [0-9]|macOS [0-9]|M[0-9] (Pro|Max)?|neural cores'
+doctrine_law='TRAINING DOCTRINE (NEURAL.md §TRAINING DOCTRINE, LASHES row 18): every training-lane Adversary-Report must carry a DOCTRINE-CONCORDANCE: line.'
+# IRON law: no hardcoded paths without env override. Default derived from the
+# repo's real trainer layout (packages/*/examples/*train*.rs,
+# packages/*/src/*_dataset.rs) but any path ending examples/...train....rs or
+# ..._dataset.rs anywhere counts, and the whole regex is overridable.
+train_pattern="${GAIA_JAGD_TRAIN_PATTERN:-(^|/)examples/[^/]*train[^/]*\.rs$|(^|/)[^/]*_dataset\.rs$}"
 
 if [[ -n "${GAIA_JAGD_SKIP:-}" ]]; then
   printf 'WILDE JAGD BYPASS — GAIA_JAGD_SKIP=%s\n' "$GAIA_JAGD_SKIP" >&2
@@ -105,6 +111,36 @@ for commit in "${commits[@]}"; do
     printf 'Required: Adversary: <agent> HOLDS\n' >&2
     printf 'Required: Concordance: checked\n' >&2
     printf '%s\n' "$law" >&2
+    status=1
+    continue
+  fi
+
+  # DOCTRINE-CONCORDANCE TOOTH (07-20, LASHES row 18): a merge that touches
+  # training-lane files must have its Adversary-Report carry a
+  # DOCTRINE-CONCORDANCE: line, or the sealed law is a memo again.
+  parent1=$(git rev-parse "${commit}^1" 2>/dev/null || true)
+  parent2=$(git rev-parse "${commit}^2" 2>/dev/null || true)
+  mergebase="$parent1"
+  if [[ -n "$parent1" && -n "$parent2" ]]; then
+    mergebase=$(git merge-base "$parent1" "$parent2" 2>/dev/null || echo "$parent1")
+  fi
+  touched=""
+  if [[ -n "$mergebase" ]]; then
+    touched=$(git diff --no-ext-diff --name-only "$mergebase" "$commit" -- 2>/dev/null || true)
+  fi
+  training_touch=""
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    if grep -Eq "$train_pattern" <<<"$f"; then
+      training_touch=1
+      break
+    fi
+  done <<<"$touched"
+
+  if [[ -n "$training_touch" ]] && ! grep -q 'DOCTRINE-CONCORDANCE:' <<<"$report_blob"; then
+    printf 'WILDE JAGD REFUSED — merge %s touches a training-lane file but the Adversary-Report lacks a DOCTRINE-CONCORDANCE: line.\n' "$commit" >&2
+    printf '%s\n' "$doctrine_law" >&2
+    printf 'See NEURAL.md §TRAINING DOCTRINE (enforcement clause, 07-20) and LASHES.md row 18.\n' >&2
     status=1
   else
     printf 'WILDE JAGD HOLDS — merge %s\n' "$commit" >&2
