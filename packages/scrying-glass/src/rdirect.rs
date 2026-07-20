@@ -235,6 +235,81 @@ impl Mlp {
         Mlp { config: base.config, layers }
     }
 
+    /// v8c TIER 1 — BORN AS THE ESTIMATOR (TRAINING DOCTRINE, sealed 07-18,
+    /// enforcement clause 07-20). Constructs the N5 split-history net (39-in
+    /// `HIST_FEATURES_SPLIT`, 3-out) so that BEFORE ANY GRADIENT STEP its
+    /// output is EXACTLY the classical evidence-averaging estimator: the
+    /// unweighted box mean of the 4 E-taps per channel plus the box mean of
+    /// the 4 D-taps per channel (`pixel_features_split`'s own 2×2 bilinear
+    /// neighbourhood — the same 1-spp evidence the net's input already
+    /// carries, no rendering/teacher needed to build this init). Analytic,
+    /// no He-random weights, no pretrain loop, no seed:
+    ///   - layer 0 (39→hidden_width): hidden units 0..3 = mean of the 4 E
+    ///     taps for channel c (weight 0.25 each, all other inputs 0 weight);
+    ///     units 3..6 = mean of the 4 D taps for channel c likewise; every
+    ///     other hidden unit is the all-zero row (contributes nothing).
+    ///   - every interior hidden→hidden layer: identity on units 0..6 (1.0
+    ///     on the diagonal), zero elsewhere — a pass-through so units 0..6
+    ///     survive unchanged to the last hidden layer. Sound because taps
+    ///     are `log_demod` values, always >=0 (`(x.max(0)+1).ln()`), so the
+    ///     ReLU an identity block sits behind is a no-op on this subspace.
+    ///   - output layer (hidden_width→3): out[c] = E_mean[c] + D_mean[c]
+    ///     (row c has a 1.0 at unit c and at unit 3+c, 0 elsewhere; linear,
+    ///     no ReLU on the last layer) — the presented estimator BEFORE any
+    ///     training, byte-exact given the construction (verify with a
+    ///     forward pass vs a hand-computed box mean; see rdirect_train_v8c's
+    ///     own ORDEAL-ASSERT at init).
+    /// Requires `hidden_width >= 6`. `history`/`validity` (features 35..39)
+    /// get zero-weight columns everywhere — this is the memoryless per-frame
+    /// classical filter, exactly what "evidence-averaging estimator" means;
+    /// the recurrent net LEARNS to do better than it from here.
+    pub fn evidence_mean_init_split(config: RdirectConfig) -> Mlp {
+        assert!(config.hidden_width >= 6, "evidence_mean_init_split needs hidden_width>=6");
+        let sizes = config.layer_sizes_with(HIST_FEATURES_SPLIT);
+        assert_eq!(sizes[0], HIST_FEATURES_SPLIT, "evidence_mean_init_split is the N5 split-history (39-in) net only");
+        let mut layers: Vec<Layer> = Vec::with_capacity(sizes.len() - 1);
+        // Layer 0: input -> first hidden. Units 0..3 = E-tap mean per
+        // channel, units 3..6 = D-tap mean per channel (see
+        // `pixel_features_split`'s own tap layout: E taps at [0..12), D taps
+        // at [12..24), each 4 taps of 3 channels, tap t's channel c at
+        // `12*group + 3*t + c`).
+        {
+            let (in_dim, out_dim) = (sizes[0], sizes[1]);
+            let mut layer = Layer::zeros(in_dim, out_dim);
+            for c in 0..3 {
+                for &tap in &[c, c + 3, c + 6, c + 9] {
+                    layer.w[c * in_dim + tap] = 0.25;
+                }
+                let u = 3 + c;
+                for &tap in &[12 + c, 15 + c, 18 + c, 21 + c] {
+                    layer.w[u * in_dim + tap] = 0.25;
+                }
+            }
+            layers.push(layer);
+        }
+        // Interior hidden->hidden layers: identity on units 0..6, else zero.
+        for li in 1..config.hidden_layers {
+            let (in_dim, out_dim) = (sizes[li], sizes[li + 1]);
+            let mut layer = Layer::zeros(in_dim, out_dim);
+            for u in 0..6.min(in_dim).min(out_dim) {
+                layer.w[u * in_dim + u] = 1.0;
+            }
+            layers.push(layer);
+        }
+        // Output layer: out[c] = E_mean[c] + D_mean[c], linear (no ReLU).
+        {
+            let li = sizes.len() - 2;
+            let (in_dim, out_dim) = (sizes[li], sizes[li + 1]);
+            let mut layer = Layer::zeros(in_dim, out_dim);
+            for c in 0..out_dim.min(3) {
+                layer.w[c * in_dim + c] = 1.0;
+                layer.w[c * in_dim + (3 + c)] = 1.0;
+            }
+            layers.push(layer);
+        }
+        Mlp { config, layers }
+    }
+
     pub fn config(&self) -> RdirectConfig {
         self.config
     }
@@ -1706,6 +1781,39 @@ mod tests {
         let mlp = Mlp::new_random(RdirectConfig::default(), 7);
         let input = vec![0.2f32; INPUT_FEATURES];
         assert_eq!(mlp.forward(&input), mlp.forward(&input));
+    }
+
+    #[test]
+    fn evidence_mean_init_split_copies_the_box_mean_exactly() {
+        // v8c TIER 1: fabricate a synthetic 39-wide feature vector (E taps,
+        // D taps, everything else nonzero junk INCLUDING history/validity)
+        // and assert forward() reproduces out[c] = mean(E taps c) + mean(D
+        // taps c) exactly, ignoring history entirely — the analytic
+        // construction, not "close after training".
+        let config = RdirectConfig::default();
+        let mlp = Mlp::evidence_mean_init_split(config);
+        assert_eq!(mlp.layer_dims()[0].0 as usize, HIST_FEATURES_SPLIT);
+        let mut feat = [0.0f32; HIST_FEATURES_SPLIT];
+        // E taps (12): tap t, channel c at 3*t+c.
+        let e_taps: [[f32; 3]; 4] = [[0.1, 0.2, 0.3], [0.4, 0.05, 0.6], [0.0, 0.9, 0.2], [0.3, 0.3, 0.3]];
+        for (t, tap) in e_taps.iter().enumerate() {
+            for c in 0..3 { feat[3 * t + c] = tap[c]; }
+        }
+        // D taps (12) at offset 12.
+        let d_taps: [[f32; 3]; 4] = [[0.05, 0.0, 0.1], [0.2, 0.4, 0.0], [0.1, 0.1, 0.1], [0.0, 0.2, 0.3]];
+        for (t, tap) in d_taps.iter().enumerate() {
+            for c in 0..3 { feat[12 + 3 * t + c] = tap[c]; }
+        }
+        // Everything else (subpixel, albedo, normal, depth, motion, history,
+        // validity) set to nonzero junk — must have ZERO effect on output.
+        for i in 24..HIST_FEATURES_SPLIT { feat[i] = 7.77; }
+        let out = mlp.forward(&feat);
+        for c in 0..3 {
+            let e_mean = (e_taps[0][c] + e_taps[1][c] + e_taps[2][c] + e_taps[3][c]) / 4.0;
+            let d_mean = (d_taps[0][c] + d_taps[1][c] + d_taps[2][c] + d_taps[3][c]) / 4.0;
+            let expect = e_mean + d_mean;
+            assert!((out[c] - expect).abs() < 1e-6, "channel {c}: out={} expect={expect}", out[c]);
+        }
     }
 
     #[test]

@@ -1,0 +1,23 @@
+    Finished `release` profile [optimized] target(s) in 0.19s
+     Running `/Users/pascaldisse/projects/magic-crystal-neural-live/target/release/examples/rdirect_train_v8c`
+[v8c_check5] GAIA_V7_SKY_HISTORY reject=true — mandate expects true (set GAIA_V7_SKY_HISTORY=reject)
+[v8c_check5] training poses (mirror always on, A3-innocent): ["front", "wide", "orbit_+20", "mirror"]
+[v8c_check5] rendered 4+2 MOVING/STILL pose sequences (K=3 steps, 384x288, teacher 64 [VALIDATOR ONLY], pan_step=0.004, mirror_spp=4, TIER2 draw_B seed base=0xb222) in 3.3s
+[v8c_check5] TIER1 ORDEAL-ASSERT: output==evidence-mean(box-mean of 4 E-taps + 4 D-taps), BY CONSTRUCTION, on 36 real-render channel samples: max|diff|=0.00000000 mean|diff|=0.00000000
+[v8c_check5] TIER1 construction VERIFIED — output IS the classical evidence-averaging estimator before epoch 0.
+[v8c_check5] arch RdirectConfig { hidden_layers: 5, hidden_width: 64 } in=39 macs/px=19072 — 5 epochs (wall<=10800s), subsample 5000px/pose (uniform, NO highlight bias — A2 convicted), lr0=0.0001 (mild harmonic decay), ema=0.999, TIER2 loss = plain MSE vs independent draw-B radiance (noise2noise, teacher NEVER in the loss)
+[v8c_check5] MONITOR epoch -1 (TIER1 fresh, BORN AS ESTIMATOR): val sparkle 18.1/Mpx resid 0.0428 highlight_ratio 0.784 score=1.222 | mirror sparkle 9.0/Mpx resid 0.0192 highlight_ratio 0.948 (tgt sp<16 resid<0.035) *BEST->saved
+[v8c_check5] TIER1 fresh-init baseline (vs teacher validator): sparkle 18.1 resid 0.0428 (floor 1.222)
+[v8c_check5] epoch 0/5 n2n_mse=0.023766 lr=0.000100 hist_ms=16036 (20.1s)
+[v8c_check5] MONITOR epoch 0: val sparkle 18.1/Mpx resid 0.0427 highlight_ratio 0.778 score=1.221 | mirror sparkle 0.0/Mpx resid 0.0193 highlight_ratio 0.942 (tgt sp<16 resid<0.035) *BEST->saved
+[v8c_check5] epoch 1/5 n2n_mse=0.021428 lr=0.000083 hist_ms=16047 (56.7s)
+[v8c_check5] MONITOR epoch 1: val sparkle 18.1/Mpx resid 0.0427 highlight_ratio 0.767 score=1.219 | mirror sparkle 0.0/Mpx resid 0.0199 highlight_ratio 0.932 (tgt sp<16 resid<0.035) *BEST->saved
+[v8c_check5] epoch 2/5 n2n_mse=0.019217 lr=0.000071 hist_ms=16039 (93.2s)
+[v8c_check5] MONITOR epoch 2: val sparkle 9.0/Mpx resid 0.0427 highlight_ratio 0.752 score=1.219 | mirror sparkle 0.0/Mpx resid 0.0206 highlight_ratio 0.915 (tgt sp<16 resid<0.035)
+[v8c_check5] epoch 3/5 n2n_mse=0.016773 lr=0.000062 hist_ms=16029 (129.6s)
+[v8c_check5] MONITOR epoch 3: val sparkle 9.0/Mpx resid 0.0428 highlight_ratio 0.735 score=1.222 | mirror sparkle 0.0/Mpx resid 0.0213 highlight_ratio 0.895 (tgt sp<16 resid<0.035)
+[v8c_check5] epoch 4/5 n2n_mse=0.023905 lr=0.000056 hist_ms=16066 (166.0s)
+[v8c_check5] MONITOR epoch 4: val sparkle 9.0/Mpx resid 0.0429 highlight_ratio 0.724 score=1.225 | mirror sparkle 9.0/Mpx resid 0.0217 highlight_ratio 0.882 (tgt sp<16 resid<0.035)
+[v8c_check5] training done in 182.6s (best score=1.219)
+[v8c_check5] wrote /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/data/rdirect-weights-v8c_check5.bin sha256=5c2a5a8c5e7f2d37908532fd9c810fc890dd494ee0c8dd88afd81dbfc69a2d8e
+[v8c_check5] wrote provenance (/Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/data/rdirect-weights-v8c_check5.provenance.json). tag=v8c_check5 weights=/Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/data/rdirect-weights-v8c_check5.bin — NOT the real v8 checkpoint unless tag=="v8".
