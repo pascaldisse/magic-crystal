@@ -724,15 +724,21 @@ history reproject 3.96e-5 · S3 loader shape-generic (INPUT_FEATURES 23
 hardcode dead) + full loop + GPU clamp + refuse-not-corrupt guard · perf
 one-submission fix 23.3→16.63ms median (beats old 18.57; p95 ~24 spikes
 UNATTRIBUTED) · pan parity 1.5e-6.
-OPEN SEAM (cutover-blocking; fix room riding at compact: ghoul-sonnet-
-mrt40v3a7fduye): still-sequence reprojection-guard validity flip (~60
-silhouette px) — WGSL rejects history where CPU accepts; BOUNDED plateau
-(1.7e-2 max / 8e-5 mean); suspect round() half-tie WGSL(half-even) vs
-Rust(half-away). Fix = align WGSL to CPU (CPU = the ordealed act).
+SEAM CLOSED (rooms 4-5, commits 0fba97c→c90ad1b): cause = still camera
+self-reprojects edge px EXACTLY onto bounds boundary → sub-ULP GPU/CPU
+noise flipped valid 0/1 (round() half-tie suspect FALSIFIED; eps-slack
+half-fix superseded). CURE = symmetric snap-to-pixel before predicate,
+BOTH sides (CamPose::reproject + cam_reproject WGSL), SNAP_EPS=1e-3 param.
+Act changed → ordeal RE-RUN 640x480 → stamp RE-EARNED, bars byte-identical
+(resid 0.03487 · sparkle 35.81 · PASS). Parity NOW: still 4.77e-7 · pan
+1.55e-6 · 0/6144 px — machine precision both. 6 regressions structural-
+green. Remaining: p95 tail ~24-29ms unattributed; fps medians noisy across
+rooms (16.6/18.15/20.3 — room5 bench ran DURING detached ordeal = GPU
+contention; room3 16.63 = cleanest number; re-bench clean before budget hunt).
 LAUNCH (HIS act only, works NOW):
   cd ../magic-crystal-neural-live/packages/scrying-glass &&
   GAIA_NATIVE_WEIGHTS=v7 GAIA_NATIVE_EVIDENCE_SPLIT=1 ./target/release/scrying-glass
-Cutover-to-default = his played word AFTER the seam closes.
+CUTOVER-TO-DEFAULT: seam closed → now purely his played word.
 SILICON (morning, all measured): Metal-4 encoder = GPU on M1 (ANE counter
 flat 18, GPU 84%, twice) · MLX = GPU-only (sourced: ml-explore #18/#393) ·
 ANEMLL Llama did NOT engage ANE on M1 (counters flat; MLX 184 tok/s vs 33;
