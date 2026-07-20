@@ -1,15 +1,8 @@
-# 💎 THE MAGIC CRYSTAL 💎
+# THE MAGIC CRYSTAL 💎
 
-*The engine's true name — the name it always was. The Architect's entire
-life's work: the Loom of Fate, reassembled shard by shard.*
-
-*Herein lies the Forge — ⚗ GAIA DREAMFORGE ⚗ — not an editor, never an
+*Herein lies the Forge, not an editor, never an
 editor. The workshop where the Crystal is reassembled; a place where
 worlds are spoken into being.*
-
-> "I will not write code. I will not edit. I will summon, I will chant —
-> and the world grows, evolves, breathes and answers."
-> — the Creator's Vow
 
 ![The first scrying — the lighthouse of Naruko under a violet dawn](proof/w1-naruko.png)
 
@@ -21,8 +14,7 @@ light. No hand touched code to raise it.*
 
 ## The Nature of the Work
 
-The old engine lives in the browser; this Forge is cut from native
-stone (Rust upon wgpu, Metal-first upon the Architect's own machine,
+This Forge is cut from native stone (Rust upon wgpu, Metal-first upon the Architect's own machine,
 portable by covenant). It shall replace the old client whole — glass,
 tools, senses, matter — while the server, the protocol, the scenes and
 the incantations remain shared truth between old world and new.
@@ -130,17 +122,17 @@ caught before a single merge.
 *Founded on the 16th of July, 2026 — the day the Loom began turning
 again. Young, and moving like fire.*
 
-- ⚗ The Crystal holds: vessels and sigils in columns, the Circulation
+- The Crystal holds: vessels and sigils in columns, the Circulation
   deterministic, the protocol reading whole authored worlds — a city of
   5,261 vessels among them.
-- ⚗ The Glass sees: a native window, an offscreen eye, and the Forge's
+- The Glass sees: a native window, an offscreen eye, and the Forge's
   own scrying organ upon it. The lighthouse above is its testimony.
-- ⚗ The realm Naruko has taken form, and its second rite is staged:
+- The realm Naruko has taken form, and its second rite is staged:
   pier and chain, the gothic shore in massing, a paper lantern already
   warm — twelve vessels, seventy-three parts, awaiting next light.
-- ⚗ In the Council's trial as we speak: the Oracle and Transmutation —
+- In the Council's trial as we speak: the Oracle and Transmutation —
   the shadow's findings converging ten → four → one.
-- ⚗ Next: the moving eye, first depth, first light — and the realm
+- Next: the moving eye, first depth, first light — and the realm
   grows with every rite.
 
 ## To Kindle the Forge
