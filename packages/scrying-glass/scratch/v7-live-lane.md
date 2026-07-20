@@ -1638,3 +1638,12 @@ writes params2.y), `packages/scrying-glass/examples/rdirect_v7_sky_smear_probe.r
 (new, pure-CPU offscreen probe), `proof/neural-live/sky-smear-{default,
 reject}-last.png`, this section. No world/live-app process touched, no port
 8430 activity.
+
+## GAMMA SWEEP (room timed out at wall; detached probe completed the work — harvested by monad)
+Probe: examples/gamma_sweep_probe.rs — ordeal's OWN sparkle/resid metric, trace once, sweep gammas over cached buffers. Instrument TRUE: γ=1.5 reproduces stamped pair exactly (0.03487/35.81).
+γ · resid_still · sparkle/Mpx · highlight_patch (teacher 0.3878):
+1.5 · 0.03487 · 35.81 · 0.2377 (−38.7%)
+1.25 · 0.03572 · 24.41 · 0.2314 (−40.3%)
+1.0 · 0.03789 · 11.39 · 0.2191 (−43.5%)
+0.85 · pending in scratch/gamma-sweep-20260720.log (PID 21074 detached; harvest tail on read)
+VERDICT: γ = sparkle↔resid Pareto slider. ONLY γ=1.5 passes resid bar 0.035 (1.25 + 1.0 both breach). Dots CANNOT be lawfully killed by ceiling alone → v8 weights must earn sparkle ≪35 AT resid ≤0.035 (Architect's eye rejected dots at 35.8 → the real bar). Bonus signal: net under-renders highlights −38.7% vs teacher ALREADY at γ1.5 (clamp-independent) → v8 training target too.

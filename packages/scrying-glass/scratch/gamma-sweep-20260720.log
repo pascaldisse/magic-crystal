@@ -1,0 +1,24 @@
+[gamma-sweep] traced pose orbit_-20 (0.9s elapsed)
+[gamma-sweep] traced pose orbit_+40 (1.5s elapsed)
+[gamma-sweep] all GPU tracing done at 1.5s, sweeping 4 gammas over cached buffers
+[gamma-sweep] bright mask: 3073 px (top 1% by teacher lum, thresh=0.185), teacher_bright_mean=0.3878
+
+gamma,resid_still,sparkle_still,highlight_patch_mean,highlight_delta_vs_teacher_pct
+[gamma-sweep] wrote /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/proof/neural-live/gamma-sweep-1.5.png
+1.5,0.03487,35.81,0.2377,-38.71
+[gamma-sweep] gamma=1.5 resid_still=0.03487 sparkle_still=35.81/Mpx highlight_patch_mean=0.2377 (teacher 0.3878, delta -38.71%) [480.7s elapsed]
+[gamma-sweep] wrote /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/proof/neural-live/gamma-sweep-1.25.png
+1.25,0.03572,24.41,0.2314,-40.33
+[gamma-sweep] gamma=1.25 resid_still=0.03572 sparkle_still=24.41/Mpx highlight_patch_mean=0.2314 (teacher 0.3878, delta -40.33%) [970.6s elapsed]
+[gamma-sweep] wrote /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/proof/neural-live/gamma-sweep-1.png
+1,0.03789,11.39,0.2191,-43.50
+[gamma-sweep] gamma=1 resid_still=0.03789 sparkle_still=11.39/Mpx highlight_patch_mean=0.2191 (teacher 0.3878, delta -43.50%) [1444.1s elapsed]
+[gamma-sweep] wrote /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/proof/neural-live/gamma-sweep-0.85.png
+0.85,0.04443,6.51,0.1937,-50.05
+[gamma-sweep] gamma=0.85 resid_still=0.04443 sparkle_still=6.51/Mpx highlight_patch_mean=0.1937 (teacher 0.3878, delta -50.05%) [1925.8s elapsed]
+
+[gamma-sweep] done in 1925.8s. rows:
+  gamma=1.5   resid=0.03487 sparkle= 35.81/Mpx highlight_mean=0.2377 highlight_delta=-38.71%
+  gamma=1.25  resid=0.03572 sparkle= 24.41/Mpx highlight_mean=0.2314 highlight_delta=-40.33%
+  gamma=1     resid=0.03789 sparkle= 11.39/Mpx highlight_mean=0.2191 highlight_delta=-43.50%
+  gamma=0.85  resid=0.04443 sparkle=  6.51/Mpx highlight_mean=0.1937 highlight_delta=-50.05%
