@@ -432,3 +432,109 @@ selection), chasing the still-sequence clamp-boundary root cause, and
 reducing the new evidence-stage poll count for fps recovery. All next-room
 work, not started here — see `scratch/v7-cutover-ready.md`'s own "NOT done"
 language for the exact scope.
+
+## STAGE 3 PROGRESS (room 3, ghoul run 2026-07-20) — fps recovered, boundary-flip theory FALSIFIED
+
+**1. Poll reduction — DONE.** `resolve_frame`'s v7 tail (`evidence_accumulate`
+→ non-fused `demod` → `evidence_clamp_present` → `pack_out_dl3to4` →
+history `swap`/`copy_buffer_to_buffer`) is now ONE command encoder / ONE
+`queue.submit`, with NO `device.poll(wait_indefinitely())` in between (was
+3 separate submit+poll pairs). wgpu tracks buffer read-after-write hazards
+within one command buffer itself (evidence_sum written by accumulate then
+read by clamp; out_dl_padded written by pack then read by swap), so no CPU
+sync is needed — same house pattern as SHIFT 17 CUT B's async-trace poll
+removal. Nothing downstream reads these buffers on the CPU this frame; the
+next frame's own poll(s) (trace stage, `commit_net`'s wait) transitively
+catch this submission up before anything depends on it, since it's all one
+FIFO queue. Semantics unchanged — sync strategy only.
+
+**2. Parity re-run (unchanged, byte-identical to room 2's numbers — this
+probe is a standalone harness, doesn't exercise `resolve_frame` directly,
+so it wasn't expected to move):**
+```
+still frame 0 max-abs-diff 4.7684e-7 mean-abs-diff 7.9931e-8 px>1e-3=0
+still frame 1 max-abs-diff 1.7205e-2 mean-abs-diff 7.9278e-5 px>1e-3=59
+still frame 2 max-abs-diff 1.9002e-2 mean-abs-diff 7.9573e-5 px>1e-3=60
+pan   frame 0/1/2: ~1e-6, px>1e-3=0 (all 3 frames)
+```
+Regression guard: all 6 pre-existing ordeals (`rdirect_live_ordeals`,
+`rdirect_gpu_ordeals`, `rdirect_gather_ordeals`) still byte-identical to
+every prior room's numbers.
+
+**3. FPS re-bench (s20, offscreen 640x480, `GAIA_NATIVE_WEIGHTS=v7
+GAIA_NATIVE_EVIDENCE_SPLIT=1`) — target was <=18.6ms, RESULT BEATS IT:**
+
+| run | trace | gather | net_wall | demod(resolve) | present | **TOTAL** | wall_fps (/budget) |
+|---|---|---|---|---|---|---|---|
+| room-2 (3 polls/frame) | 8.73/15.80 | 1.80/2.18 | 0.05/3.51 | **8.39/13.69** | 0.10/0.18 | **23.32/31.09** | 39.81 |
+| room-3 (1 submit, 0 polls) run A | 12.76/23.33 | 1.84/2.06 | 0.04/8.36 | **0.26/0.44** | 0.12/0.18 | **16.63/25.60** | 45.36 |
+| room-3 run B (repeat) | 13.03/20.84 | 1.86/2.07 | 0.04/8.01 | **0.27/0.47** | 0.12/0.19 | **16.57/23.51** | 45.39 |
+| non-split baseline (documented, room 1) | — | — | — | — | — | **18.57** | 53.85 |
+
+The "demod" bucket (Stage 3's `resolve_ms`, folding in evidence/pack/swap)
+collapsed from 8.39ms median to 0.26-0.27ms — confirms the 3 blocking polls
+were in fact ~8ms/frame, and removing them (not the GPU work itself, which
+was already cheap) recovers essentially all of it. **TOTAL median (16.57-
+16.63ms) is now BELOW the non-split 23-in baseline's own 18.57ms** —
+surprising but explained by `net_gpu` staying ~5.1-5.2ms both rooms (the
+39-in GEMM itself isn't the bottleneck) and the removed polls having cost
+MORE than the work they were purely there to serialize. Distance to the
+16.67ms/60fps line: room-3 TOTAL sits right at/just under it already.
+**Caveat**: `wall_fps` (45.36/45.39, full server loop incl. world tick +
+http) is still below the non-split baseline's reported 53.85 — that number
+likely came from a lighter `outside` (world/http) load in whatever session
+produced it, not from render-stage cost; TOTAL-to-TOTAL is the apples-to-
+apples comparison and it improved. Not chased further (out of scope — the
+non-render `outside` bucket, world/http, is untouched by this room).
+
+**4. Boundary-flip verdict — room 2's theory FALSIFIED, real (small) gap
+found instead.** Added a diagnostic-only dump to
+`examples/v7_present_parity_probe.rs`: for each "still" frame with
+px>1e-3 mismatches, print the 5 worst pixels' PRE-clamp `net_linear`
+(read back right after demod, before the evidence-clamp kernel runs) next
+to that pixel's own clamp ceiling (`gamma * local_max_3x3(evidence_sum /
+count)`, computed CPU-side from a readback of the live `evidence_sum`
+buffer — bit-exact recipe, not approximated).
+```
+f1 px=2976 unclamped=(0.322,0.123,0.202) ceiling=(0.529,0.198,0.325) |u-c|=(0.207,0.075,0.123)
+f1 px=13   unclamped=(0.223,0.081,0.150) ceiling=(0.326,0.123,0.222) |u-c|=(0.104,0.042,0.071)
+f1 px=17   unclamped=(0.220,0.080,0.149) ceiling=(0.321,0.121,0.219) |u-c|=(0.101,0.041,0.070)
+... (f2 pixels: same shape, |u-c| ~0.09-0.21)
+```
+Every flipped pixel's unclamped value sits **10-20% BELOW its ceiling**,
+not at it — the clamp `min()` never fires on the GPU side (`unclamped ==
+gpu` exactly, confirmed by comparing the dumped `unclamped` column to the
+same pixel's `gpu` presented value in the line above: identical). So this
+is **not** a sub-ULP `min()` boundary flip as room 2 guessed — the GPU's
+raw (pre-clamp) net output itself differs from the CPU reference's by
+~0.01-0.02 absolute (~5-10% relative) at these pixels, a real semantic gap,
+far outside the ~1e-6 float-ULP class every other gate in this lane sits
+in. **It is scoped tightly**: only the STILL sequence (camera repeated
+identically 3x, exercising `has_prev=true` same-pose reprojection) shows
+it — the PAN sequence (camera genuinely moving each frame) stays at ~1e-6
+through all 3 frames, and STILL frame 0 (no history yet) is also exact.
+So the gap appears specifically when the SAME pose recurs and REAL net
+output (not Stage 2's synthetic E-tap0 stand-in) feeds back through
+history more than once. Stage 2's own `gather_hist_split` probe already
+proved the 39-feature ROW (including history idx 35-38) bit-exact for
+both static and panning poses at ~4e-5 — so the gather step itself is not
+the suspect; the divergence more likely compounds ACROSS repeated
+real-output feedback (a small per-frame GPU/CPU numeric difference in the
+net forward or the reprojection's fractional-pixel resample, invisible in
+a single pass, growing over 2-3 recurrent steps at a fixed pose). Root
+cause not isolated further this room (would need per-layer diffing of the
+MPSGraph forward output alone, feeding it the SAME feature row on both
+sides, decoupled from the recurrence) — flagging as a genuine open item
+for the next room, corrected from room 2's "benign fp noise" framing.
+Magnitude is still small in absolute terms (mean-abs-diff stays ~8e-5,
+only ~1% of pixels affected) but the mechanism is not what was assumed.
+
+**Artifacts this room**: `src/main.rs` (`resolve_frame`'s v7 tail, single
+encoder), `examples/v7_present_parity_probe.rs` (boundary-flip dump, +
+`COPY_SRC` on its own diagnostic `evidence_sum` buffer — main.rs's live
+buffer stays `COPY_DST`-only, untouched), this note.
+
+NOT done this room: root-causing the still-sequence net-output gap itself
+(scoped above, not fixed); the `wall_fps` vs non-split-baseline `wall_fps`
+gap (world/http overhead, out of this room's render-only scope); cutover
+itself.

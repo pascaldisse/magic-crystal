@@ -107,7 +107,9 @@ fn run_sequence(
     let evidence_sum = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("parity evidence sum"),
         size: EvidenceClamp::sum_bytes(n).max(1),
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        // COPY_SRC added for this diagnostic probe's boundary-flip readback
+        // only (main.rs's live evidence_sum stays COPY_DST-only, untouched).
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
         mapped_at_creation: false,
     });
     let out_dl_padded = device.create_buffer(&wgpu::BufferDescriptor {
@@ -126,6 +128,9 @@ fn run_sequence(
     let mut cpu_frames: Vec<HistFrameSplit> = Vec::new();
     let mut gpu_presented: Vec<Vec<f32>> = Vec::new(); // per-frame [n,4] xyz used
     let mut count: u32 = 0;
+    // BOUNDARY-FLIP PROBE: per-frame (pre-clamp net_linear, clamp ceiling),
+    // both [n] Vec3, so a flipped pixel can be checked against the ceiling.
+    let mut boundary_probe: Vec<(Vec<f32>, Vec<glam::Vec3>)> = Vec::new();
 
     // Own the per-frame CPU-side low_e/low_d/albedo/normal/depth so the
     // HistFrameSplit borrows stay alive for the single direct_render call
@@ -191,11 +196,31 @@ fn run_sequence(
         demod.encode(device, queue, &mut enc, &net_out_buf, &aov_buf, &present_buf, n as u32, false);
         queue.submit(Some(enc.finish()));
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        // BOUNDARY-FLIP PROBE (diagnostic only, this example): capture the
+        // PRE-clamp net_linear so a later flipped pixel can be checked
+        // against the clamp ceiling. Extra readback, not part of the timed
+        // live path this probe cross-checks.
+        let unclamped_lin = read_f32(device, queue, &present_buf, (n as u64) * 16);
 
-        // ── Stage 3 evidence accumulate + clamp (the new kernels) ──
+        // ── Stage 3 evidence accumulate (its own submit, so the boundary
+        // probe can read the updated sum before the clamp consumes it) ──
         count += 1;
-        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("parity evidence") });
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("parity evidence accumulate") });
         evidence.encode_accumulate(queue, device, &mut enc, &accum_ed, &evidence_sum, low_w, low_h, target_w, target_h);
+        queue.submit(Some(enc.finish()));
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        let sum_raw = read_f32(device, queue, &evidence_sum, (n as u64) * 16);
+        let sum_vec3: Vec<glam::Vec3> = (0..n)
+            .map(|p| glam::Vec3::new(sum_raw[p * 4], sum_raw[p * 4 + 1], sum_raw[p * 4 + 2]))
+            .collect();
+        let mean: Vec<glam::Vec3> = sum_vec3.iter().map(|&s| s / (count as f32)).collect();
+        let ceiling_lin: Vec<glam::Vec3> = scrying_glass::rdirect::local_max_3x3(&mean, target_w, target_h)
+            .iter()
+            .map(|&m| gamma * m.max(glam::Vec3::ZERO))
+            .collect();
+
+        // ── clamp + pack (unchanged) ──
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("parity evidence clamp+pack") });
         evidence.encode_clamp(queue, device, &mut enc, &evidence_sum, &present_buf, target_w, target_h, count, gamma);
         evidence.encode_pack(queue, device, &mut enc, &net_out_buf, &out_dl_padded, n as u32);
         queue.submit(Some(enc.finish()));
@@ -203,6 +228,7 @@ fn run_sequence(
 
         let presented = read_f32(device, queue, &present_buf, (n as u64) * 16);
         gpu_presented.push(presented);
+        boundary_probe.push((unclamped_lin, ceiling_lin));
 
         // ── history swap (this frame's own RAW out_dl feeds next frame) ──
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("parity swap") });
@@ -264,6 +290,31 @@ fn run_sequence(
         println!(
             "[v7-present-parity] {label} frame {f} N={n} max-abs-diff {max_d:.4e} mean-abs-diff {mean_d:.4e} px>1e-3={over}"
         );
+
+        // BOUNDARY-FLIP PROBE: dump the 5 worst-diff pixels' pre-clamp
+        // net_linear vs this frame's clamp ceiling (gamma*local_max_evidence)
+        // — a flip is "benign fp min() boundary" if unclamped sits within
+        // ~1e-3 of the ceiling on either side; anything wider is a real gap.
+        if over > 0 {
+            let (unclamped, ceiling) = &boundary_probe[f];
+            let mut idx: Vec<usize> = (0..n).collect();
+            idx.sort_by(|&a, &b| {
+                let da = (gpu[a * 4] - cpu[a].x).abs().max((gpu[a * 4 + 1] - cpu[a].y).abs()).max((gpu[a * 4 + 2] - cpu[a].z).abs());
+                let db = (gpu[b * 4] - cpu[b].x).abs().max((gpu[b * 4 + 1] - cpu[b].y).abs()).max((gpu[b * 4 + 2] - cpu[b].z).abs());
+                db.partial_cmp(&da).unwrap()
+            });
+            for &p in idx.iter().take(5) {
+                let u = glam::Vec3::new(unclamped[p * 4], unclamped[p * 4 + 1], unclamped[p * 4 + 2]);
+                let c = ceiling[p];
+                let dist = (u - c).abs();
+                println!(
+                    "[v7-present-parity]   {label} f{f} flip px={p} gpu=({:.5},{:.5},{:.5}) cpu=({:.5},{:.5},{:.5}) unclamped=({:.5},{:.5},{:.5}) ceiling=({:.5},{:.5},{:.5}) |unclamped-ceiling|=({:.2e},{:.2e},{:.2e})",
+                    gpu[p * 4], gpu[p * 4 + 1], gpu[p * 4 + 2],
+                    cpu[p].x, cpu[p].y, cpu[p].z,
+                    u.x, u.y, u.z, c.x, c.y, c.z, dist.x, dist.y, dist.z
+                );
+            }
+        }
     }
     println!("[v7-present-parity] {label} OVERALL max-abs-diff {max_all:.4e}");
     max_all

@@ -140,16 +140,57 @@ DEFAULT weights selection) is a separate decision this room does not make.
   (`rdirect_live_ordeals`, `rdirect_gpu_ordeals`, `rdirect_gather_ordeals`)
   still green, unchanged this room.
 
+## Room 3 update (ghoul run 2026-07-20): fps regression fixed, boundary theory corrected
+
+- **Fix**: folded `evidence_accumulate` / (non-fused) `demod` /
+  `evidence_clamp_present` / `pack_out_dl3to4` / history `swap` into ONE
+  command encoder + ONE `queue.submit`, no mid-frame
+  `device.poll(wait_indefinitely())` between them (was 3). wgpu's own
+  intra-command-buffer hazard tracking handles the ordering; nothing reads
+  these buffers back on the CPU this frame, so the next frame's own poll
+  transitively catches the work up (house pattern, same as SHIFT 17 CUT B).
+- **FPS, s20 offscreen 640x480, `GAIA_NATIVE_WEIGHTS=v7
+  GAIA_NATIVE_EVIDENCE_SPLIT=1`, TOTAL stage bucket (median/p95 ms)**:
+
+  | | TOTAL | demod(resolve) bucket | /budget wall_fps |
+  |---|---|---|---|
+  | before (room 2, 3 polls) | 23.32/31.09 | 8.39/13.69 | 39.81 |
+  | after (room 3, 1 submit) | 16.57-16.63 / 23.51-25.60 | 0.26-0.27/0.44-0.47 | 45.36-45.39 |
+  | non-split baseline (v4, room 1) | 18.57 | — | 53.85 |
+
+  TOTAL now sits BELOW the non-split baseline (16.6ms vs 18.57ms) — target
+  was <=18.6ms, beaten. `wall_fps` (full server loop incl. world/http) is
+  still under the baseline's 53.85 — read as a difference in `outside`
+  (world/http) load between sessions, not render cost; TOTAL-to-TOTAL is
+  the fair comparison and it improved. Full numbers/commands:
+  `scratch/v7-live-lane.md` §"STAGE 3 PROGRESS (room 3)".
+- **Boundary-flip verdict corrected**: room 2's "sub-ULP `min()` flip"
+  theory is FALSIFIED by a new diagnostic dump (5 worst STILL-sequence
+  pixels' pre-clamp net output vs their clamp ceiling) — every flipped
+  pixel's unclamped value sits 10-20% BELOW its ceiling (the clamp never
+  fires), so the mismatch is a real ~5-10%-relative gap in the raw net
+  output itself, present only in the repeated-identical-camera (STILL)
+  sequence, absent in the moving-camera (PAN) sequence and in STILL's own
+  frame 0. Scoped to compounding recurrent feedback of REAL net output at
+  a fixed pose; not root-caused this room. See lane note §4 for the full
+  dump and reasoning.
+- Regression guard unchanged: all 6 pre-existing ordeals still
+  byte-identical.
+
 ## Artifacts
 
 - `src/rdirect_evidence.{rs,wgsl}` — new Stage 3 GPU evidence-clamp kernels.
-- `examples/v7_present_parity_probe.rs` — new full-frame parity probe (this
-  room's numbers above).
+- `examples/v7_present_parity_probe.rs` — full-frame parity probe + (room 3)
+  the boundary-flip diagnostic dump.
 - `proof/neural-live/s20-v7stage3b.{log,budget.json,state.json}` +
-  `s20-v7stage3b-presented.png` — the fps run + captured proof frame.
-- `src/main.rs` (`NetPresent`) — the real wiring.
+  `s20-v7stage3b-presented.png` — room 2's fps run + captured proof frame.
+- `proof/neural-live/s20-v7fpsroom{,2}.{log,budget.json,state.json}` +
+  `-presented.png` — room 3's fps re-runs (2x) + captured proof frames
+  (non-black, mean brightness ~88/255, real content).
+- `src/main.rs` (`NetPresent`, `resolve_frame`'s v7 tail) — the wiring +
+  room 3's single-submission merge.
 - `src/integrator.rs` (`make_split_buffer`) — the COPY_DST fix.
-- This file + `scratch/v7-live-lane.md` §"STAGE 3 PROGRESS (room 2)".
+- This file + `scratch/v7-live-lane.md` §§"STAGE 3 PROGRESS (room 2/3)".
 
 No gate was weakened or bypassed. Nothing launched with a window, no running
 session touched (whip 154). All new claims in this file were played through

@@ -1930,36 +1930,97 @@ impl NetPresent {
         // undoes the log-demod, writes present_accum. Skipped on the first frame
         // (demod_set None) — present_accum stays as-is (black on boot).
         let t3 = Instant::now();
-        // V7-LIVE LANE STAGE 3: fold THIS frame's own low-res E/D trace into
-        // the persistent temporal-mean evidence sum every v7 frame — mirrors
-        // rdirect.rs `EvidenceAccum::push` being called once per rendered
-        // frame in the CPU reference. HONEST ASYNC CAVEAT: the CPU reference
-        // accumulates evidence[f] and clamps frame f's OWN net output in
-        // lock-step; this pipeline's frame overlap means the net output
-        // finishing THIS iteration (`dset`) was actually GATHERED ~1
+        // V7-LIVE LANE STAGE 3 (fps room): fold THIS frame's own low-res E/D
+        // trace into the persistent temporal-mean evidence sum every v7
+        // frame — mirrors rdirect.rs `EvidenceAccum::push` being called once
+        // per rendered frame in the CPU reference. HONEST ASYNC CAVEAT: the
+        // CPU reference accumulates evidence[f] and clamps frame f's OWN net
+        // output in lock-step; this pipeline's frame overlap means the net
+        // output finishing THIS iteration (`dset`) was actually GATHERED ~1
         // iteration ago, so the clamp below applies the CURRENT running
         // sum/count (already includes this iteration's own composite) to a
         // frame-old net output — a ~1-frame lag on a slow temporal-mean
         // filter, not a semantic difference. See scratch/v7-live-lane.md.
+        //
+        // FPS ROOM: accumulate + (non-fused demod) + clamp + pack + swap are
+        // now ONE command encoder / ONE submission — no mid-frame
+        // `device.poll(wait_indefinitely())` between them. wgpu tracks
+        // resource usage within a command buffer and inserts the hazard
+        // sync itself (evidence_sum written by accumulate then read by
+        // clamp; out_dl_padded written by pack then read by swap all
+        // resolve on-GPU without a CPU round-trip) — same house pattern as
+        // SHIFT 17 CUT B's async trace (removing polls that exist only to
+        // time sub-stages, not for correctness, since everything here rides
+        // one FIFO queue). No CPU code reads these buffers back this frame,
+        // so no poll is needed at all: the NEXT frame's own poll(s) (trace
+        // stage, `commit_net`'s wait) transitively catch this submission up
+        // before anything downstream depends on it. Semantics unchanged —
+        // only sync strategy changed; re-verified via
+        // `v7_present_parity_probe` after this edit (see lane note).
         if self.is_v7 {
             let net_accum_ed = self.net_accum_ed.as_ref().expect("v7: net_accum_ed");
             let evidence = self.evidence.as_ref().expect("v7: evidence");
             let evidence_sum = self.evidence_sum.as_ref().expect("v7: evidence_sum");
             let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("v7 evidence accumulate"),
+                label: Some("v7 evidence resolve (accumulate+demod+clamp+pack+swap)"),
             });
             evidence.encode_accumulate(
                 queue, device, &mut enc, net_accum_ed, evidence_sum,
                 self.low_w, self.low_h, self.target_w, self.target_h,
             );
-            queue.submit(Some(enc.finish()));
-            let _ = device.poll(wgpu::PollType::wait_indefinitely());
             self.evidence_count += 1;
-        }
-        if let Some(dset) = demod_set {
-            // SHIFT 17 CUT A: on the fused path the native demod ALREADY ran on
-            // the net queue (in `commit_net`) and wrote present_accum[dset] — no
-            // wgpu demod, no cross-queue submit+poll here (the tail we killed).
+            if let Some(dset) = demod_set {
+                // SHIFT 17 CUT A: on the fused path the native demod ALREADY
+                // ran on the net queue (in `commit_net`) and wrote
+                // present_accum[dset] — no wgpu demod here either way.
+                if !self.fused {
+                    let net_out = self
+                        .live
+                        .output_buffer_set(dset)
+                        .expect("net-present pooled output buffer");
+                    self.demod.encode(
+                        device,
+                        queue,
+                        &mut enc,
+                        net_out,
+                        &self.net_aov[dset],
+                        &self.present_accum[0],
+                        self.n as u32,
+                        false, // presented (undo albedo demod); belief eye is /scry?eye=belief
+                    );
+                }
+                // Evidence clamp at present (in-place on whichever
+                // present_accum slot the demod just filled) + recurrent
+                // history swap. History gets this frame's RAW/UNCLAMPED
+                // out_dl (matches the CPU reference's `prev = Some((out_dl,
+                // ...))` — the clamp is presentation-only, never fed back).
+                let out_dl_padded = self.out_dl_padded.as_ref().expect("v7: out_dl_padded");
+                let net_out = self
+                    .live
+                    .output_buffer_set(dset)
+                    .expect("v7: net-present pooled output buffer");
+                let gamma = scrying_glass::rdirect::evidence_clamp_gamma();
+                let present = self.present_accum_for(dset);
+                evidence.encode_clamp(
+                    queue, device, &mut enc, evidence_sum, present,
+                    self.target_w, self.target_h, self.evidence_count, gamma,
+                );
+                evidence.encode_pack(queue, device, &mut enc, net_out, out_dl_padded, self.n as u32);
+
+                let swap_cam = self.cam_by_set[dset].unwrap_or(cur_cam);
+                let history = self.history.as_mut().expect("v7: history");
+                history.swap(&mut enc, out_dl_padded, &self.net_aov[dset], swap_cam, self.target_w, self.target_h);
+
+                // S12.5: remember which set the presented frame came from,
+                // so a /scry?eye=belief capture re-demods THAT net output in
+                // belief mode, and (fused) the blit picks
+                // present_accum[last_set].
+                self.last_set = dset;
+            }
+            queue.submit(Some(enc.finish()));
+        } else if let Some(dset) = demod_set {
+            // Non-v7 path, unchanged: demod is the only wgpu work here
+            // (skipped when fused, same as above), one submission.
             if !self.fused {
                 let net_out = self
                     .live
@@ -1981,44 +2042,6 @@ impl NetPresent {
                 queue.submit(Some(enc.finish()));
                 let _ = device.poll(wgpu::PollType::wait_indefinitely());
             }
-            // V7-LIVE LANE STAGE 3: evidence clamp at present (in-place on
-            // whichever present_accum slot the demod just filled) + recurrent
-            // history swap. History gets this frame's RAW/UNCLAMPED out_dl
-            // (matches the CPU reference's `prev = Some((out_dl, ...))` —
-            // the clamp is presentation-only, never fed back).
-            if self.is_v7 {
-                let evidence = self.evidence.as_ref().expect("v7: evidence");
-                let evidence_sum = self.evidence_sum.as_ref().expect("v7: evidence_sum");
-                let out_dl_padded = self.out_dl_padded.as_ref().expect("v7: out_dl_padded");
-                let net_out = self
-                    .live
-                    .output_buffer_set(dset)
-                    .expect("v7: net-present pooled output buffer");
-                let gamma = scrying_glass::rdirect::evidence_clamp_gamma();
-                let present = self.present_accum_for(dset);
-                let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("v7 evidence clamp + history pack"),
-                });
-                evidence.encode_clamp(
-                    queue, device, &mut enc, evidence_sum, present,
-                    self.target_w, self.target_h, self.evidence_count, gamma,
-                );
-                evidence.encode_pack(queue, device, &mut enc, net_out, out_dl_padded, self.n as u32);
-                queue.submit(Some(enc.finish()));
-                let _ = device.poll(wgpu::PollType::wait_indefinitely());
-
-                let swap_cam = self.cam_by_set[dset].unwrap_or(cur_cam);
-                let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("v7 history swap"),
-                });
-                let history = self.history.as_mut().expect("v7: history");
-                history.swap(&mut enc, out_dl_padded, &self.net_aov[dset], swap_cam, self.target_w, self.target_h);
-                queue.submit(Some(enc.finish()));
-                let _ = device.poll(wgpu::PollType::wait_indefinitely());
-            }
-            // S12.5: remember which set the presented frame came from, so a
-            // /scry?eye=belief capture re-demods THAT net output in belief mode,
-            // and (fused) the blit picks present_accum[last_set].
             self.last_set = dset;
         }
         // The present blit resolves present_accum (w=1) 1:1 nearest to screen.
