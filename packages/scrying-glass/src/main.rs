@@ -37,7 +37,7 @@ use scrying_glass::rdirect::ALBEDO_DEMOD_EPS;
 #[cfg(target_os = "macos")]
 use scrying_glass::rdirect_demod::DemodPass;
 #[cfg(target_os = "macos")]
-use scrying_glass::rdirect_gather::FeatureGather;
+use scrying_glass::rdirect_gather::{FeatureGather, FeatureGatherSplit};
 #[cfg(target_os = "macos")]
 use scrying_glass::rdirect_live::RdirectLive;
 use scrying_glass::scene::{
@@ -1338,6 +1338,27 @@ struct NetPresent {
     /// dispatches pipeline on the GPU, the render thread spin-waits once (before
     /// the fence signal) instead of thrice.
     async_trace: bool,
+    /// V7-LIVE LANE STAGE 1: true when the GPU E/D evidence split runs
+    /// alongside the ordinary 23-in trace+gather (gated by
+    /// `GAIA_NATIVE_EVIDENCE_SPLIT`, default OFF — the 23-in path below is
+    /// byte-identical when this is false; nothing new is even allocated).
+    /// Purely additive/observational this stage: the net still forwards the
+    /// 23-in `feats`/gather output only; `net_feats_split` is not read by
+    /// anything downstream yet (Stage 3 wires a 39-in net + history to it).
+    evidence_split: bool,
+    /// V7-LIVE LANE STAGE 1: split-radiance trace accumulation (2 vec4
+    /// cells/px — E sum+count, D sum+count), mirrors `net_accum` but for
+    /// `integrator::dispatch_split` / `integrate_split`. `None` unless
+    /// `evidence_split`.
+    net_accum_ed: Option<wgpu::Buffer>,
+    /// V7-LIVE LANE STAGE 1: the 35-feature (`INPUT_FEATURES_SPLIT`) split
+    /// gather destination — mirrors the 23-in `feats` pooled buffer inside
+    /// `RdirectLive`, but pooled HERE (not net-forward-bound this stage).
+    /// `None` unless `evidence_split`.
+    net_feats_split: Option<wgpu::Buffer>,
+    /// V7-LIVE LANE STAGE 1: the split gather compute pass. `None` unless
+    /// `evidence_split`.
+    gather_split: Option<FeatureGatherSplit>,
     low_w: u32,
     low_h: u32,
     target_w: u32,
@@ -1490,9 +1511,34 @@ impl NetPresent {
             std::env::var("GAIA_NATIVE_ASYNC_TRACE").as_deref(),
             Ok("1" | "true" | "on")
         );
+        // V7-LIVE LANE STAGE 1: GPU E/D evidence split, additive/observational
+        // only (see the struct field docs above) — default OFF so the shipped
+        // 23-in path allocates nothing new and runs byte-identical.
+        let evidence_split = matches!(
+            std::env::var("GAIA_NATIVE_EVIDENCE_SPLIT").as_deref(),
+            Ok("1" | "true" | "on")
+        );
+        let (net_accum_ed, net_feats_split, gather_split_pass) = if evidence_split {
+            (
+                Some(integrator.make_split_buffer(device, low_w, low_h)),
+                Some(device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("net-present split feats (35-in, no history)"),
+                    size: FeatureGatherSplit::feature_bytes(n).max(1),
+                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                    mapped_at_creation: false,
+                })),
+                Some(FeatureGatherSplit::new(device)),
+            )
+        } else {
+            (None, None, None)
+        };
         Ok(Self {
             fused,
             async_trace,
+            evidence_split,
+            net_accum_ed,
+            net_feats_split,
+            gather_split: gather_split_pass,
             live,
             gather,
             demod,
@@ -1563,6 +1609,19 @@ impl NetPresent {
         });
         enc.clear_buffer(&self.net_accum, 0, None);
         integrator.dispatch(queue, &mut enc, uni_low, &accum_bg, self.low_w, self.low_h);
+        // V7-LIVE LANE STAGE 1: additive E/D split trace, same encoder (FIFO
+        // on this queue, so ordering vs the composite dispatch above needs no
+        // extra sync) — only when `evidence_split` opted in; the composite
+        // `net_accum` path above is untouched either way.
+        if self.evidence_split {
+            if let Some(net_accum_ed) = &self.net_accum_ed {
+                enc.clear_buffer(net_accum_ed, 0, None);
+                let split_bg = integrator.split_bind_group(device, net_accum_ed);
+                integrator.dispatch_split(
+                    queue, &mut enc, uni_low, &accum_bg, &split_bg, self.low_w, self.low_h,
+                );
+            }
+        }
         queue.submit(Some(enc.finish()));
         // SHIFT 17 CUT B — ASYNC TRACE: the two intermediate render-thread GPU
         // polls (after clear+accum, after aov) exist only to time the sub-stages
@@ -1618,6 +1677,32 @@ impl NetPresent {
         );
         queue.submit(Some(enc.finish()));
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        // V7-LIVE LANE STAGE 1: additive split gather (35-in, no history) into
+        // `net_feats_split` — nothing downstream reads it yet this stage (the
+        // net forward below still consumes the ordinary 23-in `feats` only).
+        if self.evidence_split {
+            if let (Some(net_accum_ed), Some(net_feats_split), Some(gs)) =
+                (&self.net_accum_ed, &self.net_feats_split, &self.gather_split)
+            {
+                let mut enc_split = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("net gather split"),
+                });
+                gs.encode(
+                    device,
+                    queue,
+                    &mut enc_split,
+                    net_accum_ed,
+                    &self.net_aov[set],
+                    net_feats_split,
+                    self.low_w,
+                    self.low_h,
+                    self.target_w,
+                    self.target_h,
+                );
+                queue.submit(Some(enc_split.finish()));
+                let _ = device.poll(wgpu::PollType::wait_indefinitely());
+            }
+        }
         let gather_ms = t1.elapsed().as_secs_f64() * 1000.0;
 
         // S12: release the gather→net fence on the render queue now the gather

@@ -13,7 +13,7 @@
 
 use bytemuck::{Pod, Zeroable};
 
-use crate::rdirect::INPUT_FEATURES;
+use crate::rdirect::{INPUT_FEATURES, INPUT_FEATURES_SPLIT};
 
 /// The gather uniform: `dims = (low_w, low_h, target_w, target_h)`.
 #[repr(C)]
@@ -136,6 +136,136 @@ impl FeatureGather {
         });
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("rdirect gather pass"),
+            timestamp_writes: None,
+        });
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &bind, &[]);
+        let gx = target_w.div_ceil(8);
+        let gy = target_h.div_ceil(8);
+        pass.dispatch_workgroups(gx, gy, 1);
+    }
+}
+
+// ── V7-LIVE LANE STAGE 1: split (E/D) feature gather ───────────────────────
+// Sibling of `FeatureGather` above, over the SAME house pattern, for the
+// 35-feature `INPUT_FEATURES_SPLIT` layout (no history — that's Stage 2).
+// Reads the integrator's `accum_ed` split buffer instead of the composite
+// `accum`. Additive: never constructed unless the live path opts in
+// (`GAIA_NATIVE_EVIDENCE_SPLIT`), so the 23-in `FeatureGather` path above is
+// byte-untouched when this type is never built.
+pub const GATHER_SPLIT_SHADER: &str = include_str!("rdirect_gather_split.wgsl");
+
+pub struct FeatureGatherSplit {
+    pipeline: wgpu::ComputePipeline,
+    layout: wgpu::BindGroupLayout,
+    uniform_buf: wgpu::Buffer,
+}
+
+impl FeatureGatherSplit {
+    pub fn new(device: &wgpu::Device) -> Self {
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("rdirect gather split"),
+            source: wgpu::ShaderSource::Wgsl(GATHER_SPLIT_SHADER.into()),
+        });
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("rdirect gather split layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(
+                            std::mem::size_of::<GatherUniform>() as u64,
+                        ),
+                    },
+                    count: None,
+                },
+                storage_entry(1, true),  // accum_ed (read)
+                storage_entry(2, true),  // aov (read)
+                storage_entry(3, false), // feats (read_write)
+            ],
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("rdirect gather split pipeline layout"),
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
+        });
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("rdirect gather split pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &module,
+            entry_point: Some("gather_split"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
+        });
+        let uniform_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rdirect gather split uniform"),
+            size: std::mem::size_of::<GatherUniform>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        Self {
+            pipeline,
+            layout,
+            uniform_buf,
+        }
+    }
+
+    /// Bytes the destination feature buffer must hold for `n` target pixels
+    /// (35-feature `INPUT_FEATURES_SPLIT` rows, no history).
+    pub fn feature_bytes(n: usize) -> u64 {
+        (n * INPUT_FEATURES_SPLIT * std::mem::size_of::<f32>()) as u64
+    }
+
+    /// Encode one split-gather dispatch. `accum_ed` = the integrator's split
+    /// trace-res accumulation (2 vec4 cells/px, E then D — see
+    /// `integrator::dispatch_split`), `aov` = SAME native-res AOVs the 23-in
+    /// gather reads, `feats` = the `[N,35]` destination STORAGE buffer
+    /// (≥ `feature_bytes(target_w*target_h)`). All current-frame.
+    #[allow(clippy::too_many_arguments)]
+    pub fn encode(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        accum_ed: &wgpu::Buffer,
+        aov: &wgpu::Buffer,
+        feats: &wgpu::Buffer,
+        low_w: u32,
+        low_h: u32,
+        target_w: u32,
+        target_h: u32,
+    ) {
+        let uniform = GatherUniform {
+            dims: [low_w, low_h, target_w, target_h],
+        };
+        queue.write_buffer(&self.uniform_buf, 0, bytemuck::bytes_of(&uniform));
+        let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("rdirect gather split bind"),
+            layout: &self.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.uniform_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: accum_ed.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: aov.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: feats.as_entire_binding(),
+                },
+            ],
+        });
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("rdirect gather split pass"),
             timestamp_writes: None,
         });
         pass.set_pipeline(&self.pipeline);
