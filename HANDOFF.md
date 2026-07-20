@@ -766,3 +766,41 @@ ALSO: neural-motion TODO docs/research/2026-07-19-neural-motion-todo.md
 (ARDY NVIDIA/ETH + MANN dogs) · terra/sol pool capped ~6d (07-19), sonnet
 carried the whole day · frame-budget 1.9ms hunt (trace 7.4 + net contention)
 still queued behind v7 lane.
+
+## ★ 07-20 EVE — LAUNCH + HIS EYE'S VERDICT + THE V8 MANDATE (fresh-ctx anchor; supersedes morning § where they differ)
+LAUNCHED on his word 14:38 (his "launch" = in-moment go-ahead, whip-154
+intact): window wgpu-surface from worktree, v7 + evidence-split +
+async-trace. Live vitals ~18.3ms/40fps warm (retina-blit gather heavier
+than offscreen 16.31). Own-eyes proof: worktree packages/scrying-glass/
+scratch/launch-live-scry.png. Endpoints :8430 /scry /pose /walk. App may
+STILL RUN — NEVER kill/restart, his act only.
+HIS EYE (whip 213): dots STILL there · mirror weird · sky GHOSTING (new).
+Bars passed ≠ his eye passed. THREE AUTOPSIES (committed; full notes =
+worktree scratch/v7-live-lane.md):
+1. GHOST (a774741): sky history accept = `ok=prev_miss` — NO similarity
+   test; AND trainer settle = identity self-feedback only (net never
+   learned to doubt history). Probe: smear 0.077-0.081/frame → 1e-6 under
+   GAIA_V7_SKY_HISTORY=reject. Fix LANDED symmetric CPU+WGSL, OPT-IN;
+   default flip = act change → re-ordeal REQUIRED (not run).
+2. MIRROR (§MIRROR AUTOPSY): EVIDENCE-side — chrome sphere's 4 low-res
+   taps = uncorrelated single-sample specular draws → diffuse-trained
+   Pleroma collapses to flat gray mean. Clamp EXONERATED (preclamp ≈
+   presented). Fixes all act-class: specular spp · mirror training poses ·
+   coherence feature — each retrain/re-ordeal.
+3. DOTS (§GAMMA SWEEP, probe instrument true — γ1.5 reproduces stamp
+   exactly): γ 1.5/1.25/1.0/0.85 → sparkle 35.8/24.4/11.4/6.5 BUT resid
+   0.03487/0.03572/0.03789/0.04443 vs bar 0.035 — ONLY γ=1.5 passes.
+   Ceiling CANNOT lawfully kill dots. Bonus: highlights under-rendered
+   −38.7% vs teacher at γ1.5 (clamp-independent).
+SYNTHESIS → THE V8 MANDATE (one training round covers all three):
+(a) MOVING-camera history sequences — real reprojection in the settle
+loop, not identity feedback (kills ghost at root, makes sky-reject
+learnable; sky-reject flag likely part of v8's act → ordeal flag-on);
+(b) curved-mirror / low-roughness poses (specular coherence);
+(c) targets: sparkle ≪35 @ resid ≤0.035 (HIS EYE = the bar; γ stays 1.5)
++ highlight recovery (−38.7% gap). Morning §'s training laws apply:
+corner-crawl lr, cross-run floors, per-epoch monitor, detach everything.
+PERF: async-trace opt-in proven (16.31ms median offscreen, CUT B
+reversed); p95 rare net stalls unattacked (lane note room 7 proposal 2).
+COMMITS today (worktree, order): d0a9240→63d024c (rooms 1-8) · a774741
+ghost · gamma harvest ×2. Every lane resumable from worktree scratch.
