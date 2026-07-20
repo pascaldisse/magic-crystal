@@ -701,3 +701,48 @@ window BLACK correctly · LASHES rows 13-15 · RIDING: N2 memory/recurrence
 R=0.999 his order) · manifest crack (neural-cores wall). His ratifications:
 low samples = less accurate guess NEVER dots · unlimited lights = R5 next.
 RULING 07-19 08:52 CORRECTED (his words: 'IT RUNS ON NEURAL CORES THROUGH METAL') [source: room 08:52]: PLEROMA = NEURAL CORES as silicon, METAL as the only API road (MTL4 ML encoder [source: metal4-neural-recon.md]) — Metal end-to-end, ANE execution; dispatch lane carries her package + locus proof; GPU stays her measured home until the encoder dispatch lands numbers.
+
+## ★ 07-20 — V7 FIRST LIGHT (nyari, pre-compact anchor — read FIRST)
+THE DAY: Pleroma's FIRST STAMPED IMAGE EVER. v7 weights sha 55720b45 PASSED
+the real-image ordeal (resid 0.03487/0.035 · sparkle 35.8/40 · tvar/move/
+ghost all PASS) — stamp on disk, committed. Worktree ../magic-crystal-
+neural-live, branch neural-live. Own-eyes proof: proof/neural-live/
+s25-still.png (harbor/lighthouse/lit windows) + s20-v7stage3b-presented.png
+(LIVE loop render).
+THE ROAD (laws earned): v3-v6 sparkle grave → AUTOPSY (net OVERSHOOTS real
+E-light 1.15-4.1x; D innocent; no anonymous channel — the 0.88% figure IS D)
+→ EVIDENCE CLAMP, structural not penalty (presented = min(net, γ·local_max_
+3x3(evidence)), γ=1.5 env GAIA_V7_CLAMP_GAMMA, commit c8b9ba6) → zero-
+retrain sparkle 52→27.7 → CORNER-CRAWL (lr 1e-4, monitor EVERY epoch,
+cross-run score floor) caught score 1.013 → ordeal PASS.
+TRAINING LAWS: fine-tune from best ALWAYS regressed (5/5, floors held) ·
+monitor-every-epoch or blind · detach (nohup) everything — walls eat rooms
+not work · cross-run bar-normalized floor mandatory.
+V7-LIVE LANE (all committed, lane notes = worktree scratch/v7-live-lane.md
++ scratch/v7-cutover-ready.md): S1 split gather parity 9.5e-7 · S2 GPU
+history reproject 3.96e-5 · S3 loader shape-generic (INPUT_FEATURES 23
+hardcode dead) + full loop + GPU clamp + refuse-not-corrupt guard · perf
+one-submission fix 23.3→16.63ms median (beats old 18.57; p95 ~24 spikes
+UNATTRIBUTED) · pan parity 1.5e-6.
+OPEN SEAM (cutover-blocking; fix room riding at compact: ghoul-sonnet-
+mrt40v3a7fduye): still-sequence reprojection-guard validity flip (~60
+silhouette px) — WGSL rejects history where CPU accepts; BOUNDED plateau
+(1.7e-2 max / 8e-5 mean); suspect round() half-tie WGSL(half-even) vs
+Rust(half-away). Fix = align WGSL to CPU (CPU = the ordealed act).
+LAUNCH (HIS act only, works NOW):
+  cd ../magic-crystal-neural-live/packages/scrying-glass &&
+  GAIA_NATIVE_WEIGHTS=v7 GAIA_NATIVE_EVIDENCE_SPLIT=1 ./target/release/scrying-glass
+Cutover-to-default = his played word AFTER the seam closes.
+SILICON (morning, all measured): Metal-4 encoder = GPU on M1 (ANE counter
+flat 18, GPU 84%, twice) · MLX = GPU-only (sourced: ml-explore #18/#393) ·
+ANEMLL Llama did NOT engage ANE on M1 (counters flat; MLX 184 tok/s vs 33;
+MLX kills frame tail p90 +162% → disqualified for live voice) · afm CLI
+(installed, /opt/homebrew/bin/afm) = Apple foundation models, GPU ~10%
+during gen → likely ANE-resident; sudo powermetrics proof = HIS paste,
+pending. Voice tier: afm default (adapters .fmadapter for flavor; afm mlx
+mode = GPU road). ioreg busy-ms = IOKit bookkeeping, NOT utilization —
+lesson recorded.
+ALSO: neural-motion TODO docs/research/2026-07-19-neural-motion-todo.md
+(ARDY NVIDIA/ETH + MANN dogs) · terra/sol pool capped ~6d (07-19), sonnet
+carried the whole day · frame-budget 1.9ms hunt (trace 7.4 + net contention)
+still queued behind v7 lane.
