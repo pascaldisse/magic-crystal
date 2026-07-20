@@ -182,3 +182,97 @@ epoch 2→19 trend a PASS inside this run is unlikely without the fix above.
 - Port 8430 / the live scrying-glass window: NOT touched this room (this
   trainer is a standalone offscreen `wgpu` process, never binds a server;
   verified no listener on 8430 during the run).
+
+## 2026-07-20 (ghoul room 2) — EMA fix FALSIFIED, ablation matrix launched
+
+**EMA-sourced-history fix (`cf8bd7b`) does NOT cure the runaway.** v8b
+(fresh detached relaunch of the exact same trainer post-fix, PID 24874,
+log `scratch/v8b-train.log`) reproduces the IDENTICAL seesaw shape as the
+pre-fix v8 run (`scratch/v8-train.log`), epoch-for-epoch, through epoch 28:
+
+```
+epoch  v8  (pre-fix)          v8b (post-fix, ema_mlp-sourced history)
+9      val_sparkle 262.2      val_sparkle 334.6
+13     val_sparkle 479.2      val_sparkle 542.5
+17     val_sparkle 723.4      val_sparkle 633.0
+21     val_sparkle 795.7      val_sparkle 759.5   resid stuck ~0.040 both runs
+```
+Both: val_resid plateaus ~0.039-0.041 (never reaches 0.035 bar), val_sparkle
+climbs roughly monotonically well past the sp<16 target while mirror-pose
+val (STILL, diagnostic) stays low/zero and resid keeps improving normally.
+The EMA-vs-raw history-source hypothesis (previous room's leading
+diagnosis) is **falsified as sole root cause** — whatever detonates val
+sparkle survives sourcing the recurrent feedback chain from the smoothed
+net. v8b killed at **epoch 28** (PID 24874, confirmed dead via `pgrep -fl
+rdirect_train_v8` returning empty) — two matching diseased curves through
+epoch 21+ is evidence enough; the GPU was freed for ablation instead of
+riding out 200 epochs of a run already known to fail the bars.
+
+### Ablation design
+v7e (prior trainer) was stable; v8 added exactly three new components:
+(a) moving-camera pan history, (b) mirror training pose, (c) highlight-
+targeted sampling. One of these (or their interaction) is the detonator.
+Added env switches to `examples/rdirect_train_v8.rs` (commit `bcc1c04`),
+IRON-law defaults (omitting all of them reproduces the exact mandate
+trainer): `GAIA_V8_TAG` (renames log prefix + `data/rdirect-weights-<TAG>.bin`
++ its provenance.json + the cross-run score floor — ablation runs can never
+read or clobber the real v8 checkpoint), `GAIA_V8_MIRROR_POSE` (default 1,
+0 drops mirror from the TRAINING cam set only; the diagnostic mirror-monitor
+pose still renders/reports either way). `GAIA_V8_PANSTEP=0` and
+`GAIA_V8_HIGHLIGHT_FRAC=0` already existed and already fully disable (a)/(c)
+respectively (SNAP_EPS still-camera degeneration; zero highlight-oversample
+draws) — no new switches needed for those two.
+
+Four 25-epoch runs, SERIAL (one GPU), fresh init each (INIT_SEED is a
+compile-time const shared by construction across all runs — same seed),
+`GAIA_V7_SKY_HISTORY=reject` always:
+
+| run | tag      | pan_step | mirror_pose | highlight_frac | isolates |
+|-----|----------|----------|-------------|-----------------|----------|
+| A0  | v8ablA0  | 0        | 0           | 0               | v7e-parity baseline (all 3 off) |
+| A1  | v8ablA1  | 0.004    | 0           | 0               | (a) moving-camera history alone |
+| A2  | v8ablA2  | 0        | 0           | 0.30            | (c) highlight sampling alone |
+| A3  | v8ablA3  | 0        | 1           | 0               | (b) mirror pose alone |
+
+Detonation signature to compare once all four finish: val sparkle
+>300/Mpx by epoch 10 (both diseased v8/v8b runs hit that); healthy
+expectation ≪100 (A0, the v7e-parity baseline, should stay low throughout
+if the theory holds — its own early epochs already look healthy, see
+below). Whichever of A1/A2/A3 reproduces the >300/Mpx-by-epoch-10 signature
+while A0 stays clean identifies the detonator; if A0 ALSO detonates, the
+bug is upstream of all three (shared plumbing/config), not one of the
+three mandate components.
+
+Driver: `scratch/v8-ablate.sh` (new, committed `bcc1c04`) runs all four
+runs serially, logs to `scratch/v8-ablate-{A0,A1,A2,A3}.log`, launched
+detached: `nohup ./scratch/v8-ablate.sh > scratch/v8-ablate-driver.log 2>&1 &`
+— driver PID **26543** (the trainer subprocess it spawns per run gets its
+own PID, currently 26546 for A0). Total matrix ≈ 4×(25/200 × prior-run
+wall) — prior 200-epoch runs ran ~37s/epoch cumulative-elapsed so 25
+epochs ≈ 13-16min per run, ≈ 1-1.1h for all four; leave unattended, it
+finishes on its own (fresh 384x288 native res, same as the full v8 runs —
+NOT shrunk, so the signature stays comparable).
+
+**A0 early read (epochs -1..2, watched live)**: val_sparkle **0.0/Mpx**
+through epoch 2, val_resid falling normally 0.1253→0.1198→0.1105→0.0972
+(monotonic improvement, no plateau yet at this early stage — 25-epoch runs
+starting from scratch won't reach the 0.035 bar in this few epochs
+regardless, that's expected and not itself a verdict). This is NOT yet
+comparable to the diseased runs' own epoch-2 numbers (val_sparkle was
+already 45-72/Mpx by epoch 2 in both v8/v8b) — A0's epoch 2 sparkle being
+exactly 0.0 vs their 45-72 is the first positive signal for the "one of
+(a)/(b)/(c) is the detonator, not shared plumbing" hypothesis, but this is
+NOT a verdict — only 3 epochs observed, no cure/pass claim, wait for all
+four logs at epoch 10+ before comparing against the >300/Mpx-by-epoch-10
+signature.
+
+Checkpoint/floor isolation verified before launch: `GAIA_V8_TAG=smoketest`
+tiny run (64x48, 1 epoch) wrote `rdirect-weights-smoketest.bin` +
+`.provenance.json`, left `data/rdirect-weights-v8.bin`'s md5
+(`69dbd3f0f952479c8d679c1a9238896d`) byte-identical; smoketest artifacts
+deleted after the check.
+
+**Status: matrix running, unwatched past A0 epoch 2. No cure/pass claim.**
+This room only isolates the variable — read all four
+`scratch/v8-ablate-{A0,A1,A2,A3}.log` in a later room before drawing any
+conclusion about which component (or combination) is the detonator.
