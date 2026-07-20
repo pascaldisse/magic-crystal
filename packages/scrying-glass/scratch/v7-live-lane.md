@@ -1645,5 +1645,5 @@ Probe: examples/gamma_sweep_probe.rs — ordeal's OWN sparkle/resid metric, trac
 1.5 · 0.03487 · 35.81 · 0.2377 (−38.7%)
 1.25 · 0.03572 · 24.41 · 0.2314 (−40.3%)
 1.0 · 0.03789 · 11.39 · 0.2191 (−43.5%)
-0.85 · pending in scratch/gamma-sweep-20260720.log (PID 21074 detached; harvest tail on read)
+0.85 · 0.04443 · 6.51 · 0.1937 (−50.1%) — sweep COMPLETE, probe exited clean
 VERDICT: γ = sparkle↔resid Pareto slider. ONLY γ=1.5 passes resid bar 0.035 (1.25 + 1.0 both breach). Dots CANNOT be lawfully killed by ceiling alone → v8 weights must earn sparkle ≪35 AT resid ≤0.035 (Architect's eye rejected dots at 35.8 → the real bar). Bonus signal: net under-renders highlights −38.7% vs teacher ALREADY at γ1.5 (clamp-independent) → v8 training target too.
