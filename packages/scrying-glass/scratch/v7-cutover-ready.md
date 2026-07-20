@@ -220,6 +220,116 @@ DEFAULT weights selection) is a separate decision this room does not make.
   — within noise of room 3's 16.57-16.63ms, not independently re-confirmed
   with a second run.
 
+## Room 5 update (ghoul run 2026-07-20): symmetric SNAP_EPS — SEAM CLOSED
+
+- **Fix**: replaced room 4's asymmetric (GPU-only) `REPROJ_EDGE_EPS` bounds
+  slack with a symmetric pixel-boundary SNAP applied identically on BOTH
+  sides: `CamPose::reproject` (`src/rdirect.rs`) and `cam_reproject`
+  (`src/rdirect_gather_split.wgsl`) now snap `fpx`/`fpy` to the nearest
+  integer whenever within `SNAP_EPS = 1.0e-3` of one, BEFORE the unchanged
+  bounds/depth/normal tests — removes the boundary ambiguity at its source
+  (the fractional coordinate) instead of fuzzing the accept window on one
+  side only. `SNAP_EPS` derivation (documented at both definition sites):
+  ~1e-6 observed ULP noise floor, 0.5 half-pixel tie point; 1e-3 sits
+  ~1000x above the former, ~500x below the latter. Room 4's `REPROJ_EDGE_EPS`
+  constant and its asymmetric clamp are fully removed (superseded, not kept
+  alongside).
+- **Ordeal (a) — RE-EARNED, PASS.** Full real-image ordeal re-run under the
+  modified CPU act (`GAIA_ORDEAL_WEIGHTS=v7 GAIA_ORDEAL_W=640
+  GAIA_ORDEAL_H=480`, detached, `scratch/v7i-ordeal-snap.log`, 754.5s):
+  ```
+  resid_still    0.03487  bar 0.03500  PASS  (distance -0.00013)
+  sparkle_still 35.80729  bar 40.00000  PASS  (distance -4.19271)
+  tvar_still     0.00003  bar 0.00050  PASS  (distance -0.00047)
+  resid_move     0.03670  bar 0.06000  PASS  (distance -0.02330)
+  ghost_excess   0.00000  bar 0.01200  PASS  (distance -0.01200)
+  VERDICT: PASS — stamp re-written data/rdirect-weights-v7.bin.stamp
+  ```
+  Every number byte-identical to the pre-fix stamp (room `55720b45`'s own
+  PASS) — confirms the prediction: the snap only touches boundary-history
+  validity at silhouette pixels, the resid/sparkle/tvar/ghost metrics (which
+  don't reproject) are untouched. `resid_still` still sits at its own
+  narrowest margin (0.03487 vs 0.035 bar) — unchanged, not a new risk.
+- **Parity (b) — COLLAPSED to machine precision on BOTH sequences.**
+  `examples/v7_present_parity_probe` re-run post-fix
+  (`scratch/v7i-parity-snap.log`):
+  ```
+  still frame 0  max-abs-diff 4.7684e-7
+  still frames 1-11  max-abs-diff 3.5763e-7 (constant, px>1e-3=0 every frame)
+  still OVERALL max-abs-diff 4.7684e-7        (was 1.2803e-2 after room 4's fix, 6.0695e-2 pre-room-4)
+  pan   frame 0  max-abs-diff 4.7684e-7
+  pan   frame 1  max-abs-diff 1.5497e-6
+  pan   frame 2  max-abs-diff 1.0729e-6
+  pan OVERALL max-abs-diff 1.5497e-6          (was 2.9301e-4 after room 4's fix, 1.5497e-6 pre-room-4)
+  ```
+  The still sequence now matches the pan sequence's own machine-precision
+  class (~1e-7-1e-6, px>1e-3=0 throughout) — the room-4 plateau (30-32/6144
+  flipped px) is fully gone, not just halved. The pan sequence's small new
+  room-4 delta (2.93e-4 at frame 2) is also gone — pan is back to its
+  original 1.5497e-6 exactly, because the fix is symmetric (no asymmetric
+  admission on either side to introduce a new delta).
+- **Regression (c) — all 6 pre-existing ordeals byte-identical, flag OFF.**
+  `scratch/v7i-regression-snap.log`:
+  ```
+  n0b_gather_and_shared_forward_match_cpu ... ok
+  c_ban_no_temporal_vocabulary_in_the_gpu_kernel ... ok
+  a_gpu_inference_is_byte_identical_same_frame_twice ... ok
+  b_f32_gpu_matches_cpu_within_derived_bound ... ok
+  b2_fp16_fast_kernel_matches_cpu_within_derived_bound ... ok
+  n0_gate1_live_net_matches_cpu_reference ... ok
+  ```
+  Checked which of these exercise `CamPose::reproject`: NONE — grepped
+  `tests/rdirect_gather_ordeals.rs`, `tests/rdirect_gpu_ordeals.rs`,
+  `tests/rdirect_live_ordeals.rs` for `reproject`/`hist_features`/
+  `direct_render_sequence_hist`; the only hit is a string-ban check
+  (`rdirect_gpu_ordeals.rs`'s vocabulary-ban test greps for the word
+  "reproject" in generated shader source — unrelated to calling the
+  function). All 6 use the non-history/non-split forward paths
+  (`gather_and_shared_forward`, GPU-vs-CPU single-frame parity, live-net
+  gate) which never call `reproject` — byte-identity is exactly expected,
+  not merely observed, and confirmed exactly (all numbers match room 4's
+  own re-run verbatim).
+- **FPS (d) — one s20 run, flag ON.** `GAIA_NATIVE_WEIGHTS=v7
+  GAIA_NATIVE_EVIDENCE_SPLIT=1`, 640×480 offscreen, 1130 frames:
+  **TOTAL median 20.30ms / p95 28.81ms, WALL-FPS 42.8**
+  (`proof/neural-live/s20-v7snap.{log,budget.json,state.json}` +
+  `-presented.png`). Within noise of room 4's 18.15ms/42.7fps and room 3's
+  16.57-16.63ms — the changed op (an `if`+`floor` compare, same ALU class as
+  room 4's eps compare) is not a plausible multi-ms source; read as machine
+  load noise, consistent across 3 rooms now.
+- **Seam status: CLOSED.** Ordeal PASS (re-earned under the modified act,
+  byte-identical metrics to the pre-fix stamp), both parity probes at
+  machine precision, all 6 regressions unchanged, fps within established
+  noise band. The shipped-equals-ordealed-act seam that blocked cutover
+  since room 2 is resolved — the only remaining known delta is the
+  documented p95 tail (28.8ms, ~1.6x the median, consistent across every
+  room's fps numbers — a scheduling/poll-latency tail, not a correctness
+  gap; not chased further, was never in scope for this seam).
+
+**Final launch command (unchanged from room 2, now backed by a closed
+parity seam):**
+```sh
+GAIA_NATIVE_WEIGHTS=v7 GAIA_NATIVE_EVIDENCE_SPLIT=1 ./target/release/scrying-glass
+```
+Cutover itself (making v7 the DEFAULT weights selection) remains a separate
+decision this note does not make — per whip 154, no window was opened, no
+running session touched; all verification above is offscreen on dedicated
+ports.
+
+### Artifacts this room
+- `src/rdirect.rs` (`CamPose::reproject` — SNAP_EPS symmetric snap, replaces
+  nothing on the CPU side, this is the CPU side's first edit in this lane).
+- `src/rdirect_gather_split.wgsl` (`cam_reproject` — SNAP_EPS symmetric
+  snap, REPROJ_EDGE_EPS + its asymmetric clamp fully removed).
+- `data/rdirect-weights-v7.bin.stamp` — re-earned PASS stamp (metrics
+  byte-identical to pre-fix).
+- `scratch/v7i-ordeal-snap.log`, `scratch/v7i-parity-snap.log`,
+  `scratch/v7i-regression-snap.log` — this room's full act outputs.
+- `proof/neural-live/s20-v7snap.{log,budget.json,state.json}` +
+  `-presented.png` — this room's fps run + captured proof frame.
+- `proof/neural-live/s25-{still,moving}{,-teacher}.png` — refreshed ordeal
+  proof frames (regenerated by the re-earned ordeal run).
+
 No gate was weakened or bypassed. Nothing launched with a window, no running
 session touched (whip 154). All new claims in this file were played through
 the real offscreen server + read back from real output (image bytes, /budget

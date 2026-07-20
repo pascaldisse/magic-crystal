@@ -996,6 +996,20 @@ pub fn weights_sha256(mlp: &Mlp) -> String {
 /// the first layer's in_dim.
 pub const HIST_FEATURES: usize = INPUT_FEATURES + 4;
 
+/// SNAP_EPS — symmetric pixel-boundary snap (v7 seam closure, room 5). See
+/// the mirrored constant + full derivation comment in
+/// `rdirect_gather_split.wgsl` (`cam_reproject`) — this value and its use
+/// must stay identical on both sides of the CPU/GPU seam. Summary: a static
+/// camera's self-reprojected edge pixels land the fractional reproject
+/// coordinate EXACTLY on an integer pixel boundary; sub-ULP GPU-vs-CPU noise
+/// then flips which side of that boundary the coordinate lands on, which the
+/// accept/reject test converts into a full history valid=0/1 disagreement.
+/// Snapping the coordinate to the nearest integer whenever within SNAP_EPS of
+/// one removes the ambiguity at its root, applied identically on both sides.
+/// Magnitude: ~1e-6 observed ULP noise floor, half-pixel tie point is 0.5;
+/// 1e-3 sits ~1000x above the former and ~500x below the latter.
+const SNAP_EPS: f32 = 1.0e-3;
+
 /// A previous-frame camera pose, enough to reproject a world point into its
 /// screen. `half_tan` = tan(fov_y/2); `aspect` = w/h. Kept dependency-free
 /// (raw glam vectors) so this module stays decoupled from `scene::Camera`.
@@ -1030,8 +1044,18 @@ impl CamPose {
         }
         let sx = rel.dot(self.right) / (rz * self.half_tan * self.aspect);
         let sy = rel.dot(self.up) / (rz * self.half_tan);
-        let fpx = (sx + 1.0) * 0.5 * w as f32 - 0.5;
-        let fpy = (1.0 - sy) * 0.5 * h as f32 - 0.5;
+        let mut fpx = (sx + 1.0) * 0.5 * w as f32 - 0.5;
+        let mut fpy = (1.0 - sy) * 0.5 * h as f32 - 0.5;
+        // Symmetric pixel-boundary snap — see SNAP_EPS doc above. Must mirror
+        // `cam_reproject` in rdirect_gather_split.wgsl exactly.
+        let snap_x = (fpx + 0.5).floor();
+        if (fpx - snap_x).abs() < SNAP_EPS {
+            fpx = snap_x;
+        }
+        let snap_y = (fpy + 0.5).floor();
+        if (fpy - snap_y).abs() < SNAP_EPS {
+            fpy = snap_y;
+        }
         if fpx < 0.0 || fpy < 0.0 || fpx > (w - 1) as f32 || fpy > (h - 1) as f32 {
             return None;
         }

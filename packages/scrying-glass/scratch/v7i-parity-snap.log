@@ -1,0 +1,23 @@
+   Compiling scrying-glass v0.1.0 (/Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass)
+    Finished `release` profile [optimized] target(s) in 6.34s
+     Running `/Users/pascaldisse/projects/magic-crystal-neural-live/target/release/examples/v7_present_parity_probe`
+[v7-present-parity] weights stamp PASS: true
+[v7-present-parity] live net loaded in_features=39 out_channels=3
+[v7-present-parity] still frame 0 N=6144 max-abs-diff 4.7684e-7 mean-abs-diff 7.9931e-8 px>1e-3=0
+[v7-present-parity] still frame 1 N=6144 max-abs-diff 3.5763e-7 mean-abs-diff 8.3725e-8 px>1e-3=0
+[v7-present-parity] still frame 2 N=6144 max-abs-diff 3.5763e-7 mean-abs-diff 8.2991e-8 px>1e-3=0
+[v7-present-parity] still frame 3 N=6144 max-abs-diff 3.5763e-7 mean-abs-diff 8.3824e-8 px>1e-3=0
+[v7-present-parity] still frame 4 N=6144 max-abs-diff 3.5763e-7 mean-abs-diff 8.3979e-8 px>1e-3=0
+[v7-present-parity] still frame 5 N=6144 max-abs-diff 3.5763e-7 mean-abs-diff 8.2779e-8 px>1e-3=0
+[v7-present-parity] still frame 6 N=6144 max-abs-diff 3.5763e-7 mean-abs-diff 8.3962e-8 px>1e-3=0
+[v7-present-parity] still frame 7 N=6144 max-abs-diff 3.5763e-7 mean-abs-diff 8.4398e-8 px>1e-3=0
+[v7-present-parity] still frame 8 N=6144 max-abs-diff 3.5763e-7 mean-abs-diff 8.3569e-8 px>1e-3=0
+[v7-present-parity] still frame 9 N=6144 max-abs-diff 3.5763e-7 mean-abs-diff 8.4786e-8 px>1e-3=0
+[v7-present-parity] still frame 10 N=6144 max-abs-diff 3.5763e-7 mean-abs-diff 8.5012e-8 px>1e-3=0
+[v7-present-parity] still frame 11 N=6144 max-abs-diff 3.5763e-7 mean-abs-diff 8.3508e-8 px>1e-3=0
+[v7-present-parity] still OVERALL max-abs-diff 4.7684e-7
+[v7-present-parity] pan frame 0 N=6144 max-abs-diff 4.7684e-7 mean-abs-diff 7.6172e-8 px>1e-3=0
+[v7-present-parity] pan frame 1 N=6144 max-abs-diff 1.5497e-6 mean-abs-diff 8.2880e-8 px>1e-3=0
+[v7-present-parity] pan frame 2 N=6144 max-abs-diff 1.0729e-6 mean-abs-diff 7.6146e-8 px>1e-3=0
+[v7-present-parity] pan OVERALL max-abs-diff 1.5497e-6
+[v7-present-parity] SUMMARY still_max=4.7684e-7 pan_max=1.5497e-6

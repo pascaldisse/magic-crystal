@@ -1,0 +1,68 @@
+   Compiling scrying-glass v0.1.0 (/Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass)
+warning: fields `capture_frames`, `upscale_mode`, `temporal_enabled`, `temporal_params`, `t_bind`, and `t_parity` are never read
+    --> packages/scrying-glass/src/main.rs:1996:5
+     |
+1956 | struct Renderer {
+     |        -------- fields in this struct
+...
+1996 |     capture_frames: u32,
+     |     ^^^^^^^^^^^^^^
+...
+2002 |     upscale_mode: u32,
+     |     ^^^^^^^^^^^^
+...
+2010 |     temporal_enabled: bool,
+     |     ^^^^^^^^^^^^^^^^
+2011 |     temporal_params: TemporalParams,
+     |     ^^^^^^^^^^^^^^^
+...
+2019 |     t_bind: [wgpu::BindGroup; 2],
+     |     ^^^^^^
+...
+2022 |     t_parity: usize,
+     |     ^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `view_key` is never used
+    --> packages/scrying-glass/src/main.rs:2707:8
+     |
+2057 | impl Renderer {
+     | ------------- method in this implementation
+...
+2707 |     fn view_key(&self) -> ([f32; 3], f32, f32, u32, u32) {
+     |        ^^^^^^^^
+
+warning: `scrying-glass` (bin "scrying-glass") generated 2 warnings
+    Finished `release` profile [optimized] target(s) in 46.36s
+     Running tests/rdirect_gather_ordeals.rs (/Users/pascaldisse/projects/magic-crystal-neural-live/target/release/deps/rdirect_gather_ordeals-6a57dc1f86be8868)
+
+running 1 test
+[n0b] GATE A gather: N=6144 px × 23 feat · max abs 9.537e-7
+[n0b] GATE B shared forward: max abs 7.749e-7
+[n0g] S8 MPSGraph(default) vs chain: max abs 2.384e-7
+[n0b] GATHER median 0.316 ms over 200 frames @ 96×64 (6144 px)
+test n0b_gather_and_shared_forward_match_cpu ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.84s
+
+     Running tests/rdirect_gpu_ordeals.rs (/Users/pascaldisse/projects/magic-crystal-neural-live/target/release/deps/rdirect_gpu_ordeals-9fc6ca215bbbf606)
+
+running 4 tests
+test c_ban_no_temporal_vocabulary_in_the_gpu_kernel ... ok
+test a_gpu_inference_is_byte_identical_same_frame_twice ... ok
+[rdirect parity] f32 parity_rel=5.636e-7 bound=2.159e-3
+test b_f32_gpu_matches_cpu_within_derived_bound ... ok
+[rdirect parity] fp16 MODE-A parity_rel=5.791e-4 bound=3.128e-3
+test b2_fp16_fast_kernel_matches_cpu_within_derived_bound ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
+
+     Running tests/rdirect_live_ordeals.rs (/Users/pascaldisse/projects/magic-crystal-neural-live/target/release/deps/rdirect_live_ordeals-c0d93c146a80158b)
+
+running 1 test
+[n0-gate1] N=6144 px · live-vs-committed: abs 1.311e-6 rel 5.960e-5 · live-vs-recomputed-CPU: abs 1.311e-6
+test n0_gate1_live_net_matches_cpu_reference ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+

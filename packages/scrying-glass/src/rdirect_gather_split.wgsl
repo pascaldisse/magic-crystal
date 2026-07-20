@@ -138,16 +138,27 @@ fn gather_split(@builtin(global_invocation_id) gid: vec3<u32>) {
 // `FeatureGatherHistSplit` (flag-gated the same as Stage 1, default OFF).
 
 const FEATURES_HIST: u32 = 39u;
-// Reprojection screen-bounds accept slack: GPU vs CPU dot-product/FMA
-// evaluation order can disagree by a few ULP on `sx`/`sy`, which is
-// invisible almost everywhere but flips the `fpx</fpy < 0` / `> dim-1`
-// accept test at pixels whose reprojected coord sits geometrically AT the
-// frame edge (self-reprojection of a static/near-static camera lands
-// exactly on tx=0/ty=0/w-1/h-1 there). Widening the accept window by this
-// much (far below one pixel, comfortably above observed ~1e-6 ULP noise)
-// matches the CPU reference's accept decision at those edge pixels without
-// changing the interior accept/reject boundary anywhere else.
-const REPROJ_EDGE_EPS: f32 = 1.0e-3;
+// SNAP_EPS — symmetric pixel-boundary snap (v7 seam closure, room 5).
+// GPU vs CPU dot-product/FMA evaluation order can disagree by a few ULP on
+// `sx`/`sy`; invisible almost everywhere, but a self-reprojecting static
+// camera lands the fractional coord EXACTLY on an integer pixel boundary
+// (tx=0/ty=0/w-1/h-1 reproject to fpx/fpy==0 or dim-1 algebraically), so the
+// sub-ULP noise flips which side of that boundary the coord lands on, which
+// the `is_miss` accept/reject test converts into a full valid=0/1 disagreement.
+// Fix: snap fpx/fpy to the nearest integer whenever within SNAP_EPS of one,
+// BEFORE the accept test — this removes the boundary ambiguity at its root
+// (the fractional coordinate itself) instead of admitting a fuzzy accept
+// window (room 4's REPROJ_EDGE_EPS, superseded: asymmetric — GPU-only — so it
+// could flip pixels the OTHER side correctly rejected, and did, per
+// scratch/v7-live-lane.md room 4's px=2976 A/B dump). Applied identically on
+// BOTH sides (CamPose::reproject in rdirect.rs, cam_reproject here), so it
+// cannot introduce a new GPU-vs-CPU asymmetry.
+// Magnitude: observed ULP noise on `sx`/`sy` after the pinhole projection is
+// ~1e-6 (this lane's own pan-sequence parity floor); a half-pixel is 0.5.
+// 1e-3 sits ~1000x above the noise floor and ~500x below the half-pixel
+// tie point — comfortably inside both margins, not tuned to any one probe's
+// numbers.
+const SNAP_EPS: f32 = 1.0e-3;
 
 // One camera pose, GPU layout: eye_ht.xyz=eye, .w=half_tan;
 // right_asp.xyz=right, .w=aspect; up.xyz=up; fwd.xyz=forward. Mirrors CPU
@@ -195,13 +206,16 @@ fn cam_reproject(cam: CamGpu, world: vec3<f32>, w: f32, h: f32) -> vec3<f32> {
   let aspect = cam.right_asp.w;
   let sx = dot(rel, cam.right_asp.xyz) / (rz * half_tan * aspect);
   let sy = dot(rel, cam.up.xyz) / (rz * half_tan);
-  let fpx = (sx + 1.0) * 0.5 * w - 0.5;
-  let fpy = (1.0 - sy) * 0.5 * h - 0.5;
-  if (fpx < -REPROJ_EDGE_EPS || fpy < -REPROJ_EDGE_EPS ||
-      fpx > (w - 1.0 + REPROJ_EDGE_EPS) || fpy > (h - 1.0 + REPROJ_EDGE_EPS)) {
+  var fpx = (sx + 1.0) * 0.5 * w - 0.5;
+  var fpy = (1.0 - sy) * 0.5 * h - 0.5;
+  let snap_x = floor(fpx + 0.5);
+  if (abs(fpx - snap_x) < SNAP_EPS) { fpx = snap_x; }
+  let snap_y = floor(fpy + 0.5);
+  if (abs(fpy - snap_y) < SNAP_EPS) { fpy = snap_y; }
+  if (fpx < 0.0 || fpy < 0.0 || fpx > (w - 1.0) || fpy > (h - 1.0)) {
     return vec3<f32>(0.0, 0.0, 0.0);
   }
-  return vec3<f32>(clamp(fpx, 0.0, w - 1.0), clamp(fpy, 0.0, h - 1.0), 1.0);
+  return vec3<f32>(fpx, fpy, 1.0);
 }
 
 // bilinear_vec3 — SAME clamped 4-tap resample as the CPU TAA-style history
