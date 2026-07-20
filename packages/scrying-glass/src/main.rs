@@ -546,6 +546,11 @@ struct HttpContext {
     tick_dt: f32,
     /// S12.5: live budget/state JSON for `/budget` and `/state`.
     debug: DebugCell,
+    /// V7-LIVE LANE PERF ROOM 7: shutdown-flush trigger for the
+    /// `GAIA_FRAME_CSV` per-frame series. `/frame_csv` sets it; the render
+    /// loop (which owns `NetPresent`, not `Send`-shared) checks it once per
+    /// iteration and does the actual `std::fs::write`.
+    frame_csv_flush: Arc<AtomicBool>,
 }
 
 /// Read one bounded HTTP request, including its Content-Length body.
@@ -771,6 +776,20 @@ fn handle_http(mut stream: TcpStream, ctx: &HttpContext) {
             "200 OK",
             "application/json; charset=utf-8",
             json.as_bytes(),
+            "",
+        );
+        return;
+    }
+    // V7-LIVE LANE PERF ROOM 7: request a `GAIA_FRAME_CSV` flush (the render
+    // thread does the actual write next iteration — NetPresent isn't shared
+    // across threads). No-op (harmless) if the env gate was never set.
+    if path == "/frame_csv" && method == "GET" {
+        ctx.frame_csv_flush.store(true, Ordering::Release);
+        let _ = write_response(
+            &mut stream,
+            "200 OK",
+            "application/json; charset=utf-8",
+            b"{\"requested\":true}",
             "",
         );
         return;
@@ -1422,6 +1441,19 @@ struct NetPresent {
     /// N0.i S13 THROUGHPUT: wall-clock start of the first recorded frame, for
     /// the frames/second-over-the-whole-run figure (the throughput truth).
     wall_start: Option<Instant>,
+    /// V7-LIVE LANE PERF ROOM 7: per-frame timing series dump, env-gated
+    /// (`GAIA_FRAME_CSV=<path>`, default OFF — `None` means the room 6 p95-tail
+    /// diagnostic is disabled and `record()` does zero extra work). Diagnostic
+    /// only: root-attributing the p95 tail needs the RAW per-frame series
+    /// (periodic vs random spike spacing), not the cumulative median/p95 the
+    /// `[n0i]` line already prints — that line can't tell a fixed cadence from
+    /// a constant-rate random process (both look like a flat cumulative p95).
+    frame_csv_path: Option<String>,
+    /// Buffered in RAM, ONE push per frame (no per-frame I/O — the CSV write
+    /// itself happens once, on flush). Columns match `budget_json`'s stages:
+    /// (frame, trace, gather, net_wall, net_gpu, net_commit, net_wait, demod,
+    /// present, total) ms.
+    frame_csv_rows: Vec<(u64, f64, f64, f64, f64, f64, f64, f64, f64, f64)>,
 }
 
 // SAFETY: `NetPresent` embeds `RdirectLive` (an MPSGraph handle + Metal
@@ -1716,6 +1748,10 @@ impl NetPresent {
             s_total: Vec::new(),
             frames: 0,
             wall_start: None,
+            frame_csv_path: std::env::var("GAIA_FRAME_CSV")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            frame_csv_rows: Vec::new(),
         })
     }
 
@@ -2070,6 +2106,24 @@ impl NetPresent {
             self.wall_start = Some(Instant::now());
         }
         self.frames += 1;
+        // V7-LIVE LANE PERF ROOM 7: RAM-only per-frame row, gated by
+        // `frame_csv_path` — zero-cost (one branch) when the env var is unset.
+        // `s_net_gpu`/`s_net_commit`/`s_net_wait` already carry this frame's
+        // entry (pushed inside `resolve_frame`, before `record` is called).
+        if self.frame_csv_path.is_some() {
+            self.frame_csv_rows.push((
+                self.frames,
+                t.trace,
+                t.gather,
+                t.net,
+                *self.s_net_gpu.last().unwrap_or(&0.0),
+                *self.s_net_commit.last().unwrap_or(&0.0),
+                *self.s_net_wait.last().unwrap_or(&0.0),
+                t.demod,
+                t.present,
+                t.total,
+            ));
+        }
         if self.frames % 60 == 0 {
             // N0.i S13 throughput truth: frames / wall seconds over the run.
             let wall_fps = self
@@ -2106,6 +2160,35 @@ impl NetPresent {
                 pct(&self.s_total, 0.95),
                 wall_fps,
             );
+        }
+    }
+
+    /// V7-LIVE LANE PERF ROOM 7: write the buffered per-frame series to
+    /// `frame_csv_path` (one `std::fs::write`, called once from the shutdown
+    /// flush hook — no per-frame I/O). No-op if the env gate is off or no
+    /// frames were recorded yet. Idempotent (safe to call more than once;
+    /// re-writes the file with whatever has accumulated so far).
+    fn write_frame_csv(&self) {
+        let Some(path) = &self.frame_csv_path else { return };
+        if self.frame_csv_rows.is_empty() {
+            return;
+        }
+        let mut out = String::with_capacity(self.frame_csv_rows.len() * 72 + 96);
+        out.push_str(
+            "frame,trace_ms,gather_ms,net_wall_ms,net_gpu_ms,net_commit_ms,net_wait_ms,demod_ms,present_ms,total_ms\n",
+        );
+        for r in &self.frame_csv_rows {
+            out.push_str(&format!(
+                "{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4}\n",
+                r.0, r.1, r.2, r.3, r.4, r.5, r.6, r.7, r.8, r.9
+            ));
+        }
+        match std::fs::write(path, out) {
+            Ok(()) => eprintln!(
+                "[frame_csv] wrote {} rows to {path}",
+                self.frame_csv_rows.len()
+            ),
+            Err(e) => eprintln!("[frame_csv] write failed ({path}): {e}"),
         }
     }
 
@@ -3484,6 +3567,16 @@ impl Renderer {
         )
     }
 
+    /// V7-LIVE LANE PERF ROOM 7: flush the buffered `GAIA_FRAME_CSV` series to
+    /// disk. Called from the offscreen loop's shutdown-flush hook (the
+    /// `/frame_csv` HTTP trigger), never per-frame.
+    fn flush_frame_csv(&self) {
+        #[cfg(target_os = "macos")]
+        if let Some(np) = &self.net_present {
+            np.write_frame_csv();
+        }
+    }
+
     fn debug_state_json(&self) -> String {
         #[cfg(target_os = "macos")]
         if let Some(np) = &self.net_present {
@@ -4398,6 +4491,11 @@ fn main() {
                 let (scry_tx, scry_rx) = mpsc::channel::<RenderRequest>();
                 let (world_tx, world_rx) = mpsc::channel::<WorldRequest>();
                 let debug: DebugCell = Arc::new(RwLock::new(DebugSnapshot::default()));
+                // V7-LIVE LANE PERF ROOM 7: unused in the windowed loop (the
+                // CSV dump is only wired into the offscreen bench path this
+                // room — NO windows per instruction); field still required to
+                // construct `HttpContext`.
+                let frame_csv_flush = Arc::new(AtomicBool::new(false));
                 start_screenshot_server(
                     native_port,
                     HttpContext {
@@ -4412,6 +4510,7 @@ fn main() {
                         ground: ground.clone(),
                         tick_dt,
                         debug: debug.clone(),
+                        frame_csv_flush,
                     },
                 )
                 .map_err(std::io::Error::other)?;
@@ -4553,6 +4652,8 @@ fn run_offscreen(config: ScryingGlassConfig, render_scene: RenderScene) -> ! {
     // never drained here, matching this mode's original (pre-remap) scope.
     let (world_tx, _world_rx) = mpsc::channel::<WorldRequest>();
     let debug: DebugCell = Arc::new(RwLock::new(DebugSnapshot::default()));
+    // V7-LIVE LANE PERF ROOM 7: `/frame_csv` shutdown-flush trigger.
+    let frame_csv_flush = Arc::new(AtomicBool::new(false));
     start_screenshot_server(
         native_port,
         HttpContext {
@@ -4567,6 +4668,7 @@ fn run_offscreen(config: ScryingGlassConfig, render_scene: RenderScene) -> ! {
             ground: ground.clone(),
             tick_dt,
             debug: debug.clone(),
+            frame_csv_flush: frame_csv_flush.clone(),
         },
     )
     .unwrap_or_else(|e| panic!("offscreen http server: {e}"));
@@ -4664,6 +4766,11 @@ fn run_offscreen(config: ScryingGlassConfig, render_scene: RenderScene) -> ! {
         if let Ok(mut d) = debug.write() {
             d.budget = renderer.debug_budget_json();
             d.state = renderer.debug_state_json();
+        }
+        // V7-LIVE LANE PERF ROOM 7: shutdown-flush hook — checked once per
+        // iteration (one atomic load, no cost when never requested).
+        if frame_csv_flush.swap(false, Ordering::AcqRel) {
+            renderer.flush_frame_csv();
         }
         http_ms += t_debug.elapsed().as_secs_f64() * 1000.0;
         // Record the outside-work AFTER render set `last_readback_ms` this frame.

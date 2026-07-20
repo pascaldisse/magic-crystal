@@ -41,5 +41,10 @@ echo "$STATE" | tee -a "$LOG"
 
 curl -s "http://127.0.0.1:$PORT/scry?eye=presented" -o "$PROOF/s20-$LABEL-presented.png"
 
+# V7-LIVE LANE PERF ROOM 7: shutdown-flush the GAIA_FRAME_CSV per-frame series
+# (no-op / harmless if the env gate was never set for this run).
+curl -s "http://127.0.0.1:$PORT/frame_csv" >/dev/null 2>&1
+sleep 0.5
+
 echo "=== wall-fps tail ($LABEL) ===" | tee -a "$LOG"
 grep "WALL-FPS" "$LOG" | tail -3
