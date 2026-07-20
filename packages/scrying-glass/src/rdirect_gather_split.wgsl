@@ -121,3 +121,221 @@ fn gather_split(@builtin(global_invocation_id) gid: vec3<u32>) {
   feats[base + k + 0u] = 0.0;
   feats[base + k + 1u] = 0.0;
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// V7-LIVE LANE STAGE 2 — RECURRENT HISTORY (features 35-38, → 39-in
+// `HIST_FEATURES_SPLIT`). Mirrors CPU `rdirect::hist_features_split` fed by
+// `direct_render_sequence_hist_split`'s per-pixel reprojection block
+// bit-for-bit: world point = this frame's camera ray * depth (or 1e5 on a
+// miss, matching CPU's `is_miss` convention), reprojected into the PREVIOUS
+// camera's screen via `CamPose::reproject` (pinhole, same sign convention),
+// nearest-pixel depth+normal reject test against the previous frame's own
+// AOV, and — only if accepted — a BILINEAR resample of the previous frame's
+// net output (demod-log space) at the fractional reprojected coordinate.
+// First frame / any reject ⇒ prev_dl = 0, valid = 0 (copy of the CPU rule).
+// This entry is ADDITIVE: `gather_split` (35-in, Stage 1) above is untouched
+// byte-for-byte; nothing here executes unless the caller builds
+// `FeatureGatherHistSplit` (flag-gated the same as Stage 1, default OFF).
+
+const FEATURES_HIST: u32 = 39u;
+
+// One camera pose, GPU layout: eye_ht.xyz=eye, .w=half_tan;
+// right_asp.xyz=right, .w=aspect; up.xyz=up; fwd.xyz=forward. Mirrors CPU
+// `rdirect::CamPose` field-for-field (no reordering, no repacking games).
+struct CamGpu {
+  eye_ht: vec4<f32>,
+  right_asp: vec4<f32>,
+  up: vec4<f32>,
+  fwd: vec4<f32>,
+};
+
+struct HistU {
+  cur: CamGpu,
+  prev: CamGpu,
+  // params = (prev_w, prev_h, has_prev, depth_tol)
+  params: vec4<f32>,
+  // params2 = (normal_thresh, pad, pad, pad)
+  params2: vec4<f32>,
+};
+
+@group(1) @binding(0) var<storage, read> prev_out_dl: array<vec4<f32>>;
+@group(1) @binding(1) var<storage, read> prev_aov: array<vec4<f32>>;
+@group(1) @binding(2) var<uniform> hu: HistU;
+
+// CamPose::ray_dir — SAME pixel-centre primary ray the integrator/CPU use.
+fn cam_ray_dir(cam: CamGpu, tx: u32, ty: u32, w: u32, h: u32) -> vec3<f32> {
+  let cx = (2.0 * (f32(tx) + 0.5) / f32(w)) - 1.0;
+  let cy = 1.0 - (2.0 * (f32(ty) + 0.5) / f32(h));
+  let half_tan = cam.eye_ht.w;
+  let aspect = cam.right_asp.w;
+  let d = cam.fwd.xyz + cam.right_asp.xyz * cx * half_tan * aspect + cam.up.xyz * cy * half_tan;
+  let len = length(d);
+  if (len <= 1.0e-8) { return vec3<f32>(0.0, 0.0, 0.0); }
+  return d / len;
+}
+
+// CamPose::reproject — returns (fpx, fpy, ok) with ok as 1.0/0.0 (WGSL has no
+// Option); sign-for-sign against the CPU version, including the same
+// behind-eye and off-screen rejections.
+fn cam_reproject(cam: CamGpu, world: vec3<f32>, w: f32, h: f32) -> vec3<f32> {
+  let rel = world - cam.eye_ht.xyz;
+  let rz = dot(rel, cam.fwd.xyz);
+  if (rz <= 1.0e-4) { return vec3<f32>(0.0, 0.0, 0.0); }
+  let half_tan = cam.eye_ht.w;
+  let aspect = cam.right_asp.w;
+  let sx = dot(rel, cam.right_asp.xyz) / (rz * half_tan * aspect);
+  let sy = dot(rel, cam.up.xyz) / (rz * half_tan);
+  let fpx = (sx + 1.0) * 0.5 * w - 0.5;
+  let fpy = (1.0 - sy) * 0.5 * h - 0.5;
+  if (fpx < 0.0 || fpy < 0.0 || fpx > (w - 1.0) || fpy > (h - 1.0)) {
+    return vec3<f32>(0.0, 0.0, 0.0);
+  }
+  return vec3<f32>(fpx, fpy, 1.0);
+}
+
+// bilinear_vec3 — SAME clamped 4-tap resample as the CPU TAA-style history
+// fetch, over the `prev_out_dl` buffer (xyz used, w unused/pad).
+fn bilinear_prev_dl(fx: f32, fy: f32, w: u32, h: u32) -> vec3<f32> {
+  let x0 = i32(floor(fx));
+  let y0 = i32(floor(fy));
+  let tx = fx - f32(x0);
+  let ty = fy - f32(y0);
+  let x0c = u32(clamp(x0, 0, i32(w) - 1));
+  let x1c = u32(clamp(x0 + 1, 0, i32(w) - 1));
+  let y0c = u32(clamp(y0, 0, i32(h) - 1));
+  let y1c = u32(clamp(y0 + 1, 0, i32(h) - 1));
+  let a = prev_out_dl[y0c * w + x0c].xyz;
+  let b = prev_out_dl[y0c * w + x1c].xyz;
+  let c = prev_out_dl[y1c * w + x0c].xyz;
+  let d = prev_out_dl[y1c * w + x1c].xyz;
+  let top = a * (1.0 - tx) + b * tx;
+  let bot = c * (1.0 - tx) + d * tx;
+  return top * (1.0 - ty) + bot * ty;
+}
+
+@compute @workgroup_size(8, 8, 1)
+fn gather_hist_split(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let tw = u.dims.z;
+  let th = u.dims.w;
+  if (gid.x >= tw || gid.y >= th) { return; }
+  let tx = gid.x;
+  let ty = gid.y;
+  let lw = u.dims.x;
+  let lh = u.dims.y;
+  let i = ty * tw + tx;
+
+  // Native-res primary-hit AOVs for this target pixel — SAME as `gather_split`.
+  let a = aov[2u * i + 0u];
+  let b = aov[2u * i + 1u];
+  let albedo = a.xyz;
+  let depth = a.w;
+  let normal = b.xyz;
+
+  var divisor = vec3<f32>(1.0, 1.0, 1.0);
+  if (dot(albedo, albedo) > NO_HIT_SQ) {
+    divisor = albedo + vec3<f32>(EPS, EPS, EPS);
+  }
+
+  let fxs = low_coord(tx, lw, tw);
+  let fys = low_coord(ty, lh, th);
+  let x0 = floor(fxs);
+  let y0 = floor(fys);
+  let dx = fxs - x0;
+  let dy = fys - y0;
+  let x0i = min(u32(max(x0, 0.0)), lw - 1u);
+  let x1i = min(u32(max(x0 + 1.0, 0.0)), lw - 1u);
+  let y0i = min(u32(max(y0, 0.0)), lh - 1u);
+  let y1i = min(u32(max(y0 + 1.0, 0.0)), lh - 1u);
+  var taps = array<u32, 4>(
+    y0i * lw + x0i,
+    y0i * lw + x1i,
+    y1i * lw + x0i,
+    y1i * lw + x1i,
+  );
+
+  let base = i * FEATURES_HIST;
+  var k = 0u;
+  for (var t = 0u; t < 4u; t = t + 1u) {
+    let cell = accum_ed[2u * taps[t] + 0u];
+    let rad = cell.xyz / max(cell.w, 1.0);
+    let d = rad / divisor;
+    feats[base + k + 0u] = log(max(d.x, 0.0) + 1.0);
+    feats[base + k + 1u] = log(max(d.y, 0.0) + 1.0);
+    feats[base + k + 2u] = log(max(d.z, 0.0) + 1.0);
+    k = k + 3u;
+  }
+  for (var t = 0u; t < 4u; t = t + 1u) {
+    let cell = accum_ed[2u * taps[t] + 1u];
+    let rad = cell.xyz / max(cell.w, 1.0);
+    let d = rad / divisor;
+    feats[base + k + 0u] = log(max(d.x, 0.0) + 1.0);
+    feats[base + k + 1u] = log(max(d.y, 0.0) + 1.0);
+    feats[base + k + 2u] = log(max(d.z, 0.0) + 1.0);
+    k = k + 3u;
+  }
+  feats[base + k + 0u] = dx;
+  feats[base + k + 1u] = dy;
+  k = k + 2u;
+  feats[base + k + 0u] = albedo.x;
+  feats[base + k + 1u] = albedo.y;
+  feats[base + k + 2u] = albedo.z;
+  k = k + 3u;
+  feats[base + k + 0u] = normal.x;
+  feats[base + k + 1u] = normal.y;
+  feats[base + k + 2u] = normal.z;
+  k = k + 3u;
+  feats[base + k] = log(max(depth, 0.0) + 1.0);
+  k = k + 1u;
+  feats[base + k + 0u] = 0.0;
+  feats[base + k + 1u] = 0.0;
+  k = k + 2u;
+
+  // ── HISTORY (idx 35-38) — copy of CPU direct_render_sequence_hist_split's
+  // reprojection block, exactly. ──
+  var prev_dl = vec3<f32>(0.0, 0.0, 0.0);
+  var valid = 0.0;
+  let has_prev = hu.params.z;
+  if (has_prev > 0.5) {
+    let prev_w = u32(hu.params.x);
+    let prev_h = u32(hu.params.y);
+    let depth_tol = hu.params.w;
+    let normal_thresh = hu.params2.x;
+
+    let is_miss = depth <= 0.0;
+    let dir = cam_ray_dir(hu.cur, tx, ty, tw, th);
+    var dist = depth;
+    if (is_miss) { dist = 1.0e5; }
+    let world = hu.cur.eye_ht.xyz + dir * dist;
+
+    let rep = cam_reproject(hu.prev, world, f32(prev_w), f32(prev_h));
+    if (rep.z > 0.5) {
+      let fx = rep.x;
+      let fy = rep.y;
+      let ipx = u32(clamp(round(fx), 0.0, f32(prev_w) - 1.0));
+      let ipy = u32(clamp(round(fy), 0.0, f32(prev_h) - 1.0));
+      let pj = ipy * prev_w + ipx;
+      let prev_depth = prev_aov[2u * pj + 0u].w;
+      let prev_norm = prev_aov[2u * pj + 1u].xyz;
+      let prev_miss = prev_depth <= 0.0;
+      var ok = false;
+      if (is_miss) {
+        ok = prev_miss;
+      } else if (prev_miss) {
+        ok = false;
+      } else {
+        let dist_prev = length(world - hu.prev.eye_ht.xyz);
+        let depth_ok = abs(dist_prev - prev_depth) <= depth_tol * max(dist_prev, 1.0e-4);
+        let normal_ok = dot(normal, prev_norm) >= normal_thresh;
+        ok = depth_ok && normal_ok;
+      }
+      if (ok) {
+        prev_dl = bilinear_prev_dl(fx, fy, prev_w, prev_h);
+        valid = 1.0;
+      }
+    }
+  }
+  feats[base + k + 0u] = prev_dl.x;
+  feats[base + k + 1u] = prev_dl.y;
+  feats[base + k + 2u] = prev_dl.z;
+  feats[base + k + 3u] = valid;
+}

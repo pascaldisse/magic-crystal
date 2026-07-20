@@ -130,29 +130,158 @@ error) — the E/D split gather is bit-correct against the CPU/trainer
 reference. History (idx 35-38, Stage 2) is not produced by `gather_split`
 yet, so it is out of this probe's scope by construction.
 
-## 3. NEXT STAGE (resume point for the next room)
+## 3. STAGE 2 LANDED: GPU recurrent history ping-pong (35→39-in gather)
 
-STAGE 2 = recurrent history buffer ping-pong on GPU: a per-pixel GPU-resident
-`prev_dl`(vec3)+`valid`(f32) buffer that survives frame-to-frame, written by
-a new pass mirroring the CPU sequence loop's reprojection (`p_cam.reproject`
-+ depth/normal reject test in `direct_render_sequence_hist_split`) — needs
-previous frame's camera pose + depth + normal kept alive one frame (currently
-`net_aov` is per-SET, not per-frame-history; check whether the existing
-double-buffer sets can serve this or a dedicated ping-pong buffer is needed).
-Then `HIST_FEATURES_SPLIT` (39) gather = Stage-1's 35-feature `gather_split`
-+ append prev_dl/valid (4 features) from that buffer.
+Flag: same `GAIA_NATIVE_EVIDENCE_SPLIT` gate as Stage 1 (Stage 2's new types
+are additive Rust/WGSL — nothing constructs them unless a caller opts in;
+`NetPresent`/`resolve_frame` in main.rs is UNTOUCHED this stage, so the live
+path's `evidence_split` branch still only runs Stage-1's 35-in gather.
+Wiring `FeatureGatherHistSplit` + `HistoryBuffers` into `NetPresent` is
+STAGE 3's job, once a 39-in net exists to actually consume + produce the
+recurrent output — building the plumbing without a real net to drive it would
+be wiring for nothing).
 
-STAGE 3 = 39-in net load (swap `RdirectLive` to accept v7's
-`data/rdirect-weights-v7.bin`, in_dim 39) + port `clamp_evidence_lin` into
-the demod stage (WGSL or fused MSL, mirroring `EvidenceAccum`/
-`local_max_3x3`/`evidence_composite_frame` on GPU) + full v7 parity gate
-(new n0-gate1-shaped test over the 39-in fixture) + fps re-measure (last
-known: 18.57ms/53.85fps pre-v7, non-split net — expect regression, unmeasured
-for 39-in).
+- `src/rdirect_gather_split.wgsl` — new compute entry `gather_hist_split`,
+  additive alongside `gather_split` (Stage 1, byte-untouched): writes the
+  full 39-feature `HIST_FEATURES_SPLIT` row — idx 0-34 identical to
+  `gather_split`'s body (E/D taps, subpixel, albedo/normal/depth, motion
+  zero) — then idx 35-38 (history) via a bit-for-bit port of CPU
+  `direct_render_sequence_hist_split`'s reprojection block: world point =
+  this frame's `cam_ray_dir(cur_cam, tx,ty)*depth` (dist=1e5 on a miss, same
+  `is_miss` convention), `cam_reproject(prev_cam, world)` (pinhole, same
+  sign/bounds convention as CPU `CamPose::reproject`), nearest-pixel
+  depth+normal reject test against the PREVIOUS frame's own AOV
+  (`prev_aov`), and — only on accept — a bilinear resample
+  (`bilinear_prev_dl`) of the previous frame's net output
+  (`prev_out_dl`, demod-log space) at the fractional reprojected coord.
+  First frame / any reject ⇒ prev_dl=0, valid=0 (the CPU rule, copied
+  exactly — nothing invented: CPU history IS full reprojection with a
+  bilinear resample, not same-pixel no-reproject — confirmed by reading
+  `rdirect.rs::direct_render_sequence_hist_split` + `CamPose::reproject`
+  before writing a line of WGSL).
+- `src/rdirect_gather.rs` — added `CamGpu` (GPU-layout camera pose, 4×vec4,
+  `From<CamPose>` for a lossless field-for-field port), `FeatureGatherHistSplit`
+  (own pipeline over 2 bind groups — group0 = Stage-1's dims/accum_ed/aov/feats
+  shape with feats now 39-wide; group1 = the new `prev_out_dl`/`prev_aov`/
+  `HistU` uniform carrying both cameras + `has_prev`/`prev_w`/`prev_h`/
+  `depth_tol`/`normal_thresh`), and `HistoryBuffers` (the GPU-resident
+  ping-pong state: `prev_out_dl` vec4/px + `prev_aov` 2×vec4/px + `has_prev`
+  + `prev_cam`; `swap()` GPU-copies the CALLER's current out_dl/aov buffers
+  into the history buffers via `copy_buffer_to_buffer` — no CPU round-trip —
+  and is meant to be called once per frame AFTER that frame's own
+  `gather_hist_split` has consumed the OLD history; `reset()` drops history
+  for a scene cut/resize, after which the next gather sees `has_prev=false`
+  and the CPU zero/invalid rule takes over). `FeatureGather`/`FeatureGatherSplit`
+  (Stage 1) are BYTE-UNTOUCHED — new code only, no shared-function edits.
 
-## 4. Build/process state (resume)
+### Parity guard (flag OFF — the old 23-in path, byte-identical)
+```
+$ cargo build --release -j2 --bin scrying-glass   # 0 errors, same 3 pre-existing warnings as Stage 1
+$ cargo test --release -j2 --test rdirect_gather_ordeals -- --nocapture
+[n0b] GATE A gather: N=6144 px × 23 feat · max abs 9.537e-7
+[n0b] GATE B shared forward: max abs 7.749e-7
+[n0g] S8 MPSGraph(default) vs chain: max abs 2.384e-7
+test n0b_gather_and_shared_forward_match_cpu ... ok
+$ cargo test --release -j2 --test rdirect_gpu_ordeals --test rdirect_live_ordeals -- --nocapture
+test c_ban_no_temporal_vocabulary_in_the_gpu_kernel ... ok
+test a_gpu_inference_is_byte_identical_same_frame_twice ... ok
+[rdirect parity] f32 parity_rel=5.636e-7 bound=2.159e-3
+test b_f32_gpu_matches_cpu_within_derived_bound ... ok
+[rdirect parity] fp16 MODE-A parity_rel=5.791e-4 bound=3.128e-3
+test b2_fp16_fast_kernel_matches_cpu_within_derived_bound ... ok
+[n0-gate1] N=6144 px · live-vs-committed: abs 1.311e-6 rel 5.960e-5 · live-vs-recomputed-CPU: abs 1.311e-6
+test n0_gate1_live_net_matches_cpu_reference ... ok
+```
+All identical numbers to Stage 1's own baseline — confirms Stage 2's new
+types never execute unless a caller (only the new probe, so far) builds them.
+Also re-ran Stage 1's own probe unmodified: `cargo run --release -j2
+--example v7_live_ed_probe` → `E/D taps 4.768e-7 · tail 9.537e-7 · overall
+9.537e-7` — byte-identical to the number recorded above, `gather_split`
+truly untouched.
+
+### History probe (flag ON semantics, no flag needed — new types only)
+`examples/v7_live_hist_probe.rs` — 3-frame small-pan sequence (orbit yaw
+-3/0/+3° around the naruko front pivot `[0,2,0]`, continuous motion so
+reprojection is genuinely exercised — not a degenerate same-pixel case).
+Drives the SAME `gather_hist_split` + `HistoryBuffers::swap` wiring a live
+integration would use, and cross-checks against an independent CPU
+transcription of the reprojection block (NOT calling
+`direct_render_sequence_hist_split` itself — that function also runs the
+net forward + evidence clamp and is load-bearing for the STAMPED real-image
+ordeal; this lane must not touch or risk it, so the probe re-derives the
+reprojection-only slice standalone). No 39-in net exists yet (Stage 3), so
+both sides feed forward a synthetic-but-identical stand-in "previous net
+output" (`out_dl(frame) = that frame's own E-tap0`, itself Stage-1
+bit-exact GPU-vs-CPU) — this exercises the real plumbing (ping-pong buffer,
+reprojection math, depth/normal guard, bilinear resample) without depending
+on unbuilt Stage-3 weights.
+```
+$ cargo run --release -j2 --example v7_live_hist_probe
+[v7-hist-probe] frame 0 N=6144 px x 39 feat — base(0-34) max-abs-diff 9.537e-7 · history(35-38) max-abs-diff 0.000e0 (has_prev=false)
+[v7-hist-probe] frame 1 N=6144 px x 39 feat — base(0-34) max-abs-diff 9.537e-7 · history(35-38) max-abs-diff 3.958e-5 (has_prev=true)
+[v7-hist-probe] frame 2 N=6144 px x 39 feat — base(0-34) max-abs-diff 9.537e-7 · history(35-38) max-abs-diff 3.910e-5 (has_prev=true)
+[v7-hist-probe] OVERALL base max-abs-diff 9.537e-7 · history max-abs-diff 3.958e-5
+[v7-hist-probe] PASS — GPU 39-in gather (base+history) matches CPU reference
+```
+Frame 0 (no history yet) is EXACT zero diff (the has_prev=false branch is a
+pure literal-zero write, both sides). Frames 1-2 (reprojection live) sit at
+~4e-5 — same float-ULP class as every other gate in this lane (n0b's own
+bound is 1e-4; the probe asserts `< 1.0e-4` on both base and history and
+prints PASS). Base (idx 0-34) stays at Stage 1's exact 9.537e-7 across all 3
+frames, confirming the new entry's shared body is a true copy of
+`gather_split`, not a re-derivation that could drift.
+
+## 4. STAGE 3 SPEC (sharpened — resume point for the next room)
+
+STAGE 3 = wire a 39-in net into the live path + prove full-frame parity +
+measure the fps cost:
+
+1. **39-in net load**: swap `RdirectLive` (or a sibling) to accept the
+   STAMPED v7 weights file (commit 59e7bfa: `55720b45`, crawl checkpoint +
+   evidence clamp baked in — `data/rdirect-weights-v7.bin` is the file to
+   point at, verify it carries that stamp's sha256 via
+   `rdirect::verify_stamp` the SAME way `NetPresent::new`'s v4 load does —
+   REAL OR BLACK, no exceptions for v7). `Mlp::layer_dims()[0].0` must read
+   39 (`HIST_FEATURES_SPLIT`) — `RdirectLive`'s MPSGraph input tensor shape
+   is currently hardcoded around the 23-in path; find where and parameterize
+   it (or branch a `RdirectLiveSplit` sibling, mirroring how `FeatureGather`/
+   `FeatureGatherSplit` stayed siblings rather than one parameterized type —
+   consistent with this lane's own additive-sibling pattern so the shipped
+   23-in v4 path never risks a regression).
+2. **Evidence clamp at present**: port `clamp_evidence_lin` (rdirect.rs,
+   `presented = min(net_linear, gamma*local_max_evidence)`, gamma default
+   1.5 via `GAIA_V7_CLAMP_GAMMA`/`evidence_clamp_gamma()`, semantics fixed by
+   commit c8b9ba6) into the demod stage — either the wgpu `DemodPass` (new
+   variant) or the fused native/MSL demod (`RdirectLive::attach_demod`,
+   whichever the live path is using — SHIFT 18 made fused the DEFAULT, so
+   port there first). Needs `local_max_evidence` at native res: this lane's
+   OWN `evidence_composite_frame`/`local_max_3x3`/`EvidenceAccum` (CPU,
+   rdirect.rs) show the exact recipe — bilinear-upsample low_e+low_d to
+   native (E+D composite), a TEMPORAL-MEAN accumulator across the live
+   frame stream (NOT max-across-time — the gamma derivation note in
+   rdirect.rs explains why that's a dead end), then a spatial 3×3 max-pool.
+   The temporal-mean accumulator itself is new per-pixel GPU state (another
+   ping-pong-shaped buffer, same family as this stage's `HistoryBuffers`).
+3. **Full-frame parity gate**: a new n0-gate1-shaped test — GPU live 39-in
+   forward (this stage's `gather_hist_split` output → the loaded v7 net →
+   evidence-clamped present) vs `direct_render_sequence_hist_split` run on
+   an IDENTICAL multi-frame pose sequence (CPU, same weights) — compare the
+   PRESENTED (post-clamp) linear image, not just the pre-clamp net output,
+   since the clamp is itself part of what Stage 3 ships. Tolerance: same
+   derived-bound style as `b_f32_gpu_matches_cpu_within_derived_bound`
+   (rdirect_gpu_ordeals.rs) — reuse its derivation, don't invent a new one.
+4. **fps re-measure**: `[n0i]` budget table (`NetPresent::record`, already
+   instrumented — trace/gather/net/demod/present ms + WALL-FPS) run live
+   with v7 loaded; compare against the last known non-split baseline
+   (18.57ms/53.85fps) — expect a regression (39-in forward is larger than
+   23-in, plus the new gather/history/clamp passes) and record the actual
+   number rather than assume it. `tools/profile-seam.mjs` if a stage looks
+   disproportionately hot.
+
+## 5. Build/process state (resume)
 
 No background build left running by this room (single-token, sequential
-`cargo test`/`cargo run --example` under `nice -n 19`, `-j2`, foreground,
-each finished before starting the next). If a later room needs to detach a
-long build, note PID + log path HERE.
+`cargo build`/`cargo test`/`cargo run --example` under `nice -n 19`, `-j2`,
+foreground, each finished before starting the next — same discipline as
+Stage 1). If a later room needs to detach a long build, note PID + log path
+HERE.
