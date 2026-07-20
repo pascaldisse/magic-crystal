@@ -71,6 +71,20 @@
 //!   (default 1e-4), GAIA_V8_EMA (default 0.999), GAIA_V8_SPARK_TGT (default
 //!   16.0), GAIA_V8_RESID_GATE (default 0.035 — the IRON bar itself),
 //!   GAIA_V8_WALL (seconds, default 10800 = 3h — detach for real runs).
+//!
+//! ABLATION SWITCHES (2026-07-20, all default to CURRENT v8 behavior —
+//!   omitting them reproduces the exact mandate trainer above):
+//!   GAIA_V8_MIRROR_POSE (default 1; 0 = drop the "mirror" pose from the
+//!   TRAINING pose set entirely — component (b) off; the diagnostic mirror
+//!   monitor still renders/reports, it just no longer contributes gradient).
+//!   GAIA_V8_TAG (default "v8") — every log line, the saved checkpoint
+//!   (`data/rdirect-weights-<TAG>.bin`) and its provenance JSON are named
+//!   from this tag, so ablation runs (GAIA_V8_TAG=a0, etc.) can NEVER
+//!   overwrite the real v8 checkpoint or its cross-run score floor — each
+//!   tag gets its own floor file and own weights path. GAIA_V8_PANSTEP=0
+//!   already disables component (a) (still-camera history, degenerates via
+//!   SNAP_EPS) and GAIA_V8_HIGHLIGHT_FRAC=0 already disables component (c)
+//!   (pure uniform sampling) — both pre-existing, no new switch needed.
 
 use std::io::Write;
 use std::path::Path;
@@ -425,6 +439,7 @@ fn settle(mlp: &Mlp, seq: &PoseSeq) -> (Vec<GVec3>, Vec<GVec3>) {
 
 #[allow(clippy::too_many_arguments)]
 fn run_monitor(
+    run_tag: &str,
     tag: &str,
     ema_mlp: &Mlp,
     val_seq: &PoseSeq,
@@ -453,7 +468,7 @@ fn run_monitor(
         std::fs::write(wpath, &*best_bytes).unwrap();
     }
     eprintln!(
-        "[v8] MONITOR {tag}: val sparkle {sp:.1}/Mpx resid {rs:.4} highlight_ratio {hl:.3} score={score:.3}{} | mirror sparkle {msp:.1}/Mpx resid {mrs:.4} highlight_ratio {mhl:.3} (tgt sp<{spark_target} resid<{resid_gate}){}",
+        "[{run_tag}] MONITOR {tag}: val sparkle {sp:.1}/Mpx resid {rs:.4} highlight_ratio {hl:.3} score={score:.3}{} | mirror sparkle {msp:.1}/Mpx resid {mrs:.4} highlight_ratio {mhl:.3} (tgt sp<{spark_target} resid<{resid_gate}){}",
         if passes { " PASS" } else { "" }, if better { " *BEST->saved" } else { "" },
     );
     std::io::stderr().flush().ok();
@@ -461,14 +476,15 @@ fn run_monitor(
 }
 
 fn main() {
+    let run_tag = std::env::var("GAIA_V8_TAG").unwrap_or_else(|_| "v8".to_string());
     let sky_reject = sky_history_reject();
-    eprintln!("[v8] GAIA_V7_SKY_HISTORY reject={sky_reject} — mandate expects true (set GAIA_V7_SKY_HISTORY=reject)");
+    eprintln!("[{run_tag}] GAIA_V7_SKY_HISTORY reject={sky_reject} — mandate expects true (set GAIA_V7_SKY_HISTORY=reject)");
     if !sky_reject {
-        eprintln!("[v8] WARNING: sky-reject semantics NOT active — set GAIA_V7_SKY_HISTORY=reject per the mandate.");
+        eprintln!("[{run_tag}] WARNING: sky-reject semantics NOT active — set GAIA_V7_SKY_HISTORY=reject per the mandate.");
     }
 
     let Some((device, queue)) = headless_device() else {
-        panic!("[v8] no GPU");
+        panic!("[{run_tag}] no GPU");
     };
     let params = scrying_glass::denoiser_dataset::naruko_params();
     let world_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../worlds/naruko");
@@ -491,6 +507,7 @@ fn main() {
     let blur_radius = env_u32("GAIA_V8_BLUR", 2) as i32;
     let pan_step = env_f32("GAIA_V8_PANSTEP", 0.004); // matches GAIA_ORDEAL_PANSTEP
     let mirror_spp = env_u32("GAIA_V8_MIRROR_SPP", 4);
+    let mirror_pose_enabled = env_u32("GAIA_V8_MIRROR_POSE", 1) != 0;
     let highlight_frac = env_f32("GAIA_V8_HIGHLIGHT_FRAC", 0.3);
     let highlight_pctl = env_f32("GAIA_V8_HIGHLIGHT_PCTL", 0.05);
     let spark_target = env_f32("GAIA_V8_SPARK_TGT", 16.0);
@@ -501,12 +518,18 @@ fn main() {
     let all = scrying_glass::denoiser_dataset::law_poses(&params);
     let find = |n: &str| all.iter().find(|(pn, _)| *pn == n).unwrap().1.clone();
     let mirror_cam = scrying_glass::denoiser_dataset::mirror_camera();
-    let train_cams: [(&str, Camera, u32); 4] = [
+    let mut train_cams: Vec<(&str, Camera, u32)> = vec![
         ("front", find("front"), 1),
         ("wide", find("wide"), 1),
         ("orbit_+20", find("orbit_+20"), 1),
-        ("mirror", mirror_cam, mirror_spp),
     ];
+    if mirror_pose_enabled {
+        train_cams.push(("mirror", mirror_cam, mirror_spp));
+    }
+    eprintln!(
+        "[{run_tag}] mirror_pose_enabled={mirror_pose_enabled} — training poses: {:?}",
+        train_cams.iter().map(|(n, ..)| *n).collect::<Vec<_>>()
+    );
 
     let t_render = Instant::now();
     let poses: Vec<PoseSeq> = train_cams
@@ -521,7 +544,7 @@ fn main() {
     // are read the same way the ordeal reads any STILL pose.
     let mirror_val_seq = render_pose_seq(&device, &queue, &base_tris, &scene, &mirror_cam, k, low_w, low_h, tw, th, ref_frames, blur_radius, 0.0, mirror_spp);
     eprintln!(
-        "[v8] rendered {}+2 MOVING/STILL pose sequences (K={k} steps, {tw}x{th}, teacher {ref_frames}, D-blur r={blur_radius}, pan_step={pan_step}, mirror_spp={mirror_spp}) in {:.1}s",
+        "[{run_tag}] rendered {}+2 MOVING/STILL pose sequences (K={k} steps, {tw}x{th}, teacher {ref_frames}, D-blur r={blur_radius}, pan_step={pan_step}, mirror_spp={mirror_spp}) in {:.1}s",
         poses.len(), t_render.elapsed().as_secs_f64()
     );
     std::io::stderr().flush().ok();
@@ -543,7 +566,7 @@ fn main() {
         .collect();
 
     let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("data");
-    let wpath = data_dir.join("rdirect-weights-v8.bin");
+    let wpath = data_dir.join(format!("rdirect-weights-{run_tag}.bin"));
     let config = RdirectConfig {
         hidden_layers: env_u32("GAIA_V8_LAYERS", 5) as usize,
         hidden_width: env_u32("GAIA_V8_WIDTH", 64) as usize,
@@ -556,21 +579,23 @@ fn main() {
     let mut adam = Adam::new(&mlp, lr0, 0.9, 0.999, 1e-8);
     let mut ema_mlp = mlp.clone();
     eprintln!(
-        "[v8] arch {:?} in={HIST_FEATURES_SPLIT} macs/px={} — {epochs} epochs (wall<={wall_budget}s), subsample {subsample}px/pose, lr0={lr0} (mild harmonic decay), ema={ema_decay}, highlight_frac={highlight_frac} (top {}%), PLAIN MSE vs split-smoothed target",
+        "[{run_tag}] arch {:?} in={HIST_FEATURES_SPLIT} macs/px={} — {epochs} epochs (wall<={wall_budget}s), subsample {subsample}px/pose, lr0={lr0} (mild harmonic decay), ema={ema_decay}, highlight_frac={highlight_frac} (top {}%), PLAIN MSE vs split-smoothed target",
         config, mlp.macs(), highlight_pctl * 100.0,
     );
     std::io::stderr().flush().ok();
 
-    // Cross-run bar-normalized score floor: beat the EXISTING v8 checkpoint
-    // (if this is a resumed/second round of v8 rounds) or accept any first
-    // save (no prior v8 checkpoint on disk).
+    // Cross-run bar-normalized score floor: beat the EXISTING checkpoint FOR
+    // THIS TAG (if this is a resumed/second round of this tag's runs) or
+    // accept any first save (no prior checkpoint for this tag on disk).
+    // Tag-scoped by construction (wpath is per-tag) — an ablation run's
+    // floor can never read or clobber the real v8 checkpoint's floor.
     let mut best_score: f64 = if wpath.exists() {
         if let Some(prior) = std::fs::read(&wpath).ok().and_then(|b| deserialize_weights(&b)) {
             let (net, teacher) = settle(&prior, &val_seq);
             let sp = sparkle_resid_per_mpx(&net, &teacher, val_seq.tw, val_seq.th);
             let rs = rmse_lin(&net, &teacher);
             let s = (sp / 40.0).max(rs / 0.035);
-            eprintln!("[v8] cross-run floor: existing checkpoint score={s:.3} (sparkle {sp:.1} resid {rs:.4}) — this run must beat it to overwrite");
+            eprintln!("[{run_tag}] cross-run floor: existing checkpoint score={s:.3} (sparkle {sp:.1} resid {rs:.4}) — this run must beat it to overwrite");
             s
         } else {
             f64::INFINITY
@@ -581,8 +606,8 @@ fn main() {
     let mut best_bytes: Vec<u8> = serialize_weights(&ema_mlp);
 
     {
-        let (sp, rs) = run_monitor("epoch -1 (fresh)", &ema_mlp, &val_seq, &mirror_val_seq, highlight_pctl, spark_target, resid_gate, &mut best_score, &mut best_bytes, &wpath);
-        eprintln!("[v8] fresh-init baseline: sparkle {sp:.1} resid {rs:.4} (floor {best_score:.3})");
+        let (sp, rs) = run_monitor(&run_tag, "epoch -1 (fresh)", &ema_mlp, &val_seq, &mirror_val_seq, highlight_pctl, spark_target, resid_gate, &mut best_score, &mut best_bytes, &wpath);
+        eprintln!("[{run_tag}] fresh-init baseline: sparkle {sp:.1} resid {rs:.4} (floor {best_score:.3})");
     }
 
     let n_px: Vec<usize> = poses.iter().map(|p| (p.tw * p.th) as usize).collect();
@@ -591,7 +616,7 @@ fn main() {
 
     'train: for epoch in 0..epochs {
         if t_train.elapsed().as_secs_f64() > wall_budget as f64 {
-            eprintln!("[v8] WALL budget {wall_budget}s reached at epoch {epoch} — stopping, keeping best");
+            eprintln!("[{run_tag}] WALL budget {wall_budget}s reached at epoch {epoch} — stopping, keeping best");
             break;
         }
         let frac = epoch as f32 / epochs as f32;
@@ -632,7 +657,7 @@ fn main() {
         let mut bstart = 0usize;
         while bstart < samples.len() {
             if t_train.elapsed().as_secs_f64() > wall_budget as f64 {
-                eprintln!("[v8] WALL budget {wall_budget}s reached MID-epoch {epoch} (batch {bstart}/{}) — stopping, keeping best", samples.len());
+                eprintln!("[{run_tag}] WALL budget {wall_budget}s reached MID-epoch {epoch} (batch {bstart}/{}) — stopping, keeping best", samples.len());
                 std::io::stderr().flush().ok();
                 break 'train;
             }
@@ -678,25 +703,27 @@ fn main() {
 
         let denom = (n_steps as f64 * OUTPUT_CHANNELS as f64).max(1.0);
         println!(
-            "[v8] epoch {}/{} mse={:.6} lr={:.6} hist_ms={hist_ms:.0} ({:.1}s)",
+            "[{run_tag}] epoch {}/{} mse={:.6} lr={:.6} hist_ms={hist_ms:.0} ({:.1}s)",
             epoch, epochs, epoch_mse / denom, adam.lr(), t_train.elapsed().as_secs_f64()
         );
         std::io::stdout().flush().ok();
 
         if (epoch + 1) % monitor_every == 0 || epoch + 1 == epochs {
-            run_monitor(&format!("epoch {epoch}"), &ema_mlp, &val_seq, &mirror_val_seq, highlight_pctl, spark_target, resid_gate, &mut best_score, &mut best_bytes, &wpath);
+            run_monitor(&run_tag, &format!("epoch {epoch}"), &ema_mlp, &val_seq, &mirror_val_seq, highlight_pctl, spark_target, resid_gate, &mut best_score, &mut best_bytes, &wpath);
         }
     }
-    eprintln!("[v8] training done in {:.1}s (best score={best_score:.3})", t_train.elapsed().as_secs_f64());
+    eprintln!("[{run_tag}] training done in {:.1}s (best score={best_score:.3})", t_train.elapsed().as_secs_f64());
     std::io::stderr().flush().ok();
 
     std::fs::write(&wpath, &best_bytes).unwrap();
     let best_mlp = deserialize_weights(&best_bytes).expect("reload best");
     let wsha = weights_sha256(&best_mlp);
-    println!("[v8] wrote {} sha256={wsha}", wpath.display());
+    println!("[{run_tag}] wrote {} sha256={wsha}", wpath.display());
     std::io::stdout().flush().ok();
     let prov = serde_json::json!({
-        "artifact": "rdirect-weights-v8.bin",
+        "artifact": format!("rdirect-weights-{run_tag}.bin"),
+        "ablation_tag": run_tag,
+        "mirror_pose_enabled_in_training": mirror_pose_enabled,
         "weights_sha256": wsha,
         "supersedes": "rdirect-weights-v7.bin",
         "architecture": {
@@ -722,10 +749,10 @@ fn main() {
             "history_precompute": "once per epoch (target-network pattern): full-frame forward at epoch-start weights builds the reprojected-history chain batches read from; live weights update within the epoch as usual",
         },
         "dataset": { "realm": "naruko", "low": [low_w, low_h], "native": [tw, th],
-            "train": ["front", "wide", "orbit_+20", "mirror"], "val": ["orbit_-20 (still)"] },
+            "train": train_cams.iter().map(|(n, ..)| *n).collect::<Vec<_>>(), "val": ["orbit_-20 (still)"] },
         "gate": "presents ONLY if real_image_ordeal writes a PASS stamp beside this file (run with GAIA_V7_SKY_HISTORY=reject to match training semantics)",
     });
-    std::fs::write(data_dir.join("rdirect-weights-v8.provenance.json"), serde_json::to_string_pretty(&prov).unwrap()).unwrap();
-    println!("[v8] wrote provenance. NEXT: real_image_ordeal (GAIA_ORDEAL_WEIGHTS=v8 GAIA_V7_SKY_HISTORY=reject) to earn the stamp.");
+    std::fs::write(data_dir.join(format!("rdirect-weights-{run_tag}.provenance.json")), serde_json::to_string_pretty(&prov).unwrap()).unwrap();
+    println!("[{run_tag}] wrote provenance ({}). tag={run_tag} weights={} — NOT the real v8 checkpoint unless tag==\"v8\".", data_dir.join(format!("rdirect-weights-{run_tag}.provenance.json")).display(), wpath.display());
     std::io::stdout().flush().ok();
 }
