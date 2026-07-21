@@ -891,6 +891,28 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
+### 07-21 DELTA — V9 BODY BORN, TRAINING LIVE (~13:15)
+Worktree ../magic-crystal-v9body branch v9-body (392a7ff7 → 31444094 →
+ae847923, unpushed): multi-scale U-Net body (rdirect_unet: tensor-path
+forward + CPU-trainable twin, grad-checks pass 0.0719/0.0013 max_rel_err
+[source: cpu_grad_check test run 07-21]). Spike: chosen C-med widths
+[24,40,64] fwd 4.29ms vs 9.07 budget; D-large 11.36ms rejected [source: docs/perf/2026-07-21-v9-spike.md].
+Output-res free = param (grad-check covers free-output-res path). Trainer
+rdirect_train_v9 = v8d recipe ported (REAL moving-cam reprojection in
+settle loop · mirror poses · K-avg n2n K=8 teacher=validator · 2 real
+motion-vector channels). Disclosed gaps: no evidence-clamp · fresh He-init
+only (no conv estimator-init).
+TRAINING DETACHED: PID 56664, log packages/scrying-glass/scratch/
+v9-train.log, res 128×72 probe round, 300 epochs. Epoch 7 own-eyes:
+★ SPARKLE 0.0/Mpx FROM EPOCH 0 (v8 bodies: 90-353) — receptive-field
+diagnosis CONFIRMED structurally [source: scratch/v9-train.log epoch 0-7].
+resid 0.1464→0.1408 falling · highlight −0.226→−0.206 improving. resid
+vs bar 0.035 UNVERIFIED (early + low-res probe; 640×480-comparable resid
+needs the real-res round). Epoch wall ~110-125s not ~16s → 300 epochs
+overruns the 3h in-run budget; best-checkpoint saves every epoch, floors
+hold. Next gates: probe verdict at plateau → real-res round → ordeal
+(sky-reject γ1.5, resid≤0.035 + sparkle≪35 + highlight) → HIS EYE.
+
 ### 07-21 DELTA — CONVERGENCE LANDED + V8D VERDICT (~11:55)
 MERGE LANDED: origin/main = d3a2d696 (no-ff, zero conflicts, suite 444/0 all
 17 packages, all gate teeth HELD, adversary report at tip). Main IS the
