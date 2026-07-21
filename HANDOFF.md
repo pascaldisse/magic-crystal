@@ -891,6 +891,21 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
+### ★ 07-21 DELTA — 60FPS LAW: V9 BODY UNDER BUDGET (~17:00)
+v9-wire @ e2485c40: ZERO-COPY BRIDGE LANDED (UnetLive::from_wgpu_queue,
+v7 house pattern; fp16 pack GPU-side, rdirect_pack16.wgsl). Full frame
+wall 640×480 N=40 panning: v9-bridged 15.30-15.37ms med / 15.45-15.73
+p95 vs budget 16.67 — UNDER, ~1.0-1.3ms cushion, BOTH runs; v7 16.66-16.75
+med; chain 105→46→28→15.3 [source: docs/perf/2026-07-21-v9-wire.md §bridge].
+Parity exact through the bridge (max_abs 1.9e-4 identical to unbridged;
+gather ordeal 2.3e-5). Measured UNDER GPU CONTENTION (v9body training
+concurrent) — ~6.5ms waitUntilCompleted gap plausibly contention,
+UNVERIFIED (isolated re-run = cheap seal when host quiet). The multi-scale
+body FITS THE 60FPS LAW at render res — first neural body ever to.
+Remaining live work = stamp-day only: main.rs/NetPresent wiring once
+weights pass ordeal (deliberately untouched, REAL IMAGE BAR). Wiring
+queue now EMPTY pending fidelity.
+
 ### 07-21 DELTA — V9E NEUTRAL → PROBE-RES ARTIFACT HYPOTHESIS + V9F (~16:45)
 v9e (winsorized targets) reproduced v9c EXACTLY: onset ~ep52, floor resid
 0.0938, score 2.680 vs 2.678 — winsorize NEUTRAL; fireflies CONFIRMED in
