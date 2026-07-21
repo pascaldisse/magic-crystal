@@ -890,3 +890,20 @@ until merge lands AND v8d finishes, then sweep per hygiene law · his window:
 NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
+
+### 07-21 DELTA — CONVERGENCE LANDED + V8D VERDICT (~11:55)
+MERGE LANDED: origin/main = d3a2d696 (no-ff, zero conflicts, suite 444/0 all
+17 packages, all gate teeth HELD, adversary report at tip). Main IS the
+no-fallback engine: Pleroma 640x480 letterbox or black. Launch cmd for HIS
+eye unchanged (§ above). Conductor also cite-tagged 80 legacy silicon lines
+in 5 merged .md files (content unchanged) + merge trailers.
+V8D FINAL: resid 0.0416 (v8c 0.0432 → K=8 moved it, then PLATEAU), sparkle
+108, highlight 0.72, best score 1.206. CAPACITY VERDICT SEALED by exhaustion:
+instability killed (ablation A2) · init killed (tier1 exact) · signal killed
+(tier2 K=8) → the per-pixel body CANNOT reach bar 0.035. Next round = NEW
+BODY (multi-scale spatial context, M1-sized per dlss4-bringup numbers, NOT
+DLSS widths). BLOCKED ON HIS RULING: interior multi-scale features (output
+stays 640x480) vs upscaling ban. v8d checkpoint sha256 27c7dc38, tag-scoped,
+NOT the real v8. Worktree neural-live: v8d done → tree sweepable per hygiene
+law ONCE its scratch/ lane notes + data/ checkpoints are preserved (they are
+committed on the branch? scratch logs UNTRACKED — copy before sweep).
