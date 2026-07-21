@@ -891,6 +891,24 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
+### 07-21 DELTA — V9C: DETONATION DEAD (~15:10)
+Pose-diversity diagnosis CONFIRMED: v9c (fresh pose draws/epoch, val fixed
+held-out) healthy through epoch 34+, score falls EVERY epoch, sparkle
+0.0/Mpx every epoch, watchdog streak 0/20 — old onset was ep12, detonation
+DEAD [source: scratch/v9c-train.log ep-1..34]. Past-ep250 survival
+UNVERIFIED (run detached, PID 77670, 300 epochs — CHECK LOG AT COMPLETION,
+next session's first act). Domain-fix correction: eval was ALREADY fixed —
+resid numbers were REAL; "too dark" = genuinely under-trained, NOT the
+measurement bug (my suspicion wrong, accepted). Trainers' settle/monitor
+now domain-fixed too (undo_log_demod before metrics). 640×480 domain-fixed
+eval: v9 ep11 resid 0.1276 → v9c ep29 resid 0.1179, sparkle 0.0 both,
+clamp near-noop [source: scratch/v9-autopsy.md + v9c eval PNGs]. Gap to
+bar 0.035 = 3.4×, curve NOT plateaued at ep34. Commits v9-body:
+d0621464/b0f0ab5b (unpushed). Old-domain scores (floor 3.94) ≠ new-domain
+scores — not comparable, flagged. Next gates: v9c completion verdict →
+plateau? → if stalled ≫bar: higher-res round / capacity-within-9ms /
+longer runs → ordeal → HIS EYE.
+
 ### 07-21 DELTA — V9 PROBE AUTOPSY + V9C (~14:45)
 Probe run DETONATED deterministically at epoch 12 (both v9 and cured v9b,
 same seed; last BEST ep11 score 3.96) [source: scratch/v9-autopsy.md].
