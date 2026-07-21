@@ -891,6 +891,25 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
+### 07-21 DELTA — V9-WIRE LANDED (~16:00)
+Branch v9-wire @ 6b952229 (worktree ../magic-crystal-v9wire, unpushed),
+2 commits, v7 artifacts byte-untouched (one accidental proof-PNG clobber
+caught + restored pre-commit, disclosed):
+· PARITY: UnetLive::from_weights closes the loading gap; permanent
+  gpu_cpu_parity test PASS — max_abs 1.3-1.9e-4 vs derived bound 5.86e-3
+  (fp16 roundoff × op-boundary derivation in test) [source: docs/perf/2026-07-21-v9-wire.md].
+· ORDEAL DOOR: real_image_ordeal selects body by weights magic (GAIARD9/
+  GAIARDR1), same 5 bars + stamp machinery + clamp. v9c ckpt honest FAIL:
+  resid_still 0.113/0.035 · resid_move 0.113/0.06 · SPARKLE+TVAR+GHOST
+  ALL PASS — war is down to resid alone. No stamp written (correct).
+· FRAME WALL 640×480 offscreen N=40: v7 full 17.43ms med · v9 full
+  107.96ms med (gather is CPU-built) · v9 GPU-forward alone 4.75ms med,
+  cross-checks spike 4.29 [source: docs/perf/2026-07-21-v9-wire.md].
+  → the live-speed gap = GPU gather for the U-Net input schema (atom
+  riding, v9-wire tree). main.rs untouched (REAL IMAGE BAR blocks
+  unstamped presents — wiring deferred to stamp-day, rationale in doc).
+v9d lane still riding (autopsy + wider pool + Polyak EMA).
+
 ### 07-21 DELTA — V9C LATE DETONATION + SECOND WAVE (~15:20)
 CORRECTION to ~15:10 §: "detonation DEAD" was WRONG — v9c detonated LATE
 (~ep52 onset): ep71 val sparkle 759/Mpx, highlight +0.503 rising, streak
