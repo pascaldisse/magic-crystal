@@ -891,6 +891,21 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
+### 07-21 DELTA — FORENSICS VERDICT: SIX TEXELS, NOT A DETONATION (~17:15)
+COORDS dump (v9e deterministic rerun, env-gated in run_monitor): the
+entire probe-res "sparkle explosion" = the SAME 6-7 FIXED pixels every
+epoch — cluster (94-97,3-8) + (55,34)+(66,38) at 128×72 — error growing
+smoothly ~0.5%/epoch (0.17→0.22 over 11 ep) [source: scratch/
+v9e-forensics.log COORDS ep62-73, commit in v9body tree]. Verdict:
+localized monotonic highlight bias at ~6 scene texels, NOT detonation/
+fireflies/memorization; at 640×480 same world-spots spread 25× → below
+sparkle threshold (why every render-res eval = 0.0). Old watchdog was
+killing runs over six drifting texels. v9f (two-signal watchdog, bar-res
+probe of record, dual checkpoints) RUNNING through the old kill zone —
+PID 17962, ep13+ healthy; verdict + deep-cook floor lands at completion
+(~90min). Residual real issue to watch: the 6-texel bias itself if it
+ever crosses render-res thresholds — bar-res probes in v9f log will say.
+
 ### ★ 07-21 DELTA — 60FPS LAW: V9 BODY UNDER BUDGET (~17:00)
 v9-wire @ e2485c40: ZERO-COPY BRIDGE LANDED (UnetLive::from_wgpu_queue,
 v7 house pattern; fp16 pack GPU-side, rdirect_pack16.wgsl). Full frame
