@@ -2688,8 +2688,8 @@ impl Renderer {
         // display blit only. Anamorphic camera framing (surface aspect below)
         // maps the canvas onto the window without geometric distortion, exactly
         // as the normal `render` path does.
-        let (low_w, low_h) = (self.render_width, self.render_height);
-        let (target_w, target_h) = (self.render_width, self.render_height);
+        let (low_w, low_h) = (self.canvas_width, self.canvas_height);
+        let (target_w, target_h) = (self.canvas_width, self.canvas_height);
 
         let rebuild = match &self.net_present {
             Some(np) => np.target_w != target_w || np.target_h != target_h,
@@ -4142,12 +4142,11 @@ fn run_offscreen(config: ScryingGlassConfig, render_scene: RenderScene) -> ! {
         &config.bvh,
         config.refit,
         config.capture_frames,
-        config.render_width,
-        config.render_height,
-        config.upscale_mode,
         config.draw_own_body,
         config.temporal_enabled,
         config.temporal,
+        config.native_canvas_width,
+        config.native_canvas_height,
         config.net_present,
     )
     .unwrap_or_else(|e| panic!("offscreen renderer: {e}"));
@@ -4155,16 +4154,26 @@ fn run_offscreen(config: ScryingGlassConfig, render_scene: RenderScene) -> ! {
     let (median, mean) = renderer.measure_trace_ms(60);
     eprintln!(
         "[frame] trace {}x{} → offscreen {}x{}: median {median:.2}ms mean {mean:.2}ms/frame (spp={}, 60-frame sample)",
-        config.render_width, config.render_height, dims.0, dims.1, config.integrator.spp,
+        renderer.canvas_width, renderer.canvas_height, dims.0, dims.1, config.integrator.spp,
     );
 
-    let (scry_tx, scry_rx) = mpsc::channel::<ScryRequest>();
+    let (scry_tx, scry_rx) = mpsc::channel::<RenderRequest>();
+    // WINDOW-BAN offscreen is a headless measurement/proof surface: it serves
+    // /scry but not live world ops. The channel exists only to satisfy
+    // HttpContext (so /world endpoints don't 500) — world_rx is intentionally
+    // never drained here, matching this mode's original (pre-remap) scope.
+    let (world_tx, _world_rx) = mpsc::channel::<WorldRequest>();
     let debug: DebugCell = Arc::new(RwLock::new(DebugSnapshot::default()));
     start_screenshot_server(
         native_port,
         HttpContext {
             latest,
             scry: scry_tx,
+            world: world_tx,
+            authority_timeout: config.authority_timeout,
+            event_default_limit: config.event_default_limit,
+            event_limit_max: config.event_limit_max,
+            max_request_bytes: config.max_request_bytes,
             player: player.clone(),
             ground: ground.clone(),
             tick_dt,
@@ -4220,22 +4229,29 @@ fn run_offscreen(config: ScryingGlassConfig, render_scene: RenderScene) -> ! {
         let _ = renderer.device.poll(wgpu::PollType::Poll);
         let t_http = Instant::now();
         while let Ok(request) = scry_rx.try_recv() {
-            let frame = if request.params.belief {
-                #[cfg(target_os = "macos")]
-                {
-                    renderer.capture_belief()
+            match request {
+                RenderRequest::Scry(request) => {
+                    let frame = if request.params.belief {
+                        #[cfg(target_os = "macos")]
+                        {
+                            renderer.capture_belief()
+                        }
+                        #[cfg(not(target_os = "macos"))]
+                        {
+                            Err("belief eye is macOS-only".to_string())
+                        }
+                    } else if request.params.presented {
+                        // N0.j S13.2 on-demand readback of the current offscreen frame.
+                        renderer.capture_presented()
+                    } else {
+                        renderer.capture_pose(&request.params)
+                    };
+                    let _ = request.reply.send(frame);
                 }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    Err("belief eye is macOS-only".to_string())
+                RenderRequest::Retina { params, reply } => {
+                    let _ = reply.send(renderer.capture_retina(&params));
                 }
-            } else if request.params.presented {
-                // N0.j S13.2 on-demand readback of the current offscreen frame.
-                renderer.capture_presented()
-            } else {
-                renderer.capture_pose(&request.params)
-            };
-            let _ = request.reply.send(frame);
+            }
         }
         let mut http_ms = t_http.elapsed().as_secs_f64() * 1000.0;
         // N0.j S13 THE OUTSIDE-9ms HUNT: time the non-net frame-loop segments.
