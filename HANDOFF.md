@@ -891,6 +891,21 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
+### 07-21 DELTA — V9C LATE DETONATION + SECOND WAVE (~15:20)
+CORRECTION to ~15:10 §: "detonation DEAD" was WRONG — v9c detonated LATE
+(~ep52 onset): ep71 val sparkle 759/Mpx, highlight +0.503 rising, streak
+19/20 → watchdog abort ~ep72, best floor kept [source: scratch/
+v9c-train.log ep71]. Pose diversity DELAYED onset 12→~52 + deepened floor
+(val resid →0.0796 by ep71; 640×480 ep29 eval 0.1179) — overfit diagnosis
+holds directionally; highlight-overshoot disease (v8-A2 signature)
+survives narrow pools; mirror val stayed clean. RIDING (2 lanes): v9d
+(ghoul-sonnet-mruoi6nto33jlt, tree v9body): autopsy + cures = much wider
+pool + Polyak EMA 0.999 eval weights (NRC-proven) + keeps · v9-wire
+(ghoul-sonnet-mruoi6ntf3gie9, NEW worktree ../magic-crystal-v9wire branch
+v9-wire): CPU/tensor parity ordeal · ordeal door for U-Net weights (same
+bars+stamp, expected honest FAIL today) · live present-path body-by-weights
+wiring (no default flip, v7 stays stamped act) + frame-wall v7-vs-v9 body.
+
 ### 07-21 DELTA — V9C: DETONATION DEAD (~15:10)
 Pose-diversity diagnosis CONFIRMED: v9c (fresh pose draws/epoch, val fixed
 held-out) healthy through epoch 34+, score falls EVERY epoch, sparkle
