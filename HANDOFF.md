@@ -897,6 +897,24 @@ MERGE LANDED: origin/main = d3a2d696 (no-ff, zero conflicts, suite 444/0 all
 no-fallback engine: Pleroma 640x480 letterbox or black. Launch cmd for HIS
 eye unchanged (§ above). Conductor also cite-tagged 80 legacy silicon lines
 in 5 merged .md files (content unchanged) + merge trailers.
+### ★ RULING 07-21 ~12:21 + AMENDMENT ~12:25 — MULTI-SCALE LEGAL · OUTPUT RES FREE (his words, room chat-mruhqnjx-c9mj)
+Interior multi-scale features RULED LEGAL. AMENDED by his second word:
+output does NOT stay 640×480 — "render resolution" = 640×480 (the
+evidence/trace side), the neural renderer picks ANY output size. NO
+UPSCALING stays absolute: Pleroma RENDERS at output res from world truth
++ evidence — never interpolates a small image up. Output res = parameter
+w/ default (IRON). Unblocks THE NEXT BODY (v9): multi-scale spatial
+context (the dots killer — receptive field) + motion-vector channel +
+recurrent history [source: ~/projects/dlss4-bringup/REPORT.md transfer list],
+M1-sized, NOT DLSS widths [source: ~/projects/dlss4-bringup/REPORT.md].
+Lane open: v9-body (worktree ../magic-crystal-v9body, branch v9-body off
+main): stage 1 shape-parametric body (ALL dims incl. output res = params
+w/ defaults, IRON) + perf spike, net budget ≤~9ms = 16.67 − rays ~7.6 [source: docs/perf/2026-07-18-neural-live-n0.md]
+→ stage 2 trainer wiring (moving-cam history sequences + mirror poses per
+V8 MANDATE, K-avg n2n targets kept) → stage 3 train DETACHED (5 training
+laws) → ordeal at render res, sky-reject γ1.5, bar resid≤0.035 +
+sparkle≪35 (HIS EYE) + highlight recovery.
+
 SWEEP DONE (07-21 ~12:xx): neural-live worktree preserved (scratch+data
 committed, branch neural-live @ dd14d068, local-only — blob tooth) →
 worktree REMOVED. projects/ mc footprint = magic-crystal alone.
