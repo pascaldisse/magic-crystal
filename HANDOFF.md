@@ -891,6 +891,26 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
+### 07-21 DELTA — V9 PROBE AUTOPSY + V9C (~14:45)
+Probe run DETONATED deterministically at epoch 12 (both v9 and cured v9b,
+same seed; last BEST ep11 score 3.96) [source: scratch/v9-autopsy.md].
+Watchdog cure WORKS (abort streak fired ep31, floor kept, 1/9th wall
+burn) [source: scratch/v9b-train.log]. Loss-clamp cure did NOT suppress
+val divergence — clamp only reaches the 4 training poses → EXONERATED as
+root cause. CONVICTED #2: settle()/eval compare raw demod-log output vs
+LINEAR teacher (no undo_log_demod, unlike v8d inference) → val resid
+domain-inflated + eval PNG "too dark" same smell. 640×480 eval ep11 ckpt:
+sparkle 0.0/Mpx · highlight_ratio 0.018 · resid 0.1276 vs bar 0.035 —
+resid UNVERIFIED until domain fix [source: scratch/v9-autopsy.md §eval].
+Monad diagnosis: 4 FIXED training poses = conv overfit engine (whole-image
+conv sees 4 samples where per-pixel v8 saw millions); ep12 = memorization
+onset. → v9c round riding (ghoul-sonnet-mrun9h7k70mekv): domain fix
+everywhere + re-eval ep11 + pose-diversity training (fresh pose draws per
+epoch, val fixed held-out) + watchdog. Verdict wanted: detonation dead?
+Commits v9-body: c6f82ff3/f705084c/a425a615 (unpushed).
+CORRECTION to ~13:15 §: epoch wall ~16s — log times are CUMULATIVE, my
+misread; 300 epochs fit the in-run budget fine.
+
 ### 07-21 DELTA — V9 BODY BORN, TRAINING LIVE (~13:15)
 Worktree ../magic-crystal-v9body branch v9-body (392a7ff7 → 31444094 →
 ae847923, unpushed): multi-scale U-Net body (rdirect_unet: tensor-path
