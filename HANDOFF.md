@@ -897,6 +897,9 @@ MERGE LANDED: origin/main = d3a2d696 (no-ff, zero conflicts, suite 444/0 all
 no-fallback engine: Pleroma 640x480 letterbox or black. Launch cmd for HIS
 eye unchanged (§ above). Conductor also cite-tagged 80 legacy silicon lines
 in 5 merged .md files (content unchanged) + merge trailers.
+SWEEP DONE (07-21 ~12:xx): neural-live worktree preserved (scratch+data
+committed, branch neural-live @ dd14d068, local-only — blob tooth) →
+worktree REMOVED. projects/ mc footprint = magic-crystal alone.
 V8D FINAL: resid 0.0416 (v8c 0.0432 → K=8 moved it, then PLATEAU), sparkle
 108, highlight 0.72, best score 1.206. CAPACITY VERDICT SEALED by exhaustion:
 instability killed (ablation A2) · init killed (tier1 exact) · signal killed
