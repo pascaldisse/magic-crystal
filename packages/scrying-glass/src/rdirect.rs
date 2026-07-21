@@ -1072,7 +1072,7 @@ pub fn weights_sha256(mlp: &Mlp) -> String {
 // net cannot close from one sample. N2 gives the net a MEMORY: its OWN previous
 // output, reprojected into this frame (the light-fix reprojection math, reused
 // as FEATURE PLUMBING — not a separate present path), fed as extra per-pixel
-// features + a validity flag that GATES it (like the light-fix `still_px` /
+// features + a validity flag that GATES it (like the light-fix stillness gate /
 // disocclusion reject). One render, one net: the history is INPUT, the image is
 // still the only output. Trained with the recurrence UNROLLED (the net's own
 // prev output fed back) so it learns to AVERAGE across frames at stillness and

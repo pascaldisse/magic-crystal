@@ -305,21 +305,35 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
 /// `VIII-0 AOV EXPORT BEGIN`/`END` markers this atom introduced, which is
 /// grep-able and exhaustive over every line this wave added to those files.
 ///
-/// The vocabulary list (adversary review, night-2): beyond the obvious
-/// `previous_frame`/`history`/`motion_vector`/`temporal`, the reprojection/
-/// recurrent-net/optical-flow family the ban's substance actually targets —
-/// `reproject`, `warp`, `feedback`, `recurrent`, `accum_prev`, `prev_`,
-/// `last_frame`, `frame_history`, and `velocity` (a motion-vector alias in
-/// most renderer codebases). This list is intentionally scoped to ONLY the
-/// AOV/denoiser seam (never the whole crate): a word like `warp` is a
-/// plausible false positive elsewhere in scrying-glass (e.g. a
-/// `domain_warp` noise helper, were one to exist) that has nothing to do
-/// with temporal frame synthesis — scanning the whole crate for these words
-/// would eventually false-positive on unrelated legitimate code. Confirmed
-/// by direct audit at the time this list was widened: `grep -rniE` for
-/// every word above across `src/error_metric.rs`, `src/integrator.rs`, and
-/// `src/integrator.wgsl` returns zero hits outside this gate's own strings —
-/// no existing collision to work around.
+/// VOCABULARY, NARROWED (monad ruling 07-21, whip 219 merge — supersedes the
+/// night-2 widen below): the 07-18 ban intent (main.rs `THE DESIGN IS THE
+/// LAW` comment, NEURAL.md ‘hand-heuristics (gates/clamps/thresholds) never
+/// ship’) targets the DEAD SVGF/TAA-style hand-tuned reprojection-denoiser
+/// (NR1/NR2, demoted to lab equipment 07-18) — motion-vector reprojection,
+/// its accept/reject gates, and its blend-with-clamp accumulation — never
+/// Pleroma's OWN learned act, which the ONE-RENDER LAW explicitly charters
+/// to consume ‘temporal accumulation = substrate … its history input’
+/// (NEURAL.md ★ THE ONE-RENDER LAW). The night-2 list banned bare generic
+/// words (`history`, `temporal`, `reproject`, `recurrent`, `prev_`) that
+/// Pleroma's own net module (`rdirect*.rs` — reprojected-history input
+/// features, its recurrent split-net design, `prev_dl` demod state) uses
+/// legitimately and constantly; scanning bare true would forbid Pleroma's
+/// own charter. Narrowed to the literal heresy identifiers — the hand-
+/// heuristic's own vocabulary, which has no legitimate reason to appear in
+/// ANY ban-scoped file: the dead present-path names (`raw_accum`,
+/// `raw-accum`, `reset_on_move`, `reset-on-move`), the dead alpha-blend gate
+/// (`blend_alpha`, `blend-alpha`), its literal gate/clamp/threshold knobs
+/// (`alpha_min`, `clamp_k`, `normal_tol`, `still_px` — `TemporalParams`'
+/// own field names, integrator.rs; `depth_tol` excluded — Pleroma's own
+/// recurrent-net reprojection validity guard reuses that exact disocclusion
+/// primitive legitimately, rdirect.rs), and the original
+/// unambiguous SVGF-family terms that stay zero-collision in Pleroma's own
+/// vocabulary (`previous_frame`, `motion_vector`, `optical_flow`, `warp`,
+/// `feedback`, `accum_prev`, `last_frame`, `frame_history`, `velocity`).
+/// `history` is explicitly ALLOWED in BAN-SCOPED files as Pleroma's net
+/// input-feature term (monad ruling 07-21); a genuine heresy term inserted
+/// anywhere in a ban-scoped file (e.g. `raw_accum`, `motion_vector`) must
+/// still fail this ordeal — proven by adversary sabotage-check, 07-21.
 ///
 /// SCOPE IS FORWARD-PROOF, so VIII-1 does not require editing this test to
 /// be covered: a file is "ban-scoped" (and therefore scanned whole) if
@@ -334,17 +348,35 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
 #[test]
 fn ban_no_temporal_vocabulary_in_the_new_aov_error_module() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    // NARROWED 07-21 (monad ruling, whip 219 merge): the ban targets the DEAD
+    // hand-tuned SVGF/TAA reprojection-denoiser (NR1/NR2, 07-18 lab-equipment
+    // demotion) — never Pleroma's own learned act, which is chartered
+    // (NEURAL.md ★ ONE-RENDER LAW) to take temporal accumulation/history as
+    // its substrate. `history`/`temporal`/`reproject`/`recurrent`/`prev_`
+    // dropped bare (Pleroma's own net-module vocabulary, `rdirect*.rs`);
+    // replaced by the literal dead-heuristic identifiers below, which have
+    // no legitimate reason to appear in any ban-scoped file.
     let forbidden = [
         "previous_frame",
-        "history",
         "motion_vector",
-        "temporal",
-        "reproject",
+        "optical_flow",
+        "reset_on_move",
+        "reset-on-move",
+        "raw_accum",
+        "raw-accum",
+        "blend_alpha",
+        "blend-alpha",
+        "alpha_min",
+        "clamp_k",
+        // depth_tol dropped (07-21): Pleroma's own recurrent-net reprojection
+        // validity guard (rdirect.rs `direct_render_sequence_hist`) reuses
+        // the identical disocclusion-gate concept legitimately — not a
+        // collision with the dead heuristic, a shared/necessary primitive.
+        "normal_tol",
+        "still_px",
         "warp",
         "feedback",
-        "recurrent",
         "accum_prev",
-        "prev_",
         "last_frame",
         "frame_history",
         "velocity",
