@@ -177,7 +177,6 @@ fn main() {
         camera_position: setup.camera.eye.to_array(),
         camera_yaw: setup.camera.yaw,
         camera_pitch: setup.camera.pitch,
-        cluster_error_threshold: 1.0,
         tick_dt: 1.0 / 60.0,
         sun: SunDefaults {
             sun_color: "#ffffff".into(),

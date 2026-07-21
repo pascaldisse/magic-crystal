@@ -97,7 +97,7 @@ fn net_frame(
     weights: &[u8],
     bvh: &Bvh,
     scene: &RenderScene,
-    front: &scrying_glass::integrator::Camera,
+    front: &scrying_glass::scene::Camera,
     low_w: u32,
     low_h: u32,
     target_w: u32,
