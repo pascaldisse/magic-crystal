@@ -891,6 +891,22 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
+### 07-21 DELTA — V9D REGRESSED → TAIL HYPOTHESIS + V9E (~16:05)
+v9d (4 anchors, ±180°, 8 draws) REGRESSED: onset ep24 vs v9c's ep51,
+mirror val infected too; best floor 0.1033 vs v9c 0.1022 (640×480 eval)
+[source: scratch/v9-autopsy.md §v9d]. Pure pose-memorization FALSIFIED.
+Monad hypothesis now under test: onset tracks IMAGE-UPDATE COUNT
+(v9≈48 · v9c≈153 · v9d≈192 updates) — low n2n_mse → gradient dominated
+by unbounded 1-ray target tails (fireflies) → conv capacity fits them =
+A2 highlight signature (per-pixel v8 was immune by incapacity). v9e
+riding (ghoul-sonnet-mruq33t3aqkfyj): forensics (update-count table +
+target tail-mass in loss domain) → cure = winsorized targets OR
+luminance-normalized loss, on v9c's narrow-pool config · EMA kept (was
+already in v9c — v9d's real delta was raw-vs-EMA logging: raw score
+~100× noisier, EMA smoothing confirmed). Prediction: v9e survives past
+~200 updates or hypothesis dies. Commits v9-body: 7128b4b1/66ef172c/
+bd798242 (unpushed).
+
 ### 07-21 DELTA — V9-WIRE LANDED (~16:00)
 Branch v9-wire @ 6b952229 (worktree ../magic-crystal-v9wire, unpushed),
 2 commits, v7 artifacts byte-untouched (one accidental proof-PNG clobber
