@@ -1,0 +1,15 @@
+[v4] rendered 3+1 poses (K=4, 480x360, teacher 96, cap 5×5 margin 0.2, ff_w 8) in 1.6s
+[v4] WARM-STARTED from v3 /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/data/rdirect-weights-v3.bin
+[v4] arch RdirectConfig { hidden_layers: 5, hidden_width: 64 } in=27 macs/px=18304 — training 64 epochs, subsample 6000px/pose
+[v4] MONITOR epoch -1 (start): val sparkle 243.1/Mpx
+[v4] epoch 0/64 mse=0.025889 ff=0.000754 (4.9s)
+[v4] MONITOR epoch 3: val sparkle 52.1/Mpx resid 0.0402 (tgt sp<16 resid<0.036) *BEST→saved
+[v4] MONITOR epoch 7: val sparkle 81.0/Mpx resid 0.0387 (tgt sp<16 resid<0.036)
+[v4] epoch 10/64 mse=0.022389 ff=0.000329 (69.6s)
+[v4] MONITOR epoch 11: val sparkle 52.1/Mpx resid 0.0380 (tgt sp<16 resid<0.036)
+[v4] MONITOR epoch 15: val sparkle 57.9/Mpx resid 0.0403 (tgt sp<16 resid<0.036)
+[v4] MONITOR epoch 19: val sparkle 191.0/Mpx resid 0.0361 (tgt sp<16 resid<0.036)
+[v4] epoch 20/64 mse=0.019727 ff=0.000146 (143.1s)
+[v4] MONITOR epoch 23: val sparkle 196.8/Mpx resid 0.0364 (tgt sp<16 resid<0.036)
+[v4] MONITOR epoch 27: val sparkle 57.9/Mpx resid 0.0373 (tgt sp<16 resid<0.036)
+[v4] epoch 30/64 mse=0.016949 ff=0.000179 (208.7s)

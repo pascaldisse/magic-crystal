@@ -1,0 +1,52 @@
+    Finished `release` profile [optimized] target(s) in 0.76s
+     Running `target/release/examples/rdirect_spike`
+[rdirect] naruko: 12368 static leaf tris
+[rdirect] scene aabb min=Vec3(-1000.0, -6.519457, -1160.0) max=Vec3(1000.0, 63.0, 192.0)
+[rdirect] scene-edit block: 160 leaf tris displaced by Vec3(6.0, 3.0, 0.0)
+[rdirect] rendered 'front' low=48x32 native=96x64
+[rdirect] rendered 'wide' low=48x32 native=96x64
+[rdirect] rendered 'orbit_+20' low=48x32 native=96x64
+[rdirect] rendered 'orbit_-20' low=48x32 native=96x64
+[rdirect] rendered 'orbit_+40' low=48x32 native=96x64
+[rdirect] rendered 'front_edit' low=48x32 native=96x64
+[rdirect] scene-edit gate: rmse(front_edit_ref, front_ref)=0.025130 (must be >0)
+[rdirect] train pairs: 18432 (config RdirectConfig { hidden_layers: 5, hidden_width: 64 }, macs/pixel=18048)
+[rdirect] epoch 0/160 train_mse(out-space)=0.089049
+[rdirect] epoch 20/160 train_mse(out-space)=0.067500
+[rdirect] epoch 40/160 train_mse(out-space)=0.060479
+[rdirect] epoch 60/160 train_mse(out-space)=0.056353
+[rdirect] epoch 80/160 train_mse(out-space)=0.050366
+[rdirect] epoch 100/160 train_mse(out-space)=0.047059
+[rdirect] epoch 120/160 train_mse(out-space)=0.044012
+[rdirect] epoch 140/160 train_mse(out-space)=0.043859
+[rdirect] epoch 159/160 train_mse(out-space)=0.041896
+
+[rdirect] === GATE (a) QUALITY — RMSE vs converged reference ===
+pose           bilinear      chain        net   net<chain?
+orbit_-20      0.054106   0.048072   0.038871          yes
+orbit_+40      0.042729   0.054037   0.040453          yes
+[rdirect] --- generalization: held-out SCENE EDIT (block displaced) ---
+front_edit     0.067038   0.054533   0.037185          yes
+[rdirect] --- train poses (informational) ---
+front          0.068492   0.052964   0.032610          yes
+wide           0.068553   0.056059   0.049792          yes
+orbit_+20      0.062546   0.048428   0.036464          yes
+
+[rdirect] === GATE (b) COST ===
+[rdirect] MAC/native-pixel: chain(denoise@low + upscale@native)=14696  net=18048  ratio=1.23x
+[rdirect] CPU ref inference @ 96x64: net=174.15ms  chain=178.26ms (median of 5, CPU f32 reference — NOT the GPU number)
+[rdirect] GPU PROJECTION (naive-port scaling from VIII-2's 26.5ms/3488-MAC/540kpx, UNVERIFIED extrapolation):
+[rdirect]   @900x600: net~137.1ms  chain~111.7ms  (60fps budget=16.67ms; both need the fp16/subgroup opt VIII-2 flagged)
+
+[rdirect] === VERDICT INPUTS ===
+[rdirect] net beats chain on EVERY held-out pose+edit: YES
+[rdirect] worst held-out net RMSE (pinned bound) = 0.040453
+[rdirect] wrote /Users/pascaldisse/projects/magic-crystal-rdirect/packages/scrying-glass/data/rdirect-weights-v1.bin (73552 bytes) sha256=4f25cdb1a6835c4d8c9e956b4ae5772ee2f47e1c17c37f315c08ab8906ce142a
+[rdirect] wrote /Users/pascaldisse/projects/magic-crystal-rdirect/packages/scrying-glass/data/rdirect-weights-v1.provenance.json
+[rdirect] wrote /Users/pascaldisse/projects/magic-crystal-rdirect/packages/scrying-glass/../../proof/rdirect-orbit_-20.png
+[rdirect] wrote /Users/pascaldisse/projects/magic-crystal-rdirect/packages/scrying-glass/../../proof/rdirect-orbit_+40.png
+[rdirect] wrote /Users/pascaldisse/projects/magic-crystal-rdirect/packages/scrying-glass/../../proof/rdirect-front_edit.png
+[rdirect] wrote /Users/pascaldisse/projects/magic-crystal-rdirect/packages/scrying-glass/../../proof/rdirect-front.png
+[rdirect] wrote /Users/pascaldisse/projects/magic-crystal-rdirect/packages/scrying-glass/../../proof/rdirect-wide.png
+[rdirect] wrote /Users/pascaldisse/projects/magic-crystal-rdirect/packages/scrying-glass/../../proof/rdirect-orbit_+20.png
+[rdirect] proof quads (1spp-input | net | ground-truth | chain) written to proof/rdirect-*.png

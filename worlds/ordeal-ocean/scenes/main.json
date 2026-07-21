@@ -1,0 +1,38 @@
+{
+  "env": {
+    "environment": {
+      "sky": { "top": "#020308", "horizon": "#04060c" },
+      "sun": { "intensity": 0.0, "position": [0, 90, 30] },
+      "hemisphere": { "intensity": 0.02 }
+    }
+  },
+  "world_spawn": {
+    "spawn": { "position": [0, 3, 34], "yaw": 0 }
+  },
+  "ocean": {
+    "transform": { "position": [0, 0, 0] },
+    "mesh": { "parts": [
+      { "shape": "box", "size": [800, 0.4, 800], "position": [0, -0.2, -80], "color": "#9fb0cc", "metallic": 1.0, "roughness": 0.055 }
+    ] }
+  },
+  "lantern_00": { "transform": { "position": [-26, 0.8, -6] },  "mesh": { "parts": [ { "shape": "sphere", "radius": 0.9,  "position": [0,0,0], "color": "#ffb347", "emissive": "#ffb347" } ] } },
+  "lantern_01": { "transform": { "position": [-19, 1.7, -22] }, "mesh": { "parts": [ { "shape": "sphere", "radius": 0.6,  "position": [0,0,0], "color": "#ff4d4d", "emissive": "#ff4d4d" } ] } },
+  "lantern_02": { "transform": { "position": [-12, 0.7, 8] },   "mesh": { "parts": [ { "shape": "sphere", "radius": 1.2,  "position": [0,0,0], "color": "#ff5bd0", "emissive": "#ff5bd0" } ] } },
+  "lantern_03": { "transform": { "position": [-6, 3.2, -30] },  "mesh": { "parts": [ { "shape": "sphere", "radius": 0.7,  "position": [0,0,0], "color": "#a86bff", "emissive": "#a86bff" } ] } },
+  "lantern_04": { "transform": { "position": [2, 0.9, -4] },    "mesh": { "parts": [ { "shape": "sphere", "radius": 1.0,  "position": [0,0,0], "color": "#4d7bff", "emissive": "#4d7bff" } ] } },
+  "lantern_05": { "transform": { "position": [9, 2.3, -18] },   "mesh": { "parts": [ { "shape": "sphere", "radius": 0.8,  "position": [0,0,0], "color": "#37e0ff", "emissive": "#37e0ff" } ] } },
+  "lantern_06": { "transform": { "position": [17, 0.75, 4] },   "mesh": { "parts": [ { "shape": "sphere", "radius": 1.4,  "position": [0,0,0], "color": "#2fe8c0", "emissive": "#2fe8c0" } ] } },
+  "lantern_07": { "transform": { "position": [25, 1.9, -12] },  "mesh": { "parts": [ { "shape": "sphere", "radius": 0.65, "position": [0,0,0], "color": "#7dff6b", "emissive": "#7dff6b" } ] } },
+  "lantern_08": { "transform": { "position": [-30, 4.5, -26] }, "mesh": { "parts": [ { "shape": "sphere", "radius": 1.1,  "position": [0,0,0], "color": "#ffe94d", "emissive": "#ffe94d" } ] } },
+  "lantern_09": { "transform": { "position": [-22, 0.7, -34] }, "mesh": { "parts": [ { "shape": "sphere", "radius": 0.95, "position": [0,0,0], "color": "#fff2d0", "emissive": "#fff2d0" } ] } },
+  "lantern_10": { "transform": { "position": [-15, 2.6, 0] },   "mesh": { "parts": [ { "shape": "sphere", "radius": 0.55, "position": [0,0,0], "color": "#ff7a1a", "emissive": "#ff7a1a" } ] } },
+  "lantern_11": { "transform": { "position": [-3, 0.7, -14] },  "mesh": { "parts": [ { "shape": "sphere", "radius": 1.3,  "position": [0,0,0], "color": "#ff8fb0", "emissive": "#ff8fb0" } ] } },
+  "lantern_12": { "transform": { "position": [5, 5.5, -40] },   "mesh": { "parts": [ { "shape": "sphere", "radius": 1.5,  "position": [0,0,0], "color": "#ffd11a", "emissive": "#ffd11a" } ] } },
+  "lantern_13": { "transform": { "position": [13, 0.75, -8] },  "mesh": { "parts": [ { "shape": "sphere", "radius": 0.85, "position": [0,0,0], "color": "#5bff9e", "emissive": "#5bff9e" } ] } },
+  "lantern_14": { "transform": { "position": [21, 3.1, -28] },  "mesh": { "parts": [ { "shape": "sphere", "radius": 0.7,  "position": [0,0,0], "color": "#d94dff", "emissive": "#d94dff" } ] } },
+  "lantern_15": { "transform": { "position": [30, 0.8, -20] },  "mesh": { "parts": [ { "shape": "sphere", "radius": 1.05, "position": [0,0,0], "color": "#ff3b6b", "emissive": "#ff3b6b" } ] } },
+  "lantern_16": { "transform": { "position": [-9, 0.7, -24] },  "mesh": { "parts": [ { "shape": "sphere", "radius": 0.6,  "position": [0,0,0], "color": "#4dffe0", "emissive": "#4dffe0" } ] } },
+  "lantern_17": { "transform": { "position": [0, 1.4, -50] },   "mesh": { "parts": [ { "shape": "sphere", "radius": 1.25, "position": [0,0,0], "color": "#ffa64d", "emissive": "#ffa64d" } ] } },
+  "lantern_18": { "transform": { "position": [-18, 0.7, 6] },   "mesh": { "parts": [ { "shape": "sphere", "radius": 0.8,  "position": [0,0,0], "color": "#6b8fff", "emissive": "#6b8fff" } ] } },
+  "lantern_19": { "transform": { "position": [11, 0.7, 2] },    "mesh": { "parts": [ { "shape": "sphere", "radius": 0.9,  "position": [0,0,0], "color": "#ff6bf0", "emissive": "#ff6bf0" } ] } }
+}

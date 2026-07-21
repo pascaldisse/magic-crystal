@@ -1,0 +1,50 @@
+{
+  "architecture": {
+    "hidden_layers": 5,
+    "hidden_width": 64,
+    "input_features": 39,
+    "kind": "N6 SIGNED EVIDENCE, TARGET-SMOOTHED — recurrent direct-render MLP, split radiance input (E+D), single combined output trained against an E-exact/D-blurred target",
+    "macs_per_pixel": 19072,
+    "output_channels": 3
+  },
+  "artifact": "rdirect-weights-v7.bin",
+  "dataset": {
+    "low": [
+      240,
+      180
+    ],
+    "native": [
+      480,
+      360
+    ],
+    "realm": "naruko",
+    "train": [
+      "front",
+      "wide",
+      "orbit_+20"
+    ],
+    "val": [
+      "orbit_-20"
+    ]
+  },
+  "gate": "presents ONLY if real_image_ordeal writes a PASS stamp beside this file",
+  "supersedes": "rdirect-weights-v6.bin",
+  "training": {
+    "batch": 64,
+    "best_checkpoint_criterion": "bar-normalized score = max(sparkle/40, resid/0.035), save on new MIN, floor 1.157",
+    "cure": "harmonic lr-decay from ~0.3x prior lr + Polyak/EMA (decay 0.999, monitor+checkpoint evaluate EMA weights) + cross-run bar-normalized score floor (max(sparkle/40, resid/0.035), only overwrites the starting 636c8743 checkpoint if strictly better than its own score 1.157, then monotonically tightens) — the same recipe that fixed the noise-ball-outlier signature in magic-crystal-nrc/docs/perf/2026-07-17-nrc-spike-verdict.md. Two-head (v7c) is BANNED, tried and FAILED (worse seesaw).",
+    "d_blur_radius": 2,
+    "ema_decay": 0.9990000128746033,
+    "epochs": 120,
+    "evidence_clamp_gamma": 1.5,
+    "init": "CURE fine-tune: resumed from restored 636c8743 3-out checkpoint",
+    "loss": "PLAIN MSE vs split-smoothed target, backprop through the v7e evidence clamp (no cap/gate/firefly-weight loss term, no two-head)",
+    "lr0": 0.00009999999747378752,
+    "ref_frames": 96,
+    "split": "E = radiance via zero-or-more specular/low-roughness bounces (SPEC_CHAIN_MAX_ROUGHNESS 0.25); D = radiance after a diffuse/rough scatter (~0.88% of frame energy)",
+    "subsample_px_per_pose_per_epoch": 20000,
+    "target_construction": "target = E_full (exact, ref_frames) + box_blur(D_full, radius) — E kept sharp, D smoothed at the SOURCE before demod-log; escapes the sparkle<->resid Pareto front structurally instead of penalizing the output",
+    "unroll_steps": 8
+  },
+  "weights_sha256": "55720b4592ba2c088844172d49a84ce9bfbf73ade92184b3b32a7e65cd2340ce"
+}

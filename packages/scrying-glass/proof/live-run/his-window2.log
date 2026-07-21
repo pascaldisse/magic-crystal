@@ -1,0 +1,43 @@
+[package] scrying-glass v0.1.0 registered
+[world] worlds/naruko scene(s)=["main"] entities=45 chains=23 clusters=913 transmute=85.0ms
+[embodiment] spawn eye=Vec3(0.0, 7.0, 44.0) yaw=0 floor_triangles=10464 tick_dt=0.016666668
+[pleroma] BVH nodes=15487 triangles=23192 (static 12368 + dynamic 10824) build=13.5ms; 22 dynamic entit(ies) — living layer
+[pleroma] traced integrator spp=2 bounces=4 rr_start=2 — first_light is dead
+[wgpu] traced 640x480 → upscale → surface 1920x1280 (bilinear); Bgra8UnormSrgb
+[bloodbend] 🩸 watching 1 scene file(s) + /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/src/integrator.wgsl @ 500ms poll
+[frame] trace 640x480 → surface 960x640: median 7.59ms mean 7.90ms/frame (spp=2, 60-frame sample)
+[scry] GET http://127.0.0.1:8430/scry (alias: /screenshot; optional pos/yaw/pitch/fov/w/h)
+[embodiment] GET http://127.0.0.1:8430/pose · POST http://127.0.0.1:8430/walk {keys,yaw?,pitch?,ticks?}
+[scrying-glass] child webview overlay created; render, capture, PNG, and HTTP run off the main thread
+[focus] t=1784414843639ms window="wgpu-surface" focused=true worker_window=false
+[n0c] net-present rig pooled (God's res): trace 640x480 → net 640x480 → nearest blit → surface 1920x1280 (307200 px)
+[hud] window.__gaiaHud && window.__gaiaHud(5.7,175.93)
+[hud] window.__gaiaHud && window.__gaiaHud(5.7,175.93)
+[hud] window.__gaiaHud && window.__gaiaHud(6.1,165.14)
+[hud] window.__gaiaHud && window.__gaiaHud(5.7,175.93)
+[hud] window.__gaiaHud && window.__gaiaHud(6.1,165.14)
+[n0i] frames=60 640x480→640x480 (ms median/p95 vs 16.67): trace 8.83/16.48 gather 1.12/4.11 net[wall 0.08/32.11 gpu 6.12/13.19 commit 0.01/0.04 wait 0.00/32.07] demod 0.09/0.14 present 0.24/0.82 TOTAL 15.65/47.62 | WALL-FPS 34.8
+[n0i] frames=120 640x480→640x480 (ms median/p95 vs 16.67): trace 8.30/15.25 gather 1.12/3.30 net[wall 0.07/19.66 gpu 6.34/10.74 commit 0.01/0.03 wait 0.00/19.61] demod 0.08/0.14 present 0.24/0.35 TOTAL 14.53/28.64 | WALL-FPS 41.9
+[n0i] frames=180 640x480→640x480 (ms median/p95 vs 16.67): trace 8.30/15.00 gather 1.12/3.05 net[wall 0.07/16.17 gpu 6.40/10.11 commit 0.01/0.02 wait 0.00/16.06] demod 0.08/0.14 present 0.24/0.33 TOTAL 14.43/26.21 | WALL-FPS 45.1
+[wgpu-input] passthrough click x=258.5 y=379.1
+[wgpu-input] passthrough click x=258.5 y=379.1
+[n0i] frames=240 640x480→640x480 (ms median/p95 vs 16.67): trace 8.19/15.25 gather 1.09/2.94 net[wall 0.05/15.42 gpu 6.43/9.74 commit 0.01/0.02 wait 0.00/15.39] demod 0.08/0.14 present 0.24/0.33 TOTAL 14.45/25.04 | WALL-FPS 46.8
+[n0i] frames=300 640x480→640x480 (ms median/p95 vs 16.67): trace 8.19/15.84 gather 1.08/2.80 net[wall 0.05/14.01 gpu 6.35/9.58 commit 0.01/0.02 wait 0.00/13.98] demod 0.08/0.14 present 0.23/0.32 TOTAL 14.42/24.71 | WALL-FPS 48.0
+[n0i] frames=360 640x480→640x480 (ms median/p95 vs 16.67): trace 8.33/16.38 gather 1.07/2.73 net[wall 0.05/13.97 gpu 6.38/9.73 commit 0.01/0.02 wait 0.00/13.94] demod 0.08/0.13 present 0.23/0.31 TOTAL 14.45/23.17 | WALL-FPS 48.2
+[n0i] frames=420 640x480→640x480 (ms median/p95 vs 16.67): trace 8.54/16.68 gather 1.07/2.72 net[wall 0.05/13.81 gpu 6.43/10.11 commit 0.01/0.02 wait 0.00/13.75] demod 0.08/0.13 present 0.23/0.31 TOTAL 14.66/23.58 | WALL-FPS 48.5
+[n0i] frames=480 640x480→640x480 (ms median/p95 vs 16.67): trace 8.65/16.57 gather 1.07/2.58 net[wall 0.06/13.74 gpu 6.52/10.30 commit 0.01/0.02 wait 0.00/13.72] demod 0.08/0.13 present 0.23/0.31 TOTAL 14.80/23.58 | WALL-FPS 48.7
+[n0i] frames=540 640x480→640x480 (ms median/p95 vs 16.67): trace 9.25/16.57 gather 1.06/2.33 net[wall 0.06/13.69 gpu 6.64/10.74 commit 0.01/0.02 wait 0.00/13.65] demod 0.08/0.13 present 0.23/0.31 TOTAL 14.98/23.97 | WALL-FPS 48.6
+[n0i] frames=600 640x480→640x480 (ms median/p95 vs 16.67): trace 9.77/16.62 gather 1.06/2.24 net[wall 0.06/13.74 gpu 6.92/11.23 commit 0.01/0.02 wait 0.00/13.72] demod 0.08/0.13 present 0.23/0.31 TOTAL 15.29/24.65 | WALL-FPS 48.5
+[n0i] frames=660 640x480→640x480 (ms median/p95 vs 16.67): trace 10.07/16.68 gather 1.06/2.16 net[wall 0.06/13.63 gpu 7.08/12.02 commit 0.01/0.02 wait 0.00/13.59] demod 0.08/0.14 present 0.23/0.31 TOTAL 15.56/24.97 | WALL-FPS 48.1
+[n0i] frames=720 640x480→640x480 (ms median/p95 vs 16.67): trace 10.43/16.78 gather 1.06/2.08 net[wall 0.06/13.59 gpu 7.19/12.68 commit 0.01/0.02 wait 0.00/13.56] demod 0.08/0.14 present 0.23/0.31 TOTAL 15.69/25.35 | WALL-FPS 47.7
+[n0i] frames=780 640x480→640x480 (ms median/p95 vs 16.67): trace 10.69/17.60 gather 1.06/2.09 net[wall 0.06/13.69 gpu 7.22/13.08 commit 0.01/0.02 wait 0.00/13.65] demod 0.08/0.14 present 0.23/0.31 TOTAL 16.12/25.78 | WALL-FPS 47.1
+[n0i] frames=840 640x480→640x480 (ms median/p95 vs 16.67): trace 11.00/18.18 gather 1.07/2.12 net[wall 0.07/13.68 gpu 7.29/13.11 commit 0.01/0.02 wait 0.00/13.65] demod 0.08/0.13 present 0.23/0.31 TOTAL 16.68/26.30 | WALL-FPS 46.6
+[focus] t=1784414862081ms window="wgpu-surface" focused=false worker_window=false
+[n0i] frames=900 640x480→640x480 (ms median/p95 vs 16.67): trace 11.17/18.37 gather 1.07/2.16 net[wall 0.07/13.75 gpu 7.35/13.09 commit 0.01/0.02 wait 0.00/13.72] demod 0.08/0.13 present 0.23/0.31 TOTAL 17.05/26.41 | WALL-FPS 46.3
+[n0i] frames=960 640x480→640x480 (ms median/p95 vs 16.67): trace 11.15/18.67 gather 1.07/2.16 net[wall 0.07/13.80 gpu 7.37/13.08 commit 0.01/0.02 wait 0.00/13.75] demod 0.08/0.14 present 0.23/0.31 TOTAL 17.22/26.48 | WALL-FPS 46.0
+[n0i] frames=1020 640x480→640x480 (ms median/p95 vs 16.67): trace 11.23/18.74 gather 1.07/2.12 net[wall 0.07/13.84 gpu 7.40/13.08 commit 0.01/0.02 wait 0.00/13.79] demod 0.08/0.14 present 0.22/0.31 TOTAL 17.64/26.56 | WALL-FPS 45.9
+[n0i] frames=1080 640x480→640x480 (ms median/p95 vs 16.67): trace 11.38/18.67 gather 1.07/2.09 net[wall 0.07/13.80 gpu 7.57/13.09 commit 0.01/0.02 wait 0.00/13.75] demod 0.08/0.14 present 0.22/0.30 TOTAL 17.68/26.48 | WALL-FPS 45.9
+[n0i] frames=1140 640x480→640x480 (ms median/p95 vs 16.67): trace 11.44/18.74 gather 1.07/2.10 net[wall 0.07/13.94 gpu 7.54/13.19 commit 0.01/0.02 wait 0.00/13.90] demod 0.08/0.14 present 0.22/0.30 TOTAL 17.80/26.76 | WALL-FPS 45.7
+[n0i] frames=1200 640x480→640x480 (ms median/p95 vs 16.67): trace 11.52/18.86 gather 1.07/2.09 net[wall 0.07/14.03 gpu 7.63/13.35 commit 0.01/0.02 wait 0.00/13.98] demod 0.08/0.14 present 0.21/0.30 TOTAL 17.90/27.01 | WALL-FPS 45.6
+[focus] t=1784414870079ms window="wgpu-surface" focused=true worker_window=false
+[activation] t=1784414870080ms event=Reopen has_visible_windows=true

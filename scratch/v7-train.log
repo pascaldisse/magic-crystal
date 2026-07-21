@@ -1,0 +1,30 @@
+    Finished `release` profile [optimized] target(s) in 0.22s
+     Running `target/release/examples/rdirect_train_v7`
+[v7] rendered 3+1 SPLIT poses (K=4, 640x480, teacher 96, D-blur r=2) in 2.6s
+[v7] arch RdirectConfig { hidden_layers: 5, hidden_width: 64 } in=39 macs/px=19072 — 120 epochs (wall<=660s), subsample 6000px/pose, PLAIN MSE vs split-smoothed target
+[v7] MONITOR epoch -1 (fresh init): val sparkle 0.0/Mpx resid 0.1304
+[v7] epoch 0/120 mse=0.022689 (5.0s)
+[v7] MONITOR epoch 9: val sparkle 306.0/Mpx resid 0.0413 (tgt sp<16 resid<0.036) *BEST->saved
+[v7] epoch 10/120 mse=0.018902 (69.6s)
+[v7] MONITOR epoch 19: val sparkle 136.7/Mpx resid 0.0369 (tgt sp<16 resid<0.036) *BEST->saved
+[v7] epoch 20/120 mse=0.017664 (135.9s)
+[v7] MONITOR epoch 29: val sparkle 100.9/Mpx resid 0.0360 (tgt sp<16 resid<0.036) *BEST->saved
+[v7] epoch 30/120 mse=0.017988 (200.2s)
+[v7] MONITOR epoch 39: val sparkle 244.1/Mpx resid 0.0340 (tgt sp<16 resid<0.036)
+[v7] epoch 40/120 mse=0.013362 (264.7s)
+[v7] MONITOR epoch 49: val sparkle 224.6/Mpx resid 0.0347 (tgt sp<16 resid<0.036)
+[v7] epoch 50/120 mse=0.014090 (329.1s)
+[v7] MONITOR epoch 59: val sparkle 263.7/Mpx resid 0.0350 (tgt sp<16 resid<0.036)
+[v7] epoch 60/120 mse=0.013141 (393.6s)
+[v7] MONITOR epoch 69: val sparkle 192.1/Mpx resid 0.0328 (tgt sp<16 resid<0.036)
+[v7] epoch 70/120 mse=0.013306 (458.7s)
+[v7] MONITOR epoch 79: val sparkle 224.6/Mpx resid 0.0338 (tgt sp<16 resid<0.036)
+[v7] epoch 80/120 mse=0.013449 (524.1s)
+[v7] MONITOR epoch 89: val sparkle 149.7/Mpx resid 0.0339 (tgt sp<16 resid<0.036)
+[v7] epoch 90/120 mse=0.010713 (589.7s)
+[v7] MONITOR epoch 99: val sparkle 283.2/Mpx resid 0.0338 (tgt sp<16 resid<0.036)
+[v7] epoch 100/120 mse=0.014079 (655.2s)
+[v7] WALL budget 660s reached at epoch 102 — stopping, keeping best
+[v7] training done in 660.4s (best: pass=false resid inf / fallback sparkle 100.9)
+[v7] wrote /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/data/rdirect-weights-v7.bin sha256=ba701a929d1db6858e038264b27ff26d0748d61a95dba9fcba5af887eb883edf
+[v7] wrote provenance. NEXT: real_image_ordeal (GAIA_ORDEAL_WEIGHTS=v7) to earn the stamp.

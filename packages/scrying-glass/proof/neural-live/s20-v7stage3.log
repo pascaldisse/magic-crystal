@@ -1,0 +1,26 @@
+[package] scrying-glass v0.1.0 registered
+[world] /Users/pascaldisse/projects/magic-crystal-neural-live/worlds/naruko scene(s)=["main"] entities=45 chains=23 clusters=913 transmute=94.7ms
+[embodiment] spawn eye=Vec3(0.0, 7.0, 44.0) yaw=0 floor_triangles=10464 tick_dt=0.016666668
+[pleroma] BVH nodes=15487 triangles=23192 (static 12368 + dynamic 10824) build=12.7ms; 22 dynamic entit(ies) — living layer
+[pleroma] traced integrator spp=2 bounces=4 rr_start=2 — first_light is dead
+[wgpu] traced 640x480 → upscale → surface 960x640 (bilinear); Bgra8UnormSrgb
+[frame] trace 640x480 → offscreen 960x640: median 7.35ms mean 7.62ms/frame (spp=2, 60-frame sample)
+[scry] GET http://127.0.0.1:8433/scry (alias: /screenshot; optional pos/yaw/pitch/fov/w/h)
+[embodiment] GET http://127.0.0.1:8433/pose · POST http://127.0.0.1:8433/walk {keys,yaw?,pitch?,ticks?}
+[offscreen] GAIA_NATIVE_OFFSCREEN=true: NO NSWindow — rendering to offscreen 960x640; /scry (?eye=belief|presented), /budget, /state on http://127.0.0.1:8433
+[n0c] net-present rig pooled (God's res): trace 640x480 → net 640x480 → nearest blit → surface 960x640 (307200 px)
+
+thread 'main' (446600) panicked at /Users/pascaldisse/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-30.0.0/src/backend/wgpu_core.rs:2678:18:
+wgpu error: Validation Error
+
+Caused by:
+  In a CommandEncoder, label = 'net trace: clear+accum'
+    Usage flags BufferUsages(COPY_SRC | STORAGE) of Buffer with 'integrator split radiance' label do not contain required usage flags BufferUsages(COPY_DST)
+
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+=== /budget (v7stage3) ===
+
+=== /state (v7stage3) ===
+
+=== wall-fps tail (v7stage3) ===

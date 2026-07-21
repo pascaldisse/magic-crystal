@@ -1,0 +1,55 @@
+{
+  "architecture": {
+    "feature_layout": "2x2 low-res 1spp demod-log radiance taps(12) + subpixel(2) + hi-res albedo(3) + normal(3) + log-depth(1) + motion(2, zero in static dataset)",
+    "hidden_layers": 5,
+    "hidden_width": 64,
+    "input_features": 23,
+    "kind": "direct-render per-target-pixel MLP (denoise+upscale fused, absolute output)",
+    "macs_per_pixel": 18048,
+    "output_channels": 3
+  },
+  "artifact": "rdirect-weights-v1.bin",
+  "dataset": {
+    "low": [
+      48,
+      32
+    ],
+    "native": [
+      96,
+      64
+    ],
+    "realm": "naruko",
+    "ref_frames": 128,
+    "scale": 2,
+    "scene_edit_gate": "front_edit (block displaced)",
+    "train": [
+      "front",
+      "wide",
+      "orbit_+20"
+    ],
+    "val": [
+      "orbit_-20",
+      "orbit_+40"
+    ]
+  },
+  "gate_b_cost": {
+    "chain_mac_per_native_px": 14696,
+    "cpu_ref_ms_chain": 178.26287499999998,
+    "cpu_ref_ms_net": 174.146875,
+    "net_mac_per_native_px": 18048
+  },
+  "net_beats_chain_all_heldout": true,
+  "pinned_bound": {
+    "description": "worst held-out (val+edit) net RMSE vs reference",
+    "value": 0.04045265682677536
+  },
+  "training": {
+    "batch": 64,
+    "epochs": 160,
+    "init_seed": 13721325,
+    "lr0": 0.0020000000949949026,
+    "lr_schedule": "harmonic decay lr0/(1+2*frac)",
+    "optimizer": "adam"
+  },
+  "weights_sha256": "4f25cdb1a6835c4d8c9e956b4ae5772ee2f47e1c17c37f315c08ab8906ce142a"
+}

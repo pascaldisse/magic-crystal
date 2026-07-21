@@ -317,7 +317,11 @@ pub struct Integrator {
     // "VIII-0 AOV EXPORT" block and the AOV-off golden-hash ordeal).
     pub aov_pipeline: wgpu::ComputePipeline,
     pub aov_layout: wgpu::BindGroupLayout,
-    // ── VIII-0 AOV EXPORT END ────────────────────────────────────────────
+    // ── VIII-0 AOV EXPORT END ─────────────────────────────────────
+    // ── N5 SIGNED EVIDENCE: split-radiance export (own @group(1) buffer +
+    // pipeline, same shape as AOV) ──
+    pub split_pipeline: wgpu::ComputePipeline,
+    pub split_layout: wgpu::BindGroupLayout,
     // ── LIGHT-NOT-DOTS: temporal accumulation ──
     // Two more split pipelines over the SAME @group(0) plus a shared @group(1)
     // of five storage buffers. When temporal accumulation is off neither is
@@ -438,7 +442,26 @@ impl Integrator {
             label: Some("integrator aov layout"),
             entries: &[storage_entry(0, false, wgpu::ShaderStages::COMPUTE)],
         });
-        // ── VIII-0 AOV EXPORT END ──────────────────────────────────────────
+        // ── VIII-0 AOV EXPORT END ─────────────────────────────────
+        // N5 split-radiance @group(1): one read_write buffer (2 cells/pixel).
+        let split_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("integrator split layout"),
+            entries: &[storage_entry(0, false, wgpu::ShaderStages::COMPUTE)],
+        });
+        let split_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("integrator split pipeline layout"),
+                bind_group_layouts: &[Some(&compute_layout), Some(&split_layout)],
+                immediate_size: 0,
+            });
+        let split_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("integrator split pipeline"),
+            layout: Some(&split_pipeline_layout),
+            module: &shader,
+            entry_point: Some("integrate_split"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
+        });
 
         // The three pipelines (compute / blit / aov) are built by the SHARED
         // `build_pipelines` — the SAME path das Blutbändigen's shader bend
@@ -505,6 +528,8 @@ impl Integrator {
             tri_count: bvh.tris.len() as u32,
             aov_pipeline,
             aov_layout,
+            split_pipeline,
+            split_layout,
             temporal_integrate_pipeline,
             temporal_resolve_pipeline,
             temporal_layout,
@@ -839,6 +864,62 @@ impl Integrator {
         pass.dispatch_workgroups(width.div_ceil(8), height.div_ceil(8), 1);
     }
     // ── VIII-0 AOV EXPORT END ──────────────────────────────────────────────
+
+    // ── N5 SIGNED EVIDENCE: split-radiance export ──
+    /// Allocate a split-radiance buffer: 2 `vec4<f32>` cells per pixel
+    /// (E sum+count, D sum+count). Accumulated across frames like `accum`.
+    pub fn make_split_buffer(&self, device: &wgpu::Device, width: u32, height: u32) -> wgpu::Buffer {
+        let cells = (width as u64) * (height as u64);
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("integrator split radiance"),
+            size: (cells.max(1)) * ACCUM_CELL * 2,
+            // V7-LIVE LANE STAGE 3: COPY_DST is required by `NetPresent`'s live
+            // trace stage, which `clear_buffer`s this every frame (like the
+            // composite `net_accum` buffer already does) before re-accumulating
+            // — a real gap surfaced only once Stage 3 actually drove this buffer
+            // through the live app for the first time (Stage 1 was
+            // additive/observational and never previously exercised this path
+            // end-to-end; probes construct their own single-shot buffers and
+            // rely on wgpu's implicit zero-init instead of an explicit clear).
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        })
+    }
+
+    /// @group(1) bind group for the split pipeline (the accum_ed buffer alone).
+    pub fn split_bind_group(&self, device: &wgpu::Device, split: &wgpu::Buffer) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("integrator split bind group"),
+            layout: &self.split_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: split.as_entire_binding(),
+            }],
+        })
+    }
+
+    /// Dispatch one split-radiance accumulation frame into `accum_ed`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn dispatch_split(
+        &self,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        uniform: &IntegratorUniform,
+        compute_bg: &wgpu::BindGroup,
+        split_bg: &wgpu::BindGroup,
+        width: u32,
+        height: u32,
+    ) {
+        queue.write_buffer(&self.uniform_buf, 0, bytemuck::bytes_of(uniform));
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("integrate split"),
+            timestamp_writes: None,
+        });
+        pass.set_pipeline(&self.split_pipeline);
+        pass.set_bind_group(0, compute_bg, &[]);
+        pass.set_bind_group(1, split_bg, &[]);
+        pass.dispatch_workgroups(width.div_ceil(8), height.div_ceil(8), 1);
+    }
 
     pub fn compute_bind_group(
         &self,
@@ -1235,6 +1316,84 @@ pub fn split_aov(raw: &[[f32; 4]]) -> (Vec<Vec3>, Vec<Vec3>, Vec<f32>) {
     (albedo, normal, depth)
 }
 // ── VIII-0 AOV EXPORT END ──────────────────────────────────────────────────
+
+// ── N5 SIGNED EVIDENCE: split-radiance trace ──
+/// Trace `frames` accumulation frames and read back the SPLIT radiance:
+/// returns (E, D) resolved images (radiance per pixel). E = direct/specular-
+/// chain evidence (sharp), D = post-diffuse-bounce evidence (noisy). E + D
+/// equals `trace_headless`'s total, term for term. The trainer / ordeal feed
+/// both as the net's two radiance channels; the teacher target stays the
+/// converged total (rendered by the ordinary `trace_headless`).
+#[allow(clippy::too_many_arguments)]
+pub fn trace_headless_split(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    bvh: &Bvh,
+    camera: &Camera,
+    sun: &SunLight,
+    sky_top: [f32; 4],
+    sky_horizon: [f32; 4],
+    width: u32,
+    height: u32,
+    frames: u32,
+    params: &IntegratorParams,
+) -> (Vec<Vec3>, Vec<Vec3>) {
+    let integrator = Integrator::new(device, wgpu::TextureFormat::Rgba8UnormSrgb, bvh, None);
+    let accum = integrator.make_accum(device, width, height);
+    let split = integrator.make_split_buffer(device, width, height);
+    let compute_bg = integrator.compute_bind_group(device, &accum);
+    let split_bg = integrator.split_bind_group(device, &split);
+
+    let mut samples_before = 0u32;
+    for _ in 0..frames {
+        let uniform = IntegratorUniform::build(
+            camera, sun, sky_top, sky_horizon, width, height,
+            integrator.node_count, integrator.tri_count, samples_before, params, None,
+        );
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("headless split integrate"),
+        });
+        integrator.dispatch_split(queue, &mut encoder, &uniform, &compute_bg, &split_bg, width, height);
+        queue.submit(Some(encoder.finish()));
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        samples_before += params.spp;
+    }
+
+    let cells = (width as u64) * (height as u64);
+    let readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("headless split readback"),
+        size: cells * ACCUM_CELL * 2,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("headless split copy"),
+    });
+    encoder.copy_buffer_to_buffer(&split, 0, &readback, 0, cells * ACCUM_CELL * 2);
+    let (tx, rx) = std::sync::mpsc::channel();
+    encoder.map_buffer_on_submit(&readback, wgpu::MapMode::Read, .., move |r| {
+        let _ = tx.send(r.map(|_| ()));
+    });
+    queue.submit(Some(encoder.finish()));
+    let _ = device.poll(wgpu::PollType::wait_indefinitely());
+    rx.recv().expect("readback channel").expect("map readback");
+    let mapped = readback.get_mapped_range(..).expect("mapped readback");
+    let raw: Vec<[f32; 4]> = bytemuck::cast_slice(&mapped).to_vec();
+    drop(mapped);
+    readback.unmap();
+    let n = raw.len() / 2;
+    let mut e = Vec::with_capacity(n);
+    let mut d = Vec::with_capacity(n);
+    for i in 0..n {
+        let ce = raw[2 * i];
+        let cd = raw[2 * i + 1];
+        let se = ce[3].max(1.0);
+        let sd = cd[3].max(1.0);
+        e.push(Vec3::new(ce[0] / se, ce[1] / se, ce[2] / se));
+        d.push(Vec3::new(cd[0] / sd, cd[1] / sd, cd[2] / sd));
+    }
+    (e, d)
+}
 
 /// Convenience: the linear resolved image (radiance per pixel) from an accum
 /// readback (sum ÷ samples).

@@ -1,0 +1,30 @@
+[v5]   pose dark_ceiling=0.1413 (pct 0.8) gate ON for 133214/172800 px (77%)
+[v5]   pose dark_ceiling=0.0551 (pct 0.8) gate ON for 122578/172800 px (71%)
+[v5]   pose dark_ceiling=0.1416 (pct 0.8) gate ON for 132842/172800 px (77%)
+[v5]   pose dark_ceiling=0.1328 (pct 0.8) gate ON for 133483/172800 px (77%)
+[v5] rendered 3+1 poses (K=4, 480x360, teacher 96, cap 5×5 margin 0.05, ff_w 15, dark_pct 0.8) in 1.6s
+[v5] RESUMED from /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/data/rdirect-weights-v5.bin
+[v5] arch RdirectConfig { hidden_layers: 5, hidden_width: 64 } in=27 macs/px=18304 — training 90 epochs, subsample 6000px/pose
+[v5] MONITOR epoch -1 (start=v3): val sparkle 75.2/Mpx resid 0.0394
+[v5] epoch 0/90 mse=0.021194 ff=0.000058 (4.7s)
+[v5] MONITOR epoch 9: val sparkle 40.5/Mpx resid 0.0411 (tgt sp<16 resid<0.036) *BEST→saved
+[v5] epoch 10/90 mse=0.020026 ff=0.000044 (59.6s)
+[v5] MONITOR epoch 19: val sparkle 329.9/Mpx resid 0.0358 (tgt sp<16 resid<0.036)
+[v5] epoch 20/90 mse=0.019185 ff=0.000014 (114.6s)
+[v5] MONITOR epoch 29: val sparkle 63.7/Mpx resid 0.0379 (tgt sp<16 resid<0.036)
+[v5] epoch 30/90 mse=0.019309 ff=0.000023 (169.5s)
+[v5] MONITOR epoch 39: val sparkle 167.8/Mpx resid 0.0374 (tgt sp<16 resid<0.036)
+[v5] epoch 40/90 mse=0.018559 ff=0.000103 (224.7s)
+[v5] MONITOR epoch 49: val sparkle 185.2/Mpx resid 0.0356 (tgt sp<16 resid<0.036)
+[v5] epoch 50/90 mse=0.019611 ff=0.000016 (279.8s)
+[v5] MONITOR epoch 59: val sparkle 52.1/Mpx resid 0.0366 (tgt sp<16 resid<0.036)
+[v5] epoch 60/90 mse=0.018949 ff=0.000014 (335.2s)
+[v5] MONITOR epoch 69: val sparkle 318.3/Mpx resid 0.0373 (tgt sp<16 resid<0.036)
+[v5] epoch 70/90 mse=0.021273 ff=0.000053 (390.8s)
+[v5] MONITOR epoch 79: val sparkle 196.8/Mpx resid 0.0351 (tgt sp<16 resid<0.036)
+[v5] epoch 80/90 mse=0.018056 ff=0.000011 (447.3s)
+[v5] epoch 89/90 mse=0.016181 ff=0.000028 (490.7s)
+[v5] MONITOR epoch 89: val sparkle 156.2/Mpx resid 0.0352 (tgt sp<16 resid<0.036)
+[v5] training done in 499.0s (best combined: pass=false resid inf / fallback sparkle 40.5)
+[v5] wrote /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/data/rdirect-weights-v5.bin sha256=01b67a4550f84a2511d32ce5e8b9131a8963add7b9d92267f7d7956fa556da40
+[v5] wrote provenance. NEXT: run `real_image_ordeal` (GAIA_ORDEAL_WEIGHTS=v5) to earn the stamp.

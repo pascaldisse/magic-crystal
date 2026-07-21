@@ -1,0 +1,50 @@
+{
+  "architecture": {
+    "hidden_layers": 5,
+    "hidden_width": 64,
+    "input_features": 23,
+    "kind": "direct-render per-target-pixel MLP (denoise+upscale fused, absolute output) — SAME arch as v1",
+    "macs_per_pixel": 18048,
+    "output_channels": 3
+  },
+  "artifact": "rdirect-weights-v2.bin",
+  "dataset": {
+    "low": [
+      320,
+      240
+    ],
+    "native": [
+      640,
+      480
+    ],
+    "realm": "naruko",
+    "ref_frames": 128,
+    "scale": 2,
+    "scene_edit_gate": "front_edit (block displaced)",
+    "train": [
+      "front",
+      "wide",
+      "orbit_+20"
+    ],
+    "val": [
+      "orbit_-20",
+      "orbit_+40"
+    ]
+  },
+  "pinned_bound": {
+    "description": "worst held-out (val+edit) v2 RMSE vs reference",
+    "value": 0.03900237874407213
+  },
+  "supersedes": "rdirect-weights-v1.bin",
+  "training": {
+    "batch": 64,
+    "epochs": 40,
+    "init_seed": 899240755202,
+    "lr0": 0.0020000000949949026,
+    "lr_schedule": "harmonic decay lr0/(1+2*frac)",
+    "note": "per-epoch random pixel subset (data=f(seed)) to bound wall-clock at 640x480",
+    "optimizer": "adam",
+    "subsample_px_per_frame_per_epoch": 25000
+  },
+  "weights_sha256": "1746e98da7bbb110abb87956f58aad50e04cbe9920fa7ed931d51fffb4e775c0"
+}

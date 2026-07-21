@@ -1,0 +1,18 @@
+[ordeal] orbit_-20 STILL: resid=0.04734 sparkle=32.6/Mpx (teacher 0.0) tvar=6.123e-6
+[ordeal] orbit_-20 PAN mid: resid_hist=0.04748 resid_single=0.04696 ghost_excess=+0.00052
+[ordeal] orbit_+40 STILL: resid=0.05463 sparkle=45.6/Mpx (teacher 0.0) tvar=6.458e-6
+[ordeal] orbit_+40 PAN mid: resid_hist=0.05457 resid_single=0.05405 ghost_excess=+0.00052
+[ordeal] wrote /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/proof/neural-live/s21-still.png
+[ordeal] wrote /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/proof/neural-live/s21-still-teacher.png
+[ordeal] wrote /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/proof/neural-live/s21-moving.png
+[ordeal] wrote /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/proof/neural-live/s21-moving-teacher.png
+
+[ordeal] ===== REAL-IMAGE BAR ===== (751.2s)
+  resid_still         0.05099  bar    0.03500  FAIL  (distance to bar +0.01599)
+  sparkle_still      39.06250  bar   40.00000  PASS  (distance to bar -0.93750)
+  tvar_still          0.00001  bar    0.00050  PASS  (distance to bar -0.00049)
+  resid_move          0.05102  bar    0.06000  PASS  (distance to bar -0.00898)
+  ghost_excess        0.00052  bar    0.01200  PASS  (distance to bar -0.01148)
+  (teacher sparkle 0.0/Mpx — reference floor)
+
+[ordeal] VERDICT: FAIL — NO stamp — the window is BLACK by law (real or black).

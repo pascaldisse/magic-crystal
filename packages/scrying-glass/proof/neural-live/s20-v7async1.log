@@ -1,0 +1,37 @@
+[package] scrying-glass v0.1.0 registered
+[world] /Users/pascaldisse/projects/magic-crystal-neural-live/worlds/naruko scene(s)=["main"] entities=45 chains=23 clusters=913 transmute=98.7ms
+[embodiment] spawn eye=Vec3(0.0, 7.0, 44.0) yaw=0 floor_triangles=10464 tick_dt=0.016666668
+[pleroma] BVH nodes=15487 triangles=23192 (static 12368 + dynamic 10824) build=12.9ms; 22 dynamic entit(ies) — living layer
+[pleroma] traced integrator spp=2 bounces=4 rr_start=2 — first_light is dead
+[wgpu] traced 640x480 → upscale → surface 960x640 (bilinear); Bgra8UnormSrgb
+[frame] trace 640x480 → offscreen 960x640: median 7.44ms mean 7.77ms/frame (spp=2, 60-frame sample)
+[scry] GET http://127.0.0.1:8470/scry (alias: /screenshot; optional pos/yaw/pitch/fov/w/h)
+[embodiment] GET http://127.0.0.1:8470/pose · POST http://127.0.0.1:8470/walk {keys,yaw?,pitch?,ticks?}
+[offscreen] GAIA_NATIVE_OFFSCREEN=true: NO NSWindow — rendering to offscreen 960x640; /scry (?eye=belief|presented), /budget, /state on http://127.0.0.1:8470
+[n0c] net-present rig pooled (God's res): trace 640x480 → net 640x480 → nearest blit → surface 960x640 (307200 px)
+[n0i] frames=60 640x480→640x480 (ms median/p95 vs 16.67): trace 0.18/0.30 gather 15.32/25.75 net[wall 2.63/27.47 gpu 7.62/13.43 commit 0.01/0.02 wait 2.60/27.43] demod 0.26/0.33 present 0.08/0.11 TOTAL 22.96/39.05 | WALL-FPS 31.8
+[n0i] frames=120 640x480→640x480 (ms median/p95 vs 16.67): trace 0.21/0.34 gather 17.33/25.75 net[wall 0.13/18.01 gpu 7.27/13.48 commit 0.01/0.03 wait 0.01/17.96] demod 0.29/0.67 present 0.09/0.19 TOTAL 22.91/34.34 | WALL-FPS 33.6
+[n0i] frames=180 640x480→640x480 (ms median/p95 vs 16.67): trace 0.23/0.45 gather 18.10/25.30 net[wall 0.11/14.61 gpu 7.14/13.53 commit 0.01/0.03 wait 0.00/14.58] demod 0.31/0.86 present 0.10/0.30 TOTAL 22.99/33.34 | WALL-FPS 34.6
+[n0i] frames=240 640x480→640x480 (ms median/p95 vs 16.67): trace 0.23/0.45 gather 16.77/24.18 net[wall 0.11/14.25 gpu 7.00/13.42 commit 0.01/0.03 wait 0.00/14.23] demod 0.32/0.86 present 0.10/0.27 TOTAL 21.91/32.56 | WALL-FPS 36.6
+[n0i] frames=300 640x480→640x480 (ms median/p95 vs 16.67): trace 0.22/0.40 gather 15.89/23.27 net[wall 0.11/14.61 gpu 6.84/12.99 commit 0.01/0.03 wait 0.00/14.58] demod 0.32/0.83 present 0.10/0.23 TOTAL 21.19/31.32 | WALL-FPS 38.4
+[n0i] frames=360 640x480→640x480 (ms median/p95 vs 16.67): trace 0.22/0.39 gather 14.78/23.06 net[wall 0.23/14.25 gpu 6.79/12.74 commit 0.01/0.03 wait 0.01/14.23] demod 0.32/0.83 present 0.10/0.23 TOTAL 19.95/30.58 | WALL-FPS 39.8
+[n0i] frames=420 640x480→640x480 (ms median/p95 vs 16.67): trace 0.22/0.39 gather 13.93/22.84 net[wall 0.29/13.60 gpu 6.75/12.37 commit 0.01/0.03 wait 0.05/13.52] demod 0.31/0.79 present 0.09/0.23 TOTAL 19.24/28.70 | WALL-FPS 41.0
+[n0i] frames=480 640x480→640x480 (ms median/p95 vs 16.67): trace 0.22/0.37 gather 13.33/22.52 net[wall 1.17/12.67 gpu 6.77/11.82 commit 0.01/0.03 wait 1.13/12.60] demod 0.31/0.73 present 0.09/0.22 TOTAL 18.71/28.49 | WALL-FPS 42.0
+[n0i] frames=540 640x480→640x480 (ms median/p95 vs 16.67): trace 0.22/0.36 gather 12.95/22.37 net[wall 1.68/12.51 gpu 6.70/11.69 commit 0.01/0.03 wait 1.57/12.40] demod 0.31/0.70 present 0.09/0.21 TOTAL 17.99/28.28 | WALL-FPS 42.9
+[n0i] frames=600 640x480→640x480 (ms median/p95 vs 16.67): trace 0.22/0.36 gather 12.46/22.13 net[wall 2.04/12.35 gpu 6.68/11.39 commit 0.01/0.03 wait 1.98/12.31] demod 0.31/0.69 present 0.09/0.20 TOTAL 17.61/27.83 | WALL-FPS 43.6
+[n0i] frames=660 640x480→640x480 (ms median/p95 vs 16.67): trace 0.22/0.35 gather 12.15/21.92 net[wall 2.11/12.10 gpu 6.65/11.19 commit 0.01/0.03 wait 2.08/12.05] demod 0.31/0.66 present 0.09/0.19 TOTAL 17.06/27.58 | WALL-FPS 44.2
+[n0i] frames=720 640x480→640x480 (ms median/p95 vs 16.67): trace 0.22/0.35 gather 11.84/21.62 net[wall 2.15/12.15 gpu 6.57/11.06 commit 0.01/0.03 wait 2.10/12.06] demod 0.31/0.66 present 0.09/0.19 TOTAL 16.82/27.20 | WALL-FPS 44.7
+[n0i] frames=780 640x480→640x480 (ms median/p95 vs 16.67): trace 0.22/0.35 gather 11.51/21.39 net[wall 2.11/12.17 gpu 6.54/10.87 commit 0.01/0.03 wait 2.05/12.12] demod 0.31/0.64 present 0.09/0.19 TOTAL 16.58/27.01 | WALL-FPS 45.0
+[n0i] frames=840 640x480→640x480 (ms median/p95 vs 16.67): trace 0.22/0.34 gather 11.31/21.06 net[wall 2.32/12.10 gpu 6.54/10.75 commit 0.01/0.03 wait 2.27/12.05] demod 0.31/0.64 present 0.09/0.18 TOTAL 16.46/26.71 | WALL-FPS 45.4
+[n0i] frames=900 640x480→640x480 (ms median/p95 vs 16.67): trace 0.22/0.33 gather 11.16/20.91 net[wall 2.45/12.10 gpu 6.53/10.66 commit 0.01/0.03 wait 2.42/12.05] demod 0.31/0.63 present 0.09/0.18 TOTAL 16.34/26.55 | WALL-FPS 45.7
+[n0i] frames=960 640x480→640x480 (ms median/p95 vs 16.67): trace 0.22/0.33 gather 11.05/20.81 net[wall 2.50/12.10 gpu 6.51/10.54 commit 0.01/0.03 wait 2.45/12.05] demod 0.31/0.62 present 0.09/0.18 TOTAL 16.27/26.20 | WALL-FPS 45.9
+[n0i] frames=1020 640x480→640x480 (ms median/p95 vs 16.67): trace 0.22/0.33 gather 11.04/20.71 net[wall 2.47/12.02 gpu 6.51/10.37 commit 0.01/0.03 wait 2.43/11.99] demod 0.31/0.62 present 0.09/0.18 TOTAL 16.34/26.08 | WALL-FPS 45.9
+[n0i] frames=1080 640x480→640x480 (ms median/p95 vs 16.67): trace 0.22/0.33 gather 11.11/20.59 net[wall 2.42/11.97 gpu 6.49/10.29 commit 0.01/0.03 wait 2.36/11.88] demod 0.31/0.62 present 0.09/0.18 TOTAL 16.34/25.90 | WALL-FPS 46.0
+[n0i] frames=1140 640x480→640x480 (ms median/p95 vs 16.67): trace 0.22/0.33 gather 11.19/20.23 net[wall 2.20/11.97 gpu 6.49/10.19 commit 0.01/0.03 wait 2.16/11.88] demod 0.31/0.61 present 0.09/0.18 TOTAL 16.33/25.90 | WALL-FPS 46.0
+[n0i] frames=1200 640x480→640x480 (ms median/p95 vs 16.67): trace 0.22/0.34 gather 11.25/20.11 net[wall 2.08/11.90 gpu 6.46/10.17 commit 0.01/0.03 wait 2.03/11.85] demod 0.31/0.63 present 0.09/0.18 TOTAL 16.34/25.90 | WALL-FPS 45.9
+[frame_csv] wrote 1258 rows to packages/scrying-glass/proof/neural-live/s20-v7async1.frames.csv
+[n0i] frames=1260 640x480→640x480 (ms median/p95 vs 16.67): trace 0.22/0.34 gather 11.25/19.73 net[wall 2.09/12.02 gpu 6.45/10.19 commit 0.01/0.03 wait 2.03/11.97] demod 0.31/0.63 present 0.09/0.18 TOTAL 16.36/25.90 | WALL-FPS 45.8
+.342,25.854]},"outside":{"world":[2.733,5.938],"readback":[0.000,0.000],"http":[0.912,2.145],"loop_total":[20.625,30.228]},"world_stages":{"skin":[1.076,2.388],"command":[0.848,1.318],"tick":[0.208,1.152],"kami":[0.040,0.070],"apply":[0.016,0.028],"physics":[0.119,1.058],"rederive":[0.028,0.045],"solver_step":[0.080,1.008],"poll":[0.034,0.056],"gather":[0.098,0.152],"splice":[0.267,0.424],"upload":[0.622,0.893]}}
+=== /state (v7async1) ===
+{"path":"mpsgraph","canvas":[640,480],"pixels":307200,"frames":1255,"weights":"rdirect-weights-v7","in_features":39,"out_channels":3,"max_pixels":307200}
+=== wall-fps tail (v7async1) ===

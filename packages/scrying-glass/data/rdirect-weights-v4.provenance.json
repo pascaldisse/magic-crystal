@@ -1,0 +1,50 @@
+{
+  "architecture": {
+    "hidden_layers": 5,
+    "hidden_width": 64,
+    "input_features": 27,
+    "kind": "N3 recurrent direct-render MLP — v3 arch + SPATIAL FIREFLY LOSS",
+    "macs_per_pixel": 18304,
+    "output_channels": 3
+  },
+  "artifact": "rdirect-weights-v4.bin",
+  "dataset": {
+    "low": [
+      240,
+      180
+    ],
+    "native": [
+      480,
+      360
+    ],
+    "realm": "naruko",
+    "train": [
+      "front",
+      "wide",
+      "orbit_+20"
+    ],
+    "val": [
+      "orbit_-20"
+    ]
+  },
+  "gate": "presents ONLY if real_image_ordeal writes a PASS stamp beside this file",
+  "supersedes": "rdirect-weights-v3.bin",
+  "training": {
+    "batch": 64,
+    "epochs": 64,
+    "firefly_loss": {
+      "cap_margin": 0.05000000074505806,
+      "cap_window": 5,
+      "form": "MSE + ff_w·Σ_c relu(out_c − teacher_kxk_max_c − margin)² in demod-log space",
+      "note": "penalises isolated bright outliers over dark teacher neighbourhoods; bright edges (high cap) free",
+      "weight_ff": 15.0
+    },
+    "lr0": 0.0020000000949949026,
+    "monitor": "ordeal sparkle metric on held-out val pose orbit_-20, early-stop under bar with margin",
+    "ref_frames": 96,
+    "subsample_px_per_pose_per_epoch": 6000,
+    "unroll_steps": 4,
+    "warm_start": "v3"
+  },
+  "weights_sha256": "2cc827a76f7b0662a7d24262c7576d679c07f6b32f4bcb48532646ce2c2037a9"
+}

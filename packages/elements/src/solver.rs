@@ -97,6 +97,15 @@ pub struct SolverConfig {
     /// Polar-decomposition dials for rigid shape matching (P2). Default
     /// [`PolarConfig::default`].
     pub polar: PolarConfig,
+    /// S16 ISLAND SLEEP — the rest velocity threshold (m/s). A non-anchor
+    /// particle is "quiet" this tick when its speed is below this; an island
+    /// all-quiet for `sleep_frames` consecutive ticks sleeps (skipped whole).
+    /// IRON param (`GAIA_NATIVE_SLEEP_VEL`). Default `0.03`. Only consulted
+    /// when sleep is enabled (`Solver::set_sleep`); off = byte-unchanged.
+    pub sleep_vel: f64,
+    /// S16 ISLAND SLEEP — consecutive quiet ticks before an island sleeps.
+    /// IRON param (`GAIA_NATIVE_SLEEP_FRAMES`). Default `24`.
+    pub sleep_frames: u32,
 }
 
 impl Default for SolverConfig {
@@ -109,6 +118,8 @@ impl Default for SolverConfig {
             fracture_threshold: 1.0e4,
             seed: 0,
             polar: PolarConfig::default(),
+            sleep_vel: 0.03,
+            sleep_frames: 24,
         }
     }
 }
@@ -191,6 +202,29 @@ pub struct Solver {
     /// [`Solver::calibrate_fluid_rest_density`] once `ρ₀` is known. `0.0` until
     /// calibrated; index-aligned with `fluid_boundary`.
     pub fluid_boundary_psi: Vec<f64>,
+    /// S16 ISLAND SLEEP — master switch. `false` (default) leaves `step`
+    /// BYTE-UNCHANGED (every sleep branch is gated on this AND a set asleep
+    /// flag, both false). Enable per-solver with [`Solver::set_sleep`]; the
+    /// scrying-glass `Physics` layer flips it from `GAIA_NATIVE_SLEEP`.
+    sleep_enabled: bool,
+    /// Per-particle: this particle is frozen this tick (integrate + every
+    /// solve skip it, velocity held 0). Set by island maintenance, cleared on
+    /// wake. Empty/all-false ⇒ nothing asleep.
+    asleep: Vec<bool>,
+    /// Per-particle: consecutive quiet ticks (speed &lt; `sleep_vel`). Reset to
+    /// 0 the moment a particle moves or is woken.
+    quiet: Vec<u32>,
+    /// Per-particle: the sleep ISLAND root (min member index) from the last
+    /// maintenance pass — persists so a wake event floods the whole island.
+    island_of: Vec<usize>,
+    /// Per-particle: an external wake event (impulse/warp/fracture) landed on
+    /// this particle this tick — its island MUST stay awake regardless of
+    /// quiet counters. Consumed and cleared each maintenance pass.
+    wake_flag: Vec<bool>,
+    /// S16 — identity-cached collider fingerprint `(triangles.as_ptr(), len,
+    /// fingerprint)`. Skips re-hashing the static triangle soup every tick
+    /// (see `ensure_collision_grid`).
+    collider_fp_cache: Option<(usize, usize, u64)>,
 }
 
 /// A collision cluster: particles in the SAME cluster never collide with
@@ -234,6 +268,79 @@ impl Solver {
             fluid_particles: Vec::new(),
             fluid_boundary: Vec::new(),
             fluid_boundary_psi: Vec::new(),
+            sleep_enabled: false,
+            asleep: Vec::new(),
+            quiet: Vec::new(),
+            island_of: Vec::new(),
+            wake_flag: Vec::new(),
+            collider_fp_cache: None,
+        }
+    }
+
+    /// S16 ISLAND SLEEP — enable (`true`) or disable (`false`, default)
+    /// per-island rest. Disabled leaves `step` byte-unchanged. Enabling sizes
+    /// the sleep bookkeeping vectors to the current particle count.
+    pub fn set_sleep(&mut self, on: bool) {
+        self.sleep_enabled = on;
+        if on {
+            self.ensure_sleep_buffers();
+        }
+    }
+
+    /// S16 — `(asleep_particle_count, asleep_island_count)` right now. An
+    /// island is a maximal set of particles sharing the same `island_of` root
+    /// with every member asleep. Measurement/evidence helper.
+    pub fn sleep_counts(&self) -> (usize, usize) {
+        let asleep_particles = self.asleep.iter().filter(|&&a| a).count();
+        let mut roots: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
+        for i in 0..self.asleep.len() {
+            if self.asleep[i] {
+                roots.insert(self.island_of[i]);
+            }
+        }
+        (asleep_particles, roots.len())
+    }
+
+    /// S16 — size the sleep vectors to the live particle count (idempotent).
+    /// New particles start awake, quiet 0, their own island.
+    fn ensure_sleep_buffers(&mut self) {
+        let n = self.particles.pos.len();
+        if self.asleep.len() != n {
+            self.asleep.resize(n, false);
+            self.quiet.resize(n, 0);
+            self.wake_flag.resize(n, false);
+            self.island_of.resize(n, 0);
+            for i in 0..n {
+                if self.island_of[i] == 0 && i != 0 {
+                    self.island_of[i] = i;
+                }
+            }
+        }
+    }
+
+    /// S16 — WAKE an explicit particle set and everything sharing its island
+    /// root (a settled stack wakes whole, never half). Clears asleep + quiet
+    /// and raises the wake flag so this tick's maintenance cannot re-sleep it.
+    /// The public seam for op/warp/checkpoint-driven waking; impulses call it
+    /// themselves.
+    pub fn wake_particles(&mut self, particles: &[usize]) {
+        if !self.sleep_enabled {
+            return;
+        }
+        self.ensure_sleep_buffers();
+        // Collect the island roots touched (index order — determinism).
+        let mut roots: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
+        for &i in particles {
+            if i < self.island_of.len() {
+                roots.insert(self.island_of[i]);
+            }
+        }
+        for i in 0..self.asleep.len() {
+            if roots.contains(&self.island_of[i]) {
+                self.asleep[i] = false;
+                self.quiet[i] = 0;
+                self.wake_flag[i] = true;
+            }
         }
     }
 
@@ -299,9 +406,28 @@ impl Solver {
             return;
         }
         match &self.collider {
-            None => self.collision_grid = None,
+            None => {
+                self.collision_grid = None;
+                self.collider_fp_cache = None;
+            }
             Some(c) => {
-                let fp = TriangleGrid::fingerprint(&c.triangles);
+                // S16 — the full-soup fingerprint (~148k f64 absorbs on naruko)
+                // dominated a fully-slept tick. Colliders are STATIC per scene
+                // and always REPLACED wholesale (`solver.collider = Some(..)`),
+                // never mutated triangle-by-triangle, so the Vec's (data ptr,
+                // len) is a sound identity key: unchanged ⇒ the soup is byte-
+                // identical ⇒ the cached fingerprint is exact. The rehash runs
+                // only on a genuine collider swap; byte-identical to always
+                // rehashing (same fp value either way).
+                let ident = (c.triangles.as_ptr() as usize, c.triangles.len());
+                let fp = match self.collider_fp_cache {
+                    Some((pi, li, f)) if (pi, li) == ident => f,
+                    _ => {
+                        let f = TriangleGrid::fingerprint(&c.triangles);
+                        self.collider_fp_cache = Some((ident.0, ident.1, f));
+                        f
+                    }
+                };
                 let stale = match &self.collision_grid {
                     Some(g) => g.fingerprint != fp || g.triangle_count != c.triangles.len(),
                     None => true,
@@ -1178,6 +1304,9 @@ impl Solver {
         // tick, before the substep loop — the grid is invariant across
         // substeps (the collider is static during a step).
         self.ensure_collision_grid();
+        if self.sleep_enabled {
+            self.ensure_sleep_buffers();
+        }
 
         // Which collision cluster (if any) owns each particle — cluster
         // membership never changes mid-tick (fracture only tears bonds, and
@@ -1223,6 +1352,9 @@ impl Solver {
         }
 
         self.fracture_pass();
+        if self.sleep_enabled {
+            self.maintain_sleep(&particle_cluster);
+        }
         self.tick += 1;
     }
 
@@ -1253,6 +1385,9 @@ impl Solver {
         // P-SCALE: refresh the static broadphase (inside `total` — the
         // per-tick fingerprint check is a real, if tiny, tick cost).
         self.ensure_collision_grid();
+        if self.sleep_enabled {
+            self.ensure_sleep_buffers();
+        }
 
         let t = Instant::now();
         let particle_cluster = self.particle_cluster_lookup();
@@ -1305,6 +1440,9 @@ impl Solver {
 
         let t = Instant::now();
         self.fracture_pass();
+        if self.sleep_enabled {
+            self.maintain_sleep(&particle_cluster);
+        }
         prof.fracture_pass += t.elapsed();
         self.tick += 1;
 
@@ -1318,9 +1456,11 @@ impl Solver {
     /// Symplectic-Euler prediction under gravity (anchors stand still).
     fn integrate(&mut self, dt_sub: f64) {
         let g = self.config.gravity;
+        let sleeping = self.sleep_enabled;
+        let asleep = &self.asleep;
         let p = &mut self.particles;
         for i in 0..p.pos.len() {
-            if p.inv_mass[i] == 0.0 {
+            if p.inv_mass[i] == 0.0 || (sleeping && asleep[i]) {
                 p.prev[i] = p.pos[i];
                 continue;
             }
@@ -1339,7 +1479,18 @@ impl Solver {
     /// Solve every rigid body's shape-matching constraint, in index order
     /// (order-stable — the determinism ordeal's bedrock extends to rigids).
     fn solve_shape_matching(&mut self) {
+        let sleeping = self.sleep_enabled;
+        let asleep = &self.asleep;
         for body in &mut self.rigids {
+            // A rigid body is one island (all its particles share sleep
+            // state) — an asleep body's shape-match is skipped whole.
+            if sleeping {
+                if let Some(&first) = body.indices.first() {
+                    if asleep[first] {
+                        continue;
+                    }
+                }
+            }
             body.solve(&mut self.particles);
         }
     }
@@ -1367,6 +1518,8 @@ impl Solver {
         let audit = self.broadphase_audit;
         let _ = &audit; // read in all builds; only asserted under debug
         let mat = collider.material;
+        let sleeping = self.sleep_enabled;
+        let asleep = &self.asleep;
         let p = &mut self.particles;
 
         // Apply one contact between particle `i` and triangle `ti`, recording
@@ -1406,7 +1559,7 @@ impl Solver {
             Some(grid) => {
                 let mut cand: Vec<u32> = Vec::new();
                 for i in 0..p.pos.len() {
-                    if p.inv_mass[i] == 0.0 {
+                    if p.inv_mass[i] == 0.0 || (sleeping && asleep[i]) {
                         continue;
                     }
                     let radius = p.radius[i] + mat.contact_margin;
@@ -1543,7 +1696,7 @@ impl Solver {
             // every triangle, in index order.
             None => {
                 for i in 0..p.pos.len() {
-                    if p.inv_mass[i] == 0.0 {
+                    if p.inv_mass[i] == 0.0 || (sleeping && asleep[i]) {
                         continue;
                     }
                     let radius = p.radius[i] + mat.contact_margin;
@@ -1653,10 +1806,18 @@ impl Solver {
             Some(c) => c.material.contact_margin,
             None => ContactMaterial::default().contact_margin,
         };
+        let sleeping = self.sleep_enabled;
+        let asleep = &self.asleep;
         let p = &mut self.particles;
         for (a, &i) in clustered_particles.iter().enumerate() {
+            if sleeping && asleep[i] {
+                continue; // frozen: immovable this tick, woken by proximity union
+            }
             let wi = p.inv_mass[i];
             for &j in &clustered_particles[(a + 1)..] {
+                if sleeping && asleep[j] {
+                    continue;
+                }
                 if particle_cluster[i] == particle_cluster[j] {
                     continue; // same cluster — held by its own constraint, not collision
                 }
@@ -1829,8 +1990,16 @@ impl Solver {
         } else {
             0.0
         };
+        let sleeping = self.sleep_enabled;
+        let asleep = &self.asleep;
         let p = &mut self.particles;
         for c in &mut self.constraints {
+            // Bonded endpoints share an island ⇒ same sleep state; an asleep
+            // bond is skipped (its lambda held from last solve is irrelevant
+            // while frozen).
+            if sleeping && asleep[c.a] {
+                continue;
+            }
             let wa = p.inv_mass[c.a];
             let wb = p.inv_mass[c.b];
             let w = wa + wb;
@@ -1860,9 +2029,11 @@ impl Solver {
             return;
         }
         let inv = 1.0 / dt_sub;
+        let sleeping = self.sleep_enabled;
+        let asleep = &self.asleep;
         let p = &mut self.particles;
         for i in 0..p.pos.len() {
-            if p.inv_mass[i] == 0.0 {
+            if p.inv_mass[i] == 0.0 || (sleeping && asleep[i]) {
                 continue;
             }
             p.vel[i] = (p.pos[i] - p.prev[i]).scale(inv);
@@ -1890,7 +2061,152 @@ impl Solver {
         }
         if any {
             let t = threshold;
+            if self.sleep_enabled && self.wake_flag.len() == self.particles.pos.len() {
+                for c in &self.constraints {
+                    if c.bond.fractured(t) {
+                        self.wake_flag[c.a] = true;
+                        self.wake_flag[c.b] = true;
+                    }
+                }
+            }
             self.constraints.retain(|c| !c.bond.fractured(t));
+        }
+    }
+
+    /// S16 ISLAND SLEEP — the once-per-tick rest maintenance, run at the END
+    /// of `step` (after fracture, on settled positions/velocities). Three
+    /// deterministic passes, all index-ordered (no HashMap in outcomes):
+    ///
+    /// 1. QUIET COUNTERS — every non-anchor AWAKE particle: `quiet += 1` when
+    ///    its speed is below `sleep_vel`, else reset to 0. Asleep particles
+    ///    are frozen (speed 0), so their counters simply hold high.
+    /// 2. ISLANDS — union-find (root = MIN member index) over: rigid
+    ///    membership, live bonds (`constraints`), and body-vs-body PROXIMITY
+    ///    edges sourced ONLY from AWAKE clustered particles (two settled
+    ///    asleep bodies cannot newly touch, so all-asleep ⇒ O(bonds) work,
+    ///    the naruko rest case). A moving body entering a sleeping stack's
+    ///    range unions into it here — that merged island then contains a
+    ///    low-quiet member and CANNOT sleep, and any of its formerly-asleep
+    ///    members are woken. This is the contact wake path.
+    /// 3. SLEEP/WAKE DECISION — per island (roots in index order): an island
+    ///    sleeps iff NO member carries a wake flag AND every member's `quiet`
+    ///    ≥ `sleep_frames`; then all members are frozen (asleep, velocity 0).
+    ///    Otherwise the whole island is awake.
+    fn maintain_sleep(&mut self, particle_cluster: &[Option<ClusterId>]) {
+        self.ensure_sleep_buffers();
+        let n = self.particles.pos.len();
+        let sleep_vel = self.config.sleep_vel;
+
+        // 1 — quiet counters (awake, movable particles only).
+        for i in 0..n {
+            if self.particles.inv_mass[i] == 0.0 {
+                // anchors never move: always quiet, so they never block an
+                // island's sleep.
+                self.quiet[i] = self.quiet[i].saturating_add(1);
+                continue;
+            }
+            if self.asleep[i] {
+                continue; // frozen: counter holds
+            }
+            if self.particles.vel[i].length() < sleep_vel {
+                self.quiet[i] = self.quiet[i].saturating_add(1);
+            } else {
+                self.quiet[i] = 0;
+            }
+        }
+
+        // 2 — union-find islands. parent[i] == i for a root; root is the min
+        // index in its set (deterministic, HashMap-free).
+        let mut parent: Vec<usize> = (0..n).collect();
+        fn find(parent: &mut [usize], mut x: usize) -> usize {
+            while parent[x] != x {
+                parent[x] = parent[parent[x]];
+                x = parent[x];
+            }
+            x
+        }
+        fn union(parent: &mut [usize], a: usize, b: usize) {
+            let ra = find(parent, a);
+            let rb = find(parent, b);
+            if ra == rb {
+                return;
+            }
+            let (lo, hi) = if ra < rb { (ra, rb) } else { (rb, ra) };
+            parent[hi] = lo; // min-index root
+        }
+        // rigid membership: all a body's particles share one island.
+        for body in &self.rigids {
+            if let Some(&first) = body.indices.first() {
+                for &i in &body.indices {
+                    union(&mut parent, first, i);
+                }
+            }
+        }
+        // live bonds.
+        for c in &self.constraints {
+            union(&mut parent, c.a, c.b);
+        }
+        // body-vs-body proximity from AWAKE clustered particles only.
+        let margin = match &self.collider {
+            Some(c) => c.material.contact_margin,
+            None => ContactMaterial::default().contact_margin,
+        };
+        let clustered: Vec<usize> = (0..n).filter(|&i| particle_cluster[i].is_some()).collect();
+        for (a, &i) in clustered.iter().enumerate() {
+            if self.asleep[i] {
+                continue; // frozen source can't create a NEW contact
+            }
+            let travel = (self.particles.pos[i] - self.particles.prev[i]).length();
+            for &j in &clustered[(a + 1)..] {
+                if particle_cluster[i] == particle_cluster[j] {
+                    continue; // same cluster — already unioned by membership
+                }
+                let reach = (self.particles.radius[i] + self.particles.radius[j]) * 0.5
+                    + margin
+                    + travel;
+                let d = (self.particles.pos[i] - self.particles.pos[j]).length();
+                if d < reach {
+                    union(&mut parent, i, j);
+                }
+            }
+        }
+
+        // 3 — per-island decision. Aggregate over roots in index order.
+        // An island participates only if it holds a movable particle; a
+        // singleton anchor is never "slept" (harmless either way).
+        let mut min_quiet: std::collections::BTreeMap<usize, u32> =
+            std::collections::BTreeMap::new();
+        let mut forced_awake: std::collections::BTreeSet<usize> =
+            std::collections::BTreeSet::new();
+        let mut movable: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
+        for i in 0..n {
+            let r = find(&mut parent, i);
+            self.island_of[i] = r;
+            if self.particles.inv_mass[i] != 0.0 {
+                movable.insert(r);
+            }
+            let e = min_quiet.entry(r).or_insert(u32::MAX);
+            *e = (*e).min(self.quiet[i]);
+            if self.wake_flag[i] {
+                forced_awake.insert(r);
+            }
+        }
+        let frames = self.config.sleep_frames;
+        for i in 0..n {
+            let r = self.island_of[i];
+            let sleep = movable.contains(&r)
+                && !forced_awake.contains(&r)
+                && min_quiet.get(&r).copied().unwrap_or(0) >= frames;
+            if sleep {
+                if !self.asleep[i] {
+                    self.asleep[i] = true;
+                }
+                // freeze: a slept particle carries no residual drift.
+                self.particles.vel[i] = Vec3::ZERO;
+            } else {
+                self.asleep[i] = false;
+            }
+            self.wake_flag[i] = false; // consumed
         }
     }
 
@@ -1920,6 +2236,9 @@ impl Solver {
     /// applied here directly by particle index instead. Same law as the
     /// rigid path: anchors (`inv_mass == 0`) are left untouched.
     pub fn apply_impulse_to_particles(&mut self, particles: &[usize], delta_velocity: Vec3) {
+        // S16 — the op is a hand on the body: it WAKES the touched island
+        // (impulse on a slept crate must move it). No-op when sleep is off.
+        self.wake_particles(particles);
         for &i in particles {
             if self.particles.inv_mass[i] != 0.0 {
                 self.particles.vel[i] = self.particles.vel[i] + delta_velocity;
@@ -1945,6 +2264,7 @@ impl Solver {
         center: Vec3,
         angular_velocity: Vec3,
     ) {
+        self.wake_particles(particles);
         for &i in particles {
             if self.particles.inv_mass[i] != 0.0 {
                 let r = self.particles.pos[i] - center;

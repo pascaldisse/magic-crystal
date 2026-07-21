@@ -1,0 +1,33 @@
+   Compiling scrying-glass v0.1.0 (/Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass)
+warning: unused imports: `evidence_local_max_image` and `evidence_max_accumulate`
+  --> packages/scrying-glass/examples/rdirect_v7e_gamma_derive.rs:24:26
+   |
+24 |     deserialize_weights, evidence_local_max_image, evidence_max_accumulate, hist_features_split,
+   |                          ^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `scrying-glass` (example "rdirect_v7e_gamma_derive") generated 1 warning (run `cargo fix --example "rdirect_v7e_gamma_derive" -p scrying-glass` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 4.31s
+     Running `target/release/examples/rdirect_v7e_gamma_derive`
+[v7e-gamma] weights=data/rdirect-weights-v7.bin val pose=orbit_-20 K=8 ref_frames=96
+[v7e-gamma] 480x360: 8 sparkle outliers, 108943 bright non-outlier px, 8 bright outlier px
+  non-outlier ratio p50.0  = 0.9779
+  non-outlier ratio p90.0  = 0.9972
+  non-outlier ratio p99.0  = 1.1136
+  non-outlier ratio p99.9  = 1.5052
+  non-outlier ratio p100.0 = 22.2398
+  outlier     ratio p0.0   = 1.1973
+  outlier     ratio p1.0   = 1.1973
+  outlier     ratio p10.0  = 1.2916
+  outlier     ratio p50.0  = 1.6097
+[v7e-gamma] 640x480: 16 sparkle outliers, 191701 bright non-outlier px, 16 bright outlier px
+  non-outlier ratio p50.0  = 0.9792
+  non-outlier ratio p90.0  = 0.9974
+  non-outlier ratio p99.0  = 1.0991
+  non-outlier ratio p99.9  = 1.4353
+  non-outlier ratio p100.0 = 13.6741
+  outlier     ratio p0.0   = 0.3905
+  outlier     ratio p1.0   = 0.3905
+  outlier     ratio p10.0  = 1.2110
+  outlier     ratio p50.0  = 1.9854

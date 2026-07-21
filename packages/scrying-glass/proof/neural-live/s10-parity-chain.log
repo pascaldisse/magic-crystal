@@ -1,0 +1,9 @@
+    Finished `release` profile [optimized] target(s) in 0.23s
+     Running tests/rdirect_live_ordeals.rs (target/release/deps/rdirect_live_ordeals-c0d93c146a80158b)
+
+running 1 test
+[n0-gate1] N=6144 px · live-vs-committed: abs 1.311e-6 rel 5.960e-5 · live-vs-recomputed-CPU: abs 1.311e-6
+test n0_gate1_live_net_matches_cpu_reference ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+

@@ -1,6 +1,20 @@
 use std::collections::BTreeMap;
+use std::sync::OnceLock;
 
 use crate::physics::{Body, BodyPose, Physics};
+
+/// S15 DIRTY-ONLY SKIN master switch (default ON). `GAIA_NATIVE_DIRTY_SKIN=0`
+/// (or `false`) restores the old always-re-skin path for the A/B measurement.
+/// Read once and cached — the per-body gate must not pay an env lookup per tick.
+fn dirty_skin_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        !matches!(
+            std::env::var("GAIA_NATIVE_DIRTY_SKIN").as_deref(),
+            Ok("0" | "false")
+        )
+    })
+}
 use bytemuck::{Pod, Zeroable};
 use crystal::{
     EcsWorld, Environment, Mesh, MeshPart, NumberOrNumbers, Op, QuerySpec, Spawn, Transform,
@@ -359,6 +373,14 @@ pub struct BodyInstance {
     /// The engine never special-cases a creature — any body may declare it.
     /// `None` = unattached (walker-broadcast, or minded).
     follows: Option<String>,
+    /// S15 DIRTY-ONLY SKIN — whether the PREVIOUS tick this body was animating
+    /// (non-idle gait or blending). Forces ONE final re-skin the tick after
+    /// animation stops so the settled idle pose is captured before freezing.
+    prev_animating: bool,
+    /// S15 — the model `world_tris` were last SKINNED at. When the body is idle,
+    /// settled, and its model is unchanged from this, the skin is a no-op and
+    /// `world_tris` are kept verbatim (the static majority costs ZERO per tick).
+    last_skinned_model: Mat4,
 }
 
 impl BodyInstance {
@@ -392,7 +414,32 @@ impl BodyInstance {
     pub fn command(&mut self, commanded_speed: f32) {
         self.commanded_speed = commanded_speed;
         self.pose = self.locomotion.step(&self.body.skeleton, commanded_speed);
-        self.world_tris = skin_body(&self.body, &self.pose, self.model, &self.albedo);
+        self.reskin_if_dirty();
+    }
+
+    /// S15 DIRTY-ONLY SKIN — re-skin `world_tris` ONLY when this body's skinning
+    /// inputs actually changed. An idle, settled body (gait Idle, not blending)
+    /// whose model is unchanged from the last skin holds STATIC geometry (the
+    /// engine's own `is_animating` contract), so its `posed`+triangle rebuild is
+    /// skipped and the previous `world_tris` are kept verbatim — the static
+    /// majority of the living layer costs ZERO per tick. `prev_animating` forces
+    /// one final skin the tick after animation stops (the settling frame changes
+    /// the pose while the model may already be still). `skin_body` is pure, so a
+    /// kept `world_tris` is byte-identical to what a re-skin would produce — no
+    /// order drift, determinism intact. `GAIA_NATIVE_DIRTY_SKIN=0` forces the old
+    /// always-skin path for the A/B.
+    fn reskin_if_dirty(&mut self) {
+        let animating = self.is_animating();
+        let dirty = !dirty_skin_enabled()
+            || self.world_tris.is_empty()
+            || animating
+            || self.prev_animating
+            || self.model != self.last_skinned_model;
+        if dirty {
+            self.world_tris = skin_body(&self.body, &self.pose, self.model, &self.albedo);
+            self.last_skinned_model = self.model;
+        }
+        self.prev_animating = animating;
     }
 
     /// RITE V · V2 — advance a MINDED body one tick against the world clock time
@@ -420,7 +467,7 @@ impl BodyInstance {
         self.pose = self
             .locomotion
             .step(&self.body.skeleton, self.commanded_speed);
-        self.world_tris = skin_body(&self.body, &self.pose, self.model, &self.albedo);
+        self.reskin_if_dirty();
     }
 
     /// Whether this body carries a behavior spirit (a minded body drives itself
@@ -513,6 +560,8 @@ impl BodyInstance {
             base_scale: Vec3::ONE,
             // A wire-composed presence body is not walker-attached (N2 drives it).
             follows: None,
+            prev_animating: false,
+            last_skinned_model: model,
         })
     }
 
@@ -532,7 +581,7 @@ impl BodyInstance {
         self.model = ground_model(&self.body, pos, yaw as f32, floor);
         self.commanded_speed = commanded_speed;
         self.pose = self.locomotion.step(&self.body.skeleton, commanded_speed);
-        self.world_tris = skin_body(&self.body, &self.pose, self.model, &self.albedo);
+        self.reskin_if_dirty();
     }
 
     /// The current grounded world model (rotation/scale/translation) — exposed so
@@ -934,6 +983,19 @@ impl RenderScene {
         self.dynamics.tick_with_ops(ops);
     }
 
+    /// S15: the last `tick_with_ops` sub-breakdown `[kami, apply, physics,
+    /// rederive]` (ms) — splits the ~5.5 ms `tick` thief for `/budget`.
+    pub fn last_tick_breakdown(&self) -> [f64; 6] {
+        [
+            self.dynamics.last_kami_ms,
+            self.dynamics.last_apply_ms,
+            self.dynamics.last_physics_ms,
+            self.dynamics.last_rederive_ms,
+            self.dynamics.last_solver_step_ms,
+            self.dynamics.last_poll_ms,
+        ]
+    }
+
     /// RITE V · V1 — drive every embodied body one fixed tick against the
     /// walker's `commanded_speed` (the embodiment velocity magnitude). Each body
     /// steps its SAMA state machine, takes the emitted pose, and re-skins its
@@ -1314,6 +1376,8 @@ fn body_instances(world: &EcsWorld, floor: &Ground) -> Result<Vec<BodyInstance>,
             ground_y: grounded_y,
             base_scale: body_scale,
             follows,
+            prev_animating: false,
+            last_skinned_model: model,
         });
     }
     Ok(out)
@@ -1732,6 +1796,17 @@ pub struct Dynamics {
     seed: u64,
     dt: f64,
     clock: u64,
+    /// S15 sub-breakdown of the last `tick_with_ops` (ms): KAMI decorative eval
+    /// (`tick_decorative`) / applying its ops to the ECS / physics.step /
+    /// re-deriving every entity model. Splits the ~5.5 ms `tick` thief.
+    pub last_kami_ms: f64,
+    pub last_apply_ms: f64,
+    pub last_physics_ms: f64,
+    pub last_rederive_ms: f64,
+    /// S15 split of `last_physics_ms`: the solver.step() alone vs the per-tick
+    /// `poll_bonded` fracture flood-fill.
+    pub last_solver_step_ms: f64,
+    pub last_poll_ms: f64,
 }
 
 impl Dynamics {
@@ -1747,6 +1822,12 @@ impl Dynamics {
             seed: 0,
             dt: 1.0 / 60.0,
             clock: 0,
+            last_kami_ms: 0.0,
+            last_apply_ms: 0.0,
+            last_physics_ms: 0.0,
+            last_rederive_ms: 0.0,
+            last_solver_step_ms: 0.0,
+            last_poll_ms: 0.0,
         }
     }
 
@@ -1821,7 +1902,10 @@ impl Dynamics {
             entropy: self.clock,
             dt: self.dt,
         };
+        let t_kami = std::time::Instant::now();
         let ops = kami::tick_decorative(&self.world, reg, &self.binds, &ctx);
+        self.last_kami_ms = t_kami.elapsed().as_secs_f64() * 1000.0;
+        let t_apply = std::time::Instant::now();
         for op in &ops {
             let Op::Set(set) = op else {
                 continue;
@@ -1832,6 +1916,8 @@ impl Dynamics {
                     .set_component(entity, reg.transform, set.value.clone());
             }
         }
+        self.last_apply_ms = t_apply.elapsed().as_secs_f64() * 1000.0;
+        let t_physics = std::time::Instant::now();
         // PHYSICS (the Elements bound into the realm): fold any incoming
         // impulses in first, advance every declared body one tick, then
         // write its pose (centroid + fitted rotation) back to the ECS
@@ -1845,7 +1931,9 @@ impl Dynamics {
                         physics.apply_impulse(&impulse.id, impulse.delta_velocity);
                     }
                 }
+                let t_step = std::time::Instant::now();
                 physics.step();
+                self.last_solver_step_ms = t_step.elapsed().as_secs_f64() * 1000.0;
                 physics
                     .bindings()
                     .iter()
@@ -1867,6 +1955,7 @@ impl Dynamics {
         // geometry path) spliced into the dynamic BVH by pushing a
         // `DynamicEntity` per fragment (picked up by `dynamic_leaf_
         // triangles` this exact tick, same as any other dynamic entity).
+        let t_poll = std::time::Instant::now();
         if let Some(physics) = self.physics.as_mut() {
             let (still_whole, newly_broken) = physics.poll_bonded();
             for (id, position) in still_whole {
@@ -1938,6 +2027,9 @@ impl Dynamics {
                 let _ = self.world.set_component(entity, reg.transform, value);
             }
         }
+        self.last_poll_ms = t_poll.elapsed().as_secs_f64() * 1000.0;
+        self.last_physics_ms = t_physics.elapsed().as_secs_f64() * 1000.0;
+        let t_rederive = std::time::Instant::now();
         for de in &mut self.entities {
             let Some(entity) = self.world.entity_for_gaia(&de.gaia_id) else {
                 continue;
@@ -1955,6 +2047,7 @@ impl Dynamics {
             );
             de.model = animated * de.bind_model.inverse();
         }
+        self.last_rederive_ms = t_rederive.elapsed().as_secs_f64() * 1000.0;
         self.clock += 1;
     }
 

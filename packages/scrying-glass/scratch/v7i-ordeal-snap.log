@@ -1,0 +1,21 @@
+    Finished `release` profile [optimized] target(s) in 0.50s
+     Running `/Users/pascaldisse/projects/magic-crystal-neural-live/target/release/examples/real_image_ordeal`
+[ordeal] weights=data/rdirect-weights-v7.bin in_dim=39 (N5 split recurrent (39)) res 640x480 still=10 pan=6
+[ordeal] orbit_-20 STILL: resid=0.03436 sparkle=22.8/Mpx (teacher 0.0) tvar=2.683e-5
+[ordeal] orbit_-20 PAN mid: resid_hist=0.03649 resid_single=0.03890 ghost_excess=-0.00242
+[ordeal] orbit_+40 STILL: resid=0.03537 sparkle=48.8/Mpx (teacher 0.0) tvar=3.360e-5
+[ordeal] orbit_+40 PAN mid: resid_hist=0.03692 resid_single=0.04129 ghost_excess=-0.00437
+[ordeal] wrote /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/proof/neural-live/s25-still.png
+[ordeal] wrote /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/proof/neural-live/s25-still-teacher.png
+[ordeal] wrote /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/proof/neural-live/s25-moving.png
+[ordeal] wrote /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/proof/neural-live/s25-moving-teacher.png
+
+[ordeal] ===== REAL-IMAGE BAR ===== (754.5s)
+  resid_still         0.03487  bar    0.03500  PASS  (distance to bar -0.00013)
+  sparkle_still      35.80729  bar   40.00000  PASS  (distance to bar -4.19271)
+  tvar_still          0.00003  bar    0.00050  PASS  (distance to bar -0.00047)
+  resid_move          0.03670  bar    0.06000  PASS  (distance to bar -0.02330)
+  ghost_excess        0.00000  bar    0.01200  PASS  (distance to bar -0.01200)
+  (teacher sparkle 0.0/Mpx — reference floor)
+
+[ordeal] VERDICT: PASS — stamp written /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/data/rdirect-weights-v7.bin.stamp — weights may present.

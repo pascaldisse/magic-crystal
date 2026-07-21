@@ -237,3 +237,97 @@ HANDOFF.md.
 - **Rite VII**: recon complete (anchors mapped; coordinate-law payment is
   greenfield across transmute/ring/scene/player). Held until current lanes
   merge — the 64-bit/camera-relative refactor touches every file in flight.
+
+## N2 — REAL-IMAGE BAR: v3 STAMP OR HONEST BLACK (finisher, 2026-07-19)
+- **VERDICT: HONEST BLACK.** v3 retrained (60 ep, teacher=128-accum,
+  320×240, K=5 still-unroll; loss 0.041→0.026; sha 2c6622e). REAL-IMAGE
+  ORDEAL run at the full **640×480** (2 val poses orbit_-20/+40, still+pan,
+  f(seed)). Result: FAIL on ONE iron quantity —
+  - resid_still   0.03251  ≤ 0.035  PASS (−0.00249) — it IS the real image
+  - sparkle_still 345.05   ≤ 40.0   **FAIL (+305.05)** — the dots
+  - tvar_still    7.0e-5   ≤ 5e-4   PASS (−4.3e-4) — settles, no shimmer
+  - resid_move    0.03489  ≤ 0.060  PASS (−0.02511)
+  - ghost_excess  0.00064  ≤ 0.012  PASS (−0.01136) — history no smear
+  NO stamp written. `main.rs` gate (`verify_stamp`) → present BLACK. Gate law
+  live-verified: real_image_gate 2/2 (unstamped→denied black), rite5 17/17,
+  medium_parity green.
+- **WHY sub-bar (adversary read, both eyes @640×480, defects first):** net &
+  teacher READ near-identical — geometry, dusk-pink sky gradient, lighthouse +
+  building silhouettes, two lit windows, pier wood tone all converge. The sole
+  defect is **isolated emissive-edge fireflies**: the cyan waterline neon is a
+  broken/speckled run of over-bright cyan dots (vs teacher's clean dashes) +
+  faint dark-surface speckle on the building's lower-right. tvar is LOW → the
+  fireflies are STABLE frame-to-frame (a spatial bias at emissive/reflection
+  edges), so the still-unroll recurrence — which averages TEMPORAL variance —
+  cannot dissolve them. Killing them needs a spatial firefly/clamp term in the
+  loss or an edge-aware feature, not more of the same recurrence. Sentence:
+  **BAR FAILED by sparkle +305/Mpx; every other bar PASSED with margin.**
+- **fps / history cost (exact, MACs):** v3 = 18304 MACs/px (27-in, 5×64, 3-out);
+  v2 = 18048. History features (reprojected prev demod-log 3 + validity 1 = 4
+  extra inputs ×64) cost **+256 MACs/px = +1.42%** over v2. @640×480 =
+  5.62 GMACs/frame (v3) vs 5.54 (v2), Δ 78.6 MMACs/frame — negligible vs trace.
+  Live wall-clock fps UNVERIFIED: the GPU net harness `rdirect_live_frame`
+  is bit-rotted (private `Camera` import, pre-existing, out of scope) — did NOT
+  fix; compute cost is the honest measurable and it is trivial.
+- **labyrinth (Architect recompose):** continued from salvage state (emissive
+  frame border + concentric barbershop tunnel), did NOT redesign. Current
+  proof/ordeal-light/labyrinth.png READS: centered corridor of concentric
+  cyan emissive frames receding to a vanishing point, red laser near-foreground
+  crossing INTO the glass — **~10–11 cyan nestings countable** before they
+  merge into a bright cyan-magenta core. Energy at deepest saturates = the
+  named **vanishing-point blowout** (unfixed). GAP: named tuning (mirrors
+  closer, blowout clamp) + a 1024-bounce 640×480 re-render NOT done — deferred
+  rather than start a re-render that can't finish inside the wall (the failure
+  mode that killed the prior lane).
+
+## N3 — FIREFLY LOSS: v4 STAMP OR HONEST BLACK (finisher, 2026-07-19)
+- **VERDICT: HONEST BLACK — still.** v4 = firefly-loss net (warm-start v3,
+  ff_w=15 margin=0.05 demod-log spatial clamp, best-by-held-out-sparkle,
+  early-stop ep7, val sparkle 243→17.4/Mpx @480, mse 0.028, sha **2cc827a**).
+  REAL-IMAGE ORDEAL re-run FRESH @640×480 on the canonical net (same poses
+  orbit_-20/+40, still+pan, same IRON bars — UNTOUCHED). Result: FAIL, and the
+  failing bar MOVED from v3's to a NEW one —
+  | quantity        | v4 value | bar    | verdict | distance |
+  |-----------------|----------|--------|---------|----------|
+  | resid_still     | 0.05099  | 0.035  | **FAIL**| **+0.01599** |
+  | sparkle_still   | 39.0625  | 40.0   | PASS    | −0.9375  |
+  | tvar_still      | 0.00001  | 5e-4   | PASS    | −0.00049 |
+  | resid_move      | 0.05102  | 0.060  | PASS    | −0.00898 |
+  | ghost_excess    | 0.00052  | 0.012  | PASS    | −0.01148 |
+  Reproduces the committed v4-ordeal.log to the digit → the number is the net,
+  not the seed. NO stamp written. `main.rs:1189` gate (`verify_stamp` on the
+  shipped weights) → no v4.stamp → present **BLACK by law**. Gate flip proof:
+  the gate did NOT flip to allow — real_image_gate 2/2 (unstamped denied),
+  no `data/rdirect-weights-v4.bin.stamp` on disk. Gates: rite5 17/17,
+  medium_parity 2/2, real_image_gate 2/2 — all green.
+- **THE TRADE (adversary read, both eyes @640×480, defects first):** v3 failed
+  sparkle +305 (fireflies over the cyan waterline); v4 KILLED the fireflies
+  (sparkle 345→39, clears 40) — but the SAME clamp over-clamped the REAL
+  emissive it sat on. The **cyan waterline is NOT clean dashes**: in the net it
+  is a dim, sparse, BROKEN blue smear vs the teacher's vivid continuous cyan
+  neon run — the firefly term darkened the legitimate low-cap emissive edge
+  along with the invented dots. That suppressed cyan (+ its reflection band) is
+  the resid climb 0.0325→0.051. Lit windows: **crisp** — the two yellow windows
+  are high-cap bright regions the clamp left free, so firefly loss did NOT smear
+  them (confirmed both still & pan). Motion: no ghost (0.00052). Geometry, dusk
+  sky, silhouettes all converge. Sentence: **v4 traded a sparkle-fail for a
+  resid-fail — the firefly clamp cannot tell an invented dot from the real cyan
+  neon it borders; killing one kills the other. STILL BLACK.**
+- **wip 096c70e assessed → REVERTED the regression, KEPT the lesson.** The
+  salvage commit left a runaway `rdirect_train_v4` (surgical margin 0.20, ff_w 8,
+  new COMBINED sparkle+resid checkpoint criterion + `rmse_lin` monitor) that had
+  overwritten the shipped v4.bin with an epoch-3 non-converged checkpoint
+  (3bd3f48) and committed a stale ordeal log. Killed the proc (0 procs at exit),
+  restored v4.bin+provenance to the canonical **2cc827a** (b8a078e's trained
+  net). The retrain's own log is the proof it was right to stop: sparkle
+  52→81→191→196/Mpx as MSE refit re-sharpens — the surgical clamp is too weak to
+  hold sparkle AND the aggressive clamp darkens the image; **neither margin wins
+  both bars.** The combined-criterion trainer code is kept (honest tool for the
+  next lane); the weights regression is reverted.
+- **NEXT (not this lane):** the firefly/resid coupling needs an EDGE-AWARE term,
+  not a scalar clamp weight — penalise isolated dots only where the teacher
+  neighbourhood is dark AND has no emissive edge (mask by teacher gradient), or
+  a perceptual/emissive-preserving loss. A single spatial clamp is on a Pareto
+  front between sparkle and resid and cannot clear both @640×480.
+- **labyrinth spare-wall (stage 6): NOT done** — deferred (same wall-budget call
+  as N2; a 1024-bounce 640×480 re-render can't finish inside the token). GAP.

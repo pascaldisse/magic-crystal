@@ -1,0 +1,4 @@
+   Compiling scrying-glass v0.1.0 (/Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass)
+    Finished `release` profile [optimized] target(s) in 5.33s
+     Running `target/release/examples/real_image_ordeal`
+[ordeal] weights=data/rdirect-weights-v7.bin in_dim=39 (N5 split recurrent (39)) res 640x480 still=10 pan=6

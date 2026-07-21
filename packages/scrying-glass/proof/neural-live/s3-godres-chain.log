@@ -1,0 +1,28 @@
+[package] scrying-glass v0.1.0 registered
+[world] /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/../../worlds/naruko scene(s)=["main"] entities=45 chains=23 clusters=913 transmute=71.8ms
+[worker-window] GAIA_NATIVE_WORKER_WINDOW=true: window built focused=false focusable=false (never-key) title="GAIA — Scrying Glass [worker]"
+[embodiment] spawn eye=Vec3(0.0, 7.0, 44.0) yaw=0 floor_triangles=10464 tick_dt=0.016666668
+[pleroma] BVH nodes=15487 triangles=23192 (static 12368 + dynamic 10824) build=13.4ms; 22 dynamic entit(ies) — living layer
+[pleroma] traced integrator spp=2 bounces=4 rr_start=2 — first_light is dead
+[wgpu] traced 640x480 → upscale → surface 960x640 (bilinear); Bgra8UnormSrgb
+[bloodbend] 🩸 watching 1 scene file(s) + /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/src/integrator.wgsl @ 500ms poll
+[frame] trace 640x480 → surface 480x320: median 11.95ms mean 11.67ms/frame (spp=2, 60-frame sample)
+[scry] GET http://127.0.0.1:8436/scry (alias: /screenshot; optional pos/yaw/pitch/fov/w/h)
+[embodiment] GET http://127.0.0.1:8436/pose · POST http://127.0.0.1:8436/walk {keys,yaw?,pitch?,ticks?}
+[scrying-glass] child webview overlay created; render, capture, PNG, and HTTP run off the main thread
+[n0c] net-present rig pooled (God's res): trace 640x480 → net 640x480 → nearest blit → surface 960x640 (307200 px)
+[n0e] frames=60 640x480→640x480 (ms median/p95 vs 16.67): trace 6.55/8.97 gather 1.02/1.95 net[wall 45.26/48.53 gpu 44.98/48.21] demod 0.67/1.56 present 0.20/0.28 TOTAL 54.67/58.63
+[n0e] frames=120 640x480→640x480 (ms median/p95 vs 16.67): trace 6.49/8.99 gather 1.10/2.04 net[wall 44.74/49.43 gpu 44.39/48.96] demod 0.68/1.56 present 0.20/0.28 TOTAL 54.73/58.85
+[n0e] frames=180 640x480→640x480 (ms median/p95 vs 16.67): trace 6.72/9.31 gather 1.10/1.95 net[wall 44.72/49.40 gpu 44.23/48.97] demod 0.68/1.50 present 0.21/0.28 TOTAL 54.88/59.05
+[n0e] frames=240 640x480→640x480 (ms median/p95 vs 16.67): trace 6.75/9.50 gather 1.09/2.02 net[wall 44.39/49.21 gpu 44.01/48.79] demod 0.68/1.59 present 0.20/0.28 TOTAL 54.90/59.05
+[n0e] frames=300 640x480→640x480 (ms median/p95 vs 16.67): trace 6.79/9.45 gather 1.10/2.02 net[wall 44.30/49.05 gpu 43.87/48.61] demod 0.68/1.69 present 0.20/0.28 TOTAL 54.70/58.98
+[n0e] frames=360 640x480→640x480 (ms median/p95 vs 16.67): trace 6.80/9.31 gather 1.09/2.02 net[wall 43.95/48.91 gpu 43.56/48.32] demod 0.68/1.59 present 0.20/0.28 TOTAL 54.15/58.92
+[n0e] frames=420 640x480→640x480 (ms median/p95 vs 16.67): trace 6.75/9.48 gather 1.09/2.12 net[wall 43.65/48.84 gpu 43.32/48.21] demod 0.67/1.59 present 0.20/0.28 TOTAL 53.65/58.90
+[n0e] frames=480 640x480→640x480 (ms median/p95 vs 16.67): trace 6.77/9.34 gather 1.08/2.02 net[wall 43.37/48.53 gpu 43.04/48.13] demod 0.67/1.59 present 0.20/0.27 TOTAL 53.35/58.84
+[n0e] frames=540 640x480→640x480 (ms median/p95 vs 16.67): trace 6.73/9.28 gather 1.07/2.02 net[wall 43.26/48.50 gpu 42.87/48.08] demod 0.66/1.50 present 0.20/0.27 TOTAL 53.20/58.79
+[n0e] frames=600 640x480→640x480 (ms median/p95 vs 16.67): trace 6.70/9.26 gather 1.06/2.02 net[wall 43.19/48.44 gpu 42.81/47.97] demod 0.66/1.46 present 0.20/0.27 TOTAL 53.17/58.70
+[n0e] frames=660 640x480→640x480 (ms median/p95 vs 16.67): trace 6.68/9.25 gather 1.06/2.02 net[wall 43.18/48.38 gpu 42.79/47.91] demod 0.66/1.44 present 0.20/0.27 TOTAL 53.13/58.61
+[n0e] frames=720 640x480→640x480 (ms median/p95 vs 16.67): trace 6.65/9.25 gather 1.06/1.99 net[wall 43.15/48.29 gpu 42.76/47.81] demod 0.66/1.41 present 0.20/0.27 TOTAL 53.06/58.54
+[n0e] frames=780 640x480→640x480 (ms median/p95 vs 16.67): trace 6.68/9.27 gather 1.05/1.99 net[wall 43.08/48.22 gpu 42.70/47.77] demod 0.66/1.41 present 0.20/0.26 TOTAL 52.96/58.48
+[n0e] frames=840 640x480→640x480 (ms median/p95 vs 16.67): trace 6.68/9.32 gather 1.05/2.02 net[wall 43.02/48.17 gpu 42.59/47.66] demod 0.65/1.41 present 0.20/0.26 TOTAL 52.89/58.37
+[n0e] frames=900 640x480→640x480 (ms median/p95 vs 16.67): trace 6.65/9.34 gather 1.05/2.02 net[wall 43.02/48.11 gpu 42.62/47.58] demod 0.65/1.40 present 0.20/0.26 TOTAL 52.89/58.34

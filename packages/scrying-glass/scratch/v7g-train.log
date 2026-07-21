@@ -1,0 +1,34 @@
+    Finished `release` profile [optimized] target(s) in 0.22s
+     Running `/Users/pascaldisse/projects/magic-crystal-neural-live/target/release/examples/rdirect_train_v7e`
+[v7] rendered 3+1 SPLIT poses (K=8, 480x360, teacher 96, D-blur r=2) in 1.9s
+[v7] RESUMED (fine-tune) from /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/data/rdirect-weights-v7.bin sha256=636c8743faf25fa3311d8752a9e5d6ff0abd4b4ad52fb2466e2cfcaf4bbdf8ce
+[v7] arch RdirectConfig { hidden_layers: 5, hidden_width: 64 } in=39 macs/px=19072 — 120 epochs (wall<=900s), subsample 20000px/pose, lr0=0.0001 (harmonic decay), ema=0.999, PLAIN MSE vs split-smoothed target
+[v7] MONITOR epoch -1 (fresh/resumed, EMA=live): val sparkle 28.9/Mpx resid 0.0364 score=1.039 (start floor 1.058)
+[v7] MONITOR epoch 0 @1/3: val sparkle 28.9/Mpx resid 0.0361 score=1.031 (tgt sp<16 resid<0.036) *BEST->saved
+[v7] MONITOR epoch 0 @2/3: val sparkle 40.5/Mpx resid 0.0354 score=1.013 (tgt sp<16 resid<0.036) *BEST->saved
+[v7] epoch 0/120 mse=0.017287 lr=0.000100 (122.1s)
+[v7] MONITOR epoch 0: val sparkle 46.3/Mpx resid 0.0348 score=1.157 (tgt sp<16 resid<0.036)
+[v7] MONITOR epoch 1 @1/3: val sparkle 52.1/Mpx resid 0.0345 score=1.302 (tgt sp<16 resid<0.036)
+[v7] MONITOR epoch 1 @2/3: val sparkle 52.1/Mpx resid 0.0344 score=1.302 (tgt sp<16 resid<0.036)
+[v7] MONITOR epoch 1: val sparkle 57.9/Mpx resid 0.0342 score=1.447 (tgt sp<16 resid<0.036)
+[v7] MONITOR epoch 2 @1/3: val sparkle 57.9/Mpx resid 0.0342 score=1.447 (tgt sp<16 resid<0.036)
+[v7] MONITOR epoch 2 @2/3: val sparkle 63.7/Mpx resid 0.0342 score=1.591 (tgt sp<16 resid<0.036)
+[v7] MONITOR epoch 2: val sparkle 63.7/Mpx resid 0.0342 score=1.591 (tgt sp<16 resid<0.036)
+[v7] MONITOR epoch 3 @1/3: val sparkle 63.7/Mpx resid 0.0341 score=1.591 (tgt sp<16 resid<0.036)
+[v7] MONITOR epoch 3 @2/3: val sparkle 63.7/Mpx resid 0.0340 score=1.591 (tgt sp<16 resid<0.036)
+[v7] MONITOR epoch 3: val sparkle 63.7/Mpx resid 0.0339 score=1.591 (tgt sp<16 resid<0.036)
+[v7] MONITOR epoch 4 @1/3: val sparkle 63.7/Mpx resid 0.0341 score=1.591 (tgt sp<16 resid<0.036)
+[v7] MONITOR epoch 4 @2/3: val sparkle 75.2/Mpx resid 0.0339 score=1.881 (tgt sp<16 resid<0.036)
+[v7] MONITOR epoch 4: val sparkle 75.2/Mpx resid 0.0340 score=1.881 (tgt sp<16 resid<0.036)
+[v7] MONITOR epoch 5: val sparkle 75.2/Mpx resid 0.0339 score=1.881 (tgt sp<16 resid<0.036)
+[v7] MONITOR epoch 6: val sparkle 86.8/Mpx resid 0.0336 score=2.170 (tgt sp<16 resid<0.036)
+[v7] MONITOR epoch 7: val sparkle 86.8/Mpx resid 0.0337 score=2.170 (tgt sp<16 resid<0.036)
+[v7] MONITOR epoch 8: val sparkle 86.8/Mpx resid 0.0338 score=2.170 (tgt sp<16 resid<0.036)
+[v7] MONITOR epoch 9: val sparkle 81.0/Mpx resid 0.0340 score=2.025 (tgt sp<16 resid<0.036)
+[v7] epoch 10/120 mse=0.015170 lr=0.000086 (804.5s)
+[v7] MONITOR epoch 10: val sparkle 75.2/Mpx resid 0.0339 score=1.881 (tgt sp<16 resid<0.036)
+[v7] MONITOR epoch 11: val sparkle 86.8/Mpx resid 0.0336 score=2.170 (tgt sp<16 resid<0.036)
+[v7] WALL budget 900s reached MID-epoch 12 (batch 49856/60000) — stopping, keeping best
+[v7] training done in 900.0s (best score=1.013 sparkle 40.5 resid 0.0354, started at floor 1.058)
+[v7] wrote /Users/pascaldisse/projects/magic-crystal-neural-live/packages/scrying-glass/data/rdirect-weights-v7.bin sha256=55720b4592ba2c088844172d49a84ce9bfbf73ade92184b3b32a7e65cd2340ce
+[v7] wrote provenance. NEXT: real_image_ordeal (GAIA_ORDEAL_WEIGHTS=v7) to earn the stamp.
