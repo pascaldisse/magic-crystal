@@ -891,6 +891,24 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
+### 07-21 DELTA — V9E NEUTRAL → PROBE-RES ARTIFACT HYPOTHESIS + V9F (~16:45)
+v9e (winsorized targets) reproduced v9c EXACTLY: onset ~ep52, floor resid
+0.0938, score 2.680 vs 2.678 — winsorize NEUTRAL; fireflies CONFIRMED in
+targets (rdirect_v9_tailmass, loss domain = demod-log, verified by source)
+but NOT causal [source: scratch/v9e-train.log + v9-autopsy.md §v9e].
+NEW READ of the curves: through the score "detonation" resid KEPT FALLING
+(0.0938→0.0796 ep71) · sparkle spike = 6-7 DISCRETE pixels at 128×72
+(651/759.5 per-Mpx quantization) · highlight_ratio climbing 0.27→0.50
+TOWARD teacher parity · every 640×480 eval ever run = sparkle 0.0.
+HYPOTHESIS: probe-res monitor artifact — the watchdog has been killing
+healthy runs mid-highlight-learning. v9f riding (ghoul-sonnet-
+mrurdg2n9d91cd): two-signal watchdog (resid-streak + render-res sparkle) ·
+save best AND last weights · periodic 640×480 probe IN the training log ·
+full 300-epoch run through the old onset. Verdict wanted: render-res
+sparkle stays 0 while resid falls past 0.0796 → artifact CONFIRMED, run
+cooks toward bar; ignites → hypothesis dies. v9e stall note: watcher turn
+stalled 900s (long tail-watch), run itself completed — detach law held.
+
 ### 07-21 DELTA — GPU GATHER LANDED, BRIDGE ATOM RIDING (~16:25)
 v9-wire @ 43f8c070: GPU gather PASS (max_abs 2.3e-5 vs 1e-4 bar; hist
 slots EXACT vs stage-2 gather). Wall 640×480: v9 105.5→27.6ms med (v7
