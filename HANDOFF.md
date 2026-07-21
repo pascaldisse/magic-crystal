@@ -891,6 +891,17 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
+### 07-21 DELTA — GPU GATHER LANDED, BRIDGE ATOM RIDING (~16:25)
+v9-wire @ 43f8c070: GPU gather PASS (max_abs 2.3e-5 vs 1e-4 bar; hist
+slots EXACT vs stage-2 gather). Wall 640×480: v9 105.5→27.6ms med (v7
+17.5; v9 GPU-forward alone 4.6) [source: docs/perf/2026-07-21-v9-wire.md §gather].
+Gather now 1.75ms — remaining thieves DECOMPOSED: readback 7.0 +
+fp16-glue 11.9 — root cause: UnetLive owns a separate Metal device; v7's
+zero-copy bridge (RdirectLive::from_wgpu_queue) = the exemplar. Est.
+landing ~7-9ms = under budget [source: same doc, est. line]. BRIDGE atom
+riding (ghoul-sonnet, v9-wire tree). v9e forensics/training round also
+still riding (v9body tree).
+
 ### 07-21 DELTA — V9D REGRESSED → TAIL HYPOTHESIS + V9E (~16:05)
 v9d (4 anchors, ±180°, 8 draws) REGRESSED: onset ep24 vs v9c's ep51,
 mirror val infected too; best floor 0.1033 vs v9c 0.1022 (640×480 eval)
