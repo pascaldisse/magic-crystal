@@ -61,6 +61,10 @@ claim, and BUILD the missing organ instead of working around it.
   — correct a riding spec, never wait-and-relaunch (LASHES row 11).
 - Ordeals = the suite (per-binary, build token, timeout 300); canon reds =
   re-derive by hand, never bump-to-match.
+- LANE-CLOSE HYGIENE (Pascal, 2026-07-21) [source: disk-hygiene sweep
+  2026-07-21, tools/lane-sweep.sh]: a lane that ends (merge/park/abandon)
+  cleans its worktree target/ the same hour; tools/lane-sweep.sh is the
+  sweeper; >1GB idle target = a standing violation.
 
 Born from: raster-cluster pipeline squatting in RENDER.md two days after the
 two-act law — no adversary was ever aimed at it.
