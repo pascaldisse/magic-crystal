@@ -891,6 +891,23 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
+### 07-21 DELTA — V9F DONE: DISEASE HAS A FACE, V9G MECHANISM HUNT (~18:40)
+v9f completed. Bar-res probes: ep24 sp0.0/resid 0.1211 → ep49 0.0/0.1052
+→ ep74 13.0/0.0872 → ep99 22.8/0.0701 [source: scratch/v9f-train.log
+PROBE lines]. TWO truths: (1) deep training WORKS — resid falls LINEARLY
+(~0.017/25ep, no deceleration; 0.0701 = best floor ever, halfway to bar
+in log terms); (2) artifact hypothesis DIES at depth — render-res sparkle
+IGNITED (22.8 > bar 16) as highlight_ratio grew 0.055→0.578 monotonic.
+Disease finally characterized: REAL monotonic highlight-overshoot bias,
+unopposed — something zeroes/starves the corrective down-gradient at
+bright pixels (prime suspect: one-sided evidence clamp — overshoot past
+ceiling escapes penalty → parks+drifts). Pre-drift regime perfectly
+reproducible (ep50 score 2.678 in v9c/v9e/v9f identically). v9g riding
+(ghoul-sonnet-mruvo6g6sc1lne): analytic mechanism hunt in the loss code
+(clamp asymmetry / demod-log asymmetry / gradient sign at the 6 texels)
+→ symmetric-clamp or overshoot-penalty cure → detached 300ep run, probes
+past ep100. If cure holds, linear resid fall + depth = the bar's path.
+
 ### 07-21 DELTA — FORENSICS VERDICT: SIX TEXELS, NOT A DETONATION (~17:15)
 COORDS dump (v9e deterministic rerun, env-gated in run_monitor): the
 entire probe-res "sparkle explosion" = the SAME 6-7 FIXED pixels every
