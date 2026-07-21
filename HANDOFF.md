@@ -891,6 +891,21 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
+### ★ 07-21 DELTA — MECHANISM CONVICTED: ONE-SIDED CLAMP; CURE RUNNING (~19:10)
+Instrumented gradient probe (env-gated, v9f-last weights, the 7 forensic
+texels): ALL 7 overshoot the evidence ceiling with d_out = 0.0 EXACTLY,
+20/21 channels — CURE 1's clamp gated the loss to zero ABOVE the ceiling,
+removing the only force that pulls overshooting pixels down → park+drift
+[source: v9body commits 82f91be8 + e8b185e3, autopsy §v9g]. Four rounds of
+mystery = one missing gradient branch. CURE 4: clamp made one-sided in the
+RIGHT direction (up-fitting past ceiling still gated; down-pull ALWAYS
+live). v9f end-reason confirmed on record: watchdog abort ep99, bar-res
+sparkle 22.8 > 16 (commit 947894ba). v9g run ALIVE: PID 43798, ep49+,
+resid 0.0985 / highlight_ratio 0.162 (vs v9f's 0.262 same epoch —
+down-pressure visibly biting). Verdict = bar-res probes past ep99: sparkle
+<16 while resid keeps the ~0.017/25ep linear fall → depth becomes pure
+runway to the 0.035 bar.
+
 ### 07-21 DELTA — V9F DONE: DISEASE HAS A FACE, V9G MECHANISM HUNT (~18:40)
 v9f completed. Bar-res probes: ep24 sp0.0/resid 0.1211 → ep49 0.0/0.1052
 → ep74 13.0/0.0872 → ep99 22.8/0.0701 [source: scratch/v9f-train.log
