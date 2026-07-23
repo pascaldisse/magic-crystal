@@ -891,6 +891,19 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
+### 07-23 DELTA — V9I: CURE 5 NEVER FIRED (IDENTICAL RUN) → V9J (~11:35)
+v9i aborted ep99 with v9g's trajectory TO THE DECIMAL (ep74 9.8 / ep99
+16.3 / best 2.713) [source: scratch/v9i-train.log vs v9g-train.log] —
+identical run ⇒ CURE 5 altered zero gradients: mask keyed on albedo≈0
+likely never matches the TRAINER's no-hit representation (forensics tool
+showed divisor pinned 1.0; trainer buffers may differ), pre-flight was
+run in the diagnostic's formula, not the trainer's. THIRD instrument
+lesson. v9j riding (ghoul-sonnet-mrxb9kchtd88w4): log-diff proof · convict
+the mis-keyed field · re-key on the trainer's real no-hit signal · new
+standing law: trainer prints masked-px count, aborts loudly if 0 on
+first batch (no silent no-op cures) · in-trainer pre-flight · fresh 300ep
+run, same success bar.
+
 ### 07-23 DELTA — CORRECTION + CURE 5 RUNNING (~11:10)
 CORRECTION of the 10:35 delta: "mute pixel class" was a STALE-PROBE
 artifact — the grad diagnostic had the pre-CURE4 formula baked in
