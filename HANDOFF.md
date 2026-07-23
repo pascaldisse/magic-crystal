@@ -891,6 +891,23 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
+### ★ 07-23 DELTA — DRIFT SOURCE CONVICTED: MUTE PIXEL CLASS (~10:35)
+Drift-source forensics (v9body 128c71f3, tool + JSON + autopsy): 9/9
+bar-res sparkle texels = ZERO-ALBEDO NO-HIT sky/silhouette px — the
+original dots' home class. Targets HONEST (|target−teacher| ~0.005,
+sign-flipping; 256-draw means); net > target at 9/9; C (demod) refuted,
+A (target bias) minor [source: scratch/v9h-drift-forensics.json]. Real
+mechanism: this class has active=false, d_out=0.0 — NO local loss signal;
+output = conv spillover + Adam momentum, unconstrained → overshoot_w
+scaling structurally impotent there (4×0=0), explaining the futile dose
+war. v9i riding (ghoul-sonnet-mrx9542xui6e8p): convict the gate (why is
+the loss inactive at no-hit px — sky-reject? ceiling degenerate? mask?),
+activate the class w/ its honest targets (loss only, not history reuse),
+pre-flight grad probe must show d_out≠0 at all 9 BEFORE training,
+overshoot_w default back to 1.0 (dose war drags resid: 0.0701/0.0756/
+0.0785 @0×/1×/4× ep99), then fresh 300ep run. Success = sparkle ~0 past
+ep124 + resid ≤ v9f pace.
+
 ### 07-23 DELTA — V9H: DOSE-RESPONSE SEALED, ESCALATION ≠ CURE (~10:20)
 v9h (overshoot_w 4.0) done: WATCHDOG ABORT ep124 bar-res sparkle 29.3;
 probes ep74 3.3 / ep99 13.0 / ep124 29.3; floor 0.0658 @ ep124 = best
