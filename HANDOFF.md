@@ -891,6 +891,26 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
+### 07-23 DELTA — CORRECTION + CURE 5 RUNNING (~11:10)
+CORRECTION of the 10:35 delta: "mute pixel class" was a STALE-PROBE
+artifact — the grad diagnostic had the pre-CURE4 formula baked in
+("reused from v9f", its own comment). Under the ACTUAL v9g/v9h loss:
+d_out zeros 0/27 — pixels were never mute [source: scratch/
+v9i-preflight-grad-probe.log BEFORE_stale 16/27 vs CURE4_actual 0/27].
+REAL mechanism (pre-flight verified): CURE4's overshoot branch pulls
+toward the CAP, and at zero-albedo no-hit px the cap is INFLATED above
+the honest target → pixels park at the ceiling = the observed drift.
+CURE 5 (v9i, commit f7d21e4d): at the no-hit class (nohit_albedo_sq
+param) the pull goes to the HONEST n2n target; AFTER_fix 27/27 live, all
+signed toward target. Dose reset overshoot_w→1.0. CONFOUND FLAGGED: v9h
+accidentally ran SKY_HISTORY reject UNSET (its log line 3) — v9h's
+dose-response point polluted; v9i restores reject=true per mandate.
+Run ALIVE: PID 66345, ep49+, harness else byte-identical. Success bar
+unchanged: bar-res sparkle ~0 past ep124 + resid ≤ v9f pace. Lesson
+sealed: verify the INSTRUMENT against the live formula before convicting
+(two instrument artifacts this campaign: probe-res sparkle, stale grad
+probe).
+
 ### ★ 07-23 DELTA — DRIFT SOURCE CONVICTED: MUTE PIXEL CLASS (~10:35)
 Drift-source forensics (v9body 128c71f3, tool + JSON + autopsy): 9/9
 bar-res sparkle texels = ZERO-ALBEDO NO-HIT sky/silhouette px — the
