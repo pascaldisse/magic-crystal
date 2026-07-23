@@ -891,7 +891,53 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
-### ★★ 07-23 COMPACT ANCHOR (~13:40) — READ FIRST AFTER RESTART
+### ★★ 07-23 COMPACT ANCHOR v2 (~19:40) — READ FIRST AFTER RESTART
+CONTEXT: second compact of the day; supersedes everything below down to the
+next ★ header. Full live state:
+
+V9 SPARKLE WAR — DAY'S ARC (v9k→v9r, ~/projects/magic-crystal-v9body,
+branch v9-body; every round's artifacts + trainers committed):
+· v9l (crops+4× penalty) abort ep124 = v9k → levers DON'T compose. v9m
+  (nohit_w 8×) abort ep124 identical → LOSS-SIDE FAMILY CLOSED (6 rounds).
+· v9n HIT-GATED BODY (no-hit→evidence passthrough, grad 0): resid COLLAPSED
+  0.118→0.037 at init (sky was most of remaining error) but ignited
+  35.8@124 → bar-res class ≠ no-hit (instrument artifact #5: v9h forensics
+  were 128×72-res).
+· BAR-RES FORENSICS (rdirect_v9n/v9p_barres_forensics.rs + scratch
+  logs/json): class = false_hit_dark — HIT px, albedo EXACTLY 0, dark
+  specular, demod divisor 1.0, ~11→6 px cluster y≈247-260.
+· v9o (dark px→evidence): abort ep24 81.4 — their K=3 evidence IS
+  fireflies. v9p (median+0.10 log cap): abort ep99 19.5. v9q (linear
+  despeckle cap as gradient): bent curve (6.5@74) but abort ep99 19.5 →
+  OUTPUT-SIDE CAP FAMILY CLOSED.
+· ALIGNMENT AUDIT sealed: sparkle criterion = ERROR-FIELD test (local peak
+  of lum(net)−lum(TEACHER) >0.15, 8-nbr; rdirect_train_v9k.rs:1204).
+  ⚖ RULING: teacher-anchored caps ILLEGAL for stamping — live path has no
+  teacher; probe compose must equal live compose.
+· ★ v9r RUNNING (launched ~19:25, PID ~42763, scratch/v9r-train.log):
+  REPRESENTATIONAL CURE — degenerate-demod FLAG INPUT CHANNEL (in_channels
+  42→43, flag=1 at no-hit OR dark-hit) → class finally VISIBLE in feature
+  space (drift = shared-weight drag over invisible population, verdict B)
+  + DARK_W=4 on honest targets + v9n sky gate + all caps off. Trainer
+  commit 539d5f05 (env-gated; default byte-identical; channel count
+  round-trips .bin header, loud assert). VERDICT POINTS: ep99 (v9p/q
+  death), ep124 (old wall), then 300-ep runway — resid bar ~ep170.
+· resid: bar-res 0.0436@99, val 0.034-0.036, mirror 0.031 = UNDER bar.
+  Fight = ~6 px of 307200.
+· IF v9r ignites: reserve options — DARK_W up · flag-conditioned output
+  scale · measured accept-call with Pascal. IF holds: cook 300 → ordeal →
+  stamp → wire live (main.rs/NetPresent, stamp-day) → Pascal's eye.
+· Speed DONE: 15.3ms bridged (v9wire e2485c40). HD legal, unbuilt.
+· Campaign laws: instrument-audit before hypothesis (5 artifacts) ·
+  no-silent-cure counters · measure class at JUDGING res · one training at
+  a time · salvage artifacts before relaunch.
+
+OTHER WORK: max-thinking DONE+LIVE (daemon d286062+8b55b52; fable-5
+pi-path audited clean; nyari agent.json "max"; detail → memory
+gaia-daemon.md) · meetup demo = v7 window + proof/*.png (v9 never shown,
+unstamped) · no subagents running at compact; v9r = detached OS process.
+
+### † SUPERSEDED 13:40 ANCHOR (kept as dated history)
 CONTEXT: Pascal compacting nyari ctx + restart. This block = full live state.
 
 V9 CAMPAIGN STATE (fidelity war — the only open front):
