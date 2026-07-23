@@ -891,6 +891,19 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
+### ★ 07-23 DELTA — RES GAP CONFIRMED → V9K CROP TRAINING (~12:35)
+v9j aborted ep99, bar-res probes unchanged (9.8@74/16.3@99) with CURE 5
+VERIFIED firing — v9g/v9i/v9j = three loss-side cures, zero bar-res
+effect [source: scratch/v9j-train.log PROBE lines]. RES GAP CONFIRMED BY
+EXHAUSTION: 128×72 training px span 25× solid angle — the thin
+sky-silhouette class that ignites at 640×480 is absent from training
+statistics; no loss surgery teaches unseen pixels. PIVOT (production
+standard): v9k trains on 128×72 CROPS of true 640×480 renders —
+asymmetric-frustum sub-rect tracing (cost = same px count), random
+offsets, K=8/evidence/history on-crop, all prior equipment kept. Riding:
+ghoul-sonnet-mrxde3o3a4s6ss. Lever proof = ep74 probe ≠ 9.8; success =
+sparkle ~0 past ep124 + resid pace ≤ v9f.
+
 ### 07-23 DELTA — CORRECTION 2: CURE 5 DID FIRE; RES-GAP SUSPECT (~12:05)
 Instrumentation falsified the 11:35 conviction: CURE 5 fires 6-8% of
 channel-instances from ep2 (nohit class 32.6% of px) [source: v9body
