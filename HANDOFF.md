@@ -891,6 +891,21 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
+### 07-23 DELTA — V9G PARTIAL (DOSE TOO LOW) → V9H ESCALATION (~09:30)
+v9g (CURE 4, symmetric clamp) verdict: drift ~HALVED vs v9f — ep99
+bar-res sparkle 16.3 vs 22.8, highlight 0.409 vs 0.578, resid 0.0756 =
+best bar-res floor ever — but 16.3 grazes bar 16 → two-signal watchdog
+aborted ep99 (bar-res signal, working as built) [source: scratch/
+v9g-train.log PROBE+ABORT lines]. Mechanism right, dose low. v9h riding
+(ghoul-sonnet-mrx6q19w5gahis): overshoot-penalty weight >1 on the
+restored down-branch (+optional lower up-gate ceiling at bright px),
+else identical. Success = sparkle plateaus ≪16 while resid falls past
+0.0756. Perf answer re-confirmed to Pascal: 15.3ms med bridged = 60fps
+holds; HD-output body legal per ruling (render at output res, no
+interpolation) but UNVERIFIED — forward scales ~2.9× at 720p; stamp
+640×480 first. NOTE 36h idle gap (no watcher on detached runs — accept:
+check-on-ping pattern).
+
 ### ★ 07-21 DELTA — MECHANISM CONVICTED: ONE-SIDED CLAMP; CURE RUNNING (~19:10)
 Instrumented gradient probe (env-gated, v9f-last weights, the 7 forensic
 texels): ALL 7 overshoot the evidence ceiling with d_out = 0.0 EXACTLY,
