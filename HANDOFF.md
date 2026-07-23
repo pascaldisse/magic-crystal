@@ -891,6 +891,60 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
+### ★★ 07-23 COMPACT ANCHOR (~13:40) — READ FIRST AFTER RESTART
+CONTEXT: Pascal compacting nyari ctx + restart. This block = full live state.
+
+V9 CAMPAIGN STATE (fidelity war — the only open front):
+· v9k (crop training) DONE: WATCHDOG ABORT ep124; probes ep74 3.3 / ep99
+  13.0 / ep124 29.3 sparkle; resid floor 0.0636 @ ep124 = DEEPEST EVER
+  [source: v9body scratch/v9k-train.log PROBE+ABORT lines]. Verdict: crop
+  lever BITES (first bar-res movement in 4 rounds — prior invariant 9.8@74/
+  16.3@99/die@99) + delays ignition to ep124 with only 1× penalty — but
+  drift not dead. v9k artifacts UNCOMMITTED in tree — salvage first.
+· NEXT ROUND (v9l, spec ready): crops + overshoot_w 4× (v9h showed 4× also
+  delays to 124 independently; combine levers) + optional sky-boundary crop
+  bias (param exists in v9k trainer, default off). Base = v9k trainer.
+  Success bar unchanged: bar-res sparkle <16 past ep124+, resid ≤ v9f pace.
+· resid trajectory: linear fall continues every round (0.078@99, 0.064@124)
+  — bar 0.035 reachable on runway once drift dies.
+· Speed front DONE: v9-bridged 15.30-15.37ms med < 16.67 budget (v9wire
+  e2485c40, parity exact) [source: docs/perf/2026-07-21-v9-wire.md §bridge].
+· Dots: 0.0 render-res everywhere except the drift class (sky-silhouette
+  px). Disease fully characterized across v9f-v9k deltas below.
+· Trees: ~/projects/magic-crystal-v9body (branch v9-body, training) ·
+  ~/projects/magic-crystal-v9wire (branch v9-wire, wiring done, queue
+  empty pending stamp). Ordeal door + stamp machinery ready (GAIARD9).
+  main.rs/NetPresent wiring = stamp-day only.
+· 4 instrument-artifact lessons sealed in scratch/v9-autopsy.md — ALWAYS
+  audit the instrument before the hypothesis; no-silent-cure law (masked-px
+  count + first-batch abort) now standing equipment in trainers.
+
+RUNNING SUBAGENTS AT COMPACT TIME (all ghoul-sonnet, room chat-mruhqnjx-c9mj):
+· mrxfbfkau1vd7r — gaia-daemon AUDIT: trace effective effort for
+  pi-harness fable-5 (suspected xhigh→"high" silent degradation via missing
+  thinkingLevelMap in pi-ai mapThinkingLevelToEffort default branch); may
+  commit model-map fix. May be dead to 30-min wall — check its room + repo.
+· mrxfpa25itrbxi — gaia-daemon FINISH "max": monad's 4 uncommitted edits
+  (types.ts ThinkingLevel+"max" · hints.ts levels · claude.ts effortFor
+  max→max [CLI-verified: claude --help lists --effort … max] · codex.ts
+  max→xhigh clamp) + pi.ts:714 SDK-boundary clamp (pi SDK tops at xhigh;
+  unknown level would fall to default "high" — worse). Must stage pi.ts by
+  hunk — ANOTHER lane owns uncommitted pi.ts/test diffs. Gates: bun run
+  check + bun test (bun only).
+· v9k training PID: ENDED cleanly (abort ep124) — no orphan process.
+
+MAX-THINKING CONTEXT (Pascal's whips 226-7): Claude Code CLI supports
+--effort max (help text proof); "ultracode" = interactive /effort pin
+(xhigh+workflows), headless reachability UNVERIFIED. Pascal's screenshot =
+truth; old pi-ai comment (max=Opus4.6-only) stale. AFTER both daemon ghouls
+land + HIS daemon restart (law 154 — his act): set nyari agent.json
+thinking "max" ONLY once pi-path proven non-degrading (audit ghoul's
+verdict). Other claude-harness agents can go max immediately after restart.
+
+OPEN WITH PASCAL: his eye on glass = final bar, blocked on v9 stamp ·
+launch offer for v7 engine stands · Cascadeur filed as animation Ref 3
+(docs/research/2026-07-19-neural-motion-todo.md).
+
 ### ★ 07-23 DELTA — V9K LEVER BITES: FIRST BAR-RES MOVEMENT (~13:20)
 v9k (crop training: 128×72 crops of virtual 640×480 frames, asymmetric
 frustum; v9body commits 52a8d433+00062de4) ALIVE, ep74+. PROBE ep74
