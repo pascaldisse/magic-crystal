@@ -891,6 +891,16 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
+### ★ 07-23 DELTA — V9K LEVER BITES: FIRST BAR-RES MOVEMENT (~13:20)
+v9k (crop training: 128×72 crops of virtual 640×480 frames, asymmetric
+frustum; v9body commits 52a8d433+00062de4) ALIVE, ep74+. PROBE ep74
+bar-res sparkle 3.3/Mpx (1 px) vs the 9.8 INVARIANT of v9g/v9i/v9j —
+first bar-res movement in four rounds, penalty only 1×, resid on pace
+0.0934 [source: scratch/v9k-train.log PROBE ep74]. Res-gap diagnosis
+causally confirmed. Verdict at ep99/124 probes (prior ignitions). Wall
+ate two builder rooms mid-lane (salvage d93bb595 + disk-continue) —
+checkpoint law held, zero work lost.
+
 ### ★ 07-23 DELTA — RES GAP CONFIRMED → V9K CROP TRAINING (~12:35)
 v9j aborted ep99, bar-res probes unchanged (9.8@74/16.3@99) with CURE 5
 VERIFIED firing — v9g/v9i/v9j = three loss-side cures, zero bar-res
