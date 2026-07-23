@@ -891,6 +891,19 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
+### 07-23 DELTA — CORRECTION 2: CURE 5 DID FIRE; RES-GAP SUSPECT (~12:05)
+Instrumentation falsified the 11:35 conviction: CURE 5 fires 6-8% of
+channel-instances from ep2 (nohit class 32.6% of px) [source: v9body
+commit 9c25f7bf autopsy delta]. My "identical run" inference compared
+QUANTIZED stats — bar-res sparkle is a discrete px count (9.8=3px,
+16.3=5px) and best score 2.713 is shared by v9g AND v9h AND v9i (degenerate
+statistic); resids differed (0.0766 vs 0.0756 ep99). Fourth instrument
+artifact, this one the monad's. Revised suspect (UNVERIFIED): training-res
+(128×72) vs watchdog-res (640×480) generalization gap — cure may not
+cover the bar-res drift population. v9j ALIVE: PID 40592, mask re-keyed
+to depth hit-flag, per-epoch masked-px counters, first-batch loud-abort
+guard (no-silent-cure law = standing equipment). Probes decide.
+
 ### 07-23 DELTA — V9I: CURE 5 NEVER FIRED (IDENTICAL RUN) → V9J (~11:35)
 v9i aborted ep99 with v9g's trajectory TO THE DECIMAL (ep74 9.8 / ep99
 16.3 / best 2.713) [source: scratch/v9i-train.log vs v9g-train.log] —
