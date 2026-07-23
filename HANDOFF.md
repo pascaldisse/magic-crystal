@@ -891,6 +891,17 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
+### 07-23 DELTA — V9H: DOSE-RESPONSE SEALED, ESCALATION ≠ CURE (~10:20)
+v9h (overshoot_w 4.0) done: WATCHDOG ABORT ep124 bar-res sparkle 29.3;
+probes ep74 3.3 / ep99 13.0 / ep124 29.3; floor 0.0658 @ ep124 = best
+ever [source: scratch/v9h-train.log PROBE lines]. Three-point dose curve
+(0×/1×/4× → ign ~ep87/99/124, floors 0.0701/0.0756/0.0658): each 4×
+buys ~25ep; bar needs ~150ep more → penalty = symptom war, something
+PULLS those texels up. Drift-source forensics riding (ghoul-sonnet-
+mrx8q268hzbwaf): net vs TEACHER vs n2n-target-mean vs demod factor AT the
+sparkle px (v9h-last, bar res) → verdict A target-bias / B shared-weight
+drive / C demod degeneracy → cure designed from verdict, no blind round.
+
 ### 07-23 DELTA — V9G PARTIAL (DOSE TOO LOW) → V9H ESCALATION (~09:30)
 v9g (CURE 4, symmetric clamp) verdict: drift ~HALVED vs v9f — ep99
 bar-res sparkle 16.3 vs 22.8, highlight 0.409 vs 0.578, resid 0.0756 =
