@@ -891,7 +891,42 @@ NOT running (he closed 07-20 eve; launch = his word or merged-main launch
 step above) · terra/sol pool: capped since 07-19 (~6d), sonnet carried
 everything.
 
-### ★★ 07-23 COMPACT ANCHOR v2 (~19:40) — READ FIRST AFTER RESTART
+### ★★ 07-24 GROUND-TRUTH REVOLUTION + SPARKLE-DRIVE KILL — READ FIRST
+All below in ~/projects/magic-crystal-v9body (v9-body) unless noted; every
+round's artifacts committed. [source: v9body git log 920b3e63..b2097c30]
+· TRUE GROUND TRUTH BUILT: 512spp converged reference, 1.7s/frame GPU —
+  K=8 economy was never necessary [source: examples/rdirect_reference.rs,
+  920b3e63, scratch/reference-512spp.png]. Pascal's demand was exact.
+· v9u (512spp targets, else v9t-identical): sparkle 153.0@299 ≈ v9t —
+  noisy-teacher hypothesis FALSIFIED as dot cause [source: 9edeb524].
+· EYE-TEST WINDOW post-mortem (v9wire 55f17b31): LSD flicker root = mv
+  input channels ≡0 through ALL training (static poses) — dead weights fed
+  real motion; + /scry blit bug (surface-sized uniform on 640x480 capture)
+  = week of partially dishonest screenshots. Both fixed, motion-verified.
+· v9v (input firefly clamp GAIA_V9V_INPUT_CLAMP=0.10 + real-motion
+  sequences GAIA_V9V_MOTION=1, 48efc958): sparkle 48.8@299 vs 146.5 —
+  3× starved, first bent curve [source: 07b5b86b commit body].
+· ★ v9w2 MILESTONE (display-domain loss GAIA_V9W_LOSS_DOMAIN, 4c0d36a2 +
+  check fixes c31dc2f8): sparkle DECLINES late — 19.5@174 → 9.8@299 UNDER
+  BAR, highlight drive plateau-reversed (first in 11 rounds). Dots = linear
+  MSE's appetite — CONFIRMED. resid plateau 0.0473 vs bar 0.035 remains
+  [source: f718797c, scratch/v9w2-train.log]. CAVEAT: v9p/q caps ran at
+  default 0.10 (env omitted) — not single-variable [source: 6e976285 body].
+· v9w2 eye frame (6e976285, scratch/v9w2-{teacher,net,diff}.png): no
+  fireflies, BUT dark-face mottle grain + waterline glints ERASED — display
+  loss suppresses small-bright-energy indiscriminately; resid gap = same
+  population.
+· ★ RUNNING OVERNIGHT: v9x mixed-domain loss (GAIA_V9X_MIX=0.5, 600 ep,
+  caps zeroed, b2097c30, PID 76812, scratch/v9x-train.log) — keep no-dots
+  incentive + linear reason to render glints. Verdict with morning coffee.
+· Trainer env surface now: V9_TEACHER_SPP · V9V_INPUT_CLAMP · V9V_MOTION ·
+  V9W_LOSS_DOMAIN · V9X_MIX · V9_EPOCHS · V9_SPARKLE_ABORT + v9n/o/p/q
+  gates — all default-off byte-identical (IRON).
+· Next after v9x: if glints live + sparkle low → runway/capacity to 0.035
+  → ordeal → stamp → v9wire motion-fixed window → Pascal's eye. Motion-
+  trained mv channels may re-enable in live gather (were zeroed 55f17b31).
+
+### † 07-23 COMPACT ANCHOR v2 (~19:40) — superseded 07-24
 CONTEXT: second compact of the day; supersedes everything below down to the
 next ★ header. Full live state:
 
